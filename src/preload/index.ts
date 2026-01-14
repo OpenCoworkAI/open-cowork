@@ -1,0 +1,71 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { ClientEvent, ServerEvent } from '../renderer/types';
+
+// Track registered callbacks to prevent duplicate listeners
+let registeredCallback: ((event: ServerEvent) => void) | null = null;
+let ipcListener: ((event: Electron.IpcRendererEvent, data: ServerEvent) => void) | null = null;
+
+// Expose protected methods that allow the renderer process to use
+// the ipcRenderer without exposing the entire object
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Send events to main process
+  send: (event: ClientEvent) => {
+    console.log('[Preload] Sending event:', event.type);
+    ipcRenderer.send('client-event', event);
+  },
+
+  // Receive events from main process - ensures only ONE listener
+  on: (callback: (event: ServerEvent) => void) => {
+    // Remove previous listener if exists
+    if (ipcListener) {
+      console.log('[Preload] Removing previous listener');
+      ipcRenderer.removeListener('server-event', ipcListener);
+    }
+    
+    registeredCallback = callback;
+    ipcListener = (_: Electron.IpcRendererEvent, data: ServerEvent) => {
+      console.log('[Preload] Received event:', data.type);
+      if (registeredCallback) {
+        registeredCallback(data);
+      }
+    };
+    
+    console.log('[Preload] Registering new listener');
+    ipcRenderer.on('server-event', ipcListener);
+    
+    // Return cleanup function
+    return () => {
+      console.log('[Preload] Cleanup called');
+      if (ipcListener) {
+        ipcRenderer.removeListener('server-event', ipcListener);
+        ipcListener = null;
+        registeredCallback = null;
+      }
+    };
+  },
+
+  // Invoke and wait for response
+  invoke: async <T>(event: ClientEvent): Promise<T> => {
+    console.log('[Preload] Invoking:', event.type);
+    return ipcRenderer.invoke('client-invoke', event);
+  },
+
+  // Platform info
+  platform: process.platform,
+
+  // App info
+  getVersion: () => ipcRenderer.invoke('get-version'),
+});
+
+// Type declaration for the renderer process
+declare global {
+  interface Window {
+    electronAPI: {
+      send: (event: ClientEvent) => void;
+      on: (callback: (event: ServerEvent) => void) => () => void;
+      invoke: <T>(event: ClientEvent) => Promise<T>;
+      platform: NodeJS.Platform;
+      getVersion: () => Promise<string>;
+    };
+  }
+}

@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-text-primary;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Custom scrollbar - subtle */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-muted;
+  }
+}
+
+@layer components {
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-accent/30;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-white hover:bg-accent-hover;
+    @apply shadow-soft;
+  }
+
+  .btn-secondary {
+    @apply bg-surface border border-border hover:bg-surface-hover text-text-primary;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-surface-active text-text-secondary hover:text-text-primary;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-4 py-3 rounded-xl bg-surface border border-border;
+    @apply text-text-primary placeholder:text-text-muted;
+    @apply focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/10;
+    @apply transition-all duration-150;
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-surface rounded-2xl border border-border shadow-card;
+  }
+
+  .card-hover {
+    @apply hover:shadow-elevated hover:border-border-muted cursor-pointer transition-all duration-150;
+  }
+
+  /* Tag/Chip styles - like the quick action buttons */
+  .tag {
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface border border-border;
+    @apply text-sm font-medium text-text-primary;
+    @apply hover:bg-surface-hover hover:shadow-soft cursor-pointer transition-all duration-150;
+  }
+
+  .tag-active {
+    @apply bg-accent-muted border-accent/30 text-accent;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-idle {
+    @apply bg-surface-muted text-text-muted;
+  }
+
+  .badge-running {
+    @apply bg-accent-muted text-accent;
+  }
+
+  .badge-completed {
+    @apply bg-green-50 text-success;
+  }
+
+  .badge-error {
+    @apply bg-red-50 text-error;
+  }
+
+  /* Section header */
+  .section-header {
+    @apply flex items-center justify-between px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wider;
+  }
+
+  /* Progress circle */
+  .progress-circle {
+    @apply w-6 h-6 rounded-full border-2 flex items-center justify-center;
+  }
+
+  .progress-circle-pending {
+    @apply border-border bg-surface;
+  }
+
+  .progress-circle-active {
+    @apply border-accent bg-accent-muted;
+  }
+
+  .progress-circle-completed {
+    @apply border-success bg-green-50;
+  }
+}
+
+@layer utilities {
+  /* Grid background pattern - uses theme colors from tailwind.config.js */
+  .bg-grid {
+    @apply bg-background;
+    background-image: 
+      linear-gradient(to right, theme('colors.border.DEFAULT') 1px, transparent 1px),
+      linear-gradient(to bottom, theme('colors.border.DEFAULT') 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Message bubbles */
+  .message-user {
+    @apply bg-accent-muted border border-accent/10 rounded-2xl;
+  }
+
+  .message-assistant {
+    @apply bg-surface border border-border rounded-2xl;
+  }
+
+  /* Code block */
+  .code-block {
+    @apply bg-surface-muted rounded-xl p-4 font-mono text-sm overflow-x-auto;
+  }
+}
