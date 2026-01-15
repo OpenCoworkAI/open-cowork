@@ -42,6 +42,7 @@ export const PROVIDER_PRESETS = {
     models: [
       { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
       { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+      // { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
     keyHint: '从 openrouter.ai/keys 获取',

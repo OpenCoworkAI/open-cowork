@@ -7,6 +7,7 @@ import { WelcomeView } from './components/WelcomeView';
 import { PermissionDialog } from './components/PermissionDialog';
 import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
+import { Titlebar } from './components/Titlebar';
 import type { AppConfig } from './types';
 
 // Check if running in Electron
@@ -69,17 +70,23 @@ function App() {
   }, [isConfigured, setShowConfigModal]);
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden bg-background">
-      {/* Sidebar */}
-      <Sidebar />
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-background">
+      {/* Titlebar - draggable region */}
+      <Titlebar />
       
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-background">
-        {activeSessionId ? <ChatView /> : <WelcomeView />}
-      </main>
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar />
+        
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-background">
+          {activeSessionId ? <ChatView /> : <WelcomeView />}
+        </main>
 
-      {/* Context Panel - only show when in session */}
-      {activeSessionId && <ContextPanel />}
+        {/* Context Panel - only show when in session */}
+        {activeSessionId && <ContextPanel />}
+      </div>
       
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}

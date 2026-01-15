@@ -1,8 +1,24 @@
-import { Sparkles, Minimize2, Square, X } from 'lucide-react';
+import { Sparkles, Minus, Square, X, Copy } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 export function Titlebar() {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const handleMinimize = () => {
+    window.electronAPI?.window.minimize();
+  };
+
+  const handleMaximize = () => {
+    window.electronAPI?.window.maximize();
+    setIsMaximized(!isMaximized);
+  };
+
+  const handleClose = () => {
+    window.electronAPI?.window.close();
+  };
+
   return (
-    <div className="h-10 bg-background-secondary border-b border-border flex items-center justify-between px-4 titlebar-drag">
+    <div className="h-10 bg-background-secondary border-b border-border flex items-center justify-between px-4 titlebar-drag shrink-0">
       {/* App Logo & Title */}
       <div className="flex items-center gap-3 titlebar-no-drag">
         <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-accent-cyan to-accent-purple flex items-center justify-center">
@@ -14,15 +30,28 @@ export function Titlebar() {
       
       {/* Window Controls (for Windows/Linux - macOS uses native) */}
       {window.electronAPI?.platform !== 'darwin' && (
-        <div className="flex items-center gap-1 titlebar-no-drag">
-          <button className="w-8 h-8 flex items-center justify-center rounded hover:bg-surface transition-colors">
-            <Minimize2 className="w-3.5 h-3.5 text-text-secondary" />
+        <div className="flex items-center titlebar-no-drag">
+          <button 
+            onClick={handleMinimize}
+            className="w-11 h-10 flex items-center justify-center hover:bg-surface transition-colors"
+          >
+            <Minus className="w-4 h-4 text-text-secondary" />
           </button>
-          <button className="w-8 h-8 flex items-center justify-center rounded hover:bg-surface transition-colors">
-            <Square className="w-3 h-3 text-text-secondary" />
+          <button 
+            onClick={handleMaximize}
+            className="w-11 h-10 flex items-center justify-center hover:bg-surface transition-colors"
+          >
+            {isMaximized ? (
+              <Copy className="w-3.5 h-3.5 text-text-secondary" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-text-secondary" />
+            )}
           </button>
-          <button className="w-8 h-8 flex items-center justify-center rounded hover:bg-accent-red/20 transition-colors group">
-            <X className="w-4 h-4 text-text-secondary group-hover:text-accent-red" />
+          <button 
+            onClick={handleClose}
+            className="w-11 h-10 flex items-center justify-center hover:bg-red-500 transition-colors group"
+          >
+            <X className="w-4 h-4 text-text-secondary group-hover:text-white" />
           </button>
         </div>
       )}

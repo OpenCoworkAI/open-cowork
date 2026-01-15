@@ -169,6 +169,17 @@
 }
 
 @layer utilities {
+  /* Window drag region for custom titlebar */
+  .titlebar-drag {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .titlebar-no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
   /* Grid background pattern - uses theme colors from tailwind.config.js */
   .bg-grid {
     @apply bg-background;

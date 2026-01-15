@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.save', config),
     isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
   },
+
+  // Window control methods
+  window: {
+    minimize: () => ipcRenderer.send('window.minimize'),
+    maximize: () => ipcRenderer.send('window.maximize'),
+    close: () => ipcRenderer.send('window.close'),
+  },
 });
 
 // Type declaration for the renderer process
@@ -80,6 +87,11 @@ declare global {
         getPresets: () => Promise<ProviderPresets>;
         save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
+      };
+      window: {
+        minimize: () => void;
+        maximize: () => void;
+        close: () => void;
       };
     };
   }

@@ -42,12 +42,6 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     frame: false,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: THEME.titleBar,
-      symbolColor: THEME.titleBarSymbol,
-      height: 40,
-    },
     backgroundColor: THEME.background,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -181,6 +175,23 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
 
 ipcMain.handle('config.isConfigured', () => {
   return configStore.isConfigured();
+});
+
+// Window control IPC handlers
+ipcMain.on('window.minimize', () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.on('window.maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow?.maximize();
+  }
+});
+
+ipcMain.on('window.close', () => {
+  mainWindow?.close();
 });
 
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {

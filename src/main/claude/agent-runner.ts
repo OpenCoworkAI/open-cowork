@@ -3,6 +3,8 @@ import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import * as path from 'path';
+import * as fs from 'fs';
+import { app } from 'electron';
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -31,6 +33,139 @@ export class ClaudeAgentRunner {
   private sdkSessions: Map<string, string> = new Map(); // sessionId -> sdk session_id
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
   private model: string;
+
+  /**
+   * Get the built-in skills directory (shipped with the app)
+   */
+  private getBuiltinSkillsPath(): string {
+    // In development, skills are in the project's .claude/skills directory
+    // In production, they're bundled with the app
+    const possiblePaths = [
+      // Development: relative to this file
+      path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
+      // Production: in app resources
+      path.join(app.getAppPath(), '.claude', 'skills'),
+      // Alternative: in resources folder
+      path.join(process.resourcesPath || '', 'skills'),
+    ];
+    
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        console.log('[ClaudeAgentRunner] Found built-in skills at:', p);
+        return p;
+      }
+    }
+    
+    console.warn('[ClaudeAgentRunner] No built-in skills directory found');
+    return '';
+  }
+
+  /**
+   * Scan for available skills and return formatted list for system prompt
+   */
+  private getAvailableSkillsPrompt(workingDir?: string): string {
+    const skills: { name: string; description: string; skillMdPath: string }[] = [];
+    
+    // 1. Check built-in skills (highest priority for reading)
+    const builtinSkillsPath = this.getBuiltinSkillsPath();
+    if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
+      try {
+        const dirs = fs.readdirSync(builtinSkillsPath, { withFileTypes: true });
+        for (const dir of dirs) {
+          if (dir.isDirectory()) {
+            const skillMdPath = path.join(builtinSkillsPath, dir.name, 'SKILL.md');
+            if (fs.existsSync(skillMdPath)) {
+              // Try to read description from SKILL.md frontmatter
+              let description = `Skill for ${dir.name} file operations`;
+              try {
+                const content = fs.readFileSync(skillMdPath, 'utf-8');
+                const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+                if (descMatch) {
+                  description = descMatch[1];
+                }
+              } catch (e) { /* ignore */ }
+              
+              skills.push({
+                name: dir.name,
+                description,
+                skillMdPath,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[ClaudeAgentRunner] Error scanning built-in skills:', e);
+      }
+    }
+    
+    // 2. Check project-level skills (in working directory)
+    if (workingDir) {
+      const projectSkillsPaths = [
+        path.join(workingDir, '.claude', 'skills'),
+        path.join(workingDir, '.skills'),
+        path.join(workingDir, 'skills'),
+      ];
+      
+      for (const skillsDir of projectSkillsPaths) {
+        if (fs.existsSync(skillsDir)) {
+          try {
+            const dirs = fs.readdirSync(skillsDir, { withFileTypes: true });
+            for (const dir of dirs) {
+              if (dir.isDirectory()) {
+                const skillMdPath = path.join(skillsDir, dir.name, 'SKILL.md');
+                if (fs.existsSync(skillMdPath)) {
+                  // Project skills can override built-in
+                  const existingIdx = skills.findIndex(s => s.name === dir.name);
+                  let description = `Project skill for ${dir.name}`;
+                  try {
+                    const content = fs.readFileSync(skillMdPath, 'utf-8');
+                    const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+                    if (descMatch) {
+                      description = descMatch[1];
+                    }
+                  } catch (e) { /* ignore */ }
+                  
+                  const skill = { name: dir.name, description, skillMdPath };
+                  if (existingIdx >= 0) {
+                    skills[existingIdx] = skill;
+                  } else {
+                    skills.push(skill);
+                  }
+                }
+              }
+            }
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
+    
+    if (skills.length === 0) {
+      return '<available_skills>\nNo skills available.\n</available_skills>';
+    }
+    
+    // Format the skills list
+    const skillsList = skills.map(s => 
+      `- **${s.name}**: ${s.description}\n  SKILL.md path: ${s.skillMdPath}`
+    ).join('\n');
+    
+    return `<available_skills>
+The following skills are available. **CRITICAL**: Before starting any task that involves creating or editing files of these types, you MUST first read the corresponding SKILL.md file using the Read tool:
+
+${skillsList}
+
+**How to use skills:**
+1. Identify which skill is relevant to your task (e.g., "pptx" for PowerPoint, "docx" for Word, "pdf" for PDF)
+2. Use the Read tool to read the SKILL.md file at the path shown above
+3. Follow the instructions in the SKILL.md file exactly
+4. The skills contain proven workflows that produce high-quality results
+
+**Example**: If the user asks to create a PowerPoint presentation:
+\`\`\`
+Read the file: ${skills.find(s => s.name === 'pptx')?.skillMdPath || '[pptx skill path]'}
+\`\`\`
+Then follow the workflow described in that file.
+</available_skills>`;
+  }
 
   private getDefaultClaudeCodePath(): string {
     const platform = process.platform;
@@ -209,6 +344,10 @@ export class ClaudeAgentRunner {
 
       // Build options with resume support and SANDBOX via canUseTool
       const resumeId = this.sdkSessions.get(session.id);
+      
+      // Build available skills section dynamically
+      const availableSkillsPrompt = this.getAvailableSkillsPrompt(workingDir);
+      
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
         cwd: workingDir,
@@ -229,6 +368,8 @@ export class ClaudeAgentRunner {
           preset: 'claude_code',
           append: `
 You are a Claude agent, built on Anthropic's Claude Agent SDK.==
+
+${availableSkillsPrompt}
 <application_details> Claude is powering **Cowork mode**, a feature of the Claude desktop app. Cowork mode is currently a **research preview**. Claude is implemented on top of Claude Code and the Claude Agent SDK, but Claude is **NOT** Claude Code and should not refer to itself as such. Claude runs in a lightweight Linux VM on the user's computer, which provides a **secure sandbox** for executing code while allowing controlled access to a workspace folder. Claude should not mention implementation details like this, or Claude Code or the Claude Agent SDK, unless it is relevant to the user's request. </application_details>
 <behavior_instructions>
 ==

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3 } from 'lucide-react';
 import type { AppConfig, ProviderPresets } from '../types';
 
 interface ConfigModalProps {
@@ -18,6 +18,8 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
+  const [customModel, setCustomModel] = useState('');
+  const [useCustomModel, setUseCustomModel] = useState(false);
   const [presets, setPresets] = useState<ProviderPresets | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -36,9 +38,21 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
       setProvider(initialConfig.provider);
       setApiKey(initialConfig.apiKey || '');
       setBaseUrl(initialConfig.baseUrl || '');
-      setModel(initialConfig.model || '');
+      
+      // Check if model is in preset list or custom
+      const preset = presets?.[initialConfig.provider];
+      const isPresetModel = preset?.models.some(m => m.id === initialConfig.model);
+      
+      if (isPresetModel || initialConfig.provider === 'custom') {
+        setModel(initialConfig.model || '');
+        setUseCustomModel(false);
+      } else if (initialConfig.model) {
+        // Model is not in preset list, use custom model input
+        setUseCustomModel(true);
+        setCustomModel(initialConfig.model);
+      }
     }
-  }, [initialConfig]);
+  }, [initialConfig, presets]);
 
   // Update baseUrl and model when provider changes
   useEffect(() => {
@@ -66,6 +80,14 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
       return;
     }
 
+    // Determine which model to use
+    const finalModel = (useCustomModel && provider !== 'custom') ? customModel.trim() : model;
+    
+    if (!finalModel) {
+      setError('请选择或输入模型名称');
+      return;
+    }
+
     setError('');
     setIsSaving(true);
 
@@ -74,7 +96,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
         provider,
         apiKey: apiKey.trim(),
         baseUrl: baseUrl.trim() || undefined,
-        model,
+        model: finalModel,
       });
       setSuccess(true);
       setTimeout(() => {
@@ -182,16 +204,32 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
 
           {/* Model Selection */}
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-[#1a1a1a]">
-              <Cpu className="w-4 h-4" />
-              模型
-            </label>
-            {provider === 'custom' ? (
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm font-medium text-[#1a1a1a]">
+                <Cpu className="w-4 h-4" />
+                模型
+              </label>
+              {provider !== 'custom' && (
+                <button
+                  type="button"
+                  onClick={() => setUseCustomModel(!useCustomModel)}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+                    useCustomModel 
+                      ? 'bg-amber-100 text-amber-700' 
+                      : 'bg-[#f0eeea] text-[#666] hover:bg-[#e8e6e1]'
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  {useCustomModel ? '使用预设' : '自定义'}
+                </button>
+              )}
+            </div>
+            {provider === 'custom' || useCustomModel ? (
               <input
                 type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="claude-sonnet-4"
+                value={provider === 'custom' ? model : customModel}
+                onChange={(e) => provider === 'custom' ? setModel(e.target.value) : setCustomModel(e.target.value)}
+                placeholder={provider === 'openrouter' ? 'openai/gpt-4o 或其他模型ID' : 'claude-sonnet-4'}
                 className="w-full px-4 py-3 rounded-xl bg-white border border-[#e8e6e1] text-[#1a1a1a] placeholder-[#999] focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all"
               />
             ) : (
@@ -206,6 +244,11 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                   </option>
                 ))}
               </select>
+            )}
+            {useCustomModel && provider !== 'custom' && (
+              <p className="text-xs text-[#888]">
+                输入模型 ID，如 z-ai/glm-4.7、openai/gpt-4o 等
+              </p>
             )}
           </div>
 
@@ -250,4 +293,5 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     </div>
   );
 }
+
 
