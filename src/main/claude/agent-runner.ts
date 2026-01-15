@@ -5,6 +5,7 @@ import { PathResolver } from '../sandbox/path-resolver';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
+import { spawn, type ChildProcess } from 'child_process';
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -481,6 +482,33 @@ Then follow the workflow described in that file.
         maxTurns: 50,
         abortController: controller,
         env: { ...process.env },
+
+        // Custom spawn function to use Electron's bundled Node.js
+        // This fixes "spawn node ENOENT" error in packaged apps where system node is not in PATH
+        spawnClaudeCodeProcess: (spawnOptions: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal }) => {
+          const { command, args, cwd: spawnCwd, env: spawnEnv, signal } = spawnOptions;
+
+          // If the command is 'node', use Electron's bundled Node.js (process.execPath)
+          // ELECTRON_RUN_AS_NODE=1 makes Electron behave like a Node.js process
+          const isNodeCommand = command === 'node';
+          const actualCommand = isNodeCommand ? process.execPath : command;
+          const actualArgs = isNodeCommand ? args : args;
+          const actualEnv = isNodeCommand
+            ? { ...spawnEnv, ELECTRON_RUN_AS_NODE: '1' }
+            : spawnEnv;
+
+          console.log('[ClaudeAgentRunner] Custom spawn:', actualCommand, actualArgs.slice(0, 3).join(' '), '...');
+          console.log('[ClaudeAgentRunner] ELECTRON_RUN_AS_NODE:', isNodeCommand ? '1' : 'not set');
+
+          const childProcess = spawn(actualCommand, actualArgs, {
+            cwd: spawnCwd,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: actualEnv,
+            signal,
+          }) as ChildProcess;
+
+          return childProcess;
+        },
         
         // Skills support: load from user and project .claude/skills/ directories
         settingSources: ['project', 'user'],
