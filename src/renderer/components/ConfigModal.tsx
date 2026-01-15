@@ -14,7 +14,7 @@ interface ConfigModalProps {
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun }: ConfigModalProps) {
-  const [provider, setProvider] = useState<'openrouter' | 'anthropic' | 'custom'>('openrouter');
+  const [provider, setProvider] = useState<'openrouter' | 'anthropic'>('openrouter');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
@@ -43,7 +43,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
       const preset = presets?.[initialConfig.provider];
       const isPresetModel = preset?.models.some(m => m.id === initialConfig.model);
       
-      if (isPresetModel || initialConfig.provider === 'custom') {
+      if (isPresetModel) {
         setModel(initialConfig.model || '');
         setUseCustomModel(false);
       } else if (initialConfig.model) {
@@ -56,7 +56,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
 
   // Update baseUrl and model when provider changes
   useEffect(() => {
-    if (presets && provider !== 'custom') {
+    if (presets) {
       const preset = presets[provider];
       setBaseUrl(preset.baseUrl);
       if (!model || !preset.models.find(m => m.id === model)) {
@@ -81,7 +81,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     }
 
     // Determine which model to use
-    const finalModel = (useCustomModel && provider !== 'custom') ? customModel.trim() : model;
+    const finalModel = useCustomModel ? customModel.trim() : model;
     
     if (!finalModel) {
       setError('请选择或输入模型名称');
@@ -148,8 +148,8 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <Server className="w-4 h-4" />
               API 提供商
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'custom'] as const).map((p) => (
+            <div className="grid grid-cols-2 gap-2">
+              {(['openrouter', 'anthropic'] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setProvider(p)}
@@ -183,23 +183,6 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             )}
           </div>
 
-          {/* Base URL (for custom) */}
-          {provider === 'custom' && (
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <Server className="w-4 h-4" />
-                API Base URL
-              </label>
-              <input
-                type="text"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com"
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-              />
-            </div>
-          )}
-
           {/* Model Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -207,26 +190,24 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 <Cpu className="w-4 h-4" />
                 模型
               </label>
-              {provider !== 'custom' && (
-                <button
-                  type="button"
-                  onClick={() => setUseCustomModel(!useCustomModel)}
-                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
-                    useCustomModel
-                      ? 'bg-accent-muted text-accent'
-                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                  }`}
-                >
-                  <Edit3 className="w-3 h-3" />
-                  {useCustomModel ? '使用预设' : '自定义'}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setUseCustomModel(!useCustomModel)}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+                  useCustomModel
+                    ? 'bg-accent-muted text-accent'
+                    : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                }`}
+              >
+                <Edit3 className="w-3 h-3" />
+                {useCustomModel ? '使用预设' : '自定义'}
+              </button>
             </div>
-            {provider === 'custom' || useCustomModel ? (
+            {useCustomModel ? (
               <input
                 type="text"
-                value={provider === 'custom' ? model : customModel}
-                onChange={(e) => provider === 'custom' ? setModel(e.target.value) : setCustomModel(e.target.value)}
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
                 placeholder={provider === 'openrouter' ? 'openai/gpt-4o 或其他模型ID' : 'claude-sonnet-4'}
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
@@ -243,9 +224,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 ))}
               </select>
             )}
-            {useCustomModel && provider !== 'custom' && (
+            {useCustomModel && (
               <p className="text-xs text-text-muted">
-                输入模型 ID，如 z-ai/glm-4.7、openai/gpt-4o 等
+                输入模型 ID，如 moonshotai/kimi-k2-0905、openai/gpt-4o 等
               </p>
             )}
           </div>

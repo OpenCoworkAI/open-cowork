@@ -246,25 +246,48 @@ Then follow the workflow described in that file.
   private getDefaultClaudeCodePath(): string {
     const platform = process.platform;
     const home = process.env.HOME || process.env.USERPROFILE || '';
-    
+
+    // Check if running in packaged app
+    const isPackaged = app.isPackaged;
+
     console.log('[ClaudeAgentRunner] Looking for claude-code...');
+    console.log('[ClaudeAgentRunner] isPackaged:', isPackaged);
     console.log('[ClaudeAgentRunner] app.getAppPath():', app.getAppPath());
     console.log('[ClaudeAgentRunner] process.resourcesPath:', process.resourcesPath);
     console.log('[ClaudeAgentRunner] __dirname:', __dirname);
-    
+    console.log('[ClaudeAgentRunner] process.execPath:', process.execPath);
+
     // 1. FIRST: Check bundled version in app's node_modules (highest priority)
     // NOTE: app.asar.unpacked is the correct location for unpacked modules
-    const bundledPaths = [
-      // Production: unpacked modules (MUST check this first for packaged apps)
-      path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      // Production: try asar path (for modules that don't need unpacking)
-      path.join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+    const bundledPaths: string[] = [];
+
+    if (isPackaged && process.resourcesPath) {
+      // Production: unpacked modules location (MOST IMPORTANT for packaged apps)
+      bundledPaths.push(
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+
+      // Also check directly under Resources (some electron-builder configs)
+      bundledPaths.push(
+        path.join(process.resourcesPath, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+
+      // Check under app (for some build configurations)
+      bundledPaths.push(
+        path.join(process.resourcesPath, 'app', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+    }
+
+    // Development paths
+    bundledPaths.push(
       // Development: relative to dist-electron/main
       path.join(__dirname, '..', '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
       // Development: relative to project root
       path.join(__dirname, '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-    ];
-    
+      // Try asar path (for modules that don't need unpacking)
+      path.join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+    );
+
     for (const bundledPath of bundledPaths) {
       console.log('[ClaudeAgentRunner] Checking:', bundledPath, '- exists:', fs.existsSync(bundledPath));
       if (fs.existsSync(bundledPath)) {

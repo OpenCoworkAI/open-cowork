@@ -5,7 +5,7 @@ import Store from 'electron-store';
  */
 export interface AppConfig {
   // API Provider
-  provider: 'openrouter' | 'anthropic' | 'custom';
+  provider: 'openrouter' | 'anthropic';
   
   // API credentials
   apiKey: string;
@@ -42,6 +42,7 @@ export const PROVIDER_PRESETS = {
     models: [
       { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
       { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+      { id: 'moonshotai/kimi-k2-0905', name: 'Kimi K2' },
       { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
@@ -56,13 +57,6 @@ export const PROVIDER_PRESETS = {
     ],
     keyPlaceholder: 'sk-ant-...',
     keyHint: '从 console.anthropic.com 获取',
-  },
-  custom: {
-    name: '自定义',
-    baseUrl: '',
-    models: [],
-    keyPlaceholder: '',
-    keyHint: '填写你的 API 地址和密钥',
   },
 };
 

@@ -209,7 +209,7 @@ export interface ExecutionContext {
 
 // App Config types
 export interface AppConfig {
-  provider: 'openrouter' | 'anthropic' | 'custom';
+  provider: 'openrouter' | 'anthropic';
   apiKey: string;
   baseUrl?: string;
   model: string;
@@ -229,6 +229,5 @@ export interface ProviderPreset {
 export interface ProviderPresets {
   openrouter: ProviderPreset;
   anthropic: ProviderPreset;
-  custom: ProviderPreset;
 }
 

@@ -11,12 +11,17 @@ files:
   - dist-electron/**/*
   - package.json
   - node_modules/@anthropic-ai/claude-code/**/*
+  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
+  - node_modules/@img/**/*
   - .claude/skills/**/*
 
 # Unpack claude-code so it can be executed as a CLI
 # Also unpack skills so they can be read/written at runtime
+# Sharp native modules must also be unpacked for image processing
 asarUnpack:
   - node_modules/@anthropic-ai/claude-code/**/*
+  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
+  - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
   - .claude/skills/**/*
 
@@ -33,7 +38,9 @@ mac:
     - target: dmg
       arch:
         - arm64
+        - x64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  identity: null
   hardenedRuntime: false
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
