@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ClientEvent, ServerEvent } from '../renderer/types';
+import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -55,6 +55,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   getVersion: () => ipcRenderer.invoke('get-version'),
+
+  // Config methods
+  config: {
+    get: (): Promise<AppConfig> => ipcRenderer.invoke('config.get'),
+    getPresets: (): Promise<ProviderPresets> => ipcRenderer.invoke('config.getPresets'),
+    save: (config: Partial<AppConfig>): Promise<{ success: boolean; config: AppConfig }> => 
+      ipcRenderer.invoke('config.save', config),
+    isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
+  },
 });
 
 // Type declaration for the renderer process
@@ -66,6 +75,12 @@ declare global {
       invoke: <T>(event: ClientEvent) => Promise<T>;
       platform: NodeJS.Platform;
       getVersion: () => Promise<string>;
+      config: {
+        get: () => Promise<AppConfig>;
+        getPresets: () => Promise<ProviderPresets>;
+        save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
+        isConfigured: () => Promise<boolean>;
+      };
     };
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
-import type { ClientEvent, ServerEvent, PermissionResult, Session, Message, UserQuestionResponse } from '../types';
+import type { ClientEvent, ServerEvent, PermissionResult, Session, Message } from '../types';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -70,6 +70,15 @@ export function useIPC() {
         case 'question.request':
           console.log('[useIPC] question.request received:', event.payload);
           store.setPendingQuestion(event.payload);
+          break;
+
+        case 'config.status':
+          console.log('[useIPC] config.status received:', event.payload.isConfigured);
+          store.setIsConfigured(event.payload.isConfigured);
+          store.setAppConfig(event.payload.config);
+          if (!event.payload.isConfigured) {
+            store.setShowConfigModal(true);
+          }
           break;
 
         case 'error':
@@ -142,7 +151,11 @@ export function useIPC() {
             title: title || 'New Session',
             status: 'running',
             createdAt: Date.now(),
+            updatedAt: Date.now(),
             cwd: cwd || '',
+            mountedPaths: [],
+            allowedTools: ['read', 'glob', 'grep'],
+            memoryEnabled: false,
           };
           
           addSession(session);

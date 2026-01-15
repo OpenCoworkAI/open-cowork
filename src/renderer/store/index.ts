@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings } from '../types';
+import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig } from '../types';
 
 interface AppState {
   // Sessions
@@ -26,6 +26,11 @@ interface AppState {
   // Settings
   settings: Settings;
   
+  // App Config (API settings)
+  appConfig: AppConfig | null;
+  isConfigured: boolean;
+  showConfigModal: boolean;
+  
   // Actions
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
@@ -47,6 +52,11 @@ interface AppState {
   setPendingQuestion: (question: UserQuestionRequest | null) => void;
   
   updateSettings: (updates: Partial<Settings>) => void;
+  
+  // Config actions
+  setAppConfig: (config: AppConfig | null) => void;
+  setIsConfigured: (configured: boolean) => void;
+  setShowConfigModal: (show: boolean) => void;
 }
 
 const defaultSettings: Settings = {
@@ -77,6 +87,9 @@ export const useAppStore = create<AppState>((set) => ({
   pendingPermission: null,
   pendingQuestion: null,
   settings: defaultSettings,
+  appConfig: null,
+  isConfigured: false,
+  showConfigModal: false,
   
   // Session actions
   setSessions: (sessions) => set({ sessions }),
@@ -158,5 +171,10 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       settings: { ...state.settings, ...updates },
     })),
+  
+  // Config actions
+  setAppConfig: (config) => set({ appConfig: config }),
+  setIsConfigured: (configured) => set({ isConfigured: configured }),
+  setShowConfigModal: (show) => set({ showConfigModal: show }),
 }));
 

@@ -2,23 +2,24 @@ import { useState } from 'react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import {
-  Plus,
-  MessageSquare,
   Trash2,
-  User,
   Sparkles,
   Moon,
   Sun,
+  Settings,
 } from 'lucide-react';
-import type { Session } from '../types';
 
 export function Sidebar() {
-  const { sessions, activeSessionId, settings, setActiveSession, updateSettings } = useAppStore();
+  const { sessions, activeSessionId, settings, setActiveSession, updateSettings, setShowConfigModal, isConfigured } = useAppStore();
   const { deleteSession } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
 
   const toggleTheme = () => {
     updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
+  };
+
+  const handleOpenSettings = () => {
+    setShowConfigModal(true);
   };
 
   const handleNewSession = () => {
@@ -120,8 +121,17 @@ export function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-text-primary truncate">User</p>
-            <p className="text-xs text-text-muted">Free plan</p>
+            <p className="text-xs text-text-muted">
+              {isConfigured ? 'API 已配置' : '未配置 API'}
+            </p>
           </div>
+          <button
+            onClick={handleOpenSettings}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+            title="API 设置"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>

@@ -3,10 +3,10 @@ import { join, resolve } from 'path';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
+import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
 
-// Load .env file from project root
-// In dev mode, __dirname is dist-electron/main, so we go up 2 levels
+// Load .env file from project root (for development)
 const envPath = resolve(__dirname, '../../.env');
 console.log('[dotenv] Loading from:', envPath);
 const dotenvResult = config({ path: envPath });
@@ -14,6 +14,12 @@ if (dotenvResult.error) {
   console.warn('[dotenv] Failed to load .env:', dotenvResult.error.message);
 } else {
   console.log('[dotenv] Loaded successfully');
+}
+
+// Apply saved config (this overrides .env if config exists)
+if (configStore.isConfigured()) {
+  console.log('[Config] Applying saved configuration...');
+  configStore.applyToEnv();
 }
 
 // Disable hardware acceleration for better compatibility
@@ -62,6 +68,19 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Notify renderer about config status after window is ready
+  mainWindow.webContents.on('did-finish-load', () => {
+    const isConfigured = configStore.isConfigured();
+    console.log('[Config] Notifying renderer, isConfigured:', isConfigured);
+    sendToRenderer({
+      type: 'config.status',
+      payload: { 
+        isConfigured,
+        config: isConfigured ? configStore.getAll() : null,
+      },
+    });
+  });
 }
 
 // Send event to renderer
@@ -75,6 +94,8 @@ function sendToRenderer(event: ServerEvent) {
 app.whenReady().then(async () => {
   // Log environment variables for debugging
   console.log('=== Open Cowork Starting ===');
+  console.log('Config file:', configStore.getPath());
+  console.log('Is configured:', configStore.isConfigured());
   console.log('Environment Variables:');
   console.log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
   console.log('  ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(not set)');
@@ -105,7 +126,7 @@ app.on('window-all-closed', () => {
 });
 
 // IPC Handlers
-ipcMain.on('client-event', async (event, data: ClientEvent) => {
+ipcMain.on('client-event', async (_event, data: ClientEvent) => {
   try {
     await handleClientEvent(data);
   } catch (error) {
@@ -117,7 +138,7 @@ ipcMain.on('client-event', async (event, data: ClientEvent) => {
   }
 });
 
-ipcMain.handle('client-invoke', async (event, data: ClientEvent) => {
+ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
   return handleClientEvent(data);
 });
 
@@ -125,7 +146,57 @@ ipcMain.handle('get-version', () => {
   return app.getVersion();
 });
 
+// Config IPC handlers
+ipcMain.handle('config.get', () => {
+  return configStore.getAll();
+});
+
+ipcMain.handle('config.getPresets', () => {
+  return PROVIDER_PRESETS;
+});
+
+ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
+  console.log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
+  
+  // Update config
+  configStore.update(newConfig);
+  
+  // Mark as configured if we have an API key
+  if (newConfig.apiKey) {
+    configStore.set('isConfigured', true);
+  }
+  
+  // Apply to environment
+  configStore.applyToEnv();
+  
+  // Re-initialize session manager with new config
+  if (sessionManager) {
+    const db = initDatabase();
+    sessionManager = new SessionManager(db, sendToRenderer);
+    console.log('[Config] Session manager re-initialized');
+  }
+  
+  return { success: true, config: configStore.getAll() };
+});
+
+ipcMain.handle('config.isConfigured', () => {
+  return configStore.isConfigured();
+});
+
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
+  // Check if configured before starting sessions
+  if (event.type === 'session.start' && !configStore.isConfigured()) {
+    sendToRenderer({
+      type: 'error',
+      payload: { message: '请先配置 API Key' },
+    });
+    sendToRenderer({
+      type: 'config.status',
+      payload: { isConfigured: false, config: null },
+    });
+    return null;
+  }
+
   if (!sessionManager) {
     throw new Error('Session manager not initialized');
   }
@@ -190,4 +261,3 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return null;
   }
 }
-

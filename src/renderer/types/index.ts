@@ -175,6 +175,7 @@ export type ServerEvent =
   | { type: 'trace.step'; payload: { sessionId: string; step: TraceStep } }
   | { type: 'trace.update'; payload: { sessionId: string; stepId: string; updates: Partial<TraceStep> } }
   | { type: 'folder.selected'; payload: { path: string } }
+  | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types
@@ -203,5 +204,30 @@ export interface ExecutionContext {
   cwd: string;
   mountedPaths: MountedPath[];
   allowedTools: string[];
+}
+
+// App Config types
+export interface AppConfig {
+  provider: 'openrouter' | 'anthropic' | 'custom';
+  apiKey: string;
+  baseUrl?: string;
+  model: string;
+  claudeCodePath?: string;
+  defaultWorkdir?: string;
+  isConfigured: boolean;
+}
+
+export interface ProviderPreset {
+  name: string;
+  baseUrl: string;
+  models: { id: string; name: string }[];
+  keyPlaceholder: string;
+  keyHint: string;
+}
+
+export interface ProviderPresets {
+  openrouter: ProviderPreset;
+  anthropic: ProviderPreset;
+  custom: ProviderPreset;
 }
 

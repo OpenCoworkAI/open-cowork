@@ -14,7 +14,6 @@ import {
   HelpCircle,
   Send,
   ListTodo,
-  Circle,
   Loader2,
   XCircle,
   Square,

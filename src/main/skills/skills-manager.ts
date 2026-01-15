@@ -1,9 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import type Database from 'better-sqlite3';
 import type { Skill } from '../../renderer/types';
-import { v4 as uuidv4 } from 'uuid';
+import type { InMemoryDatabase } from '../db/database';
 
 interface McpServerConfig {
   command: string;
@@ -28,11 +27,11 @@ interface SkillConfig {
  * 3. Built-in skills
  */
 export class SkillsManager {
-  private db: Database.Database;
+  private db: InMemoryDatabase;
   private loadedSkills: Map<string, Skill> = new Map();
   private runningServers: Map<string, { process: any; skill: Skill }> = new Map();
 
-  constructor(db: Database.Database) {
+  constructor(db: InMemoryDatabase) {
     this.db = db;
     this.loadBuiltinSkills();
   }
@@ -154,7 +153,7 @@ export class SkillsManager {
   /**
    * Get all active skills for a session
    */
-  async getActiveSkills(sessionId: string, projectPath?: string): Promise<Skill[]> {
+  async getActiveSkills(_sessionId: string, projectPath?: string): Promise<Skill[]> {
     const skills: Skill[] = [];
 
     // 1. Add built-in skills

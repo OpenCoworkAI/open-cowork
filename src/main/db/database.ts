@@ -4,7 +4,7 @@
  * In production, switch back to better-sqlite3 after proper native rebuild
  */
 
-interface InMemoryDatabase {
+export interface InMemoryDatabase {
   sessions: Map<string, Record<string, unknown>>;
   messages: Map<string, Record<string, unknown>>;
   memoryEntries: Map<string, Record<string, unknown>>;

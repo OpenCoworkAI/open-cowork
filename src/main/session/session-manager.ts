@@ -1,18 +1,18 @@
-import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import type { Session, Message, ServerEvent, PermissionResult, TraceStep, ContentBlock } from '../../renderer/types';
+import type { Session, Message, ServerEvent, PermissionResult, ContentBlock } from '../../renderer/types';
+import type { InMemoryDatabase } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
 
 export class SessionManager {
-  private db: Database.Database;
+  private db: InMemoryDatabase;
   private sendToRenderer: (event: ServerEvent) => void;
   private pathResolver: PathResolver;
   private agentRunner: ClaudeAgentRunner;
   private activeSessions: Map<string, AbortController> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
 
-  constructor(db: Database.Database, sendToRenderer: (event: ServerEvent) => void) {
+  constructor(db: InMemoryDatabase, sendToRenderer: (event: ServerEvent) => void) {
     this.db = db;
     this.sendToRenderer = sendToRenderer;
     this.pathResolver = new PathResolver();

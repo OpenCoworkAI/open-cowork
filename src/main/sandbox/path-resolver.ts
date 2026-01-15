@@ -98,7 +98,7 @@ export class PathResolver {
   /**
    * Validate that a resolved path is within authorized boundaries
    */
-  validatePath(sessionId: string, resolvedPath: string, mountRoot: string): boolean {
+  validatePath(_sessionId: string, resolvedPath: string, mountRoot: string): boolean {
     try {
       // 1. Normalize the path (resolves . and ..)
       const normalized = path.normalize(resolvedPath);
