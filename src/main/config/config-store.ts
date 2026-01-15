@@ -42,7 +42,7 @@ export const PROVIDER_PRESETS = {
     models: [
       { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
       { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
-      // { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
+      { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
     keyHint: '从 openrouter.ai/keys 获取',
@@ -145,8 +145,17 @@ class ConfigStore {
       process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = config.model;
     }
     
+    // Only set CLAUDE_CODE_PATH if the configured path actually exists
+    // This allows auto-detection to work when the configured path is invalid
     if (config.claudeCodePath) {
-      process.env.CLAUDE_CODE_PATH = config.claudeCodePath;
+      const fs = require('fs');
+      if (fs.existsSync(config.claudeCodePath)) {
+        process.env.CLAUDE_CODE_PATH = config.claudeCodePath;
+        console.log('[Config] Using configured Claude Code path:', config.claudeCodePath);
+      } else {
+        console.log('[Config] Configured Claude Code path not found, will use auto-detection:', config.claudeCodePath);
+        // Don't set the env var, let auto-detection find it
+      }
     }
     
     if (config.defaultWorkdir) {

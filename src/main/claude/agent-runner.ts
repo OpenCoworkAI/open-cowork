@@ -32,7 +32,6 @@ export class ClaudeAgentRunner {
   private activeControllers: Map<string, AbortController> = new Map();
   private sdkSessions: Map<string, string> = new Map(); // sessionId -> sdk session_id
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
-  private model: string;
 
   /**
    * Get the built-in skills directory (shipped with the app)
@@ -172,19 +171,28 @@ Then follow the workflow described in that file.
     const { execSync } = require('child_process');
     const home = process.env.HOME || process.env.USERPROFILE || '';
     
+    console.log('[ClaudeAgentRunner] Looking for claude-code...');
+    console.log('[ClaudeAgentRunner] app.getAppPath():', app.getAppPath());
+    console.log('[ClaudeAgentRunner] process.resourcesPath:', process.resourcesPath);
+    console.log('[ClaudeAgentRunner] __dirname:', __dirname);
+    
     // 1. FIRST: Check bundled version in app's node_modules (highest priority)
+    // NOTE: app.asar.unpacked is the correct location for unpacked modules
     const bundledPaths = [
-      // Production: inside asar or unpacked
-      path.join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      // Development: relative to dist-electron
-      path.join(__dirname, '..', '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      // Alternative: resources folder (for unpacked native modules)
+      // Production: unpacked modules (MUST check this first for packaged apps)
       path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      // Production: try asar path (for modules that don't need unpacking)
+      path.join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      // Development: relative to dist-electron/main
+      path.join(__dirname, '..', '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      // Development: relative to project root
+      path.join(__dirname, '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
     ];
     
     for (const bundledPath of bundledPaths) {
+      console.log('[ClaudeAgentRunner] Checking:', bundledPath, '- exists:', fs.existsSync(bundledPath));
       if (fs.existsSync(bundledPath)) {
-        console.log('[ClaudeAgentRunner] Found bundled claude-code at:', bundledPath);
+        console.log('[ClaudeAgentRunner] ✓ Found bundled claude-code at:', bundledPath);
         return bundledPath;
       }
     }
@@ -314,13 +322,21 @@ Then follow the workflow described in that file.
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.pathResolver = pathResolver;
-    this.model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'anthropic/claude-sonnet-4';
     
     console.log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
-    console.log('[ClaudeAgentRunner] Model:', this.model);
-    console.log('[ClaudeAgentRunner] ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
-    console.log('[ClaudeAgentRunner] ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(default)');
     console.log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
+  }
+  
+  /**
+   * Get current model from environment variables
+   * For OpenRouter, ANTHROPIC_DEFAULT_SONNET_MODEL is the key that controls model selection
+   */
+  private getCurrentModel(): string {
+    // ANTHROPIC_DEFAULT_SONNET_MODEL is the key for OpenRouter API model selection
+    const model = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || process.env.CLAUDE_MODEL || 'anthropic/claude-sonnet-4';
+    console.log('[ClaudeAgentRunner] Current model:', model);
+    console.log('[ClaudeAgentRunner] ANTHROPIC_DEFAULT_SONNET_MODEL:', process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(not set)');
+    return model;
   }
 
   // Handle user's answer to AskUserQuestion
@@ -455,10 +471,13 @@ Then follow the workflow described in that file.
       // Build available skills section dynamically
       const availableSkillsPrompt = this.getAvailableSkillsPrompt(workingDir);
       
+      // Get current model from environment (re-read each time for config changes)
+      const currentModel = this.getCurrentModel();
+      
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
         cwd: workingDir,
-        model: this.model,
+        model: currentModel,
         maxTurns: 50,
         abortController: controller,
         env: { ...process.env },
