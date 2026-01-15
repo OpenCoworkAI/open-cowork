@@ -31,6 +31,9 @@
 
 It provides a sandboxed workspace where AI can manage files, read documents, and generate professional outputs like **PPTX**, **DOCX**, **XLSX**, and more through our built-in Skills system.
 
+> [!WARNING]
+> **Disclaimer**: Open Cowork is an AI tool. Please exercise caution with its operations, especially when authorizing file modifications or deletions.
+
 ---
 
 ## ✨ Key Features
@@ -103,6 +106,11 @@ You need an API key to power the agent. We recommend:
 1. **Select a Workspace**: Choose a folder where Claude is allowed to work.
 2. **Enter a Prompt**:
    > "Read the financial_report.csv in this folder and create a PowerPoint summary with 5 slides."
+
+### 📝 Important Notes
+
+1.  **macOS Installation**: If you see a security warning when opening the app, go to **System Settings > Privacy & Security** and click **Open Anyway**.
+2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
 
 ---
 
