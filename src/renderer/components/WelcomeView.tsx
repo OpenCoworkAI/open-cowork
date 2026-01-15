@@ -3,10 +3,7 @@ import { useIPC } from '../hooks/useIPC';
 import {
   FileText,
   BarChart3,
-  Box,
-  Calendar,
   FolderOpen,
-  Send,
   ArrowRight,
   Plus,
 } from 'lucide-react';
