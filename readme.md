@@ -158,5 +158,5 @@ MIT © Open Cowork Team
 ---
 
 <p align="center">
-  Made with ❤️ by the Open Cowork Team
+  Made with ❤️ by the Open Cowork Team with the help of opus4.5
 </p>

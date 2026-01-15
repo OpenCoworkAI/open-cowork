@@ -148,7 +148,7 @@ open-cowork/
 欢迎扫码加入微信群交流：
 
 <p align="center">
-  <img src="resources/wechat_group.jpg" alt="微信交流群" width="200" />
+  <img src="resources/WeChat.jpg" alt="微信交流群" width="200" />
 </p>
 
 ---
@@ -160,5 +160,5 @@ MIT © Open Cowork Team
 ---
 
 <p align="center">
-  Made with ❤️ by the Open Cowork Team
+  Made with ❤️ by the Open Cowork Team with the help of opus4.5
 </p>
