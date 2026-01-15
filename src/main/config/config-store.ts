@@ -128,16 +128,35 @@ class ConfigStore {
   /**
    * Apply config to environment variables
    * This should be called before creating sessions
+   * 
+   * Environment variable mapping by provider:
+   * - Anthropic direct: ANTHROPIC_API_KEY = apiKey (standard SDK var)
+   * - OpenRouter/Custom: ANTHROPIC_AUTH_TOKEN = apiKey, ANTHROPIC_API_KEY = '' (proxy mode)
    */
   applyToEnv(): void {
     const config = this.getAll();
     
-    if (config.apiKey) {
-      process.env.ANTHROPIC_AUTH_TOKEN = config.apiKey;
-    }
+    // Clear all API-related env vars first to ensure clean state when switching providers
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.ANTHROPIC_BASE_URL;
     
-    if (config.baseUrl) {
-      process.env.ANTHROPIC_BASE_URL = config.baseUrl;
+    if (config.provider === 'anthropic') {
+      // Anthropic direct API: use ANTHROPIC_API_KEY (standard SDK behavior)
+      if (config.apiKey) {
+        process.env.ANTHROPIC_API_KEY = config.apiKey;
+      }
+      // No base URL needed, SDK uses default https://api.anthropic.com
+    } else {
+      // OpenRouter / Custom: use ANTHROPIC_AUTH_TOKEN for proxy authentication
+      if (config.apiKey) {
+        process.env.ANTHROPIC_AUTH_TOKEN = config.apiKey;
+      }
+      if (config.baseUrl) {
+        process.env.ANTHROPIC_BASE_URL = config.baseUrl;
+      }
+      // ANTHROPIC_API_KEY must be empty to prevent SDK from using it
+      process.env.ANTHROPIC_API_KEY = '';
     }
     
     if (config.model) {
@@ -161,16 +180,12 @@ class ConfigStore {
     if (config.defaultWorkdir) {
       process.env.COWORK_WORKDIR = config.defaultWorkdir;
     }
-
-    // For Anthropic direct API, clear the base URL
-    if (config.provider === 'anthropic') {
-      delete process.env.ANTHROPIC_BASE_URL;
-    }
-
-    // ANTHROPIC_API_KEY must be empty when using OpenRouter
-    if (config.provider === 'openrouter') {
-      process.env.ANTHROPIC_API_KEY = '';
-    }
+    
+    console.log('[Config] Applied env vars for provider:', config.provider, {
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '✓ Set' : '(empty/unset)',
+      ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '(empty/unset)',
+      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '(default)',
+    });
   }
 
   /**
