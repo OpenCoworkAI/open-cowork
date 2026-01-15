@@ -5,7 +5,76 @@ import { PathResolver } from '../sandbox/path-resolver';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
+
+// Cache for shell environment (loaded once at startup)
+let cachedShellEnv: NodeJS.ProcessEnv | null = null;
+
+/**
+ * Get shell environment with proper PATH (including node, npm, etc.)
+ * GUI apps on macOS don't inherit shell PATH, so we need to extract it
+ */
+function getShellEnvironment(): NodeJS.ProcessEnv {
+  if (cachedShellEnv) {
+    return cachedShellEnv;
+  }
+
+  const platform = process.platform;
+  let shellPath = process.env.PATH || '';
+  
+  console.log('[ShellEnv] Original PATH:', shellPath);
+
+  if (platform === 'darwin' || platform === 'linux') {
+    try {
+      // Get PATH from login shell (includes nvm, homebrew, etc.)
+      const shellEnvOutput = execSync('/bin/bash -l -c "echo $PATH"', {
+        encoding: 'utf-8',
+        timeout: 5000,
+      }).trim();
+      
+      if (shellEnvOutput) {
+        shellPath = shellEnvOutput;
+        console.log('[ShellEnv] Got PATH from login shell:', shellPath);
+      }
+    } catch (e) {
+      console.warn('[ShellEnv] Failed to get PATH from login shell, using fallback');
+      
+      // Add common paths as fallback
+      const home = process.env.HOME || '';
+      const fallbackPaths = [
+        '/opt/homebrew/bin',                    // Homebrew Apple Silicon
+        '/usr/local/bin',                       // Homebrew Intel / system
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+        `${home}/.nvm/versions/node/*/bin`,     // nvm (will be expanded below)
+        `${home}/.local/bin`,                   // pip user installs
+        `${home}/.npm-global/bin`,              // npm global
+      ];
+      
+      // Expand nvm paths
+      const nvmDir = path.join(home, '.nvm/versions/node');
+      if (fs.existsSync(nvmDir)) {
+        try {
+          const versions = fs.readdirSync(nvmDir);
+          for (const version of versions) {
+            fallbackPaths.push(path.join(nvmDir, version, 'bin'));
+          }
+        } catch (e) { /* ignore */ }
+      }
+      
+      shellPath = [...fallbackPaths.filter(p => fs.existsSync(p) || p.includes('*')), shellPath].join(':');
+    }
+  }
+
+  cachedShellEnv = {
+    ...process.env,
+    PATH: shellPath,
+  };
+  
+  return cachedShellEnv;
+}
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -176,7 +245,6 @@ Then follow the workflow described in that file.
 
   private getDefaultClaudeCodePath(): string {
     const platform = process.platform;
-    const { execSync } = require('child_process');
     const home = process.env.HOME || process.env.USERPROFILE || '';
     
     console.log('[ClaudeAgentRunner] Looking for claude-code...');
@@ -492,14 +560,21 @@ Then follow the workflow described in that file.
       console.log('[ClaudeAgentRunner] Built-in .claude dir:', builtinClaudeDir);
       console.log('[ClaudeAgentRunner] User working directory:', workingDir);
       
-      // Build environment with CLAUDE_CONFIG_DIR pointing to our built-in .claude directory
-      // This allows SDK to discover skills from our .claude/skills/ directory
-      const envWithSkills = {
-        ...process.env,
+      // Get shell environment with proper PATH (node, npm, etc.)
+      // GUI apps on macOS don't inherit shell PATH, so we need to extract it
+      const shellEnv = getShellEnvironment();
+      
+      // Build environment with:
+      // 1. Shell environment (includes proper PATH with node/npm)
+      // 2. CLAUDE_CONFIG_DIR for skills discovery
+      const envWithSkills: NodeJS.ProcessEnv = {
+        ...shellEnv,
         ...(builtinClaudeDir && fs.existsSync(builtinClaudeDir) 
           ? { CLAUDE_CONFIG_DIR: builtinClaudeDir } 
           : {}),
       };
+      
+      console.log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
       
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,

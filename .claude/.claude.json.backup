@@ -1,4 +1,8 @@
 {
+  "cachedStatsigGates": {
+    "tengu_prompt_suggestion": true,
+    "tengu_session_memory": false
+  },
   "cachedGrowthBookFeatures": {
     "tengu_1p_event_batch_config": {},
     "tengu_mcp_tool_search": true,

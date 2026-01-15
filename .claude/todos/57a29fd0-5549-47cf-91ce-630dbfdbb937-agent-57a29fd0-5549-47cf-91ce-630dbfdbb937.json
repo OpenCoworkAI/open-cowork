@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Set up html2pptx library and create presentation structure",
+    "status": "completed",
+    "activeForm": "Setting up html2pptx library"
+  },
+  {
+    "content": "Create HTML slides for DeepDive presentation",
+    "status": "completed",
+    "activeForm": "Creating HTML slides"
+  },
+  {
+    "content": "Generate and validate PowerPoint file",
+    "status": "in_progress",
+    "activeForm": "Generating PowerPoint file"
+  },
+  {
+    "content": "Verify presentation visually",
+    "status": "pending",
+    "activeForm": "Verifying presentation"
+  }
+]

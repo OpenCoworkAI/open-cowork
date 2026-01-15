@@ -1,0 +1,194 @@
+2026-01-15T13:14:15.913Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-15T13:14:15.914Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-15T13:14:15.914Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-15T13:14:15.914Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-15T13:14:15.917Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-15T13:14:15.917Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-15T13:14:15.917Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-15T13:14:15.918Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-15T13:14:15.927Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-15T13:14:15.927Z [DEBUG] Total LSP servers loaded: 0
+2026-01-15T13:14:15.927Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-15T13:14:15.927Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-15T13:14:15.927Z [DEBUG] LSP server manager initialized successfully
+2026-01-15T13:14:15.927Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-15T13:14:15.927Z [DEBUG] [STARTUP] MCP configs loaded in 9ms
+2026-01-15T13:14:15.927Z [DEBUG] [STARTUP] Running setup()...
+2026-01-15T13:14:15.932Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-15T13:14:15.932Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-15T13:14:15.934Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=/Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/skills, project=[]
+2026-01-15T13:14:15.943Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-15T13:14:15.945Z [DEBUG] Error log sink initialized
+2026-01-15T13:14:15.946Z [DEBUG] Writing to temp file: /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/todos/81f6dcb8-de0f-48b7-9477-51364d484360-agent-81f6dcb8-de0f-48b7-9477-51364d484360.json.tmp.66275.1768482855946
+2026-01-15T13:14:15.946Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-15T13:14:15.946Z [DEBUG] Renaming /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/todos/81f6dcb8-de0f-48b7-9477-51364d484360-agent-81f6dcb8-de0f-48b7-9477-51364d484360.json.tmp.66275.1768482855946 to /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/todos/81f6dcb8-de0f-48b7-9477-51364d484360-agent-81f6dcb8-de0f-48b7-9477-51364d484360.json
+2026-01-15T13:14:15.946Z [DEBUG] File /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/todos/81f6dcb8-de0f-48b7-9477-51364d484360-agent-81f6dcb8-de0f-48b7-9477-51364d484360.json written atomically
+2026-01-15T13:14:15.950Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-15T13:14:15.950Z [DEBUG] Total plugin skills loaded: 0
+2026-01-15T13:14:15.950Z [DEBUG] Total plugin commands loaded: 0
+2026-01-15T13:14:15.950Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-15T13:14:15.951Z [DEBUG] [STARTUP] setup() completed in 24ms
+2026-01-15T13:14:15.951Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-15T13:14:15.954Z [DEBUG] Total plugin agents loaded: 0
+2026-01-15T13:14:15.954Z [DEBUG] Loaded 6 unique skills (managed: 0, user: 6, project: 0, legacy commands: 0)
+2026-01-15T13:14:15.955Z [DEBUG] getSkills returning: 6 skill dir commands, 0 plugin skills, 0 bundled skills
+2026-01-15T13:14:15.955Z [DEBUG] [STARTUP] Commands and agents loaded in 4ms
+2026-01-15T13:14:15.959Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-15T13:14:15.962Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-15T13:14:15.962Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:15.962Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-15T13:14:15.969Z [DEBUG] Watching for changes in skill directories: /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/skills...
+2026-01-15T13:14:15.971Z [DEBUG] Creating shell snapshot for zsh (/bin/zsh)
+2026-01-15T13:14:15.971Z [DEBUG] Looking for shell config file: /Users/liuyusen/.zshrc
+2026-01-15T13:14:15.971Z [DEBUG] Snapshots directory: /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/shell-snapshots
+2026-01-15T13:14:15.971Z [DEBUG] Creating snapshot at: /Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/.claude/shell-snapshots/snapshot-zsh-1768482855971-1rp6m3.sh
+2026-01-15T13:14:15.971Z [DEBUG] Shell binary exists: true
+2026-01-15T13:14:15.971Z [DEBUG] Execution timeout: 10000ms
+2026-01-15T13:14:15.978Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-15T13:14:15.992Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=/Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg)
+2026-01-15T13:14:15.995Z [DEBUG] Skills and commands included in Skill tool: csv-data-summarizer, docx, pdf, pptx, skill-creator, xlsx
+2026-01-15T13:14:15.995Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:15.995Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:16.015Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:16.021Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T13:14:16.021Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T13:14:16.021Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T13:14:16.021Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T13:14:16.022Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-15T13:14:16.022Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:16.022Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T13:14:16.179Z [ERROR] "Error: Error: 404 404 page not found\n\n    at D9.generate (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:491:33688)\n    at hP.makeStatusError (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1165:4436\n    at async file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1065:2223\n    at async os8 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1064:101390)\n    at async feB (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1065:2156)\n    at async _hA (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:3129:4147)\n    at async jhA (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:3129:4842)"
+2026-01-15T13:14:16.179Z [DEBUG] countTokensWithFallback: API returned null, trying haiku fallback (18 tools)
+2026-01-15T13:14:16.179Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:16.179Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:16.179Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:16.948Z [DEBUG] Auto tool search disabled: 0 chars (threshold: 50000, 10% of context)
+2026-01-15T13:14:16.951Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:16.951Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:16.951Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:17.527Z [DEBUG] Shell snapshot created successfully (141344 bytes)
+2026-01-15T13:14:19.480Z [DEBUG] Stream started - received first chunk
+2026-01-15T13:14:21.120Z [ERROR] "Error: Error: 1P event logging: 21 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:14:21.120Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 21 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 21 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:14:22.457Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-01-15T13:14:22.457Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:22.457Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-01-15T13:14:22.457Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:22.457Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-01-15T13:14:22.457Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:22.457Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:22.457Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:22.469Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:22.469Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:22.469Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:22.498Z [DEBUG] tree-sitter: loaded from disk
+2026-01-15T13:14:22.509Z [DEBUG] No session environment scripts found
+2026-01-15T13:14:22.564Z [DEBUG] Tool search disabled for model 'claude-haiku-4-5-20251001': model does not support tool_reference blocks. This feature is only available on Claude Sonnet 4+, Opus 4+, and newer models.
+2026-01-15T13:14:22.565Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:22.565Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:22.565Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:22.565Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-01-15T13:14:22.565Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:22.565Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-01-15T13:14:22.589Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T13:14:22.589Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T13:14:22.589Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T13:14:22.589Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T13:14:22.592Z [DEBUG] Auto tool search disabled: 0 chars (threshold: 50000, 10% of context)
+2026-01-15T13:14:22.594Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:22.594Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:22.594Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:23.978Z [DEBUG] Stream started - received first chunk
+2026-01-15T13:14:25.567Z [DEBUG] Stream started - received first chunk
+2026-01-15T13:14:27.490Z [ERROR] "Error: Error: 1P event logging: 26 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:14:27.490Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 26 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 26 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:14:33.983Z [DEBUG] executePreToolHooks called for tool: AskUserQuestion
+2026-01-15T13:14:33.984Z [DEBUG] Getting matching hook commands for PreToolUse with query: AskUserQuestion
+2026-01-15T13:14:33.984Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:33.984Z [DEBUG] Matched 0 unique hooks for query "AskUserQuestion" (0 before deduplication)
+2026-01-15T13:14:39.111Z [ERROR] "Error: Error: 1P event logging: 2 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:14:39.111Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 2 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 2 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:14:42.010Z [DEBUG] Getting matching hook commands for PostToolUse with query: AskUserQuestion
+2026-01-15T13:14:42.010Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:42.010Z [DEBUG] Matched 0 unique hooks for query "AskUserQuestion" (0 before deduplication)
+2026-01-15T13:14:42.032Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T13:14:42.032Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T13:14:42.032Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T13:14:42.032Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T13:14:42.035Z [DEBUG] Auto tool search disabled: 0 chars (threshold: 50000, 10% of context)
+2026-01-15T13:14:42.037Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:42.037Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:42.037Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:44.850Z [DEBUG] Stream started - received first chunk
+2026-01-15T13:14:47.095Z [ERROR] "Error: Error: 1P event logging: 11 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:14:47.095Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 11 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 11 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] executePreToolHooks called for tool: Read
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.178Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-01-15T13:14:50.178Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.178Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.182Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:50.182Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:50.188Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:50.241Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.241Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.241Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.241Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.241Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.241Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.242Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.242Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.242Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.242Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.242Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.242Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.242Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.242Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.242Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.264Z [ERROR] "Error: Error: 404 404 page not found\n\n    at D9.generate (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:491:33688)\n    at hP.makeStatusError (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1165:4436\n    at async file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1065:2223\n    at async os8 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1064:101390)\n    at async feB (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1065:2156)\n    at async w12 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1667:13269)\n    at async Object.call (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1676:996)"
+2026-01-15T13:14:50.266Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-01-15T13:14:50.266Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:14:50.266Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-01-15T13:14:50.612Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T13:14:50.612Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T13:14:50.612Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T13:14:50.612Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T13:14:50.614Z [DEBUG] Auto tool search disabled: 0 chars (threshold: 50000, 10% of context)
+2026-01-15T13:14:50.616Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:14:50.616Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:14:50.617Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:14:55.276Z [ERROR] "Error: Error: 1P event logging: 30 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:14:55.276Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 30 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 30 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:15:06.208Z [ERROR] Error streaming, falling back to non-streaming mode: 400 {"error":{"type":"aws_invoke_error","message":"InvokeModelWithResponseStream: operation error Bedrock Runtime: InvokeModelWithResponseStream, https response error StatusCode: 400, RequestID: 3c3d6965-441b-460b-bc50-d9c34680797e, ValidationException: Input is too long for requested model. (request id: 20260115211454954675116l6z72N9W)"},"type":"error"}
+2026-01-15T13:15:06.208Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T13:15:06.208Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T13:15:06.208Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T13:15:11.293Z [ERROR] "Error: Error: 1P event logging: 2 events failed to export\n    at ua1.queueFailedEvents (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T13:15:11.293Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 2 events\\n    at ua1.doExport (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 2 events\",\"name\":\"Error\"}\n    at TH0.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T13:15:21.740Z [ERROR] Error in non-streaming fallback: 400 {"error":{"type":"aws_invoke_error","message":"InvokeModel: operation error Bedrock Runtime: InvokeModel, https response error StatusCode: 400, RequestID: 3fa187ab-bd84-41cc-b0dd-867b8b19826f, ValidationException: Input is too long for requested model. (request id: 20260115211511476955597wE3xxplC)"},"type":"error"}
+2026-01-15T13:15:21.741Z [ERROR] "Error: Error: 400 {\"error\":{\"type\":\"aws_invoke_error\",\"message\":\"InvokeModel: operation error Bedrock Runtime: InvokeModel, https response error StatusCode: 400, RequestID: 3fa187ab-bd84-41cc-b0dd-867b8b19826f, ValidationException: Input is too long for requested model. (request id: 20260115211511476955597wE3xxplC)\"},\"type\":\"error\"}\n    at D9.generate (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:491:33583)\n    at hP.makeStatusError (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async BJ9.v51.model (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:4371:6288)\n    at async v51 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1064:97940)\n    at async BJ9 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:4371:6442)\n    at async file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:4369:3799\n    at async LZ0 (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:1065:1998)\n    at async oHA (file:///Users/liuyusen/Desktop/Agent_App/open-cowork_tmp/open-cowork/node_modules/@anthropic-ai/claude-code/cli.js:4369:3769)"
+2026-01-15T13:15:21.782Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-01-15T13:15:21.782Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:15:21.782Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T13:15:21.783Z [DEBUG] Getting matching hook commands for SessionEnd with query: other
+2026-01-15T13:15:21.783Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T13:15:21.783Z [DEBUG] Matched 0 unique hooks for query "other" (0 before deduplication)

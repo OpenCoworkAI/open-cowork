@@ -1,0 +1,27 @@
+[
+  {
+    "content": "分析现有PPT模板结构",
+    "status": "completed",
+    "activeForm": "分析现有PPT模板结构"
+  },
+  {
+    "content": "规划PPT内容大纲",
+    "status": "completed",
+    "activeForm": "规划PPT内容大纲"
+  },
+  {
+    "content": "分析现有PPT可优化点",
+    "status": "in_progress",
+    "activeForm": "分析可优化点"
+  },
+  {
+    "content": "执行优化修改",
+    "status": "pending",
+    "activeForm": "执行优化修改"
+  },
+  {
+    "content": "验证优化结果",
+    "status": "pending",
+    "activeForm": "验证优化结果"
+  }
+]
