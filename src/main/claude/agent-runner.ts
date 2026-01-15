@@ -475,13 +475,32 @@ Then follow the workflow described in that file.
       // Get current model from environment (re-read each time for config changes)
       const currentModel = this.getCurrentModel();
       
+      // Determine the .claude directory containing skills
+      // SDK uses CLAUDE_CONFIG_DIR env var to locate .claude directory for skills discovery
+      const builtinSkillsPath = this.getBuiltinSkillsPath();
+      const builtinClaudeDir = builtinSkillsPath 
+        ? path.dirname(builtinSkillsPath)  // Go up from .claude/skills to .claude
+        : undefined;
+      
+      console.log('[ClaudeAgentRunner] Built-in .claude dir:', builtinClaudeDir);
+      console.log('[ClaudeAgentRunner] User working directory:', workingDir);
+      
+      // Build environment with CLAUDE_CONFIG_DIR pointing to our built-in .claude directory
+      // This allows SDK to discover skills from our .claude/skills/ directory
+      const envWithSkills = {
+        ...process.env,
+        ...(builtinClaudeDir && fs.existsSync(builtinClaudeDir) 
+          ? { CLAUDE_CONFIG_DIR: builtinClaudeDir } 
+          : {}),
+      };
+      
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
-        cwd: workingDir,
+        cwd: workingDir,  // User's actual working directory
         model: currentModel,
         maxTurns: 50,
         abortController: controller,
-        env: { ...process.env },
+        env: envWithSkills,
 
         // Custom spawn function to use Electron's bundled Node.js
         // This fixes "spawn node ENOENT" error in packaged apps where system node is not in PATH
@@ -496,8 +515,10 @@ Then follow the workflow described in that file.
           const actualEnv = isNodeCommand
             ? { ...spawnEnv, ELECTRON_RUN_AS_NODE: '1' }
             : spawnEnv;
-
+          
           console.log('[ClaudeAgentRunner] Custom spawn:', actualCommand, actualArgs.slice(0, 3).join(' '), '...');
+          console.log('[ClaudeAgentRunner] Process cwd:', spawnCwd);
+          console.log('[ClaudeAgentRunner] CLAUDE_CONFIG_DIR:', actualEnv?.CLAUDE_CONFIG_DIR || '(not set)');
           console.log('[ClaudeAgentRunner] ELECTRON_RUN_AS_NODE:', isNodeCommand ? '1' : 'not set');
 
           const childProcess = spawn(actualCommand, actualArgs, {

@@ -1,0 +1,80 @@
+2026-01-15T11:06:09.893Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-15T11:06:09.894Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-15T11:06:09.894Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-15T11:06:09.894Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-15T11:06:09.960Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-01-15T11:06:09.968Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-15T11:06:09.968Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-15T11:06:09.968Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-15T11:06:09.970Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-15T11:06:09.983Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-15T11:06:09.983Z [DEBUG] Total LSP servers loaded: 0
+2026-01-15T11:06:09.983Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-15T11:06:09.983Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-15T11:06:09.983Z [DEBUG] LSP server manager initialized successfully
+2026-01-15T11:06:09.984Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-15T11:06:09.984Z [DEBUG] [STARTUP] MCP configs loaded in 14ms
+2026-01-15T11:06:09.984Z [DEBUG] [STARTUP] Running setup()...
+2026-01-15T11:06:09.991Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-15T11:06:09.991Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-15T11:06:09.996Z [DEBUG] Loading skills from: managed=C:\ProgramData\ClaudeCode\.claude\skills, user=D:\DeskTop\todos\cowork\open-cowork\.claude\skills, project=[]
+2026-01-15T11:06:10.029Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-15T11:06:10.088Z [DEBUG] Error log sink initialized
+2026-01-15T11:06:10.120Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\todos\4ae23ba6-e0e4-46b3-bd71-a8c12a35092a-agent-4ae23ba6-e0e4-46b3-bd71-a8c12a35092a.json.tmp.23288.1768475170120
+2026-01-15T11:06:10.121Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-15T11:06:10.121Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\todos\4ae23ba6-e0e4-46b3-bd71-a8c12a35092a-agent-4ae23ba6-e0e4-46b3-bd71-a8c12a35092a.json.tmp.23288.1768475170120 to D:\DeskTop\todos\cowork\open-cowork\.claude\todos\4ae23ba6-e0e4-46b3-bd71-a8c12a35092a-agent-4ae23ba6-e0e4-46b3-bd71-a8c12a35092a.json
+2026-01-15T11:06:10.122Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\todos\4ae23ba6-e0e4-46b3-bd71-a8c12a35092a-agent-4ae23ba6-e0e4-46b3-bd71-a8c12a35092a.json written atomically
+2026-01-15T11:06:10.125Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-15T11:06:10.125Z [DEBUG] Total plugin skills loaded: 0
+2026-01-15T11:06:10.125Z [DEBUG] Total plugin commands loaded: 0
+2026-01-15T11:06:10.125Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-15T11:06:10.203Z [DEBUG] [STARTUP] setup() completed in 219ms
+2026-01-15T11:06:10.203Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-15T11:06:10.291Z [DEBUG] Total plugin agents loaded: 0
+2026-01-15T11:06:10.291Z [DEBUG] Loaded 3 unique skills (managed: 0, user: 3, project: 0, legacy commands: 0)
+2026-01-15T11:06:10.293Z [DEBUG] getSkills returning: 3 skill dir commands, 0 plugin skills, 0 bundled skills
+2026-01-15T11:06:10.294Z [DEBUG] [STARTUP] Commands and agents loaded in 91ms
+2026-01-15T11:06:10.320Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-15T11:06:10.341Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-15T11:06:10.341Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:06:10.341Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-15T11:06:10.357Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-15T11:06:10.451Z [DEBUG] Creating shell snapshot for bash (C:\Program Files\Git\bin\bash.exe)
+2026-01-15T11:06:10.451Z [DEBUG] Looking for shell config file: C:\Users\yangj\.bashrc
+2026-01-15T11:06:10.451Z [DEBUG] Shell config file not found: C:\Users\yangj\.bashrc, creating snapshot with Claude Code defaults only
+2026-01-15T11:06:10.451Z [DEBUG] Snapshots directory: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots
+2026-01-15T11:06:10.466Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=C:\Users\yangj\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\vendor\ripgrep\x64-win32\rg.exe)
+2026-01-15T11:06:10.474Z [DEBUG] Skills and commands included in Skill tool: docx, pdf, pptx
+2026-01-15T11:06:10.475Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:06:10.475Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:06:10.475Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:06:10.482Z [DEBUG] Watching for changes in skill directories: D:\DeskTop\todos\cowork\open-cowork\.claude\skills...
+2026-01-15T11:06:10.488Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T11:06:10.489Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T11:06:10.489Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T11:06:10.489Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T11:06:10.491Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-15T11:06:10.491Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:06:10.491Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T11:06:10.498Z [DEBUG] Creating snapshot at: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots\snapshot-bash-1768475170451-g6vxh9.sh
+2026-01-15T11:06:10.498Z [DEBUG] Shell binary exists: true
+2026-01-15T11:06:10.498Z [DEBUG] Execution timeout: 10000ms
+2026-01-15T11:06:11.282Z [DEBUG] Shell snapshot created successfully (342 bytes)
+2026-01-15T11:06:12.148Z [DEBUG] Tool search disabled: MCPSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-15T11:06:12.153Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:06:12.153Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:06:12.154Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:06:12.353Z [ERROR] "Error: Error: 404 {\"error\":{\"message\":\"Not Found\",\"code\":404}}\n    at D9.generate (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:491:33688)\n    at hP.makeStatusError (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1165:4436\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2223\n    at async os8 (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1064:101390)\n    at async feB (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2156)\n    at async _hA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4147)\n    at async jhA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4842)"
+2026-01-15T11:06:12.353Z [DEBUG] countTokensWithFallback: API returned null, trying haiku fallback (17 tools)
+2026-01-15T11:06:12.353Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:06:12.353Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:06:12.353Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:06:16.583Z [ERROR] "Error: Error: 1P event logging: 17 events failed to export\n    at ua1.queueFailedEvents (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:261:2038)\n    at async ua1.doExport (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:261:1195)"
+2026-01-15T11:06:16.584Z [ERROR] "Error: Error: {\"stack\":\"Error: Failed to export 17 events\\n    at ua1.doExport (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:261:1297)\",\"message\":\"Failed to export 17 events\",\"name\":\"Error\"}\n    at TH0.error (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:2283:34862)\n    at Zn1.error (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:255:10521)\n    at file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:255:41546\n    at $u3 (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:255:42092)\n    at file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:256:20245"
+2026-01-15T11:06:16.972Z [DEBUG] Stream started - received first chunk
+2026-01-15T11:06:17.995Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-01-15T11:06:17.995Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:06:17.995Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T11:06:17.998Z [DEBUG] Getting matching hook commands for SessionEnd with query: other
+2026-01-15T11:06:17.998Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:06:17.998Z [DEBUG] Matched 0 unique hooks for query "other" (0 before deduplication)

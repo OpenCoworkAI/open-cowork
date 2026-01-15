@@ -1,0 +1,274 @@
+2026-01-15T11:01:56.713Z [ERROR] Failed to save config with lock: Error: ENOENT: no such file or directory, lstat 'D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json'
+2026-01-15T11:01:56.713Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916713
+2026-01-15T11:01:56.713Z [DEBUG] Setting permissions for new file: 600
+2026-01-15T11:01:56.714Z [DEBUG] Temp file written successfully, size: 82 bytes
+2026-01-15T11:01:56.714Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916713 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.715Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.765Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916765
+2026-01-15T11:01:56.766Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:56.766Z [DEBUG] Temp file written successfully, size: 130 bytes
+2026-01-15T11:01:56.767Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:56.767Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916765 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.767Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.768Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-15T11:01:56.768Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-15T11:01:56.768Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-15T11:01:56.768Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-15T11:01:56.838Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-01-15T11:01:56.843Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916843
+2026-01-15T11:01:56.843Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:56.843Z [DEBUG] Temp file written successfully, size: 167 bytes
+2026-01-15T11:01:56.844Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:56.844Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916843 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.845Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.860Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916860
+2026-01-15T11:01:56.860Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:56.861Z [DEBUG] Temp file written successfully, size: 202 bytes
+2026-01-15T11:01:56.861Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:56.861Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916860 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.862Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.876Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916876
+2026-01-15T11:01:56.876Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:56.876Z [DEBUG] Temp file written successfully, size: 238 bytes
+2026-01-15T11:01:56.877Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:56.877Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916876 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.877Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.890Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916890
+2026-01-15T11:01:56.890Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:56.891Z [DEBUG] Temp file written successfully, size: 275 bytes
+2026-01-15T11:01:56.891Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:56.891Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474916890 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:56.892Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:56.907Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-15T11:01:56.907Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-15T11:01:56.907Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-15T11:01:56.909Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-15T11:01:56.922Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-15T11:01:56.922Z [DEBUG] Total LSP servers loaded: 0
+2026-01-15T11:01:56.922Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-15T11:01:56.922Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-15T11:01:56.922Z [DEBUG] LSP server manager initialized successfully
+2026-01-15T11:01:56.922Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-15T11:01:56.922Z [DEBUG] [STARTUP] MCP configs loaded in 13ms
+2026-01-15T11:01:56.923Z [DEBUG] [STARTUP] Running setup()...
+2026-01-15T11:01:56.937Z [DEBUG] Loading skills from: managed=C:\ProgramData\ClaudeCode\.claude\skills, user=D:\DeskTop\todos\cowork\open-cowork\.claude\skills, project=[]
+2026-01-15T11:01:56.979Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-15T11:01:57.010Z [DEBUG] Error log sink initialized
+2026-01-15T11:01:57.041Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\todos\06bed52b-f7f4-476e-b2bc-52071672f48d-agent-06bed52b-f7f4-476e-b2bc-52071672f48d.json.tmp.25724.1768474917041
+2026-01-15T11:01:57.042Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-15T11:01:57.042Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\todos\06bed52b-f7f4-476e-b2bc-52071672f48d-agent-06bed52b-f7f4-476e-b2bc-52071672f48d.json.tmp.25724.1768474917041 to D:\DeskTop\todos\cowork\open-cowork\.claude\todos\06bed52b-f7f4-476e-b2bc-52071672f48d-agent-06bed52b-f7f4-476e-b2bc-52071672f48d.json
+2026-01-15T11:01:57.043Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\todos\06bed52b-f7f4-476e-b2bc-52071672f48d-agent-06bed52b-f7f4-476e-b2bc-52071672f48d.json written atomically
+2026-01-15T11:01:57.047Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-15T11:01:57.047Z [DEBUG] Total plugin skills loaded: 0
+2026-01-15T11:01:57.047Z [DEBUG] Total plugin commands loaded: 0
+2026-01-15T11:01:57.047Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-15T11:01:57.094Z [DEBUG] [STARTUP] setup() completed in 171ms
+2026-01-15T11:01:57.094Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-15T11:01:57.138Z [DEBUG] Total plugin agents loaded: 0
+2026-01-15T11:01:57.139Z [DEBUG] Loaded 3 unique skills (managed: 0, user: 3, project: 0, legacy commands: 0)
+2026-01-15T11:01:57.140Z [DEBUG] getSkills returning: 3 skill dir commands, 0 plugin skills, 0 bundled skills
+2026-01-15T11:01:57.141Z [DEBUG] [STARTUP] Commands and agents loaded in 47ms
+2026-01-15T11:01:57.167Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-15T11:01:57.184Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-15T11:01:57.184Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:01:57.184Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-15T11:01:57.193Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-15T11:01:57.378Z [DEBUG] Creating shell snapshot for bash (C:\Program Files\Git\bin\bash.exe)
+2026-01-15T11:01:57.378Z [DEBUG] Looking for shell config file: C:\Users\yangj\.bashrc
+2026-01-15T11:01:57.378Z [DEBUG] Shell config file not found: C:\Users\yangj\.bashrc, creating snapshot with Claude Code defaults only
+2026-01-15T11:01:57.378Z [DEBUG] Snapshots directory: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots
+2026-01-15T11:01:57.403Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=C:\Users\yangj\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\vendor\ripgrep\x64-win32\rg.exe)
+2026-01-15T11:01:57.416Z [DEBUG] Skills and commands included in Skill tool: docx, pdf, pptx
+2026-01-15T11:01:57.417Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:01:57.418Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:01:57.418Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:01:57.432Z [DEBUG] Watching for changes in skill directories: D:\DeskTop\todos\cowork\open-cowork\.claude\skills...
+2026-01-15T11:01:57.449Z [DEBUG] Creating snapshot at: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots\snapshot-bash-1768474917378-11di1s.sh
+2026-01-15T11:01:57.449Z [DEBUG] Shell binary exists: true
+2026-01-15T11:01:57.449Z [DEBUG] Execution timeout: 10000ms
+2026-01-15T11:01:57.471Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T11:01:57.471Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T11:01:57.471Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T11:01:57.471Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T11:01:57.476Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-15T11:01:57.476Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:01:57.476Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T11:01:58.220Z [DEBUG] Shell snapshot created successfully (342 bytes)
+2026-01-15T11:01:58.471Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918471
+2026-01-15T11:01:58.472Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.473Z [DEBUG] Temp file written successfully, size: 451 bytes
+2026-01-15T11:01:58.473Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.473Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918471 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.474Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.503Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918503
+2026-01-15T11:01:58.503Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.504Z [DEBUG] Temp file written successfully, size: 487 bytes
+2026-01-15T11:01:58.504Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.504Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918503 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.506Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.530Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918530
+2026-01-15T11:01:58.530Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.531Z [DEBUG] Temp file written successfully, size: 515 bytes
+2026-01-15T11:01:58.531Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.531Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918530 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.532Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.554Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918554
+2026-01-15T11:01:58.555Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.555Z [DEBUG] Temp file written successfully, size: 567 bytes
+2026-01-15T11:01:58.556Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.556Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918554 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.557Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.586Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918586
+2026-01-15T11:01:58.587Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.587Z [DEBUG] Temp file written successfully, size: 606 bytes
+2026-01-15T11:01:58.588Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.588Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918586 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.589Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.615Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918615
+2026-01-15T11:01:58.615Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.616Z [DEBUG] Temp file written successfully, size: 644 bytes
+2026-01-15T11:01:58.616Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.616Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918615 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.618Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.638Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918638
+2026-01-15T11:01:58.638Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.638Z [DEBUG] Temp file written successfully, size: 683 bytes
+2026-01-15T11:01:58.640Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.640Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918638 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.643Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.664Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918664
+2026-01-15T11:01:58.665Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.665Z [DEBUG] Temp file written successfully, size: 713 bytes
+2026-01-15T11:01:58.666Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.666Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918664 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.667Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.685Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918685
+2026-01-15T11:01:58.686Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.686Z [DEBUG] Temp file written successfully, size: 743 bytes
+2026-01-15T11:01:58.686Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.687Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918685 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.688Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.706Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918706
+2026-01-15T11:01:58.708Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.708Z [DEBUG] Temp file written successfully, size: 781 bytes
+2026-01-15T11:01:58.709Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.709Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918706 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.711Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.727Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918727
+2026-01-15T11:01:58.727Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.727Z [DEBUG] Temp file written successfully, size: 827 bytes
+2026-01-15T11:01:58.728Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.728Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918727 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.731Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.743Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918743
+2026-01-15T11:01:58.743Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.743Z [DEBUG] Temp file written successfully, size: 877 bytes
+2026-01-15T11:01:58.744Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.744Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918743 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.746Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:01:58.765Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:01:58.765Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:01:58.765Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:01:58.768Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918768
+2026-01-15T11:01:58.769Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:01:58.769Z [DEBUG] Temp file written successfully, size: 923 bytes
+2026-01-15T11:01:58.770Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:01:58.770Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474918768 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:01:58.771Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:02:00.247Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474920247
+2026-01-15T11:02:00.247Z [DEBUG] Preserving file permissions: 100666
+2026-01-15T11:02:00.248Z [DEBUG] Temp file written successfully, size: 990 bytes
+2026-01-15T11:02:00.248Z [DEBUG] Applied original permissions to temp file
+2026-01-15T11:02:00.248Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json.tmp.25724.1768474920247 to D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json
+2026-01-15T11:02:00.249Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\.claude.json written atomically
+2026-01-15T11:02:01.499Z [ERROR] "Error: Error: 404 {\"error\":{\"message\":\"Not Found\",\"code\":404}}\n    at D9.generate (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:491:33688)\n    at hP.makeStatusError (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1165:4436\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2223\n    at async os8 (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1064:101390)\n    at async feB (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2156)\n    at async _hA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4147)\n    at async jhA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4842)"
+2026-01-15T11:02:01.499Z [DEBUG] countTokensWithFallback: API returned null, trying haiku fallback (18 tools)
+2026-01-15T11:02:01.499Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:02:01.499Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:02:01.499Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:02:03.616Z [DEBUG] Stream started - received first chunk
+2026-01-15T11:02:04.699Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-01-15T11:02:04.699Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:02:04.699Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T11:02:04.703Z [DEBUG] Getting matching hook commands for SessionEnd with query: other
+2026-01-15T11:02:04.703Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:02:04.703Z [DEBUG] Matched 0 unique hooks for query "other" (0 before deduplication)
+2026-01-15T11:02:04.708Z [DEBUG] Cleaned up session snapshot: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots\snapshot-bash-1768474917378-11di1s.sh
+2026-01-15T11:02:04.708Z [DEBUG] LSP server manager shut down successfully
+2026-01-15T11:02:04.712Z [DEBUG] Metrics opt-out check failed: No API key available
+2026-01-15T11:02:04.712Z [DEBUG] Metrics check failed, defaulting to disabled
+2026-01-15T11:02:04.712Z [DEBUG] Metrics export disabled by organization setting
+2026-01-15T11:02:04.712Z [DEBUG] BigQuery metrics exporter flush complete
+2026-01-15T11:02:04.712Z [DEBUG] BigQuery metrics exporter flush complete
+2026-01-15T11:02:04.712Z [DEBUG] BigQuery metrics exporter shutdown complete
+2026-01-15T11:02:25.092Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-15T11:02:25.092Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-15T11:02:25.092Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-15T11:02:25.092Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-15T11:02:25.161Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-01-15T11:02:25.170Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-15T11:02:25.170Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-15T11:02:25.170Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-15T11:02:25.173Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-15T11:02:25.189Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-15T11:02:25.189Z [DEBUG] Total LSP servers loaded: 0
+2026-01-15T11:02:25.189Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-15T11:02:25.189Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-15T11:02:25.189Z [DEBUG] LSP server manager initialized successfully
+2026-01-15T11:02:25.189Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-15T11:02:25.189Z [DEBUG] [STARTUP] MCP configs loaded in 16ms
+2026-01-15T11:02:25.190Z [DEBUG] [STARTUP] Running setup()...
+2026-01-15T11:02:25.197Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-15T11:02:25.197Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-15T11:02:25.203Z [DEBUG] Loading skills from: managed=C:\ProgramData\ClaudeCode\.claude\skills, user=D:\DeskTop\todos\cowork\open-cowork\.claude\skills, project=[]
+2026-01-15T11:02:25.241Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-15T11:02:25.288Z [DEBUG] Error log sink initialized
+2026-01-15T11:02:25.320Z [DEBUG] Writing to temp file: D:\DeskTop\todos\cowork\open-cowork\.claude\todos\5ba9740a-9136-4446-b93c-42a38f30b3eb-agent-5ba9740a-9136-4446-b93c-42a38f30b3eb.json.tmp.8336.1768474945320
+2026-01-15T11:02:25.321Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-15T11:02:25.321Z [DEBUG] Renaming D:\DeskTop\todos\cowork\open-cowork\.claude\todos\5ba9740a-9136-4446-b93c-42a38f30b3eb-agent-5ba9740a-9136-4446-b93c-42a38f30b3eb.json.tmp.8336.1768474945320 to D:\DeskTop\todos\cowork\open-cowork\.claude\todos\5ba9740a-9136-4446-b93c-42a38f30b3eb-agent-5ba9740a-9136-4446-b93c-42a38f30b3eb.json
+2026-01-15T11:02:25.322Z [DEBUG] File D:\DeskTop\todos\cowork\open-cowork\.claude\todos\5ba9740a-9136-4446-b93c-42a38f30b3eb-agent-5ba9740a-9136-4446-b93c-42a38f30b3eb.json written atomically
+2026-01-15T11:02:25.325Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-15T11:02:25.325Z [DEBUG] Total plugin skills loaded: 0
+2026-01-15T11:02:25.325Z [DEBUG] Total plugin commands loaded: 0
+2026-01-15T11:02:25.325Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-15T11:02:25.384Z [DEBUG] [STARTUP] setup() completed in 194ms
+2026-01-15T11:02:25.384Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-15T11:02:25.494Z [DEBUG] Total plugin agents loaded: 0
+2026-01-15T11:02:25.494Z [DEBUG] Loaded 3 unique skills (managed: 0, user: 3, project: 0, legacy commands: 0)
+2026-01-15T11:02:25.497Z [DEBUG] getSkills returning: 3 skill dir commands, 0 plugin skills, 0 bundled skills
+2026-01-15T11:02:25.498Z [DEBUG] [STARTUP] Commands and agents loaded in 114ms
+2026-01-15T11:02:25.532Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-15T11:02:25.574Z [DEBUG] Creating shell snapshot for bash (C:\Program Files\Git\bin\bash.exe)
+2026-01-15T11:02:25.575Z [DEBUG] Looking for shell config file: C:\Users\yangj\.bashrc
+2026-01-15T11:02:25.575Z [DEBUG] Shell config file not found: C:\Users\yangj\.bashrc, creating snapshot with Claude Code defaults only
+2026-01-15T11:02:25.575Z [DEBUG] Snapshots directory: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots
+2026-01-15T11:02:25.595Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=C:\Users\yangj\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\vendor\ripgrep\x64-win32\rg.exe)
+2026-01-15T11:02:25.606Z [DEBUG] Skills and commands included in Skill tool: docx, pdf, pptx
+2026-01-15T11:02:25.607Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:02:25.607Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:02:25.607Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:02:25.614Z [DEBUG] Watching for changes in skill directories: D:\DeskTop\todos\cowork\open-cowork\.claude\skills...
+2026-01-15T11:02:25.626Z [DEBUG] Getting matching hook commands for SessionStart with query: resume
+2026-01-15T11:02:25.626Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:02:25.626Z [DEBUG] Matched 0 unique hooks for query "resume" (0 before deduplication)
+2026-01-15T11:02:25.633Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-15T11:02:25.691Z [DEBUG] Creating snapshot at: D:\DeskTop\todos\cowork\open-cowork\.claude\shell-snapshots\snapshot-bash-1768474945575-230un0.sh
+2026-01-15T11:02:25.692Z [DEBUG] Shell binary exists: true
+2026-01-15T11:02:25.692Z [DEBUG] Execution timeout: 10000ms
+2026-01-15T11:02:25.739Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-15T11:02:25.739Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-15T11:02:25.739Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-15T11:02:25.739Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-15T11:02:25.741Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-15T11:02:25.741Z [DEBUG] Found 0 hook matchers in settings
+2026-01-15T11:02:25.741Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-15T11:02:26.533Z [DEBUG] Shell snapshot created successfully (342 bytes)
+2026-01-15T11:02:27.110Z [ERROR] "Error: Error: 404 {\"error\":{\"message\":\"Not Found\",\"code\":404}}\n    at D9.generate (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:491:33688)\n    at hP.makeStatusError (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:2195)\n    at hP.makeRequest (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:914:5420)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1165:4436\n    at async file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2223\n    at async os8 (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1064:101390)\n    at async feB (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:1065:2156)\n    at async _hA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4147)\n    at async jhA (file:///C:/Users/yangj/AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/cli.js:3129:4842)"
+2026-01-15T11:02:27.110Z [DEBUG] countTokensWithFallback: API returned null, trying haiku fallback (17 tools)
+2026-01-15T11:02:27.110Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:02:27.110Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:02:27.110Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-15T11:02:29.037Z [DEBUG] Tool search disabled: MCPSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-15T11:02:29.048Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-15T11:02:29.048Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-15T11:02:29.048Z [DEBUG] [API:auth] OAuth token check complete
