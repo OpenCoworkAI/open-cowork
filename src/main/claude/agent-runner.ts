@@ -91,8 +91,8 @@ export class ClaudeAgentRunner {
         timestamp: Date.now(),
       });
 
-      const workingDir = session.cwd || process.cwd();
-      console.log('[ClaudeAgentRunner] Working directory:', workingDir);
+      const workingDir = session.cwd || undefined;
+      console.log('[ClaudeAgentRunner] Working directory:', workingDir || '(none)');
 
       // Build conversation context by prepending history to prompt
       // Build a chat-style history so Claude can continue previous turns
@@ -119,6 +119,11 @@ export class ClaudeAgentRunner {
       // SANDBOX: Path validation function
       const isPathInsideWorkspace = (targetPath: string): boolean => {
         if (!targetPath) return true;
+        
+        // If no working directory is set, deny all file access
+        if (!workingDir) {
+          return false;
+        }
         
         // Normalize paths for comparison
         const normalizedTarget = path.normalize(targetPath);
