@@ -39,7 +39,7 @@
 ## ✨ 核心特性
 
 - **零门槛上手**：提供 Windows 和 macOS 预构建安装包，下载即用。
-- **多模型支持**：支持 **Claude**，以及国产模型 **GLM**、**Kimi**。（更多模型如 **Minimax** 即将支持）。
+- **多模型支持**：支持 **Claude**，以及国产大模型 **GLM**、**MiniMax**、**Kimi** 等，支持高性价比的 Coding Plan。
 - **自带 API Key**：使用你的 OpenRouter 或 Anthropic API Key，按需付费。
 - **文件管理**：AI 可以在工作区内读取、写入和整理文件。
 - **Skills 系统**：内置 PPTX、DOCX、PDF、XLSX 生成和处理工作流。
@@ -92,15 +92,21 @@ npm run dev
 ## 🚀 快速开始
 
 ### 1. 获取 API Key
-你需要一个 API Key 来驱动 Agent。推荐使用：
-- **[OpenRouter](https://openrouter.ai/)**：一个 Key 通用所有模型（推荐 Claude 3.5 Sonnet）。
-- **[Anthropic Console](https://console.anthropic.com/)**：官方直连。
+你需要一个 API Key 来驱动 Agent。我们支持 **OpenRouter**、**Anthropic** 以及多家高性价比的**国产大模型**。
 
-### 2. 配置
-1. 打开应用。
-2. 点击 ⚙️ **设置** 图标。
-3. 粘贴你的 API Key。
-   * *提示：如果使用 OpenRouter，请将 Base URL 设置为 `https://openrouter.ai/api`。*
+| 服务商 | 获取 Key / Coding Plan | Base URL (必填) | 推荐模型 Model |
+|-------|------------------------|-----------------|---------------|
+| **OpenRouter** | [OpenRouter](https://openrouter.ai/) | `https://openrouter.ai/api` | `claude-3-5-sonnet` |
+| **Anthropic** | [Anthropic Console](https://console.anthropic.com/) | 默认 | `claude-3-5-sonnet` |
+| **智谱 AI** | [GLM Coding Plan](https://bigmodel.cn/glm-coding) (⚡️国产特惠) | `https://open.bigmodel.cn/api/anthropic` | `glm-4.7`, `glm-4.6` |
+| **MiniMax** | [MiniMax Coding Plan](https://platform.minimaxi.com/subscribe/coding-plan) | `https://api.minimaxi.com/anthropic` | `minimax-m2` |
+| **Kimi** | [Kimi Coding Plan](https://www.kimi.com/membership/pricing) | `https://api.kimi.com/coding/` | `moonshot-v1-8k` |
+
+### 2. 配置应用
+1. 打开应用，点击左下角 ⚙️ **设置**。
+2. 填入你的 **API Key**。
+3. **关键步骤**：根据上表修改 **Base URL** (如使用智谱/MiniMax等)。
+4. 输入想要使用的 **Model** 名称。
 
 ### 3. 开始协作
 1. **选择工作区**：选择一个文件夹，授权 Claude 在其中工作。

@@ -14,7 +14,7 @@ interface ConfigModalProps {
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun }: ConfigModalProps) {
-  const [provider, setProvider] = useState<'openrouter' | 'anthropic'>('openrouter');
+  const [provider, setProvider] = useState<'openrouter' | 'anthropic' | 'custom'>('openrouter');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
@@ -58,8 +58,10 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   useEffect(() => {
     if (presets) {
       const preset = presets[provider];
-      setBaseUrl(preset.baseUrl);
-      if (!model || !preset.models.find(m => m.id === model)) {
+      if (preset) {
+        setBaseUrl(preset.baseUrl);
+        // Reset to preset model when switching providers
+        setUseCustomModel(false);
         setModel(preset.models[0]?.id || '');
       }
     }
@@ -141,15 +143,15 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
           {/* Provider Selection */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
               <Server className="w-4 h-4" />
               API 提供商
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['openrouter', 'anthropic'] as const).map((p) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(['openrouter', 'anthropic', 'custom'] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setProvider(p)}
@@ -182,6 +184,24 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
             )}
           </div>
+
+          {/* Base URL - Only editable for custom provider */}
+          {provider === 'custom' && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <Server className="w-4 h-4" />
+                Base URL
+              </label>
+              <input
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://open.bigmodel.cn/api/anthropic"
+                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+              <p className="text-xs text-text-muted">输入兼容 Anthropic API 的服务地址</p>
+            </div>
+          )}
 
           {/* Model Selection */}
           <div className="space-y-2">

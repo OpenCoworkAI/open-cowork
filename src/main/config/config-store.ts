@@ -5,7 +5,7 @@ import Store from 'electron-store';
  */
 export interface AppConfig {
   // API Provider
-  provider: 'openrouter' | 'anthropic';
+  provider: 'openrouter' | 'anthropic' | 'custom';
   
   // API credentials
   apiKey: string;
@@ -57,6 +57,17 @@ export const PROVIDER_PRESETS = {
     ],
     keyPlaceholder: 'sk-ant-...',
     keyHint: '从 console.anthropic.com 获取',
+  },
+  custom: {
+    name: '更多模型',
+    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+    models: [
+      { id: 'glm-4.7', name: 'GLM-4.7' },
+      { id: 'glm-4-plus', name: 'GLM-4-Plus' },
+      { id: 'glm-4-air', name: 'GLM-4-Air' },
+    ],
+    keyPlaceholder: 'sk-xxx',
+    keyHint: '输入你的 API Key',
   },
 };
 

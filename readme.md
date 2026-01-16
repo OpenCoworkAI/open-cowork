@@ -39,7 +39,7 @@ It provides a sandboxed workspace where AI can manage files, read documents, and
 ## ✨ Key Features
 
 - **Zero Coding Required**: Pre-built installers for Windows and macOS, just download and run.
-- **Multi-Model Support**: Supports **Claude**, and popular Chinese models like **GLM** and **Kimi**. (More models like **Minimax** coming soon).
+- **Multi-Model Support**: Supports **Claude**, and includes deep integration for Chinese models (**GLM**, **MiniMax**, **Kimi**).
 - **Bring Your Own Key**: Use your OpenRouter or Anthropic API key, pay only for what you use.
 - **File Management**: AI can read, write, and organize files within your workspace.
 - **Skills System**: Built-in workflows for PPTX, DOCX, PDF, XLSX generation and processing.
@@ -92,15 +92,21 @@ To build the installer locally: `npm run build`
 ## 🚀 Quick Start Guide
 
 ### 1. Get an API Key
-You need an API key to power the agent. We recommend:
-- **[OpenRouter](https://openrouter.ai/)**: One key for all models (Claude 3.5 Sonnet, etc.).
-- **[Anthropic Console](https://console.anthropic.com/)**: Direct access to Claude.
+You need an API key to power the agent. We support **OpenRouter**, **Anthropic**, and various cost-effective **Chinese Models**.
+
+| Provider | Get Key / Coding Plan | Base URL (Required) | Recommended Model |
+|----------|-----------------------|---------------------|-------------------|
+| **OpenRouter** | [OpenRouter](https://openrouter.ai/) | `https://openrouter.ai/api` | `claude-3-5-sonnet` |
+| **Anthropic** | [Anthropic Console](https://console.anthropic.com/) | (Default) | `claude-3-5-sonnet` |
+| **Zhipu AI (GLM)** | [GLM Coding Plan](https://bigmodel.cn/glm-coding) | `https://open.bigmodel.cn/api/anthropic` | `glm-4.7`, `glm-4.6` |
+| **MiniMax** | [MiniMax Coding Plan](https://platform.minimaxi.com/subscribe/coding-plan) | `https://api.minimaxi.com/anthropic` | `minimax-m2` |
+| **Kimi** | [Kimi Coding Plan](https://www.kimi.com/membership/pricing) | `https://api.kimi.com/coding/` | `moonshot-v1-8k` |
 
 ### 2. Configure
-1. Open the app.
-2. Click the ⚙️ **Settings** icon.
-3. Paste your API Key.
-   * *Tip: If using OpenRouter, make sure to set the Base URL to `https://openrouter.ai/api`.*
+1. Open the app and click the ⚙️ **Settings** icon.
+2. Paste your **API Key**.
+3. **Crucial**: Set the **Base URL** according to the table above (especially for non-Anthropic models).
+4. Enter the **Model** name.
 
 ### 3. Start Coworking
 1. **Select a Workspace**: Choose a folder where Claude is allowed to work.
