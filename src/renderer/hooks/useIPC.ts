@@ -357,6 +357,14 @@ export function useIPC() {
     return invoke<string | null>({ type: 'folder.select', payload: {} });
   }, [invoke]);
 
+  const getMCPServers = useCallback(async () => {
+    if (!isElectron) {
+      return [];
+    }
+    // Use the exposed mcp.getServerStatus method
+    return window.electronAPI.mcp.getServerStatus();
+  }, []);
+
   return {
     send,
     invoke,
@@ -369,6 +377,7 @@ export function useIPC() {
     respondToPermission,
     respondToQuestion,
     selectFolder,
+    getMCPServers,
     isElectron,
   };
 }

@@ -3,12 +3,15 @@ import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, Tex
 import type { DatabaseInstance } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
+import { MCPManager } from '../mcp/mcp-manager';
+import { mcpConfigStore } from '../mcp/mcp-config-store';
 
 export class SessionManager {
   private db: DatabaseInstance;
   private sendToRenderer: (event: ServerEvent) => void;
   private pathResolver: PathResolver;
   private agentRunner: ClaudeAgentRunner;
+  private mcpManager: MCPManager;
   private activeSessions: Map<string, AbortController> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
 
@@ -17,16 +20,41 @@ export class SessionManager {
     this.sendToRenderer = sendToRenderer;
     this.pathResolver = new PathResolver();
     
-    // Initialize Claude Agent Runner with message save callback
+    // Initialize MCP Manager
+    this.mcpManager = new MCPManager();
+    this.initializeMCP();
+    
+    // Initialize Claude Agent Runner with message save callback and MCP manager
     this.agentRunner = new ClaudeAgentRunner(
       { 
         sendToRenderer: this.sendToRenderer,
         saveMessage: (message: Message) => this.saveMessage(message),
       },
-      this.pathResolver
+      this.pathResolver,
+      this.mcpManager
     );
     
-    console.log('[SessionManager] Initialized with persistent database');
+    console.log('[SessionManager] Initialized with persistent database and MCP support');
+  }
+
+  /**
+   * Initialize MCP servers from configuration
+   */
+  private async initializeMCP(): Promise<void> {
+    try {
+      const servers = mcpConfigStore.getEnabledServers();
+      await this.mcpManager.initializeServers(servers);
+      console.log(`[SessionManager] Initialized ${servers.length} MCP servers`);
+    } catch (error) {
+      console.error('[SessionManager] Failed to initialize MCP servers:', error);
+    }
+  }
+
+  /**
+   * Get MCP manager instance
+   */
+  getMCPManager(): MCPManager {
+    return this.mcpManager;
   }
 
   // Create and start a new session

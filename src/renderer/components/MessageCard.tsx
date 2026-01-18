@@ -18,6 +18,7 @@ import {
   XCircle,
   Square,
   CheckSquare,
+  Plug,
 } from 'lucide-react';
 
 interface MessageCardProps {
@@ -55,6 +56,8 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
               block={block}
               isUser={isUser}
               isStreaming={isStreaming}
+              allBlocks={message.content}
+              message={message}
             />
           ))}
         </div>
@@ -67,9 +70,11 @@ interface ContentBlockViewProps {
   block: ContentBlock;
   isUser: boolean;
   isStreaming?: boolean;
+  allBlocks?: ContentBlock[]; // Pass all blocks to find related tool_use
+  message?: Message; // Pass the whole message to access previous messages
 }
 
-function ContentBlockView({ block, isUser, isStreaming }: ContentBlockViewProps) {
+function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: ContentBlockViewProps) {
   switch (block.type) {
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
@@ -135,7 +140,7 @@ function ContentBlockView({ block, isUser, isStreaming }: ContentBlockViewProps)
       return <ToolUseBlock block={block} />;
 
     case 'tool_result':
-      return <ToolResultBlock block={block} />;
+      return <ToolResultBlock block={block} allBlocks={allBlocks} message={message} />;
 
     case 'thinking':
       return (
@@ -164,6 +169,16 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
 
   // Get a more descriptive title based on tool name
   const getToolTitle = (name: string) => {
+    // Check if this is an MCP tool (format: mcp__ServerName__toolname)
+    if (name.startsWith('mcp__')) {
+      const match = name.match(/^mcp__(.+?)__(.+)$/);
+      if (match) {
+        const toolName = match[2];
+        return `Using ${toolName}`;
+      }
+      return `Using MCP tool`;
+    }
+    
     const titles: Record<string, string> = {
       'Bash': 'Running command',
       'Read': 'Reading file',
@@ -177,20 +192,45 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
     return titles[name] || `Using ${name}`;
   };
 
+  // Check if this is an MCP tool
+  const isMCPTool = block.name.startsWith('mcp__');
+  const mcpServerName = isMCPTool ? block.name.match(/^mcp__(.+?)__/)?.[1] : null;
+
   return (
-    <div className="rounded-xl border border-border overflow-hidden bg-surface">
+    <div className={`rounded-xl border overflow-hidden bg-surface ${
+      isMCPTool ? 'border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-transparent' : 'border-border'
+    }`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 flex items-center gap-3 bg-surface-muted hover:bg-surface-active transition-colors"
+        className={`w-full px-4 py-3 flex items-center gap-3 transition-colors ${
+          isMCPTool 
+            ? 'bg-purple-500/10 hover:bg-purple-500/20' 
+            : 'bg-surface-muted hover:bg-surface-active'
+        }`}
       >
-        <div className="w-6 h-6 rounded-lg bg-accent-muted flex items-center justify-center">
+        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+          isMCPTool 
+            ? 'bg-purple-500/20' 
+            : 'bg-accent-muted'
+        }`}>
+          {isMCPTool ? (
+            <Plug className="w-3.5 h-3.5 text-purple-500" />
+          ) : (
           <Terminal className="w-3.5 h-3.5 text-accent" />
+          )}
         </div>
+        <div className="flex-1 text-left">
         <span className="font-medium text-sm text-text-primary">{getToolTitle(block.name)}</span>
+          {isMCPTool && mcpServerName && (
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-500">
+              {mcpServerName}
+            </span>
+          )}
+        </div>
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-muted ml-auto" />
+          <ChevronDown className="w-4 h-4 text-text-muted" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-muted ml-auto" />
+          <ChevronRight className="w-4 h-4 text-text-muted" />
         )}
       </button>
 
@@ -476,8 +516,139 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
   );
 }
 
-function ToolResultBlock({ block }: { block: ToolResultContent }) {
-  const [expanded, setExpanded] = useState(true);
+function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultContent; allBlocks?: ContentBlock[]; message?: Message }) {
+  const { traceStepsBySession } = useAppStore();
+  
+  // Try to find the tool name from trace steps
+  let toolName: string | undefined;
+  
+  if (message?.sessionId) {
+    const steps = traceStepsBySession[message.sessionId] || [];
+    // Find the tool_call step that matches this tool_use_id
+    const toolCallStep = steps.find(s => s.id === block.toolUseId && s.type === 'tool_call');
+    if (toolCallStep) {
+      toolName = toolCallStep.toolName;
+    }
+  }
+  
+  // Fallback: try to find in allBlocks (for same message)
+  if (!toolName) {
+    const toolUseBlock = allBlocks?.find(
+      (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
+    ) as ToolUseContent | undefined;
+    toolName = toolUseBlock?.name;
+  }
+  
+  // MCP tools start with mcp__ (double underscore)
+  const isMCPTool = toolName?.startsWith('mcp__') || false;
+  
+  // All tool results default to collapsed
+  const [expanded, setExpanded] = useState(false);
+  
+  console.log('[ToolResultBlock] toolUseId:', block.toolUseId, 'toolName:', toolName, 'isMCPTool:', isMCPTool, 'expanded:', expanded);
+
+  // Generate summary for tool results
+  const generateSummary = (content: string, isError: boolean): string => {
+    if (isError) {
+      // Simplify error messages
+      if (content.includes('Could not connect to Chrome')) {
+        return '✗ Chrome not connected';
+      }
+      if (content.includes('ECONNREFUSED')) {
+        return '✗ Connection refused';
+      }
+      if (content.includes('timeout')) {
+        return '✗ Operation timed out';
+      }
+      // Generic error
+      const firstLine = content.split('\n')[0];
+      return `✗ ${firstLine.substring(0, 60)}${firstLine.length > 60 ? '...' : ''}`;
+    }
+
+    // Success cases - try to extract meaningful info
+    
+    // Chrome DevTools MCP Server responses
+    if (content.includes('Successfully navigated to')) {
+      const urlMatch = content.match(/Successfully navigated to (.+)/);
+      if (urlMatch) {
+        const url = urlMatch[1].trim();
+        return `✓ Navigated to ${url.length > 50 ? url.substring(0, 50) + '...' : url}`;
+      }
+      return '✓ Navigation successful';
+    }
+    
+    if (content.includes('Page created')) {
+      return '✓ New page created';
+    }
+    
+    if (content.includes('Screenshot saved') || content.includes('screenshot')) {
+      return '✓ Screenshot captured';
+    }
+    
+    if (content.includes('Successfully clicked')) {
+      return '✓ Element clicked';
+    }
+    
+    if (content.includes('Successfully typed')) {
+      const textMatch = content.match(/Successfully typed "(.+?)"/);
+      if (textMatch) {
+        const text = textMatch[1];
+        return `✓ Typed: ${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
+      }
+      return '✓ Text entered';
+    }
+    
+    // List pages result
+    if (content.includes('"title"') && content.includes('"url"')) {
+      try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          return `✓ Found ${parsed.length} open page${parsed.length !== 1 ? 's' : ''}`;
+        }
+      } catch (e) {
+        // Not valid JSON
+      }
+    }
+    
+    // JSON response - try to summarize
+    if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          return `✓ Returned ${parsed.length} item${parsed.length !== 1 ? 's' : ''}`;
+        }
+        if (typeof parsed === 'object') {
+          const keys = Object.keys(parsed);
+          if (keys.length <= 3) {
+            return `✓ Success (${keys.join(', ')})`;
+          }
+          return `✓ Success (${keys.length} fields)`;
+        }
+      } catch (e) {
+        // Not valid JSON
+      }
+    }
+    
+    // Generic success - show first line or length
+    const lines = content.trim().split('\n');
+    if (lines.length === 1 && lines[0].length < 80) {
+      return `✓ ${lines[0]}`;
+    }
+    
+    if (content.length < 100) {
+      return `✓ ${content.trim()}`;
+    }
+    
+    // Long content - show summary
+    const firstLine = lines[0].trim();
+    if (firstLine.length > 0 && firstLine.length < 60) {
+      return `✓ ${firstLine}`;
+    }
+    
+    return `✓ Success (${content.length} chars, ${lines.length} lines)`;
+  };
+
+  const summary = generateSummary(block.content, block.isError || false);
 
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-surface">
@@ -492,13 +663,13 @@ function ToolResultBlock({ block }: { block: ToolResultContent }) {
         ) : (
           <CheckCircle2 className="w-5 h-5 text-success" />
         )}
-        <span className={`font-medium text-sm ${block.isError ? 'text-error' : 'text-success'}`}>
-          {block.isError ? 'Error' : 'Result'}
+        <span className={`font-medium text-sm flex-1 text-left ${block.isError ? 'text-error' : 'text-success'}`}>
+          {summary}
         </span>
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-muted ml-auto" />
+          <ChevronDown className="w-4 h-4 text-text-muted" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-muted ml-auto" />
+          <ChevronRight className="w-4 h-4 text-text-muted" />
         )}
       </button>
 
