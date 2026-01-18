@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem } from '../types';
@@ -92,7 +95,37 @@ function ContentBlockView({ block, isUser, isStreaming }: ContentBlockViewProps)
       return (
         <div className="prose-chat max-w-none text-text-primary">
           <ReactMarkdown
+            remarkPlugins={[remarkMath, remarkGfm]}
+            rehypePlugins={[rehypeKatex]}
             components={{
+              a({ children, href }) {
+                return (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      if (!href) {
+                        return;
+                      }
+                      if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+                        event.preventDefault();
+                        void window.electronAPI.openExternal(href);
+                      }
+                    }}
+                    className="text-accent hover:text-accent-hover underline underline-offset-2"
+                  >
+                    {children}
+                  </a>
+                );
+              },
+              blockquote({ children }) {
+                return (
+                  <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
+                    {children}
+                  </blockquote>
+                );
+              },
               code({ className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
                 const isInline = !match;
@@ -113,6 +146,40 @@ function ContentBlockView({ block, isUser, isStreaming }: ContentBlockViewProps)
               },
               p({ children }) {
                 return <p>{children}</p>;
+              },
+              table({ children }) {
+                return (
+                  <div className="overflow-x-auto my-3">
+                    <table className="min-w-full border-collapse">
+                      {children}
+                    </table>
+                  </div>
+                );
+              },
+              th({ children }) {
+                return (
+                  <th className="border border-border px-3 py-2 text-left text-sm font-semibold text-text-primary bg-surface-muted">
+                    {children}
+                  </th>
+                );
+              },
+              td({ children }) {
+                return (
+                  <td className="border border-border px-3 py-2 text-sm text-text-primary">
+                    {children}
+                  </td>
+                );
+              },
+              input({ checked, ...props }) {
+                return (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    readOnly
+                    className="mr-2 accent-accent"
+                    {...props}
+                  />
+                );
               },
               strong({ children }) {
                 return <strong>{children}</strong>;
@@ -160,7 +227,20 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
     return <TodoWriteBlock block={block} />;
   }
 
+  const { activeSessionId, messagesBySession } = useAppStore();
   const [expanded, setExpanded] = useState(false);
+  const toolResult = useMemo(() => {
+    const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
+    let latestResult: ToolResultContent | null = null;
+    for (const message of messages) {
+      for (const content of message.content) {
+        if (content.type === 'tool_result' && content.toolUseId === block.id) {
+          latestResult = content;
+        }
+      }
+    }
+    return latestResult;
+  }, [activeSessionId, messagesBySession, block.id]);
 
   // Get a more descriptive title based on tool name
   const getToolTitle = (name: string) => {
@@ -195,13 +275,23 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
       </button>
 
       {expanded && (
-        <div className="p-4 space-y-3 bg-surface">
+        <div className="p-4 space-y-4 bg-surface">
           <div>
             <p className="text-xs font-medium text-text-muted mb-2">Request</p>
             <pre className="code-block text-xs">
               {JSON.stringify(block.input, null, 2)}
             </pre>
           </div>
+          {toolResult && (
+            <div>
+              <p className={`text-xs font-medium mb-2 ${toolResult.isError ? 'text-error' : 'text-text-muted'}`}>
+                Result
+              </p>
+              <pre className="code-block text-xs whitespace-pre-wrap">
+                {toolResult.content}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -477,7 +567,23 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
 }
 
 function ToolResultBlock({ block }: { block: ToolResultContent }) {
-  const [expanded, setExpanded] = useState(true);
+  const { activeSessionId, messagesBySession } = useAppStore();
+  const [expanded, setExpanded] = useState(false);
+  const hasToolUse = useMemo(() => {
+    const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
+    for (const message of messages) {
+      for (const content of message.content) {
+        if (content.type === 'tool_use' && content.id === block.toolUseId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [activeSessionId, messagesBySession, block.toolUseId]);
+
+  if (hasToolUse) {
+    return null;
+  }
 
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-surface">

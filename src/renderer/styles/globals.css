@@ -247,6 +247,47 @@
   .prose-chat h3 { font-size: 1.125rem; }
   .prose-chat h4 { font-size: 1rem; }
 
+  .prose-chat .katex-display {
+    margin: 1rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .prose-chat .katex {
+    font-size: 1em;
+  }
+
+  .prose-chat a {
+    color: theme('colors.accent.DEFAULT');
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .prose-chat blockquote {
+    margin: 0.75rem 0;
+    padding-left: 1rem;
+    border-left: 2px solid rgba(124, 58, 237, 0.4);
+    color: theme('colors.text.muted');
+  }
+
+  .prose-chat .footnotes {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+    color: theme('colors.text.muted');
+  }
+
+  .prose-chat .footnotes ol {
+    padding-left: 1.25rem;
+  }
+
+  .prose-chat .footnotes li {
+    margin-bottom: 0.5rem;
+  }
+
+  .prose-chat .footnotes p {
+    margin: 0.25rem 0 0;
+  }
+
   /* Code block */
   .code-block {
     @apply bg-surface-muted rounded-2xl p-4 font-mono text-sm overflow-x-auto;

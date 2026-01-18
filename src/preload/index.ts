@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   getVersion: () => ipcRenderer.invoke('get-version'),
 
+  // Open links in default browser
+  openExternal: (url: string) => ipcRenderer.invoke('shell.openExternal', url),
+
   // Config methods
   config: {
     get: (): Promise<AppConfig> => ipcRenderer.invoke('config.get'),
@@ -82,6 +85,7 @@ declare global {
       invoke: <T>(event: ClientEvent) => Promise<T>;
       platform: NodeJS.Platform;
       getVersion: () => Promise<string>;
+      openExternal: (url: string) => Promise<boolean>;
       config: {
         get: () => Promise<AppConfig>;
         getPresets: () => Promise<ProviderPresets>;

@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import {
+  ChevronLeft,
+  ChevronRight,
   Trash2,
   Sparkles,
   Moon,
@@ -10,7 +12,19 @@ import {
 } from 'lucide-react';
 
 export function Sidebar() {
-  const { sessions, activeSessionId, settings, messagesBySession, setActiveSession, setMessages, updateSettings, setShowConfigModal, isConfigured } = useAppStore();
+  const {
+    sessions,
+    activeSessionId,
+    settings,
+    messagesBySession,
+    setActiveSession,
+    setMessages,
+    updateSettings,
+    setShowConfigModal,
+    isConfigured,
+    sidebarCollapsed,
+    toggleSidebar,
+  } = useAppStore();
   const { deleteSession, getSessionMessages, isElectron } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState<string | null>(null);
@@ -60,40 +74,98 @@ export function Sidebar() {
   };
 
   return (
-    <div className="w-64 bg-surface border-r border-border flex flex-col">
+    <div
+      className={`bg-surface border-r border-border flex flex-col overflow-hidden transition-all duration-200 ${
+        sidebarCollapsed ? 'w-16' : 'w-64'
+      }`}
+    >
       {/* Header with App Title and Dark Mode Toggle */}
-      <div className="px-4 pt-6 pb-4 border-b border-border flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-text-primary">Open Cowork</h1>
-        <button
-          onClick={toggleTheme}
-          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
-          title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {settings.theme === 'dark' ? (
-            <Sun className="w-4 h-4" />
-          ) : (
-            <Moon className="w-4 h-4" />
-          )}
-        </button>
+      <div
+        className={`border-b border-border ${
+          sidebarCollapsed
+            ? 'px-2 pt-3 pb-3 flex flex-col items-center gap-2'
+            : 'px-4 pt-6 pb-4 flex items-center justify-between'
+        }`}
+      >
+        {sidebarCollapsed ? (
+          <>
+            <button
+              onClick={toggleSidebar}
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+              title="Expand sidebar"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={toggleTheme}
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+              title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {settings.theme === 'dark' ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-accent" />
+              </div>
+              <h1 className="text-lg font-semibold text-text-primary whitespace-nowrap">Open Cowork</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleTheme}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+                title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {settings.theme === 'dark' ? (
+                  <Sun className="w-4 h-4" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={toggleSidebar}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* New Task Button */}
       <div className="p-3">
         <button
           onClick={handleNewSession}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors"
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors ${
+            sidebarCollapsed ? 'justify-center' : ''
+          }`}
+          title="New task"
         >
           <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-accent" />
           </div>
-          <span className="font-medium text-text-primary">New task</span>
+          {!sidebarCollapsed && (
+            <span className="font-medium text-text-primary">New task</span>
+          )}
         </button>
       </div>
       
       {/* Sessions List */}
-      <div className="flex-1 overflow-y-auto px-3">
+      <div className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
         <div className="space-y-1">
-          {sessions.length === 0 ? (
+          {sidebarCollapsed ? (
+            <div className="text-center py-6 text-text-muted text-xs">
+              <p>Expand to view tasks</p>
+            </div>
+          ) : sessions.length === 0 ? (
             <div className="text-center py-6 text-text-muted text-sm">
               <p>No tasks yet</p>
             </div>
@@ -137,23 +209,27 @@ export function Sidebar() {
         </div>
 
         {/* Info text */}
-        <p className="text-xs text-text-muted px-3 py-4">
-          These tasks run locally and aren't synced across devices.
-        </p>
+        {!sidebarCollapsed && (
+          <p className="text-xs text-text-muted px-3 py-4">
+            These tasks run locally and aren't synced across devices.
+          </p>
+        )}
       </div>
       
       {/* User Footer */}
       <div className="p-3 border-t border-border">
-        <div className="flex items-center gap-3 px-3 py-2">
+        <div className={`flex items-center px-3 py-2 ${sidebarCollapsed ? 'flex-col gap-2' : 'gap-3'}`}>
           <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white text-sm font-medium">
             U
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-text-primary truncate">User</p>
-            <p className="text-xs text-text-muted">
-              {isConfigured ? 'API 已配置' : '未配置 API'}
-            </p>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">User</p>
+              <p className="text-xs text-text-muted">
+                {isConfigured ? 'API 已配置' : '未配置 API'}
+              </p>
+            </div>
+          )}
           <button
             onClick={handleOpenSettings}
             className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"

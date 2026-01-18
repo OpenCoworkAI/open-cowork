@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join, resolve } from 'path';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
@@ -157,6 +157,14 @@ ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
 
 ipcMain.handle('get-version', () => {
   return app.getVersion();
+});
+
+ipcMain.handle('shell.openExternal', async (_event, url: string) => {
+  if (!url) {
+    return false;
+  }
+
+  return shell.openExternal(url);
 });
 
 // Config IPC handlers

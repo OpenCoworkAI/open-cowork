@@ -3,6 +3,8 @@ import { useAppStore } from '../store';
 import {
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   FolderOpen,
   Globe,
@@ -18,7 +20,7 @@ import {
 import type { TraceStep } from '../types';
 
 export function ContextPanel() {
-  const { activeSessionId, sessions, traceStepsBySession } = useAppStore();
+  const { activeSessionId, sessions, traceStepsBySession, contextPanelCollapsed, toggleContextPanel } = useAppStore();
   const [progressOpen, setProgressOpen] = useState(true);
   const [artifactsOpen, setArtifactsOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(true);
@@ -26,8 +28,31 @@ export function ContextPanel() {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const steps = activeSessionId ? traceStepsBySession[activeSessionId] || [] : [];
 
+  if (contextPanelCollapsed) {
+    return (
+      <div className="w-10 bg-surface border-l border-border flex items-start justify-center py-3">
+        <button
+          onClick={toggleContextPanel}
+          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+          title="Expand panel"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-80 bg-surface border-l border-border flex flex-col overflow-hidden">
+      <div className="px-3 py-2 border-b border-border flex items-center justify-end">
+        <button
+          onClick={toggleContextPanel}
+          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+          title="Collapse panel"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
       {/* Progress Section */}
       <div className="border-b border-border">
         <button

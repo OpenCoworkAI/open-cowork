@@ -16,6 +16,7 @@ interface AppState {
   // UI state
   isLoading: boolean;
   sidebarCollapsed: boolean;
+  contextPanelCollapsed: boolean;
   
   // Permission
   pendingPermission: PermissionRequest | null;
@@ -48,6 +49,7 @@ interface AppState {
   
   setLoading: (loading: boolean) => void;
   toggleSidebar: () => void;
+  toggleContextPanel: () => void;
   
   setPendingPermission: (permission: PermissionRequest | null) => void;
   setPendingQuestion: (question: UserQuestionRequest | null) => void;
@@ -85,6 +87,7 @@ export const useAppStore = create<AppState>((set) => ({
   traceStepsBySession: {},
   isLoading: false,
   sidebarCollapsed: false,
+  contextPanelCollapsed: false,
   pendingPermission: null,
   pendingQuestion: null,
   settings: defaultSettings,
@@ -168,6 +171,7 @@ export const useAppStore = create<AppState>((set) => ({
   // UI actions
   setLoading: (loading) => set({ isLoading: loading }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  toggleContextPanel: () => set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
   
   // Permission actions
   setPendingPermission: (permission) => set({ pendingPermission: permission }),
@@ -186,4 +190,3 @@ export const useAppStore = create<AppState>((set) => ({
   setIsConfigured: (configured) => set({ isConfigured: configured }),
   setShowConfigModal: (show) => set({ showConfigModal: show }),
 }));
-

@@ -44,3 +44,6 @@ coverage/
 # Claude
 .claude/*
 !.claude/skills/
+
+# Codex
+.codex/
