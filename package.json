@@ -16,6 +16,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.77",
     "@anthropic-ai/claude-code": "^2.1.7",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "better-sqlite3": "^11.6.0",
     "chokidar": "^4.0.1",
     "dotenv": "^17.2.3",

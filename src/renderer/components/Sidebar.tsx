@@ -1,19 +1,22 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { SettingsPanel } from './SettingsPanel';
 import {
   Trash2,
   Sparkles,
   Moon,
   Sun,
   Settings,
+  Trash,
 } from 'lucide-react';
 
 export function Sidebar() {
-  const { sessions, activeSessionId, settings, messagesBySession, setActiveSession, setMessages, updateSettings, setShowConfigModal, isConfigured } = useAppStore();
+  const { sessions, activeSessionId, settings, messagesBySession, setActiveSession, setMessages, updateSettings, isConfigured } = useAppStore();
   const { deleteSession, getSessionMessages, isElectron } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Handle session click - load messages if needed
   const handleSessionClick = useCallback(async (sessionId: string) => {
@@ -46,10 +49,6 @@ export function Sidebar() {
     updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
   };
 
-  const handleOpenSettings = () => {
-    setShowConfigModal(true);
-  };
-
   const handleNewSession = () => {
     setActiveSession(null);
   };
@@ -57,6 +56,20 @@ export function Sidebar() {
   const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     deleteSession(sessionId);
+  };
+
+  const handleDeleteAllSessions = () => {
+    if (sessions.length === 0) return;
+    
+    const confirmed = window.confirm(`确定要删除所有 ${sessions.length} 个对话吗？此操作无法撤销。`);
+    if (confirmed) {
+      // Delete all sessions
+      sessions.forEach(session => {
+        deleteSession(session.id);
+      });
+      // Clear active session
+      setActiveSession(null);
+    }
   };
 
   return (
@@ -92,6 +105,22 @@ export function Sidebar() {
       
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto px-3">
+        {/* Sessions Header */}
+        {sessions.length > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 mb-1">
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
+              对话历史 ({sessions.length})
+            </span>
+            <button
+              onClick={handleDeleteAllSessions}
+              className="w-6 h-6 rounded flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-error transition-colors"
+              title="删除所有对话"
+            >
+              <Trash className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        
         <div className="space-y-1">
           {sessions.length === 0 ? (
             <div className="text-center py-6 text-text-muted text-sm">
@@ -144,25 +173,33 @@ export function Sidebar() {
       
       {/* User Footer */}
       <div className="p-3 border-t border-border">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white text-sm font-medium">
+        <button
+          onClick={() => setShowSettings(true)}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-hover transition-colors group"
+        >
+          <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
             U
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-text-primary truncate">User</p>
-            <p className="text-xs text-text-muted">
-              {isConfigured ? 'API 已配置' : '未配置 API'}
-            </p>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-text-primary">User</span>
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isConfigured ? 'bg-success' : 'bg-amber-500'}`} 
+                    title={isConfigured ? 'API configured' : 'API not configured'} />
+            </div>
           </div>
-          <button
-            onClick={handleOpenSettings}
-            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
-            title="API 设置"
-          >
+          <div className="flex items-center gap-1.5 text-text-muted group-hover:text-text-primary transition-colors">
             <Settings className="w-4 h-4" />
-          </button>
-        </div>
+          </div>
+        </button>
       </div>
+      
+      {/* Settings Panel */}
+      {showSettings && (
+        <SettingsPanel
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }

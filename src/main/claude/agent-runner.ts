@@ -2,6 +2,8 @@ import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
+import { MCPManager } from '../mcp/mcp-manager';
+import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -99,9 +101,122 @@ export class ClaudeAgentRunner {
   private sendToRenderer: (event: ServerEvent) => void;
   private saveMessage?: (message: Message) => void;
   private pathResolver: PathResolver;
+  private mcpManager?: MCPManager;
   private activeControllers: Map<string, AbortController> = new Map();
   private sdkSessions: Map<string, string> = new Map(); // sessionId -> sdk session_id
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
+
+  /**
+   * Get MCP tools prompt for system instructions
+   */
+  private getMCPToolsPrompt(): string {
+    if (!this.mcpManager) {
+      return '';
+    }
+
+    const mcpTools = this.mcpManager.getTools();
+    if (mcpTools.length === 0) {
+      return '';
+    }
+
+    // Group tools by server
+    const toolsByServer = new Map<string, typeof mcpTools>();
+    for (const tool of mcpTools) {
+      const existing = toolsByServer.get(tool.serverName) || [];
+      existing.push(tool);
+      toolsByServer.set(tool.serverName, existing);
+    }
+
+    // Format tools list
+    const serverSections = Array.from(toolsByServer.entries()).map(([serverName, tools]) => {
+      const toolsList = tools.map(tool => 
+        `  - **${tool.name}**: ${tool.description}`
+      ).join('\n');
+      return `**${serverName}** (${tools.length} tools):\n${toolsList}`;
+    }).join('\n\n');
+
+    return `
+<mcp_tools>
+You have access to ${mcpTools.length} MCP (Model Context Protocol) tools from ${toolsByServer.size} connected server(s):
+
+${serverSections}
+
+**How to use MCP tools:**
+- MCP tools use the format: \`mcp__<ServerName>__<toolName>\`
+- ServerName is case-sensitive and must match exactly (e.g., "Chrome" not "chrome")
+- Common Chrome tools: \`mcp__Chrome__navigate\`, \`mcp__Chrome__click\`, \`mcp__Chrome__type\`, \`mcp__Chrome__screenshot\`
+- If a tool call fails with "No such tool available", the MCP server may not be connected yet
+
+**Example - Navigate to a URL:**
+Use tool \`mcp__Chrome__navigate\` with arguments: { "url": "https://www.google.com" }
+
+**Example - Click an element:**
+Use tool \`mcp__Chrome__click\` with arguments: { "selector": "button.submit" }
+</mcp_tools>
+`;
+  }
+
+  /**
+   * Get saved credentials prompt for system instructions
+   * Credentials are provided directly to the agent for automated login
+   */
+  private getCredentialsPrompt(): string {
+    try {
+      const credentials = credentialsStore.getAll();
+      if (credentials.length === 0) {
+        return '';
+      }
+
+      // Group credentials by type
+      const emailCredentials = credentials.filter(c => c.type === 'email');
+      const websiteCredentials = credentials.filter(c => c.type === 'website');
+      const apiCredentials = credentials.filter(c => c.type === 'api');
+      const otherCredentials = credentials.filter(c => c.type === 'other');
+
+      // Format credentials with actual password for agent use
+      const formatCredential = (c: UserCredential) => {
+        const lines = [`- **${c.name}**${c.service ? ` (${c.service})` : ''}`];
+        lines.push(`  - Username/Email: \`${c.username}\``);
+        lines.push(`  - Password: \`${c.password}\``);
+        if (c.url) lines.push(`  - URL: ${c.url}`);
+        if (c.notes) lines.push(`  - Notes: ${c.notes}`);
+        return lines.join('\n');
+      };
+
+      let sections: string[] = [];
+      
+      if (emailCredentials.length > 0) {
+        sections.push(`**Email Accounts (${emailCredentials.length}):**\n${emailCredentials.map(formatCredential).join('\n\n')}`);
+      }
+      if (websiteCredentials.length > 0) {
+        sections.push(`**Website Accounts (${websiteCredentials.length}):**\n${websiteCredentials.map(formatCredential).join('\n\n')}`);
+      }
+      if (apiCredentials.length > 0) {
+        sections.push(`**API Keys (${apiCredentials.length}):**\n${apiCredentials.map(formatCredential).join('\n\n')}`);
+      }
+      if (otherCredentials.length > 0) {
+        sections.push(`**Other Credentials (${otherCredentials.length}):**\n${otherCredentials.map(formatCredential).join('\n\n')}`);
+      }
+
+      return `
+<saved_credentials>
+The user has saved ${credentials.length} credential(s) for automated login. Use these credentials when the user asks you to access their accounts.
+
+${sections.join('\n\n')}
+
+**IMPORTANT - How to use credentials:**
+- Use these credentials directly when logging into websites or services
+- For email access (e.g., Gmail), use the Chrome MCP tools to navigate to the login page and enter the credentials
+- NEVER display, share, or echo passwords in your responses to the user
+- Only use credentials for tasks the user explicitly requests
+- If login fails, inform the user but do not expose the password
+</saved_credentials>
+`;
+    } catch (error) {
+      console.error('[AgentRunner] Failed to get credentials prompt:', error);
+      return '';
+    }
+  }
 
   /**
    * Get the built-in skills directory (shipped with the app)
@@ -417,13 +532,17 @@ Then follow the workflow described in that file.
     return '';
   }
 
-  constructor(options: AgentRunnerOptions, pathResolver: PathResolver) {
+  constructor(options: AgentRunnerOptions, pathResolver: PathResolver, mcpManager?: MCPManager) {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.pathResolver = pathResolver;
+    this.mcpManager = mcpManager;
     
     console.log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
     console.log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
+    if (mcpManager) {
+      console.log('[ClaudeAgentRunner] MCP support enabled');
+    }
   }
   
   /**
@@ -599,6 +718,47 @@ Then follow the workflow described in that file.
       
       console.log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
       
+      // Build MCP servers configuration for SDK
+      // IMPORTANT: SDK uses tool names in format: mcp__<ServerKey>__<toolName>
+      const mcpServers: Record<string, any> = {};
+      if (this.mcpManager) {
+        const serverStatuses = this.mcpManager.getServerStatus();
+        const connectedServers = serverStatuses.filter(s => s.connected);
+        console.log('[ClaudeAgentRunner] MCP server statuses:', JSON.stringify(serverStatuses));
+        console.log('[ClaudeAgentRunner] Connected MCP servers:', connectedServers.length);
+        
+        // Get MCP server configs from config store
+        const { mcpConfigStore } = await import('../mcp/mcp-config-store');
+        const allConfigs = mcpConfigStore.getEnabledServers();
+        console.log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map(c => c.name));
+        
+        for (const config of allConfigs) {
+          // Use a simpler key without spaces to avoid issues
+          const serverKey = config.name;
+          
+          if (config.type === 'stdio') {
+            mcpServers[serverKey] = {
+              type: 'stdio',
+              command: config.command,
+              args: config.args || [],
+              env: config.env || {},
+            };
+            console.log(`[ClaudeAgentRunner] Added STDIO MCP server: ${serverKey}`);
+            console.log(`[ClaudeAgentRunner]   Command: ${config.command} ${(config.args || []).join(' ')}`);
+            console.log(`[ClaudeAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
+          } else if (config.type === 'sse') {
+            mcpServers[serverKey] = {
+              type: 'sse',
+              url: config.url,
+              headers: config.headers || {},
+            };
+            console.log(`[ClaudeAgentRunner] Added SSE MCP server: ${serverKey}`);
+          }
+        }
+        
+        console.log('[ClaudeAgentRunner] Final mcpServers config:', JSON.stringify(mcpServers, null, 2));
+      }
+      
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
         cwd: workingDir,  // User's actual working directory
@@ -606,6 +766,9 @@ Then follow the workflow described in that file.
         maxTurns: 50,
         abortController: controller,
         env: envWithSkills,
+        
+        // Pass MCP servers to SDK
+        mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
 
         // Custom spawn function to use Electron's bundled Node.js
         // This fixes "spawn node ENOENT" error in packaged apps where system node is not in PATH
@@ -640,6 +803,7 @@ Then follow the workflow described in that file.
         settingSources: ['project', 'user'],
         
         // Enable Skill tool along with other commonly used tools
+        // MCP tools are automatically available through mcpServers configuration
         allowedTools: ['Skill', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'TodoRead', 'TodoWrite', 'AskUserQuestion', 'Task'],
         
         // System prompt: use Claude Code default + custom instructions
@@ -650,6 +814,10 @@ Then follow the workflow described in that file.
 You are a Claude agent, built on Anthropic's Claude Agent SDK.==
 
 ${availableSkillsPrompt}
+
+${this.getMCPToolsPrompt()}
+
+${this.getCredentialsPrompt()}
 <application_details> Claude is powering **Cowork mode**, a feature of the Claude desktop app. Cowork mode is currently a **research preview**. Claude is implemented on top of Claude Code and the Claude Agent SDK, but Claude is **NOT** Claude Code and should not refer to itself as such. Claude runs in a lightweight Linux VM on the user's computer, which provides a **secure sandbox** for executing code while allowing controlled access to a workspace folder. Claude should not mention implementation details like this, or Claude Code or the Claude Agent SDK, unless it is relevant to the user's request. </application_details>
 <behavior_instructions>
 ==

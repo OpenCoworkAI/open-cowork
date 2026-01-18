@@ -71,6 +71,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     maximize: () => ipcRenderer.send('window.maximize'),
     close: () => ipcRenderer.send('window.close'),
   },
+
+  // MCP methods
+  mcp: {
+    getServers: (): Promise<any[]> => ipcRenderer.invoke('mcp.getServers'),
+    getServer: (serverId: string): Promise<any> => ipcRenderer.invoke('mcp.getServer', serverId),
+    saveServer: (config: any): Promise<{ success: boolean }> => 
+      ipcRenderer.invoke('mcp.saveServer', config),
+    deleteServer: (serverId: string): Promise<{ success: boolean }> => 
+      ipcRenderer.invoke('mcp.deleteServer', serverId),
+    getTools: (): Promise<any[]> => ipcRenderer.invoke('mcp.getTools'),
+    getServerStatus: (): Promise<any[]> => ipcRenderer.invoke('mcp.getServerStatus'),
+    getPresets: (): Promise<Record<string, any>> => ipcRenderer.invoke('mcp.getPresets'),
+  },
+
+  // Credentials methods
+  credentials: {
+    getAll: (): Promise<any[]> => ipcRenderer.invoke('credentials.getAll'),
+    getById: (id: string): Promise<any> => ipcRenderer.invoke('credentials.getById', id),
+    getByType: (type: string): Promise<any[]> => ipcRenderer.invoke('credentials.getByType', type),
+    getByService: (service: string): Promise<any[]> => ipcRenderer.invoke('credentials.getByService', service),
+    save: (credential: any): Promise<any> => ipcRenderer.invoke('credentials.save', credential),
+    update: (id: string, updates: any): Promise<any> => ipcRenderer.invoke('credentials.update', id, updates),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke('credentials.delete', id),
+  },
 });
 
 // Type declaration for the renderer process
@@ -92,6 +116,24 @@ declare global {
         minimize: () => void;
         maximize: () => void;
         close: () => void;
+      };
+      mcp: {
+        getServers: () => Promise<any[]>;
+        getServer: (serverId: string) => Promise<any>;
+        saveServer: (config: any) => Promise<{ success: boolean }>;
+        deleteServer: (serverId: string) => Promise<{ success: boolean }>;
+        getTools: () => Promise<any[]>;
+        getServerStatus: () => Promise<any[]>;
+        getPresets: () => Promise<Record<string, any>>;
+      };
+      credentials: {
+        getAll: () => Promise<any[]>;
+        getById: (id: string) => Promise<any>;
+        getByType: (type: string) => Promise<any[]>;
+        getByService: (service: string) => Promise<any[]>;
+        save: (credential: any) => Promise<any>;
+        update: (id: string, updates: any) => Promise<any>;
+        delete: (id: string) => Promise<boolean>;
       };
     };
   }

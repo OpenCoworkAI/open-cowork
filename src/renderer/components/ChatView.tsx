@@ -7,13 +7,15 @@ import {
   Square,
   Plus,
   Loader2,
+  Plug,
 } from 'lucide-react';
 
 export function ChatView() {
   const { activeSessionId, sessions, messagesBySession, partialMessage, isLoading, appConfig } = useAppStore();
-  const { continueSession, stopSession } = useIPC();
+  const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeConnectors, setActiveConnectors] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -28,6 +30,25 @@ export function ChatView() {
   useEffect(() => {
     textareaRef.current?.focus();
   }, [activeSessionId]);
+
+  // Load active MCP connectors
+  useEffect(() => {
+    if (isElectron && typeof window !== 'undefined' && window.electronAPI) {
+      const loadConnectors = async () => {
+        try {
+          const statuses = await window.electronAPI.mcp.getServerStatus();
+          const active = statuses?.filter((s: any) => s.connected && s.toolCount > 0) || [];
+          setActiveConnectors(active);
+        } catch (err) {
+          console.error('Failed to load MCP connectors:', err);
+        }
+      };
+      loadConnectors();
+      // Refresh every 5 seconds
+      const interval = setInterval(loadConnectors, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isElectron]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -60,10 +81,18 @@ export function ChatView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="h-14 border-b border-border flex items-center justify-center px-6 bg-surface/80 backdrop-blur-sm">
-        <h2 className="font-medium text-text-primary text-center truncate max-w-lg">
+      <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-surface/80 backdrop-blur-sm">
+        <h2 className="font-medium text-text-primary text-center truncate max-w-lg flex-1">
           {activeSession.title}
         </h2>
+        {activeConnectors.length > 0 && (
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20">
+            <Plug className="w-3.5 h-3.5 text-purple-500" />
+            <span className="text-xs text-purple-500 font-medium">
+              {activeConnectors.length} connector{activeConnectors.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Messages */}

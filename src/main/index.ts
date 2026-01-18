@@ -4,6 +4,9 @@ import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
+import { mcpConfigStore } from './mcp/mcp-config-store';
+import { credentialsStore, type UserCredential } from './credentials/credentials-store';
+import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
 
 // Load .env file from project root (for development)
@@ -194,6 +197,152 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
 
 ipcMain.handle('config.isConfigured', () => {
   return configStore.isConfigured();
+});
+
+// MCP Server IPC handlers
+ipcMain.handle('mcp.getServers', () => {
+  try {
+    return mcpConfigStore.getServers();
+  } catch (error) {
+    console.error('[MCP] Error getting servers:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('mcp.getServer', (_event, serverId: string) => {
+  try {
+    return mcpConfigStore.getServer(serverId);
+  } catch (error) {
+    console.error('[MCP] Error getting server:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
+  mcpConfigStore.saveServer(config);
+  // Re-initialize MCP servers if session manager exists
+  if (sessionManager) {
+    const mcpManager = sessionManager.getMCPManager();
+    const servers = mcpConfigStore.getEnabledServers();
+    try {
+      await mcpManager.initializeServers(servers);
+    } catch (err) {
+      console.error('[MCP] Failed to reinitialize servers:', err);
+    }
+  }
+  return { success: true };
+});
+
+ipcMain.handle('mcp.deleteServer', (_event, serverId: string) => {
+  mcpConfigStore.deleteServer(serverId);
+  // Disconnect from the server if session manager exists
+  if (sessionManager) {
+    const mcpManager = sessionManager.getMCPManager();
+    mcpManager.disconnectServer(serverId).catch(err => {
+      console.error('[MCP] Failed to disconnect server:', err);
+    });
+  }
+  return { success: true };
+});
+
+ipcMain.handle('mcp.getTools', () => {
+  try {
+    if (!sessionManager) {
+      return [];
+    }
+    const mcpManager = sessionManager.getMCPManager();
+    return mcpManager.getTools();
+  } catch (error) {
+    console.error('[MCP] Error getting tools:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('mcp.getServerStatus', () => {
+  try {
+    if (!sessionManager) {
+      return [];
+    }
+    const mcpManager = sessionManager.getMCPManager();
+    return mcpManager.getServerStatus();
+  } catch (error) {
+    console.error('[MCP] Error getting server status:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('mcp.getPresets', () => {
+  try {
+    return mcpConfigStore.getPresets();
+  } catch (error) {
+    console.error('[MCP] Error getting presets:', error);
+    return {};
+  }
+});
+
+// Credentials IPC handlers
+ipcMain.handle('credentials.getAll', () => {
+  try {
+    // Return credentials without passwords for UI display
+    return credentialsStore.getAllSafe();
+  } catch (error) {
+    console.error('[Credentials] Error getting credentials:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('credentials.getById', (_event, id: string) => {
+  try {
+    return credentialsStore.getById(id);
+  } catch (error) {
+    console.error('[Credentials] Error getting credential:', error);
+    return undefined;
+  }
+});
+
+ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) => {
+  try {
+    return credentialsStore.getByType(type);
+  } catch (error) {
+    console.error('[Credentials] Error getting credentials by type:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('credentials.getByService', (_event, service: string) => {
+  try {
+    return credentialsStore.getByService(service);
+  } catch (error) {
+    console.error('[Credentials] Error getting credentials by service:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('credentials.save', (_event, credential: Omit<UserCredential, 'id' | 'createdAt' | 'updatedAt'>) => {
+  try {
+    return credentialsStore.save(credential);
+  } catch (error) {
+    console.error('[Credentials] Error saving credential:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('credentials.update', (_event, id: string, updates: Partial<Omit<UserCredential, 'id' | 'createdAt' | 'updatedAt'>>) => {
+  try {
+    return credentialsStore.update(id, updates);
+  } catch (error) {
+    console.error('[Credentials] Error updating credential:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('credentials.delete', (_event, id: string) => {
+  try {
+    return credentialsStore.delete(id);
+  } catch (error) {
+    console.error('[Credentials] Error deleting credential:', error);
+    return false;
+  }
 });
 
 // Window control IPC handlers
