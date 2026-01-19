@@ -27,7 +27,9 @@ export function ChatView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeConnectors, setActiveConnectors] = useState<any[]>([]);
   const [showConnectorLabel, setShowConnectorLabel] = useState(true);
+  const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const connectorMeasureRef = useRef<HTMLDivElement>(null);
   const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -355,18 +357,31 @@ export function ChatView() {
 
   useEffect(() => {
     const titleEl = titleRef.current;
-    if (!titleEl) return;
+    const headerEl = headerRef.current;
+    const measureEl = connectorMeasureRef.current;
+    if (!titleEl || !headerEl || !measureEl) {
+      setShowConnectorLabel(true);
+      return;
+    }
     const updateLabelVisibility = () => {
       const isTruncated = titleEl.scrollWidth > titleEl.clientWidth;
-      setShowConnectorLabel(!isTruncated);
+      const headerStyle = window.getComputedStyle(headerEl);
+      const paddingLeft = Number.parseFloat(headerStyle.paddingLeft) || 0;
+      const paddingRight = Number.parseFloat(headerStyle.paddingRight) || 0;
+      const contentWidth = headerEl.clientWidth - paddingLeft - paddingRight;
+      const titleWidth = titleEl.getBoundingClientRect().width;
+      const rightColumnWidth = Math.max(0, (contentWidth - titleWidth) / 2);
+      const connectorFullWidth = measureEl.getBoundingClientRect().width;
+      setShowConnectorLabel(!isTruncated && rightColumnWidth >= connectorFullWidth);
     };
     updateLabelVisibility();
     const observer = new ResizeObserver(() => {
       updateLabelVisibility();
     });
     observer.observe(titleEl);
+    observer.observe(headerEl);
     return () => observer.disconnect();
-  }, [activeSession?.title]);
+  }, [activeSession?.title, activeConnectors.length]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -445,23 +460,40 @@ export function ChatView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="h-14 border-b border-border grid grid-cols-[1fr_auto_1fr] items-center px-6 bg-surface/80 backdrop-blur-sm">
+      <div
+        ref={headerRef}
+        className="relative h-14 border-b border-border grid grid-cols-[1fr_auto_1fr] items-center px-6 bg-surface/80 backdrop-blur-sm"
+      >
         <div />
         <h2 ref={titleRef} className="font-medium text-text-primary text-center truncate max-w-lg">
           {activeSession.title}
         </h2>
         {activeConnectors.length > 0 && (
-          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 justify-self-end">
-            <Plug className="w-3.5 h-3.5 text-purple-500" />
-            <span className="text-xs text-purple-500 font-medium">
-              {activeConnectors.length}
-              {showConnectorLabel && (
-                <span>
-                  {' '}connector{activeConnectors.length !== 1 ? 's' : ''}
+          <>
+            <div
+              ref={connectorMeasureRef}
+              aria-hidden="true"
+              className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
+            >
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-purple-500/20">
+                <Plug className="w-3.5 h-3.5" />
+                <span className="text-xs font-medium whitespace-nowrap">
+                  {activeConnectors.length} connector{activeConnectors.length !== 1 ? 's' : ''}
                 </span>
-              )}
-            </span>
-          </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 justify-self-end">
+              <Plug className="w-3.5 h-3.5 text-purple-500" />
+              <span className="text-xs text-purple-500 font-medium">
+                {activeConnectors.length}
+                {showConnectorLabel && (
+                  <span>
+                    {' '}connector{activeConnectors.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </span>
+            </div>
+          </>
         )}
       </div>
 
