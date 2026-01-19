@@ -245,20 +245,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
 }
 
 function ToolUseBlock({ block }: { block: ToolUseContent }) {
-  const { activeSessionId, messagesBySession } = useAppStore();
   const [expanded, setExpanded] = useState(false);
-  const toolResult = useMemo(() => {
-    const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
-    let latestResult: ToolResultContent | null = null;
-    for (const message of messages) {
-      for (const content of message.content) {
-        if (content.type === 'tool_result' && content.toolUseId === block.id) {
-          latestResult = content;
-        }
-      }
-    }
-    return latestResult;
-  }, [activeSessionId, messagesBySession, block.id]);
 
   // Check if this is AskUserQuestion - render inline question UI
   if (block.name === 'AskUserQuestion') {
@@ -354,16 +341,6 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
               {JSON.stringify(block.input, null, 2)}
             </pre>
           </div>
-          {toolResult && (
-            <div>
-              <p className={`text-xs font-medium mb-2 ${toolResult.isError ? 'text-error' : 'text-text-muted'}`}>
-                Result
-              </p>
-              <pre className="code-block text-xs whitespace-pre-wrap">
-                {toolResult.content}
-              </pre>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -639,26 +616,8 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
 }
 
 function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultContent; allBlocks?: ContentBlock[]; message?: Message }) {
-  const { activeSessionId, messagesBySession, traceStepsBySession } = useAppStore();
+  const { traceStepsBySession } = useAppStore();
   const [expanded, setExpanded] = useState(false);
-  const hasToolUse = useMemo(() => {
-    if (allBlocks?.some((content) => content.type === 'tool_use' && (content as ToolUseContent).id === block.toolUseId)) {
-      return true;
-    }
-    const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
-    for (const messageItem of messages) {
-      for (const content of messageItem.content) {
-        if (content.type === 'tool_use' && content.id === block.toolUseId) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [activeSessionId, messagesBySession, allBlocks, block.toolUseId]);
-
-  if (hasToolUse) {
-    return null;
-  }
 
   // Try to find the tool name from trace steps
   let toolName: string | undefined;
