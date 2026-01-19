@@ -28,6 +28,8 @@ export function ChatView() {
   const [showConnectorLabel, setShowConnectorLabel] = useState(true);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isUserAtBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevMessageCountRef = useRef(0);
   const prevPartialLengthRef = useRef(0);
@@ -69,16 +71,32 @@ export function ChatView() {
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
 
   useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const updateScrollState = () => {
+      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserAtBottomRef.current = distanceToBottom <= 80;
+    };
+    updateScrollState();
+    // 用户阅读旧消息时，阻止新消息自动滚动打断视线
+    const onScroll = () => updateScrollState();
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
     const messageCount = messages.length;
     const partialLength = partialMessage.length;
     const hasNewMessage = messageCount !== prevMessageCountRef.current;
     const isStreamingTick = partialLength !== prevPartialLengthRef.current && !hasNewMessage;
     const behavior: ScrollBehavior = hasNewMessage ? 'smooth' : 'auto';
 
-    if (!isStreamingTick) {
-      messagesEndRef.current?.scrollIntoView({ behavior });
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    if (isUserAtBottomRef.current) {
+      if (!isStreamingTick) {
+        messagesEndRef.current?.scrollIntoView({ behavior });
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }
     }
 
     prevMessageCountRef.current = messageCount;
@@ -181,7 +199,7 @@ export function ChatView() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto py-6 px-4 space-y-4">
           {displayedMessages.length === 0 ? (
             <div className="text-center py-12 text-text-muted">
