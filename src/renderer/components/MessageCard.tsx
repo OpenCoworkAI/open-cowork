@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
+import { MESSAGE_CARD, CODE_BLOCK } from '../constants/ui';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem } from '../types';
 import {
   ChevronDown,
@@ -477,7 +478,27 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
 }
 
 function ToolResultBlock({ block }: { block: ToolResultContent }) {
-  const [expanded, setExpanded] = useState(true);
+  // 智能判断初始展开状态：如果内容过长，默认收起
+  const contentLength = block.content?.length || 0;
+  const lineCount = block.content?.split('\n').length || 0;
+  const isLongContent = 
+    contentLength > MESSAGE_CARD.TOOL_RESULT_COLLAPSE_CHARS || 
+    lineCount > MESSAGE_CARD.TOOL_RESULT_COLLAPSE_LINES;
+  
+  const [expanded, setExpanded] = useState(!isLongContent);
+
+  // 生成预览文本
+  const getPreviewText = () => {
+    if (!block.content) return '';
+    const lines = block.content.split('\n');
+    const preview = lines.slice(0, MESSAGE_CARD.TOOL_RESULT_PREVIEW_LINES).join('\n');
+    if (lines.length > MESSAGE_CARD.TOOL_RESULT_PREVIEW_LINES) {
+      return preview + '\n...';
+    }
+    return preview.length > MESSAGE_CARD.TOOL_RESULT_PREVIEW_CHARS 
+      ? preview.slice(0, MESSAGE_CARD.TOOL_RESULT_PREVIEW_CHARS) + '...' 
+      : preview;
+  };
 
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-surface">
@@ -492,9 +513,16 @@ function ToolResultBlock({ block }: { block: ToolResultContent }) {
         ) : (
           <CheckCircle2 className="w-5 h-5 text-success" />
         )}
-        <span className={`font-medium text-sm ${block.isError ? 'text-error' : 'text-success'}`}>
-          {block.isError ? 'Error' : 'Result'}
-        </span>
+        <div className="flex-1 flex items-center gap-2">
+          <span className={`font-medium text-sm ${block.isError ? 'text-error' : 'text-success'}`}>
+            {block.isError ? 'Error' : 'Result'}
+          </span>
+          {isLongContent && (
+            <span className="text-xs text-text-muted">
+              ({contentLength} 字符, {lineCount} 行)
+            </span>
+          )}
+        </div>
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-text-muted ml-auto" />
         ) : (
@@ -502,13 +530,29 @@ function ToolResultBlock({ block }: { block: ToolResultContent }) {
         )}
       </button>
 
-      {expanded && (
+      {expanded ? (
         <div className="p-4 bg-surface">
           <pre className="code-block text-xs whitespace-pre-wrap font-mono">
             {block.content}
           </pre>
         </div>
-      )}
+      ) : isLongContent ? (
+        // 收起状态显示预览
+        <div className="p-4 bg-surface border-t border-border-subtle">
+          <pre className="code-block text-xs whitespace-pre-wrap font-mono text-text-muted">
+            {getPreviewText()}
+          </pre>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}
+            className="mt-2 text-xs text-accent hover:text-accent-hover transition-colors"
+          >
+            点击展开查看全部内容
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -519,7 +563,7 @@ function CodeBlock({ language, children }: { language: string; children: string 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(children);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), CODE_BLOCK.COPY_SUCCESS_DURATION);
   };
 
   return (
