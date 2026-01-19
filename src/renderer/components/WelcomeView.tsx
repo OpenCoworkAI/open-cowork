@@ -6,10 +6,10 @@ import {
   BarChart3,
   FolderOpen,
   ArrowRight,
-  Plus,
   Mail,
   Chrome,
   X,
+  Paperclip,
 } from 'lucide-react';
 
 export function WelcomeView() {
@@ -18,9 +18,10 @@ export function WelcomeView() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { startSession, selectFolder } = useIPC();
+  const { startSession, selectFolder, isElectron } = useIPC();
 
   const handleSelectFolder = async () => {
     const folder = await selectFolder();
@@ -158,6 +159,40 @@ export function WelcomeView() {
     });
   };
 
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
+  };
+
+  const handleFileSelect = async () => {
+    if (!isElectron || !window.electronAPI) {
+      console.log('[WelcomeView] Not in Electron, file selection not available');
+      return;
+    }
+
+    try {
+      const filePaths = await window.electronAPI.selectFiles();
+      if (filePaths.length === 0) return;
+
+      const newFiles = filePaths.map((filePath) => {
+        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+        return {
+          name: fileName,
+          path: filePath,
+          size: 0,
+          type: 'application/octet-stream',
+        };
+      });
+
+      setAttachedFiles(prev => [...prev, ...newFiles]);
+    } catch (error) {
+      console.error('[WelcomeView] Error selecting files:', error);
+    }
+  };
+
   // Handle drag and drop for images
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -208,7 +243,7 @@ export function WelcomeView() {
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
 
-    if ((!currentPrompt.trim() && pastedImages.length === 0) || isSubmitting) return;
+    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting) return;
 
     // Build content blocks
     const contentBlocks: ContentBlock[] = [];
@@ -222,6 +257,17 @@ export function WelcomeView() {
           media_type: img.mediaType as any,
           data: img.base64,
         },
+      });
+    });
+
+    // Add file attachments
+    attachedFiles.forEach(file => {
+      contentBlocks.push({
+        type: 'file_attachment',
+        filename: file.name,
+        relativePath: file.path,
+        size: file.size,
+        mimeType: file.type,
       });
     });
 
@@ -252,6 +298,7 @@ export function WelcomeView() {
         }
         pastedImages.forEach(img => URL.revokeObjectURL(img.url));
         setPastedImages([]);
+        setAttachedFiles([]);
       } finally {
         setIsSubmitting(false);
       }
@@ -268,6 +315,7 @@ export function WelcomeView() {
       }
       pastedImages.forEach(img => URL.revokeObjectURL(img.url));
       setPastedImages([]);
+      setAttachedFiles([]);
     } finally {
       setIsSubmitting(false);
     }
@@ -375,6 +423,29 @@ export function WelcomeView() {
             </div>
           )}
 
+          {/* File attachments */}
+          {attachedFiles.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {attachedFiles.map((file, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary truncate">{file.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    className="w-6 h-6 rounded-full bg-error/10 hover:bg-error/20 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Text Input - Auto-resizing */}
           <textarea
             ref={textareaRef}
@@ -399,19 +470,31 @@ export function WelcomeView() {
 
           {/* Bottom Actions */}
           <div className="flex items-center justify-between pt-2 border-t border-border">
-            <button
-              type="button"
-              onClick={handleSelectFolder}
-              className={`flex items-center gap-2 text-sm transition-colors ${
-                cwd
-                  ? 'text-text-secondary hover:text-text-primary'
-                  : 'text-accent hover:text-accent-hover'
-              }`}
-            >
-              <FolderOpen className="w-4 h-4" />
-              <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select Working Folder (required)'}</span>
-              <Plus className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSelectFolder}
+                className={`flex items-center gap-2 text-sm transition-colors ${
+                  cwd
+                    ? 'text-text-secondary hover:text-text-primary'
+                    : 'text-accent hover:text-accent-hover'
+                }`}
+              >
+                <FolderOpen className="w-4 h-4" />
+                <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select Working Folder (required)'}</span>
+              </button>
+
+              {isElectron && (
+                <button
+                  type="button"
+                  onClick={handleFileSelect}
+                  className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <Paperclip className="w-4 h-4" />
+                  <span>Attach Files</span>
+                </button>
+              )}
+            </div>
 
             <button
               type="submit"

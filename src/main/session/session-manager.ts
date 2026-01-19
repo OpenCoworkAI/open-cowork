@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep } from '../../renderer/types';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
@@ -207,6 +209,61 @@ export class SessionManager {
     this.enqueuePrompt(session, prompt, content);
   }
 
+  // Helper: Copy files to session's .tmp directory
+  private async processFileAttachments(session: Session, content: ContentBlock[]): Promise<ContentBlock[]> {
+    const processedContent: ContentBlock[] = [];
+
+    for (const block of content) {
+      if (block.type === 'file_attachment') {
+        const fileBlock = block as FileAttachmentContent;
+
+        try {
+          // Create .tmp directory if it doesn't exist
+          const tmpDir = path.join(session.cwd || process.cwd(), '.tmp');
+          if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            log('[SessionManager] Created .tmp directory:', tmpDir);
+          }
+
+          // Get source file path from the file attachment
+          const sourcePath = fileBlock.relativePath; // This is the full path from Electron
+          const destFilename = fileBlock.filename;
+          const destPath = path.join(tmpDir, destFilename);
+
+          // Copy file to .tmp directory
+          if (fs.existsSync(sourcePath)) {
+            fs.copyFileSync(sourcePath, destPath);
+
+            // Get actual file size
+            const stats = fs.statSync(destPath);
+            const actualSize = stats.size;
+
+            log('[SessionManager] Copied file:', sourcePath, '->', destPath, `(${actualSize} bytes)`);
+
+            // Update the content block with the new relative path and actual size
+            const relativePathFromCwd = path.join('.tmp', destFilename);
+            processedContent.push({
+              ...fileBlock,
+              relativePath: relativePathFromCwd,
+              size: actualSize,
+            });
+          } else {
+            logError('[SessionManager] Source file not found:', sourcePath);
+            // Skip this file attachment
+          }
+        } catch (error) {
+          logError('[SessionManager] Error copying file:', error);
+          // Skip this file attachment
+        }
+      } else {
+        // Keep other content blocks as-is
+        processedContent.push(block);
+      }
+    }
+
+    return processedContent;
+  }
+
   // Process a prompt using ClaudeAgentRunner
   private async processPrompt(session: Session, prompt: string, content?: ContentBlock[]): Promise<void> {
     log('[SessionManager] Processing prompt for session:', session.id);
@@ -214,18 +271,32 @@ export class SessionManager {
 
     try {
       // Use provided content blocks or fall back to simple text
-      const messageContent: ContentBlock[] = content && content.length > 0
+      let messageContent: ContentBlock[] = content && content.length > 0
         ? content
         : [{ type: 'text', text: prompt } as TextContent];
 
+      // Process file attachments - copy to .tmp directory
+      messageContent = await this.processFileAttachments(session, messageContent);
+
       log('[SessionManager] Final message content types:', messageContent.map((c: any) => c.type));
+
+      // Build enhanced prompt with file information
+      let enhancedPrompt = prompt;
+      const fileAttachments = messageContent.filter(c => c.type === 'file_attachment') as FileAttachmentContent[];
+      if (fileAttachments.length > 0) {
+        const fileInfo = fileAttachments.map(f =>
+          `- ${f.filename} (${(f.size / 1024).toFixed(1)} KB) at path: ${f.relativePath}`
+        ).join('\n');
+        enhancedPrompt = `${prompt}\n\n[Attached files - use Read tool to access them]:\n${fileInfo}`;
+        log('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
+      }
 
       // Save user message to database for persistence
       const userMessage: Message = {
         id: uuidv4(),
         sessionId: session.id,
         role: 'user',
-        content: messageContent, // Save full content including images
+        content: messageContent, // Save full content including images and files
         timestamp: Date.now(),
       };
       this.saveMessage(userMessage);
@@ -235,7 +306,8 @@ export class SessionManager {
       const existingMessages = this.getMessages(session.id);
 
       // Run the agent - this handles everything including sending messages
-      await this.agentRunner.run(session, prompt, existingMessages);
+      // Use enhanced prompt that includes file information
+      await this.agentRunner.run(session, enhancedPrompt, existingMessages);
     } catch (error) {
       logError('[SessionManager] Error processing prompt:', error);
       this.sendToRenderer({

@@ -27,6 +27,7 @@ export function ChatView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeConnectors, setActiveConnectors] = useState<any[]>([]);
   const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -219,6 +220,41 @@ export function ChatView() {
     });
   };
 
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
+  };
+
+  const handleFileSelect = async () => {
+    if (!isElectron || !window.electronAPI) {
+      console.log('[ChatView] Not in Electron, file selection not available');
+      return;
+    }
+
+    try {
+      const filePaths = await window.electronAPI.selectFiles();
+      if (filePaths.length === 0) return;
+
+      // Get file info for each selected file
+      const newFiles = filePaths.map((filePath) => {
+        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+        return {
+          name: fileName,
+          path: filePath,
+          size: 0, // Will be set by backend when copying
+          type: 'application/octet-stream',
+        };
+      });
+
+      setAttachedFiles(prev => [...prev, ...newFiles]);
+    } catch (error) {
+      console.error('[ChatView] Error selecting files:', error);
+    }
+  };
+
   // Handle drag and drop for images
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -239,28 +275,42 @@ export function ChatView() {
 
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
 
-    if (imageFiles.length === 0) return;
+    // Process images
+    if (imageFiles.length > 0) {
+      const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
 
-    const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
-
-    for (const file of imageFiles) {
-      try {
-        // Resize if needed to stay under API limit
-        const resizedBlob = await resizeImageIfNeeded(file);
-        const base64 = await blobToBase64(resizedBlob);
-        const url = URL.createObjectURL(resizedBlob);
-        newImages.push({
-          url,
-          base64,
-          mediaType: resizedBlob.type,
-        });
-      } catch (err) {
-        console.error('Failed to process dropped image:', err);
+      for (const file of imageFiles) {
+        try {
+          // Resize if needed to stay under API limit
+          const resizedBlob = await resizeImageIfNeeded(file);
+          const base64 = await blobToBase64(resizedBlob);
+          const url = URL.createObjectURL(resizedBlob);
+          newImages.push({
+            url,
+            base64,
+            mediaType: resizedBlob.type,
+          });
+        } catch (err) {
+          console.error('Failed to process dropped image:', err);
+        }
       }
+
+      setPastedImages(prev => [...prev, ...newImages]);
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    // Process other files
+    if (otherFiles.length > 0) {
+      const newFiles = otherFiles.map(file => ({
+        name: file.name,
+        path: file.path || '', // Electron provides path property
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+      }));
+
+      setAttachedFiles(prev => [...prev, ...newFiles]);
+    }
   };
 
   // Load active MCP connectors
@@ -288,7 +338,7 @@ export function ChatView() {
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
 
-    if ((!currentPrompt.trim() && pastedImages.length === 0) || !activeSessionId || isSubmitting) return;
+    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || !activeSessionId || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
@@ -304,6 +354,17 @@ export function ChatView() {
             media_type: img.mediaType as any,
             data: img.base64,
           },
+        });
+      });
+
+      // Add file attachments
+      attachedFiles.forEach(file => {
+        contentBlocks.push({
+          type: 'file_attachment',
+          filename: file.name,
+          relativePath: file.path, // Will be processed by backend to copy to .tmp
+          size: file.size,
+          mimeType: file.type,
         });
       });
 
@@ -325,6 +386,7 @@ export function ChatView() {
       }
       pastedImages.forEach(img => URL.revokeObjectURL(img.url));
       setPastedImages([]);
+      setAttachedFiles([]);
     } finally {
       setIsSubmitting(false);
     }
@@ -426,6 +488,29 @@ export function ChatView() {
               </div>
             )}
 
+            {/* File attachments */}
+            {attachedFiles.length > 0 && (
+              <div className="space-y-2 mb-3">
+                {attachedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-text-primary truncate">{file.name}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="w-6 h-6 rounded-full bg-error/10 hover:bg-error/20 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div
               className={`flex items-end gap-2 p-3 rounded-3xl bg-surface transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
@@ -434,7 +519,9 @@ export function ChatView() {
             >
               <button
                 type="button"
+                onClick={handleFileSelect}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                title="Attach files"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -474,7 +561,7 @@ export function ChatView() {
                 )}
                 <button
                   type="submit"
-                  disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0) || isSubmitting}
+                  disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
                   className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
                 >
                   <Send className="w-4 h-4" />

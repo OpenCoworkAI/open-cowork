@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
-import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem } from '../types';
+import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
   ChevronRight,
@@ -23,6 +23,7 @@ import {
   CheckSquare,
   Clock,
   Plug,
+  FileText,
 } from 'lucide-react';
 
 interface MessageCardProps {
@@ -239,6 +240,19 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
             className="w-full max-w-full rounded-lg border border-border"
             style={{ maxHeight: '600px', objectFit: 'contain' }}
           />
+        </div>
+      );
+    }
+
+    case 'file_attachment': {
+      const fileBlock = block as FileAttachmentContent;
+
+      return (
+        <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border">
+          <FileText className="w-4 h-4 text-accent flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-text-primary truncate">{fileBlock.filename}</p>
+          </div>
         </div>
       );
     }

@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open links in default browser
   openExternal: (url: string) => ipcRenderer.invoke('shell.openExternal', url),
 
+  // Select files using native dialog
+  selectFiles: (): Promise<string[]> => ipcRenderer.invoke('dialog.selectFiles'),
+
   // Config methods
   config: {
     get: (): Promise<AppConfig> => ipcRenderer.invoke('config.get'),
@@ -110,6 +113,7 @@ declare global {
       platform: NodeJS.Platform;
       getVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;
+      selectFiles: () => Promise<string[]>;
       config: {
         get: () => Promise<AppConfig>;
         getPresets: () => Promise<ProviderPresets>;
