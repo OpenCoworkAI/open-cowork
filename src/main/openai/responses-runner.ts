@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import type { Message, PermissionResult, ServerEvent, Session, TraceStep } from '../../renderer/types';
@@ -1088,17 +1089,17 @@ export class OpenAIResponsesRunner {
             const multiSelect = typeof record.multiSelect === 'boolean' ? record.multiSelect : false;
             const rawOptions = Array.isArray(record.options) ? record.options : [];
             const options = rawOptions
-              .map((option) => {
+              .map((option): QuestionOption | null => {
                 if (!option || typeof option !== 'object' || Array.isArray(option)) {
                   return null;
                 }
                 const optRecord = option as Record<string, unknown>;
                 const label = typeof optRecord.label === 'string' ? optRecord.label.trim() : '';
                 if (!label) return null;
-                const description = typeof optRecord.description === 'string' ? optRecord.description : '';
+                const description = typeof optRecord.description === 'string' ? optRecord.description : undefined;
                 return { label, description };
               })
-              .filter((option): option is QuestionOption => Boolean(option));
+              .filter((option): option is QuestionOption => option !== null);
             return { question, header, options, multiSelect } as QuestionItem;
           })
           .filter((item): item is QuestionItem => Boolean(item));
@@ -1116,7 +1117,7 @@ export class OpenAIResponsesRunner {
           throw new Error('todos is required and must be an array');
         }
         const todos = rawTodos
-          .map((item) => {
+          .map((item): TodoItem | null => {
             if (!item || typeof item !== 'object' || Array.isArray(item)) {
               return null;
             }
@@ -1127,11 +1128,11 @@ export class OpenAIResponsesRunner {
             const status: TodoItem['status'] = ['pending', 'in_progress', 'completed', 'cancelled'].includes(statusRaw)
               ? (statusRaw as TodoItem['status'])
               : 'pending';
-            const id = typeof record.id === 'string' ? record.id : '';
-            const activeForm = typeof record.activeForm === 'string' ? record.activeForm : '';
+            const id = typeof record.id === 'string' ? record.id : undefined;
+            const activeForm = typeof record.activeForm === 'string' ? record.activeForm : undefined;
             return { content, status, id, activeForm };
           })
-          .filter((item): item is TodoItem => Boolean(item));
+          .filter((item): item is TodoItem => item !== null);
         this.todoBySession.set(session.id, todos);
         return `Todo list updated (${todos.length} items)`;
       }
@@ -1237,7 +1238,7 @@ export class OpenAIResponsesRunner {
     prompt: string,
     signal: AbortSignal
   ): Promise<string> {
-    const messages = this.buildChatMessages(existingMessages, prompt);
+    const messages = this.buildChatMessages(existingMessages, prompt) as ChatCompletionMessageParam[];
     try {
       const completion = await client.chat.completions.create(
         {

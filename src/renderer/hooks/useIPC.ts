@@ -134,7 +134,6 @@ export function useIPC() {
     clearActiveTurn,
     activateNextTurn,
     clearPendingTurns,
-    clearQueuedMessages,
     cancelQueuedMessages,
   } = useAppStore();
 

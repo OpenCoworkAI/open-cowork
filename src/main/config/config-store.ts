@@ -1,5 +1,5 @@
 import Store from 'electron-store';
-import { log, logWarn } from '../utils/logger';
+import { log } from '../utils/logger';
 
 /**
  * Application configuration schema

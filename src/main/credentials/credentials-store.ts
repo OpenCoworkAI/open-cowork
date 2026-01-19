@@ -1,6 +1,6 @@
 import Store from 'electron-store';
 import * as crypto from 'crypto';
-import { log, logError } from '../utils/logger';
+import { log } from '../utils/logger';
 
 /**
  * User Credential - stored information for automated login

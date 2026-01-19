@@ -38,6 +38,17 @@ export function ContextPanel() {
   const [contextOpen, setContextOpen] = useState(true);
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
+  const [copiedPath, setCopiedPath] = useState(false);
+
+  const handleCopyPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopiedPath(true);
+      setTimeout(() => setCopiedPath(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy path:', err);
+    }
+  };
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const steps = activeSessionId ? traceStepsBySession[activeSessionId] || [] : [];
@@ -117,7 +128,7 @@ export function ContextPanel() {
             ) : (
               <div className="space-y-2">
                 {getGroupedSteps(steps).map((group) => (
-                  <TraceStepGroupItem key={group.id} group={group} allSteps={steps} />
+                  <TraceStepGroupItem key={group.id} group={group} />
                 ))}
               </div>
             )}
@@ -184,10 +195,20 @@ export function ContextPanel() {
               <p className="text-xs text-text-muted mb-2">Working Directory</p>
               <div className="space-y-1">
                 {activeSession?.cwd ? (
-                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-muted">
-                    <FolderOpen className="w-4 h-4 text-accent" />
-                    <span className="text-sm text-text-primary truncate" title={activeSession.cwd}>
-                      {activeSession.cwd}
+                  <div 
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                      copiedPath ? 'bg-success/10' : 'bg-surface-muted hover:bg-surface-active'
+                    }`}
+                    title={copiedPath ? 'Copied!' : `${activeSession.cwd}\nClick to copy`}
+                    onClick={() => handleCopyPath(activeSession.cwd || '')}
+                  >
+                    {copiedPath ? (
+                      <Check className="w-4 h-4 text-success flex-shrink-0" />
+                    ) : (
+                      <FolderOpen className="w-4 h-4 text-accent flex-shrink-0" />
+                    )}
+                    <span className={`text-sm break-all leading-relaxed ${copiedPath ? 'text-success' : 'text-text-primary'}`}>
+                      {copiedPath ? 'Copied!' : formatPath(activeSession.cwd)}
                     </span>
                   </div>
                 ) : (
@@ -405,7 +426,7 @@ function getGroupedSteps(steps: TraceStep[]): StepGroup[] {
   return groups;
 }
 
-function TraceStepGroupItem({ group, allSteps }: { group: StepGroup; allSteps: TraceStep[] }) {
+function TraceStepGroupItem({ group }: { group: StepGroup }) {
   const [expanded, setExpanded] = useState(false);
   const count = group.steps.length;
 
@@ -482,87 +503,6 @@ function TraceStepGroupItem({ group, allSteps }: { group: StepGroup; allSteps: T
   );
 }
 
-function TraceStepItem({ step }: { step: TraceStep }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const getIcon = () => {
-    if (step.status === 'running') {
-      return <Loader2 className="w-4 h-4 text-accent animate-spin" />;
-    }
-    if (step.status === 'error') {
-      return <AlertCircle className="w-4 h-4 text-error" />;
-    }
-    if (step.status === 'completed') {
-      return <Check className="w-4 h-4 text-success" />;
-    }
-    return <div className="w-4 h-4 rounded-full border-2 border-border" />;
-  };
-
-  const getBgColor = () => {
-    if (step.status === 'running') return 'bg-accent/10 border-accent/30';
-    if (step.status === 'error') return 'bg-error/10 border-error/30';
-    if (step.status === 'completed') return 'bg-success/10 border-success/30';
-    return 'bg-surface-muted border-border';
-  };
-
-  // Format tool name - remove mcp__ prefix but keep server name
-  const formatToolName = (toolName?: string) => {
-    if (!toolName) return undefined;
-    // Remove mcp__ prefix and format as "ServerName: toolname"
-    const match = toolName.match(/^mcp__(.+?)__(.+)$/);
-    if (match) {
-      const serverName = match[1]; // e.g., "Chrome"
-      const tool = match[2]; // e.g., "list_pages"
-      return `${serverName}: ${tool}`;
-    }
-    return toolName;
-  };
-
-  const displayToolName = formatToolName(step.toolName);
-  // Use formatted tool name as title if available, otherwise use step.title
-  const displayTitle = displayToolName || step.title;
-
-  return (
-    <div className={`rounded-lg border ${getBgColor()} overflow-hidden`}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-2 flex items-center gap-2 text-left"
-      >
-        {getIcon()}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-text-primary truncate">
-            {displayTitle}
-          </p>
-        </div>
-        {(step.toolInput || step.toolOutput) && (
-          <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${expanded ? 'rotate-180' : ''}`} />
-        )}
-      </button>
-
-      {expanded && (step.toolInput || step.toolOutput) && (
-        <div className="px-3 pb-3 space-y-2">
-          {step.toolInput && (
-            <div>
-              <p className="text-xs font-medium text-text-muted mb-1">Input:</p>
-              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
-                {JSON.stringify(step.toolInput, null, 2)}
-              </pre>
-            </div>
-          )}
-          {step.toolOutput && (
-            <div>
-              <p className="text-xs font-medium text-text-muted mb-1">Output:</p>
-              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                {step.toolOutput}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function getUniqueNonMCPTools(steps: TraceStep[]): string[] {
   const tools = new Set<string>();
   steps.forEach(step => {
@@ -574,12 +514,22 @@ function getUniqueNonMCPTools(steps: TraceStep[]): string[] {
   return Array.from(tools);
 }
 
-function getUniqueTools(steps: TraceStep[]): string[] {
-  const tools = new Set<string>();
-  steps.forEach(step => {
-    if (step.toolName) tools.add(step.toolName);
-  });
-  return Array.from(tools);
+
+// Format long paths to show abbreviated version
+function formatPath(path: string): string {
+  if (!path) return '';
+  
+  // Replace home directory with ~
+  const home = '/Users/';
+  if (path.startsWith(home)) {
+    const afterUsers = path.slice(home.length);
+    const firstSlash = afterUsers.indexOf('/');
+    if (firstSlash > 0) {
+      return '~' + afterUsers.slice(firstSlash);
+    }
+  }
+  
+  return path;
 }
 
 function getToolIcon(toolName: string) {

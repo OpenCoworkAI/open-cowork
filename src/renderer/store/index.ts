@@ -316,7 +316,7 @@ export const useAppStore = create<AppState>((set) => ({
       const updatedMessages = messages.map((message) => {
         if (message.localStatus === 'queued') {
           hasQueued = true;
-          return { ...message, localStatus: 'cancelled' };
+          return { ...message, localStatus: 'cancelled' as const };
         }
         return message;
       });

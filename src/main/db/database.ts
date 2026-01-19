@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import { log, logError } from '../utils/logger';
+import { log } from '../utils/logger';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)

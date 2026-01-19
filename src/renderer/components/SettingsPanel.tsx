@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Key, Plug, Settings, ChevronRight, Check, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown } from 'lucide-react';
-import type { AppConfig, ProviderPresets } from '../types';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown } from 'lucide-react';
+import type { ProviderPresets } from '../types';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
