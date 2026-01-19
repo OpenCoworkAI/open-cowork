@@ -94,7 +94,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[85vh] overflow-hidden border border-border flex">
         {/* Sidebar */}
-        <div className="w-56 bg-surface-hover border-r border-border flex flex-col flex-shrink-0">
+        <div className="w-72 bg-surface-hover border-r border-border flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-border">
             <h2 className="text-lg font-semibold text-text-primary">Settings</h2>
           </div>
