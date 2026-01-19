@@ -8,20 +8,21 @@ import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
+import { log, logWarn, logError } from './utils/logger';
 
 // Load .env file from project root (for development)
 const envPath = resolve(__dirname, '../../.env');
-console.log('[dotenv] Loading from:', envPath);
+log('[dotenv] Loading from:', envPath);
 const dotenvResult = config({ path: envPath });
 if (dotenvResult.error) {
-  console.warn('[dotenv] Failed to load .env:', dotenvResult.error.message);
+  logWarn('[dotenv] Failed to load .env:', dotenvResult.error.message);
 } else {
-  console.log('[dotenv] Loaded successfully');
+  log('[dotenv] Loaded successfully');
 }
 
 // Apply saved config (this overrides .env if config exists)
 if (configStore.isConfigured()) {
-  console.log('[Config] Applying saved configuration...');
+  log('[Config] Applying saved configuration...');
   configStore.applyToEnv();
 }
 
@@ -88,7 +89,7 @@ function createWindow() {
   // Notify renderer about config status after window is ready
   mainWindow.webContents.on('did-finish-load', () => {
     const isConfigured = configStore.isConfigured();
-    console.log('[Config] Notifying renderer, isConfigured:', isConfigured);
+    log('[Config] Notifying renderer, isConfigured:', isConfigured);
     sendToRenderer({
       type: 'config.status',
       payload: { 
@@ -109,19 +110,19 @@ function sendToRenderer(event: ServerEvent) {
 // Initialize app
 app.whenReady().then(async () => {
   // Log environment variables for debugging
-  console.log('=== Open Cowork Starting ===');
-  console.log('Config file:', configStore.getPath());
-  console.log('Is configured:', configStore.isConfigured());
-  console.log('Environment Variables:');
-  console.log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
-  console.log('  ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(not set)');
-  console.log('  CLAUDE_MODEL:', process.env.CLAUDE_MODEL || '(not set)');
-  console.log('  CLAUDE_CODE_PATH:', process.env.CLAUDE_CODE_PATH || '(not set)');
-  console.log('  OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✓ Set' : '✗ Not set');
-  console.log('  OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL || '(not set)');
-  console.log('  OPENAI_MODEL:', process.env.OPENAI_MODEL || '(not set)');
-  console.log('  OPENAI_API_MODE:', process.env.OPENAI_API_MODE || '(default)');
-  console.log('===========================');
+  log('=== Open Cowork Starting ===');
+  log('Config file:', configStore.getPath());
+  log('Is configured:', configStore.isConfigured());
+  log('Environment Variables:');
+  log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
+  log('  ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(not set)');
+  log('  CLAUDE_MODEL:', process.env.CLAUDE_MODEL || '(not set)');
+  log('  CLAUDE_CODE_PATH:', process.env.CLAUDE_CODE_PATH || '(not set)');
+  log('  OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✓ Set' : '✗ Not set');
+  log('  OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL || '(not set)');
+  log('  OPENAI_MODEL:', process.env.OPENAI_MODEL || '(not set)');
+  log('  OPENAI_API_MODE:', process.env.OPENAI_API_MODE || '(default)');
+  log('===========================');
   
   // Initialize database
   const db = initDatabase();
@@ -150,7 +151,7 @@ ipcMain.on('client-event', async (_event, data: ClientEvent) => {
   try {
     await handleClientEvent(data);
   } catch (error) {
-    console.error('Error handling client event:', error);
+    logError('Error handling client event:', error);
     sendToRenderer({
       type: 'error',
       payload: { message: error instanceof Error ? error.message : 'Unknown error' },
@@ -184,7 +185,7 @@ ipcMain.handle('config.getPresets', () => {
 });
 
 ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
-  console.log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
+  log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
   
   // Update config
   configStore.update(newConfig);
@@ -201,7 +202,7 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
   if (sessionManager) {
     const db = initDatabase();
     sessionManager = new SessionManager(db, sendToRenderer);
-    console.log('[Config] Session manager re-initialized');
+    log('[Config] Session manager re-initialized');
   }
   
   return { success: true, config: configStore.getAll() };
@@ -216,7 +217,7 @@ ipcMain.handle('mcp.getServers', () => {
   try {
     return mcpConfigStore.getServers();
   } catch (error) {
-    console.error('[MCP] Error getting servers:', error);
+    logError('[MCP] Error getting servers:', error);
     return [];
   }
 });
@@ -225,7 +226,7 @@ ipcMain.handle('mcp.getServer', (_event, serverId: string) => {
   try {
     return mcpConfigStore.getServer(serverId);
   } catch (error) {
-    console.error('[MCP] Error getting server:', error);
+    logError('[MCP] Error getting server:', error);
     return null;
   }
 });
@@ -239,7 +240,7 @@ ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
     try {
       await mcpManager.initializeServers(servers);
     } catch (err) {
-      console.error('[MCP] Failed to reinitialize servers:', err);
+      logError('[MCP] Failed to reinitialize servers:', err);
     }
   }
   return { success: true };
@@ -251,7 +252,7 @@ ipcMain.handle('mcp.deleteServer', (_event, serverId: string) => {
   if (sessionManager) {
     const mcpManager = sessionManager.getMCPManager();
     mcpManager.disconnectServer(serverId).catch(err => {
-      console.error('[MCP] Failed to disconnect server:', err);
+      logError('[MCP] Failed to disconnect server:', err);
     });
   }
   return { success: true };
@@ -265,7 +266,7 @@ ipcMain.handle('mcp.getTools', () => {
     const mcpManager = sessionManager.getMCPManager();
     return mcpManager.getTools();
   } catch (error) {
-    console.error('[MCP] Error getting tools:', error);
+    logError('[MCP] Error getting tools:', error);
     return [];
   }
 });
@@ -278,7 +279,7 @@ ipcMain.handle('mcp.getServerStatus', () => {
     const mcpManager = sessionManager.getMCPManager();
     return mcpManager.getServerStatus();
   } catch (error) {
-    console.error('[MCP] Error getting server status:', error);
+    logError('[MCP] Error getting server status:', error);
     return [];
   }
 });
@@ -287,7 +288,7 @@ ipcMain.handle('mcp.getPresets', () => {
   try {
     return mcpConfigStore.getPresets();
   } catch (error) {
-    console.error('[MCP] Error getting presets:', error);
+    logError('[MCP] Error getting presets:', error);
     return {};
   }
 });
@@ -298,7 +299,7 @@ ipcMain.handle('credentials.getAll', () => {
     // Return credentials without passwords for UI display
     return credentialsStore.getAllSafe();
   } catch (error) {
-    console.error('[Credentials] Error getting credentials:', error);
+    logError('[Credentials] Error getting credentials:', error);
     return [];
   }
 });
@@ -307,7 +308,7 @@ ipcMain.handle('credentials.getById', (_event, id: string) => {
   try {
     return credentialsStore.getById(id);
   } catch (error) {
-    console.error('[Credentials] Error getting credential:', error);
+    logError('[Credentials] Error getting credential:', error);
     return undefined;
   }
 });
@@ -316,7 +317,7 @@ ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) =
   try {
     return credentialsStore.getByType(type);
   } catch (error) {
-    console.error('[Credentials] Error getting credentials by type:', error);
+    logError('[Credentials] Error getting credentials by type:', error);
     return [];
   }
 });
@@ -325,7 +326,7 @@ ipcMain.handle('credentials.getByService', (_event, service: string) => {
   try {
     return credentialsStore.getByService(service);
   } catch (error) {
-    console.error('[Credentials] Error getting credentials by service:', error);
+    logError('[Credentials] Error getting credentials by service:', error);
     return [];
   }
 });
@@ -334,7 +335,7 @@ ipcMain.handle('credentials.save', (_event, credential: Omit<UserCredential, 'id
   try {
     return credentialsStore.save(credential);
   } catch (error) {
-    console.error('[Credentials] Error saving credential:', error);
+    logError('[Credentials] Error saving credential:', error);
     throw error;
   }
 });
@@ -343,7 +344,7 @@ ipcMain.handle('credentials.update', (_event, id: string, updates: Partial<Omit<
   try {
     return credentialsStore.update(id, updates);
   } catch (error) {
-    console.error('[Credentials] Error updating credential:', error);
+    logError('[Credentials] Error updating credential:', error);
     throw error;
   }
 });
@@ -352,7 +353,7 @@ ipcMain.handle('credentials.delete', (_event, id: string) => {
   try {
     return credentialsStore.delete(id);
   } catch (error) {
-    console.error('[Credentials] Error deleting credential:', error);
+    logError('[Credentials] Error deleting credential:', error);
     return false;
   }
 });
@@ -454,7 +455,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return null;
 
     default:
-      console.warn('Unknown event type:', event);
+      logWarn('Unknown event type:', event);
       return null;
   }
 }

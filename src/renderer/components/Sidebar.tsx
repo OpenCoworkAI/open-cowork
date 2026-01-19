@@ -199,8 +199,8 @@ export function Sidebar() {
         {/* Sessions Header */}
         {!sidebarCollapsed && sessions.length > 0 && (
           <div className="flex items-center justify-between px-3 py-2 mb-1">
-            <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-              对话历史 ({sessions.length})
+            <span className="text-xs font-medium text-text-muted tracking-wide">
+              Recents ({sessions.length})
             </span>
             <button
               onClick={handleDeleteAllSessions}
@@ -295,7 +295,7 @@ export function Sidebar() {
                 />
               </div>
               <p className="text-xs text-text-muted">
-                {isConfigured ? 'API 已配置' : '未配置 API'}
+                {isConfigured ? 'API Configured' : 'API Not Configured'}
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-text-muted group-hover:text-text-primary transition-colors">

@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import * as crypto from 'crypto';
+import { log, logError } from '../utils/logger';
 
 /**
  * User Credential - stored information for automated login
@@ -178,7 +179,7 @@ class CredentialsStore {
     credentials.push(stored);
     this.store.set('credentials', credentials);
 
-    console.log(`[CredentialsStore] Saved credential: ${credential.name}`);
+    log(`[CredentialsStore] Saved credential: ${credential.name}`);
 
     return {
       id,
@@ -227,7 +228,7 @@ class CredentialsStore {
     credentials[index] = updated;
     this.store.set('credentials', credentials);
 
-    console.log(`[CredentialsStore] Updated credential: ${updated.name}`);
+    log(`[CredentialsStore] Updated credential: ${updated.name}`);
 
     return {
       id: updated.id,
@@ -257,7 +258,7 @@ class CredentialsStore {
     const deleted = credentials.splice(index, 1)[0];
     this.store.set('credentials', credentials);
 
-    console.log(`[CredentialsStore] Deleted credential: ${deleted.name}`);
+    log(`[CredentialsStore] Deleted credential: ${deleted.name}`);
     return true;
   }
 
@@ -266,7 +267,7 @@ class CredentialsStore {
    */
   clearAll(): void {
     this.store.set('credentials', []);
-    console.log('[CredentialsStore] Cleared all credentials');
+    log('[CredentialsStore] Cleared all credentials');
   }
 }
 

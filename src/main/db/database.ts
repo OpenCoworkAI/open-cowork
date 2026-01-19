@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { log, logError } from '../utils/logger';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)
@@ -199,7 +200,7 @@ function initializeSchema(database: Database.Database): void {
     )
   `);
   
-  console.log('[Database] Schema initialized');
+  log('[Database] Schema initialized');
 }
 
 /**
@@ -209,7 +210,7 @@ export function initDatabase(): DatabaseInstance {
   if (db) return db;
   
   const dbPath = getDatabasePath();
-  console.log('[Database] Opening database at:', dbPath);
+  log('[Database] Opening database at:', dbPath);
   
   const rawDb = new Database(dbPath);
   
@@ -411,7 +412,7 @@ export function initDatabase(): DatabaseInstance {
     },
   };
   
-  console.log('[Database] SQLite database initialized successfully');
+  log('[Database] SQLite database initialized successfully');
   return db;
 }
 
@@ -432,6 +433,6 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null;
-    console.log('[Database] Database closed');
+    log('[Database] Database closed');
   }
 }

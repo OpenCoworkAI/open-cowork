@@ -174,7 +174,7 @@ export function WelcomeView() {
               }`}
             >
               <FolderOpen className="w-4 h-4" />
-              <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select a folder (required)'}</span>
+              <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select Working Folder (required)'}</span>
               <Plus className="w-3 h-3" />
             </button>
 

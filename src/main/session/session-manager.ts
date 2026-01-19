@@ -7,6 +7,7 @@ import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
+import { log, logError, logWarn } from '../utils/logger';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -52,7 +53,7 @@ export class SessionManager {
         requestPermission: (sessionId, toolUseId, toolName, input) =>
           this.requestPermission(sessionId, toolUseId, toolName, input),
       });
-      console.log('[SessionManager] Using OpenAI Responses runner');
+      log('[SessionManager] Using OpenAI Responses runner');
     } else {
       // Initialize Claude Agent Runner with message save callback
       this.agentRunner = new ClaudeAgentRunner(
@@ -63,10 +64,10 @@ export class SessionManager {
         this.pathResolver,
         this.mcpManager
       );
-      console.log('[SessionManager] Using Claude Agent runner');
+      log('[SessionManager] Using Claude Agent runner');
     }
     
-    console.log('[SessionManager] Initialized with persistent database and MCP support');
+    log('[SessionManager] Initialized with persistent database and MCP support');
   }
 
   /**
@@ -76,9 +77,9 @@ export class SessionManager {
     try {
       const servers = mcpConfigStore.getEnabledServers();
       await this.mcpManager.initializeServers(servers);
-      console.log(`[SessionManager] Initialized ${servers.length} MCP servers`);
+      log(`[SessionManager] Initialized ${servers.length} MCP servers`);
     } catch (error) {
-      console.error('[SessionManager] Failed to initialize MCP servers:', error);
+      logError('[SessionManager] Failed to initialize MCP servers:', error);
     }
   }
 
@@ -96,7 +97,7 @@ export class SessionManager {
     cwd?: string,
     allowedTools?: string[]
   ): Promise<Session> {
-    console.log('[SessionManager] Starting new session:', title);
+    log('[SessionManager] Starting new session:', title);
     
     const session = this.createSession(title, cwd, allowedTools);
     
@@ -195,7 +196,7 @@ export class SessionManager {
 
   // Continue an existing session
   async continueSession(sessionId: string, prompt: string): Promise<void> {
-    console.log('[SessionManager] Continuing session:', sessionId);
+    log('[SessionManager] Continuing session:', sessionId);
     
     const session = this.loadSession(sessionId);
     if (!session) {
@@ -207,7 +208,7 @@ export class SessionManager {
 
   // Process a prompt using ClaudeAgentRunner
   private async processPrompt(session: Session, prompt: string): Promise<void> {
-    console.log('[SessionManager] Processing prompt for session:', session.id);
+    log('[SessionManager] Processing prompt for session:', session.id);
 
     try {
       // Save user message to database for persistence
@@ -219,7 +220,7 @@ export class SessionManager {
         timestamp: Date.now(),
       };
       this.saveMessage(userMessage);
-      console.log('[SessionManager] User message saved:', userMessage.id);
+      log('[SessionManager] User message saved:', userMessage.id);
 
       // Get existing messages for context (including the one we just saved)
       const existingMessages = this.getMessages(session.id);
@@ -227,7 +228,7 @@ export class SessionManager {
       // Run the agent - this handles everything including sending messages
       await this.agentRunner.run(session, prompt, existingMessages);
     } catch (error) {
-      console.error('[SessionManager] Error processing prompt:', error);
+      logError('[SessionManager] Error processing prompt:', error);
       this.sendToRenderer({
         type: 'error',
         payload: { message: error instanceof Error ? error.message : 'Unknown error' },
@@ -243,7 +244,7 @@ export class SessionManager {
     if (!this.activeSessions.has(session.id)) {
       void this.processQueue(session);
     } else {
-      console.log('[SessionManager] Session running, queued prompt:', session.id);
+      log('[SessionManager] Session running, queued prompt:', session.id);
     }
   }
 
@@ -278,7 +279,7 @@ export class SessionManager {
 
   // Stop a running session
   stopSession(sessionId: string): void {
-    console.log('[SessionManager] Stopping session:', sessionId);
+    log('[SessionManager] Stopping session:', sessionId);
     this.agentRunner.cancel(sessionId);
     // Also abort any pending controller we tracked
     const controller = this.activeSessions.get(sessionId);
@@ -298,7 +299,7 @@ export class SessionManager {
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
     
-    console.log('[SessionManager] Session deleted:', sessionId);
+    log('[SessionManager] Session deleted:', sessionId);
   }
 
   // Update session status
@@ -322,7 +323,7 @@ export class SessionManager {
       token_usage: message.tokenUsage ? JSON.stringify(message.tokenUsage) : null,
     });
     
-    console.log('[SessionManager] Message saved:', message.id, 'role:', message.role);
+    log('[SessionManager] Message saved:', message.id, 'role:', message.role);
   }
 
   // Get messages for a session

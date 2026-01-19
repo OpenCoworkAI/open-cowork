@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
 import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
+import { log, logWarn, logError } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -17,29 +18,35 @@ let cachedShellEnv: NodeJS.ProcessEnv | null = null;
  * GUI apps on macOS don't inherit shell PATH, so we need to extract it
  */
 function getShellEnvironment(): NodeJS.ProcessEnv {
+  const fnStart = Date.now();
+  
   if (cachedShellEnv) {
+    log(`[ShellEnv] Returning cached env (0ms)`);
     return cachedShellEnv;
   }
 
   const platform = process.platform;
   let shellPath = process.env.PATH || '';
   
-  console.log('[ShellEnv] Original PATH:', shellPath);
+  log('[ShellEnv] Original PATH:', shellPath);
+  log(`[ShellEnv] Starting shell PATH extraction...`);
 
   if (platform === 'darwin' || platform === 'linux') {
     try {
       // Get PATH from login shell (includes nvm, homebrew, etc.)
+      const execStart = Date.now();
       const shellEnvOutput = execSync('/bin/bash -l -c "echo $PATH"', {
         encoding: 'utf-8',
         timeout: 5000,
       }).trim();
+      log(`[ShellEnv] execSync took ${Date.now() - execStart}ms`);
       
       if (shellEnvOutput) {
         shellPath = shellEnvOutput;
-        console.log('[ShellEnv] Got PATH from login shell:', shellPath);
+        log('[ShellEnv] Got PATH from login shell:', shellPath);
       }
     } catch (e) {
-      console.warn('[ShellEnv] Failed to get PATH from login shell, using fallback');
+      logWarn('[ShellEnv] Failed to get PATH from login shell, using fallback');
       
       // Add common paths as fallback
       const home = process.env.HOME || '';
@@ -75,6 +82,7 @@ function getShellEnvironment(): NodeJS.ProcessEnv {
     PATH: shellPath,
   };
   
+  log(`[ShellEnv] Total getShellEnvironment took ${Date.now() - fnStart}ms`);
   return cachedShellEnv;
 }
 
@@ -213,7 +221,7 @@ ${sections.join('\n\n')}
 </saved_credentials>
 `;
     } catch (error) {
-      console.error('[AgentRunner] Failed to get credentials prompt:', error);
+      logError('[AgentRunner] Failed to get credentials prompt:', error);
       return '';
     }
   }
@@ -242,12 +250,12 @@ ${sections.join('\n\n')}
     
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) {
-        console.log('[ClaudeAgentRunner] Found built-in skills at:', p);
+        log('[ClaudeAgentRunner] Found built-in skills at:', p);
         return p;
       }
     }
     
-    console.warn('[ClaudeAgentRunner] No built-in skills directory found');
+    logWarn('[ClaudeAgentRunner] No built-in skills directory found');
     return '';
   }
 
@@ -285,7 +293,7 @@ ${sections.join('\n\n')}
           }
         }
       } catch (e) {
-        console.error('[ClaudeAgentRunner] Error scanning built-in skills:', e);
+        logError('[ClaudeAgentRunner] Error scanning built-in skills:', e);
       }
     }
     
@@ -359,18 +367,23 @@ Then follow the workflow described in that file.
   }
 
   private getDefaultClaudeCodePath(): string {
+    const fnStart = Date.now();
+    const logFnTiming = (label: string) => {
+      log(`[ClaudeCodePath] ${label}: ${Date.now() - fnStart}ms`);
+    };
+    
     const platform = process.platform;
     const home = process.env.HOME || process.env.USERPROFILE || '';
 
     // Check if running in packaged app
     const isPackaged = app.isPackaged;
 
-    console.log('[ClaudeAgentRunner] Looking for claude-code...');
-    console.log('[ClaudeAgentRunner] isPackaged:', isPackaged);
-    console.log('[ClaudeAgentRunner] app.getAppPath():', app.getAppPath());
-    console.log('[ClaudeAgentRunner] process.resourcesPath:', process.resourcesPath);
-    console.log('[ClaudeAgentRunner] __dirname:', __dirname);
-    console.log('[ClaudeAgentRunner] process.execPath:', process.execPath);
+    log('[ClaudeAgentRunner] Looking for claude-code...');
+    log('[ClaudeAgentRunner] isPackaged:', isPackaged);
+    log('[ClaudeAgentRunner] app.getAppPath():', app.getAppPath());
+    log('[ClaudeAgentRunner] process.resourcesPath:', process.resourcesPath);
+    log('[ClaudeAgentRunner] __dirname:', __dirname);
+    log('[ClaudeAgentRunner] process.execPath:', process.execPath);
 
     // 1. FIRST: Check bundled version in app's node_modules (highest priority)
     // NOTE: app.asar.unpacked is the correct location for unpacked modules
@@ -404,9 +417,9 @@ Then follow the workflow described in that file.
     );
 
     for (const bundledPath of bundledPaths) {
-      console.log('[ClaudeAgentRunner] Checking:', bundledPath, '- exists:', fs.existsSync(bundledPath));
+      log('[ClaudeAgentRunner] Checking:', bundledPath, '- exists:', fs.existsSync(bundledPath));
       if (fs.existsSync(bundledPath)) {
-        console.log('[ClaudeAgentRunner] ✓ Found bundled claude-code at:', bundledPath);
+        log('[ClaudeAgentRunner] ✓ Found bundled claude-code at:', bundledPath);
         return bundledPath;
       }
     }
@@ -420,30 +433,36 @@ Then follow the workflow described in that file.
           timeout: 5000,
         }).trim();
         if (claudePath && fs.existsSync(claudePath)) {
-          console.log('[ClaudeAgentRunner] Found claude via bash -l:', claudePath);
+          log('[ClaudeAgentRunner] Found claude via bash -l:', claudePath);
           return claudePath;
         }
       } catch (e) {
-        console.log('[ClaudeAgentRunner] bash -l which failed, trying fallbacks');
+        log('[ClaudeAgentRunner] bash -l which failed, trying fallbacks');
       }
     }
     
     // 3. Try npm root -g with shell environment
+    logFnTiming('before npm root -g');
     if (platform !== 'win32') {
       try {
+        const npmStart = Date.now();
         const npmRoot = execSync('/bin/bash -l -c "npm root -g"', { 
           encoding: 'utf-8',
           timeout: 5000,
         }).trim();
+        log(`[ClaudeCodePath] npm root -g took ${Date.now() - npmStart}ms`);
+        
         const cliPath = path.join(npmRoot, '@anthropic-ai', 'claude-code', 'cli.js');
         if (fs.existsSync(cliPath)) {
-          console.log('[ClaudeAgentRunner] Found claude-code via npm root:', cliPath);
+          log('[ClaudeAgentRunner] Found claude-code via npm root:', cliPath);
+          logFnTiming('returning (found via npm root)');
           return cliPath;
         }
       } catch (e) {
-        // npm root failed
+        log(`[ClaudeCodePath] npm root -g failed: ${(e as Error).message}`);
       }
     }
+    logFnTiming('after npm root -g');
     
     // 4. Build list of possible system paths based on platform
     const possiblePaths: string[] = [];
@@ -522,13 +541,13 @@ Then follow the workflow described in that file.
     // Check all possible paths
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) {
-        console.log('[ClaudeAgentRunner] Found claude-code at:', p);
+        log('[ClaudeAgentRunner] Found claude-code at:', p);
         return p;
       }
     }
     
     // Return empty string if not found - will show error to user
-    console.error('[ClaudeAgentRunner] Claude Code not found. Searched paths:', possiblePaths);
+    logError('[ClaudeAgentRunner] Claude Code not found. Searched paths:', possiblePaths);
     return '';
   }
 
@@ -538,10 +557,10 @@ Then follow the workflow described in that file.
     this.pathResolver = pathResolver;
     this.mcpManager = mcpManager;
     
-    console.log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
-    console.log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
+    log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
+    log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
     if (mcpManager) {
-      console.log('[ClaudeAgentRunner] MCP support enabled');
+      log('[ClaudeAgentRunner] MCP support enabled');
     }
   }
   
@@ -552,8 +571,8 @@ Then follow the workflow described in that file.
   private getCurrentModel(): string {
     // ANTHROPIC_DEFAULT_SONNET_MODEL is the key for OpenRouter API model selection
     const model = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || process.env.CLAUDE_MODEL || 'anthropic/claude-sonnet-4';
-    console.log('[ClaudeAgentRunner] Current model:', model);
-    console.log('[ClaudeAgentRunner] ANTHROPIC_DEFAULT_SONNET_MODEL:', process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(not set)');
+    log('[ClaudeAgentRunner] Current model:', model);
+    log('[ClaudeAgentRunner] ANTHROPIC_DEFAULT_SONNET_MODEL:', process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(not set)');
     return model;
   }
 
@@ -561,22 +580,30 @@ Then follow the workflow described in that file.
   handleQuestionResponse(questionId: string, answer: string): boolean {
     const pending = this.pendingQuestions.get(questionId);
     if (pending) {
-      console.log(`[ClaudeAgentRunner] Question ${questionId} answered:`, answer);
+      log(`[ClaudeAgentRunner] Question ${questionId} answered:`, answer);
       pending.resolve(answer);
       this.pendingQuestions.delete(questionId);
       return true;
     } else {
-      console.warn(`[ClaudeAgentRunner] No pending question found for ID: ${questionId}`);
+      logWarn(`[ClaudeAgentRunner] No pending question found for ID: ${questionId}`);
       return false;
     }
   }
 
   async run(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+    const startTime = Date.now();
+    const logTiming = (label: string) => {
+      log(`[TIMING] ${label}: ${Date.now() - startTime}ms`);
+    };
+    
+    logTiming('run() started');
+    
     const controller = new AbortController();
     this.activeControllers.set(session.id, controller);
 
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
+      logTiming('pathResolver.registerSession');
 
       // Note: User message is now added by the frontend immediately for better UX
       // No need to send it again from backend
@@ -590,9 +617,10 @@ Then follow the workflow described in that file.
         title: 'Processing request...',
         timestamp: Date.now(),
       });
+      logTiming('sendTraceStep (thinking)');
 
       const workingDir = session.cwd ||  undefined;
-      console.log('[ClaudeAgentRunner] Working directory:', workingDir || '(none)');
+      log('[ClaudeAgentRunner] Working directory:', workingDir || '(none)');
 
       // Build conversation context by prepending history to prompt
       // Build a chat-style history so Claude can continue previous turns
@@ -609,19 +637,22 @@ Then follow the workflow described in that file.
 
       if (historyItems.length > 0) {
         contextualPrompt = `${historyItems.join('\n')}\nHuman: ${prompt}\nAssistant:`;
-        console.log('[ClaudeAgentRunner] Including', historyItems.length, 'history messages in context');
+        log('[ClaudeAgentRunner] Including', historyItems.length, 'history messages in context');
       }
 
+      logTiming('before getDefaultClaudeCodePath');
+      
       // Use query from @anthropic-ai/claude-agent-sdk
       const claudeCodePath = process.env.CLAUDE_CODE_PATH || this.getDefaultClaudeCodePath();
-      console.log('[ClaudeAgentRunner] Claude Code path:', claudeCodePath);
+      log('[ClaudeAgentRunner] Claude Code path:', claudeCodePath);
+      logTiming('after getDefaultClaudeCodePath');
       
       // Check if Claude Code is found
       if (!claudeCodePath || !fs.existsSync(claudeCodePath)) {
         const errorMsg = !claudeCodePath 
           ? 'Claude Code 未找到。请先安装: npm install -g @anthropic-ai/claude-code，或在设置中手动指定路径。'
           : `Claude Code 路径不存在: ${claudeCodePath}。请检查路径或在设置中重新配置。`;
-        console.error('[ClaudeAgentRunner]', errorMsg);
+        logError('[ClaudeAgentRunner]', errorMsg);
         this.sendToRenderer({
           type: 'error',
           payload: { message: errorMsg },
@@ -701,12 +732,15 @@ Then follow the workflow described in that file.
         ? path.dirname(builtinSkillsPath)  // Go up from .claude/skills to .claude
         : undefined;
       
-      console.log('[ClaudeAgentRunner] Built-in .claude dir:', builtinClaudeDir);
-      console.log('[ClaudeAgentRunner] User working directory:', workingDir);
+      log('[ClaudeAgentRunner] Built-in .claude dir:', builtinClaudeDir);
+      log('[ClaudeAgentRunner] User working directory:', workingDir);
+      
+      logTiming('before getShellEnvironment');
       
       // Get shell environment with proper PATH (node, npm, etc.)
       // GUI apps on macOS don't inherit shell PATH, so we need to extract it
       const shellEnv = getShellEnvironment();
+      logTiming('after getShellEnvironment');
       
       // Build environment with:
       // 1. Shell environment (includes proper PATH with node/npm)
@@ -718,7 +752,9 @@ Then follow the workflow described in that file.
           : {}),
       };
       
-      console.log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
+      log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
+      
+      logTiming('before building MCP servers config');
       
       // Build MCP servers configuration for SDK
       // IMPORTANT: SDK uses tool names in format: mcp__<ServerKey>__<toolName>
@@ -726,13 +762,13 @@ Then follow the workflow described in that file.
       if (this.mcpManager) {
         const serverStatuses = this.mcpManager.getServerStatus();
         const connectedServers = serverStatuses.filter(s => s.connected);
-        console.log('[ClaudeAgentRunner] MCP server statuses:', JSON.stringify(serverStatuses));
-        console.log('[ClaudeAgentRunner] Connected MCP servers:', connectedServers.length);
+        log('[ClaudeAgentRunner] MCP server statuses:', JSON.stringify(serverStatuses));
+        log('[ClaudeAgentRunner] Connected MCP servers:', connectedServers.length);
         
         // Get MCP server configs from config store
         const { mcpConfigStore } = await import('../mcp/mcp-config-store');
         const allConfigs = mcpConfigStore.getEnabledServers();
-        console.log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map(c => c.name));
+        log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map(c => c.name));
         
         for (const config of allConfigs) {
           // Use a simpler key without spaces to avoid issues
@@ -745,21 +781,22 @@ Then follow the workflow described in that file.
               args: config.args || [],
               env: config.env || {},
             };
-            console.log(`[ClaudeAgentRunner] Added STDIO MCP server: ${serverKey}`);
-            console.log(`[ClaudeAgentRunner]   Command: ${config.command} ${(config.args || []).join(' ')}`);
-            console.log(`[ClaudeAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
+            log(`[ClaudeAgentRunner] Added STDIO MCP server: ${serverKey}`);
+            log(`[ClaudeAgentRunner]   Command: ${config.command} ${(config.args || []).join(' ')}`);
+            log(`[ClaudeAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
           } else if (config.type === 'sse') {
             mcpServers[serverKey] = {
               type: 'sse',
               url: config.url,
               headers: config.headers || {},
             };
-            console.log(`[ClaudeAgentRunner] Added SSE MCP server: ${serverKey}`);
+            log(`[ClaudeAgentRunner] Added SSE MCP server: ${serverKey}`);
           }
         }
         
-        console.log('[ClaudeAgentRunner] Final mcpServers config:', JSON.stringify(mcpServers, null, 2));
+        log('[ClaudeAgentRunner] Final mcpServers config:', JSON.stringify(mcpServers, null, 2));
       }
+      logTiming('after building MCP servers config');
       
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
@@ -772,31 +809,66 @@ Then follow the workflow described in that file.
         // Pass MCP servers to SDK
         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
 
-        // Custom spawn function to use Electron's bundled Node.js
-        // This fixes "spawn node ENOENT" error in packaged apps where system node is not in PATH
+        // Custom spawn function to handle Node.js execution
+        // Prefer system Node.js to avoid Electron's Dock icon appearing on macOS
         spawnClaudeCodeProcess: (spawnOptions: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal }) => {
           const { command, args, cwd: spawnCwd, env: spawnEnv, signal } = spawnOptions;
 
-          // If the command is 'node', use Electron's bundled Node.js (process.execPath)
-          // ELECTRON_RUN_AS_NODE=1 makes Electron behave like a Node.js process
-          const isNodeCommand = command === 'node';
-          const actualCommand = isNodeCommand ? process.execPath : command;
-          const actualArgs = isNodeCommand ? args : args;
-          const actualEnv = isNodeCommand
-            ? { ...spawnEnv, ELECTRON_RUN_AS_NODE: '1' }
-            : spawnEnv;
-          
-          console.log('[ClaudeAgentRunner] Custom spawn:', actualCommand, actualArgs.slice(0, 3).join(' '), '...');
-          console.log('[ClaudeAgentRunner] Process cwd:', spawnCwd);
-          console.log('[ClaudeAgentRunner] CLAUDE_CONFIG_DIR:', actualEnv?.CLAUDE_CONFIG_DIR || '(not set)');
-          console.log('[ClaudeAgentRunner] ELECTRON_RUN_AS_NODE:', isNodeCommand ? '1' : 'not set');
-
-          const childProcess = spawn(actualCommand, actualArgs, {
+          let actualCommand = command;
+          let actualArgs = args;
+          let actualEnv: NodeJS.ProcessEnv = { ...spawnEnv };
+          let spawnOptions2: any = {
             cwd: spawnCwd,
             stdio: ['pipe', 'pipe', 'pipe'],
             env: actualEnv,
             signal,
-          }) as ChildProcess;
+          };
+          
+          // If the command is 'node', try to find system Node.js first
+          // Using Electron causes a visible "exec" icon in macOS menu bar
+          if (command === 'node') {
+            // Check if system node is available in PATH
+            const pathDirs = (spawnEnv?.PATH || process.env.PATH || '').split(path.delimiter);
+            const systemNodePath = pathDirs
+              .map(p => path.join(p, 'node'))
+              .find(p => fs.existsSync(p));
+            
+            if (systemNodePath) {
+              // Use system Node.js - no Dock icon
+              actualCommand = systemNodePath;
+              log('[ClaudeAgentRunner] Using system Node.js:', systemNodePath);
+            } else {
+              // Fallback to Electron as Node.js
+              // Use shell wrapper on macOS to hide Dock icon
+              if (process.platform === 'darwin') {
+                // On macOS, use shell to run Electron with ELECTRON_RUN_AS_NODE
+                // This prevents the Dock icon from appearing
+                const electronPath = process.execPath.replace(/'/g, "'\\''");
+                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+                const shellCommand = `ELECTRON_RUN_AS_NODE=1 '${electronPath}' ${quotedArgs}`;
+                
+                actualCommand = '/bin/bash';
+                actualArgs = ['-c', shellCommand];
+                // Don't pass ELECTRON_RUN_AS_NODE in env since it's in the shell command
+                log('[ClaudeAgentRunner] Using shell wrapper to hide Dock icon');
+              } else {
+                // On other platforms, use Electron directly
+                actualCommand = process.execPath;
+                actualEnv = {
+                  ...spawnEnv,
+                  ELECTRON_RUN_AS_NODE: '1',
+                };
+              }
+              
+              spawnOptions2.env = actualEnv;
+              log('[ClaudeAgentRunner] System Node.js not found, using Electron as Node.js');
+            }
+          }
+          
+          log('[ClaudeAgentRunner] Custom spawn:', actualCommand, actualArgs.slice(0, 2).join(' ').substring(0, 100), '...');
+          log('[ClaudeAgentRunner] Process cwd:', spawnCwd);
+
+          const childProcess = spawn(actualCommand, actualArgs, spawnOptions2) as ChildProcess;
 
           return childProcess;
         },
@@ -981,7 +1053,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
           input: Record<string, unknown>,
           options: { signal: AbortSignal; toolUseID: string }
         ): Promise<PermissionResult> => {
-          console.log(`[Sandbox] Checking tool: ${toolName}`, JSON.stringify(input));
+          log(`[Sandbox] Checking tool: ${toolName}`, JSON.stringify(input));
           
           // Special handling for AskUserQuestion - need to wait for user response
           if (toolName === 'AskUserQuestion') {
@@ -993,7 +1065,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
               multiSelect?: boolean;
             }> || [];
             
-            console.log(`[AskUserQuestion] Sending ${questions.length} questions to UI`);
+            log(`[AskUserQuestion] Sending ${questions.length} questions to UI`);
             
             // Send questions to frontend
             this.sendToRenderer({
@@ -1017,14 +1089,14 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
               });
             });
             
-            console.log(`[AskUserQuestion] User answered:`, answersJson);
+            log(`[AskUserQuestion] User answered:`, answersJson);
             
             // Parse answers and build the answers object for SDK
             let answers: Record<number, string[]> = {};
             try {
               answers = JSON.parse(answersJson);
             } catch (e) {
-              console.error('[AskUserQuestion] Failed to parse answers:', e);
+              logError('[AskUserQuestion] Failed to parse answers:', e);
             }
             
             // Build the updated input with answers in SDK format
@@ -1045,12 +1117,12 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
           
           // Extract all paths from input for sandbox validation
           const paths = extractPathsFromInput(toolName, input);
-          console.log(`[Sandbox] Extracted paths:`, paths);
+          log(`[Sandbox] Extracted paths:`, paths);
           
           // Validate each path
           for (const p of paths) {
             if (!isPathInsideWorkspace(p)) {
-              console.warn(`[Sandbox] BLOCKED: Path "${p}" is outside workspace "${workingDir}"`);
+              logWarn(`[Sandbox] BLOCKED: Path "${p}" is outside workspace "${workingDir}"`);
               return {
                 behavior: 'deny',
                 message: `Access denied: Path "${p}" is outside the allowed workspace "${workingDir}". Only files within the workspace can be accessed.`
@@ -1058,36 +1130,46 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
             }
           }
           
-          console.log(`[Sandbox] ALLOWED: Tool ${toolName}`);
+          log(`[Sandbox] ALLOWED: Tool ${toolName}`);
           return { behavior: 'allow', updatedInput: input };
         },
       };
       
       if (resumeId) {
         queryOptions.resume = resumeId;
-        console.log('[ClaudeAgentRunner] Resuming SDK session:', resumeId);
+        log('[ClaudeAgentRunner] Resuming SDK session:', resumeId);
       }
-      console.log('[ClaudeAgentRunner] Sandbox via canUseTool, workspace:', workingDir);
-
+      log('[ClaudeAgentRunner] Sandbox via canUseTool, workspace:', workingDir);
+      logTiming('before query() call - SDK initialization starts');
+      
+      let firstMessageReceived = false;
       for await (const message of query({
         prompt: contextualPrompt,
         options: queryOptions,
       })) {
+        if (!firstMessageReceived) {
+          logTiming('FIRST MESSAGE RECEIVED from SDK');
+          firstMessageReceived = true;
+        }
+        
         if (controller.signal.aborted) break;
 
-        console.log('[ClaudeAgentRunner] Message type:', message.type);
-        console.log('[ClaudeAgentRunner] Full message:', JSON.stringify(message, null, 2));
+        log('[ClaudeAgentRunner] Message type:', message.type);
+        log('[ClaudeAgentRunner] Full message:', JSON.stringify(message, null, 2));
 
         if (message.type === 'system' && (message as any).subtype === 'init') {
           const sdkSessionId = (message as any).session_id;
           if (sdkSessionId) {
             this.sdkSessions.set(session.id, sdkSessionId);
-            console.log('[ClaudeAgentRunner] SDK session initialized:', sdkSessionId);
+            log('[ClaudeAgentRunner] SDK session initialized:', sdkSessionId);
+            log('[ClaudeAgentRunner] Waiting for API response...');
           }
         } else if (message.type === 'assistant') {
+          log('[ClaudeAgentRunner] First assistant response received (API processing complete)');
+          logTiming('assistant response received');
           // Assistant message - extract content from message.message.content
           const content = (message as any).message?.content || (message as any).content;
-          console.log('[ClaudeAgentRunner] Assistant content:', JSON.stringify(content));
+          log('[ClaudeAgentRunner] Assistant content:', JSON.stringify(content));
           
           if (content && Array.isArray(content) && content.length > 0) {
             // Handle content - could be string or array of blocks
@@ -1142,7 +1224,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
 
             // Send message to UI
             if (contentBlocks.length > 0) {
-              console.log('[ClaudeAgentRunner] Sending assistant message with', contentBlocks.length, 'blocks');
+              log('[ClaudeAgentRunner] Sending assistant message with', contentBlocks.length, 'blocks');
               const assistantMsg: Message = {
                 id: uuidv4(),
                 sessionId: session.id,
@@ -1152,7 +1234,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
               };
               this.sendMessage(session.id, assistantMsg);
             } else {
-              console.log('[ClaudeAgentRunner] No content blocks to send!');
+              log('[ClaudeAgentRunner] No content blocks to send!');
             }
           }
         } else if (message.type === 'user') {
@@ -1191,7 +1273,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
           }
         } else if (message.type === 'result') {
           // Final result
-          console.log('[ClaudeAgentRunner] Result received');
+          log('[ClaudeAgentRunner] Result received');
         }
       }
 
@@ -1203,9 +1285,9 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log('[ClaudeAgentRunner] Aborted');
+        log('[ClaudeAgentRunner] Aborted');
       } else {
-        console.error('[ClaudeAgentRunner] Error:', error);
+        logError('[ClaudeAgentRunner] Error:', error);
         
         const errorText = error instanceof Error ? error.message : String(error);
         const errorMsg: Message = {
@@ -1237,12 +1319,12 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
   }
 
   private sendTraceStep(sessionId: string, step: TraceStep): void {
-    console.log(`[Trace] ${step.type}: ${step.title}`);
+    log(`[Trace] ${step.type}: ${step.title}`);
     this.sendToRenderer({ type: 'trace.step', payload: { sessionId, step } });
   }
 
   private sendTraceUpdate(sessionId: string, stepId: string, updates: Partial<TraceStep>): void {
-    console.log(`[Trace] Update step ${stepId}:`, updates);
+    log(`[Trace] Update step ${stepId}:`, updates);
     this.sendToRenderer({ type: 'trace.update', payload: { sessionId, stepId, updates } });
   }
 

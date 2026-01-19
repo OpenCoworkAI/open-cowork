@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Message, PermissionResult, ServerEvent, Session, TraceStep } from '../../renderer/types';
 import { PathResolver } from '../sandbox/path-resolver';
 import { ToolExecutor } from '../tools/tool-executor';
+import { log, logError, logWarn } from '../utils/logger';
 
 type ToolSpec = {
   name: string;
@@ -405,7 +406,7 @@ export class OpenAIResponsesRunner {
           );
         } catch (error) {
           if (this.shouldFallbackToChat(error)) {
-            console.warn('[OpenAIResponsesRunner] Responses unsupported by provider, falling back to Chat Completions');
+            logWarn('[OpenAIResponsesRunner] Responses unsupported by provider, falling back to Chat Completions');
             const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
             if (text) {
               await this.streamText(session.id, text, controller.signal);
@@ -429,11 +430,11 @@ export class OpenAIResponsesRunner {
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        console.log('[OpenAIResponsesRunner] Aborted');
+        log('[OpenAIResponsesRunner] Aborted');
         return;
       }
 
-      console.error('[OpenAIResponsesRunner] Error:', error);
+      logError('[OpenAIResponsesRunner] Error:', error);
       const errorText = error instanceof Error ? error.message : String(error);
       this.sendMessage(session.id, {
         id: uuidv4(),
@@ -470,7 +471,7 @@ export class OpenAIResponsesRunner {
       this.pendingQuestions.delete(questionId);
       return;
     }
-    console.log('[OpenAIResponsesRunner] Question response ignored:', questionId);
+    log('[OpenAIResponsesRunner] Question response ignored:', questionId);
   }
 
   private getApiMode(): 'responses' | 'chat' {
@@ -614,7 +615,7 @@ export class OpenAIResponsesRunner {
         throw error;
       }
 
-      console.warn('[OpenAIResponsesRunner] Responses input_text unsupported, retrying with plain message list');
+      logWarn('[OpenAIResponsesRunner] Responses input_text unsupported, retrying with plain message list');
       try {
         const initial = await this.createResponsesWithStreamingFallback(
           session.id,
@@ -632,7 +633,7 @@ export class OpenAIResponsesRunner {
           throw plainError;
         }
 
-        console.warn('[OpenAIResponsesRunner] Responses plain list unsupported, retrying with output_text list');
+        logWarn('[OpenAIResponsesRunner] Responses plain list unsupported, retrying with output_text list');
         const outputMessages = this.buildOutputMessages(existingMessages, prompt);
         if (!outputMessages.length) {
           throw plainError;
@@ -715,7 +716,7 @@ export class OpenAIResponsesRunner {
         streamed = next.streamed;
       } catch (error) {
         if (supportsPreviousResponseId && this.shouldFallbackWithoutPreviousResponseId(error)) {
-          console.warn('[OpenAIResponsesRunner] previous_response_id unsupported, retrying with full input list');
+          logWarn('[OpenAIResponsesRunner] previous_response_id unsupported, retrying with full input list');
           supportsPreviousResponseId = false;
           try {
             const next = await this.createResponsesWithStreamingFallback(
@@ -794,7 +795,7 @@ export class OpenAIResponsesRunner {
       );
     } catch (error) {
       if (useStreaming && this.shouldFallbackFromStreaming(error)) {
-        console.warn('[OpenAIResponsesRunner] Responses stream unsupported, retrying without stream');
+        logWarn('[OpenAIResponsesRunner] Responses stream unsupported, retrying without stream');
         return this.createResponses(
           sessionId,
           client,
@@ -1218,7 +1219,7 @@ export class OpenAIResponsesRunner {
       return false;
     }
 
-    console.warn('[OpenAIResponsesRunner] Responses continuation failed, returning tool results only:', error);
+    logWarn('[OpenAIResponsesRunner] Responses continuation failed, returning tool results only:', error);
     this.sendMessage(sessionId, {
       id: uuidv4(),
       sessionId,
@@ -1250,7 +1251,7 @@ export class OpenAIResponsesRunner {
     } catch (error) {
       const trimmedPrompt = prompt.trim();
       if (trimmedPrompt && this.shouldRetryChatWithPrompt(error)) {
-        console.warn('[OpenAIResponsesRunner] Chat request rejected, retrying with prompt-only context');
+        logWarn('[OpenAIResponsesRunner] Chat request rejected, retrying with prompt-only context');
         try {
           const completion = await client.chat.completions.create(
             {
@@ -1262,9 +1263,9 @@ export class OpenAIResponsesRunner {
 
           return this.extractChatText(completion);
         } catch (retryError) {
-          console.error('[OpenAIResponsesRunner] Retry with prompt-only also failed:', retryError);
+          logError('[OpenAIResponsesRunner] Retry with prompt-only also failed:', retryError);
           if (this.shouldRetryChatWithPrompt(retryError)) {
-            console.warn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
+            logWarn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
             return this.requestCompletionsText(client, model, existingMessages, prompt, signal);
           }
           throw retryError;
@@ -1272,7 +1273,7 @@ export class OpenAIResponsesRunner {
       }
 
       if (this.shouldRetryChatWithPrompt(error)) {
-        console.warn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
+        logWarn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
         return this.requestCompletionsText(client, model, existingMessages, prompt, signal);
       }
 
@@ -1306,7 +1307,7 @@ export class OpenAIResponsesRunner {
       return typeof text === 'string' ? text.trim() : '';
     } catch (error) {
       // If Completions API also fails, return a helpful error message
-      console.error('[OpenAIResponsesRunner] Completions API also failed:', error);
+      logError('[OpenAIResponsesRunner] Completions API also failed:', error);
       throw new Error('All API methods failed. This provider may not support standard OpenAI APIs. Please check your model and base URL configuration.');
     }
   }
@@ -1456,12 +1457,12 @@ export class OpenAIResponsesRunner {
   }
 
   private sendTraceStep(sessionId: string, step: TraceStep): void {
-    console.log(`[Trace] ${step.type}: ${step.title}`);
+    log(`[Trace] ${step.type}: ${step.title}`);
     this.sendToRenderer({ type: 'trace.step', payload: { sessionId, step } });
   }
 
   private sendTraceUpdate(sessionId: string, stepId: string, updates: Partial<TraceStep>): void {
-    console.log(`[Trace] Update step ${stepId}:`, updates);
+    log(`[Trace] Update step ${stepId}:`, updates);
     this.sendToRenderer({ type: 'trace.update', payload: { sessionId, stepId, updates } });
   }
 

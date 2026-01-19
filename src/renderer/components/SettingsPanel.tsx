@@ -65,12 +65,22 @@ const SERVICE_OPTIONS = [
 
 export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  // Track which tabs have been viewed at least once (for lazy loading)
+  const [viewedTabs, setViewedTabs] = useState<Set<TabId>>(new Set([initialTab]));
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
+      setViewedTabs(new Set([initialTab]));
     }
   }, [isOpen, initialTab]);
+
+  // Mark tab as viewed when it becomes active
+  useEffect(() => {
+    if (!viewedTabs.has(activeTab)) {
+      setViewedTabs(prev => new Set([...prev, activeTab]));
+    }
+  }, [activeTab, viewedTabs]);
 
   if (!isOpen) return null;
 
@@ -81,7 +91,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[85vh] overflow-hidden border border-border flex">
         {/* Sidebar */}
         <div className="w-56 bg-surface-hover border-r border-border flex flex-col flex-shrink-0">
@@ -93,7 +103,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors active:scale-[0.98] ${
                   activeTab === tab.id
                     ? 'bg-accent/10 text-accent'
                     : 'hover:bg-surface-active text-text-secondary hover:text-text-primary'
@@ -132,9 +142,16 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-6">
-            {activeTab === 'api' && <APISettingsTab />}
-            {activeTab === 'credentials' && <CredentialsTab />}
-            {activeTab === 'connectors' && <ConnectorsTab />}
+            {/* Lazy load tabs - only mount when first viewed, then keep mounted */}
+            <div className={activeTab === 'api' ? '' : 'hidden'}>
+              {viewedTabs.has('api') && <APISettingsTab />}
+            </div>
+            <div className={activeTab === 'credentials' ? '' : 'hidden'}>
+              {viewedTabs.has('credentials') && <CredentialsTab />}
+            </div>
+            <div className={activeTab === 'connectors' ? '' : 'hidden'}>
+              {viewedTabs.has('connectors') && <ConnectorsTab />}
+            </div>
           </div>
         </div>
       </div>
@@ -154,43 +171,44 @@ function APISettingsTab() {
   const [useCustomModel, setUseCustomModel] = useState(false);
   const [presets, setPresets] = useState<ProviderPresets | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const previousProviderRef = useRef(provider);
   const isLoadingConfigRef = useRef(false);
-  const manualProviderChangeRef = useRef(false);
 
   useEffect(() => {
     if (isElectron) {
       loadConfig();
+    } else {
+      setIsLoadingConfig(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!presets) return;
-    if (isLoadingConfigRef.current || !manualProviderChangeRef.current) {
-      previousProviderRef.current = provider;
-      return;
-    }
-
-    const preset = presets[provider];
+  // Handle provider change synchronously for immediate feedback
+  const handleProviderChange = (newProvider: typeof provider) => {
+    if (newProvider === provider || !presets) return;
+    
+    const preset = presets[newProvider];
     if (preset) {
-      if (provider === 'custom') {
-        if (previousProviderRef.current !== 'custom') {
-          setBaseUrl(preset.baseUrl);
-        }
-      } else {
+      // Batch state updates
+      setProvider(newProvider);
+      if (newProvider !== 'custom') {
+        setBaseUrl(preset.baseUrl);
+      } else if (previousProviderRef.current !== 'custom') {
         setBaseUrl(preset.baseUrl);
       }
       setUseCustomModel(false);
       setModel(preset.models[0]?.id || '');
+    } else {
+      setProvider(newProvider);
     }
-    manualProviderChangeRef.current = false;
-    previousProviderRef.current = provider;
-  }, [provider, presets]);
+    previousProviderRef.current = newProvider;
+  };
 
   async function loadConfig() {
     isLoadingConfigRef.current = true;
+    setIsLoadingConfig(true);
     try {
       const [cfg, prs] = await Promise.all([
         window.electronAPI.config.get(),
@@ -199,7 +217,9 @@ function APISettingsTab() {
       setPresets(prs);
       
       if (cfg) {
-        setProvider(cfg.provider || 'openrouter');
+        const newProvider = cfg.provider || 'openrouter';
+        setProvider(newProvider);
+        previousProviderRef.current = newProvider;
         setApiKey(cfg.apiKey || '');
         const preset = prs?.[cfg.provider];
         setBaseUrl(cfg.baseUrl || preset?.baseUrl || '');
@@ -219,6 +239,7 @@ function APISettingsTab() {
       console.error('Failed to load config:', err);
     } finally {
       isLoadingConfigRef.current = false;
+      setIsLoadingConfig(false);
     }
   }
 
@@ -266,6 +287,15 @@ function APISettingsTab() {
 
   const currentPreset = presets?.[provider];
 
+  if (isLoadingConfig) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        <span className="ml-2 text-text-secondary">Loading settings...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* Provider Selection */}
@@ -278,15 +308,12 @@ function APISettingsTab() {
           {(['openrouter', 'anthropic', 'openai', 'custom'] as const).map((p) => (
             <button
               key={p}
-              onClick={() => {
-                if (p === provider) return;
-                manualProviderChangeRef.current = true;
-                setProvider(p);
-              }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              onClick={() => handleProviderChange(p)}
+              disabled={isLoadingConfig}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors active:scale-95 ${
                 provider === p
                   ? 'bg-accent text-white'
-                  : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  : 'bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50'
               }`}
             >
               {presets?.[p]?.name || p}
@@ -328,7 +355,7 @@ function APISettingsTab() {
               <button
                 key={mode.id}
                 onClick={() => setCustomProtocol(mode.id)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors active:scale-95 ${
                   customProtocol === mode.id
                     ? 'bg-accent text-white'
                     : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
@@ -378,7 +405,7 @@ function APISettingsTab() {
           <button
             type="button"
             onClick={() => setUseCustomModel(!useCustomModel)}
-            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 ${
               useCustomModel
                 ? 'bg-accent-muted text-accent'
                 : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
@@ -440,7 +467,7 @@ function APISettingsTab() {
       <button
         onClick={handleSave}
         disabled={isSaving || !apiKey.trim()}
-        className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+        className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
       >
         {isSaving ? (
           <>

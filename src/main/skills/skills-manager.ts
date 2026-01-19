@@ -3,6 +3,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { Skill } from '../../renderer/types';
 import type { DatabaseInstance } from '../db/database';
+import { log, logError } from '../utils/logger';
 
 interface McpServerConfig {
   command: string;
@@ -140,11 +141,11 @@ export class SkillsManager {
           skills.push(skill);
           this.loadedSkills.set(skill.id, skill);
         } catch (error) {
-          console.error(`Failed to load skill from ${filePath}:`, error);
+          logError(`Failed to load skill from ${filePath}:`, error);
         }
       }
     } catch (error) {
-      console.error(`Failed to read skills directory ${dir}:`, error);
+      logError(`Failed to read skills directory ${dir}:`, error);
     }
 
     return skills;
@@ -196,7 +197,7 @@ export class SkillsManager {
     }
 
     if (this.runningServers.has(skill.id)) {
-      console.log(`MCP server for ${skill.name} is already running`);
+      log(`MCP server for ${skill.name} is already running`);
       return;
     }
 
@@ -210,7 +211,7 @@ export class SkillsManager {
     // 
     // this.runningServers.set(skill.id, { process: proc, skill });
 
-    console.log(`MCP server started for skill: ${skill.name}`);
+    log(`MCP server started for skill: ${skill.name}`);
   }
 
   /**
@@ -226,7 +227,7 @@ export class SkillsManager {
     // server.process.kill();
 
     this.runningServers.delete(skillId);
-    console.log(`MCP server stopped for skill: ${server.skill.name}`);
+    log(`MCP server stopped for skill: ${server.skill.name}`);
   }
 
   /**

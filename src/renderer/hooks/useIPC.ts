@@ -246,6 +246,10 @@ export function useIPC() {
             timestamp: Date.now(),
           };
           addMessage(session.id, userMessage);
+          
+          // Immediately activate turn to show processing indicator while waiting for API
+          const mockStepId = `pending-step-${Date.now()}`;
+          activateNextTurn(session.id, mockStepId);
         }
         // Loading will be reset when we receive session.status event
         return session;
@@ -308,6 +312,12 @@ export function useIPC() {
       }
       
       // Electron mode - send to backend (user message already added above)
+      // Immediately activate turn to show processing indicator while waiting for API
+      if (!shouldQueue) {
+        const mockStepId = `pending-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
+      }
+      
       send({
         type: 'session.continue',
         payload: { sessionId, prompt },

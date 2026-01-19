@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { log, logError, logWarn } from '../utils/logger';
 
 /**
  * MCP Server Configuration
@@ -46,7 +47,7 @@ export class MCPManager {
    * Initialize MCP servers from configuration
    */
   async initializeServers(configs: MCPServerConfig[]): Promise<void> {
-    console.log('[MCPManager] Initializing', configs.length, 'MCP servers');
+    log('[MCPManager] Initializing', configs.length, 'MCP servers');
     
     // Close existing connections
     await this.disconnectAll();
@@ -63,7 +64,7 @@ export class MCPManager {
         try {
           await this.connectServer(config);
         } catch (error) {
-          console.error(`[MCPManager] Failed to connect to server ${config.name}:`, error);
+          logError(`[MCPManager] Failed to connect to server ${config.name}:`, error);
         }
       }
     }
@@ -76,7 +77,7 @@ export class MCPManager {
    * Connect to a single MCP server
    */
   private async connectServer(config: MCPServerConfig): Promise<void> {
-    console.log(`[MCPManager] Connecting to MCP server: ${config.name} (${config.type})`);
+    log(`[MCPManager] Connecting to MCP server: ${config.name} (${config.type})`);
 
     let transport: StdioClientTransport | SSEClientTransport;
 
@@ -89,7 +90,7 @@ export class MCPManager {
       const args = config.args || [];
       const env = { ...process.env, ...(config.env || {}) } as Record<string, string>;
 
-      console.log(`[MCPManager] Creating STDIO transport: ${command} ${args.join(' ')}`);
+      log(`[MCPManager] Creating STDIO transport: ${command} ${args.join(' ')}`);
 
       // Create STDIO transport - it will spawn the process internally
       transport = new StdioClientTransport({
@@ -129,7 +130,7 @@ export class MCPManager {
     this.clients.set(config.id, client);
     this.transports.set(config.id, transport);
 
-    console.log(`[MCPManager] Connected to ${config.name}`);
+    log(`[MCPManager] Connected to ${config.name}`);
 
     // Special handling for Chrome DevTools MCP Server
     if (config.name.toLowerCase().includes('chrome')) {
@@ -155,22 +156,22 @@ export class MCPManager {
    * Wait for Chrome debugging port to become ready with retries
    */
   private async waitForChromeDebugPort(maxRetries: number = 15, delayMs: number = 1000): Promise<boolean> {
-    console.log(`[MCPManager] Waiting for Chrome debug port (max ${maxRetries} retries)...`);
+    log(`[MCPManager] Waiting for Chrome debug port (max ${maxRetries} retries)...`);
     
     for (let i = 0; i < maxRetries; i++) {
       const isReady = await this.isChromeDebugPortReady();
       if (isReady) {
-        console.log(`[MCPManager] Chrome debug port ready ✓ (attempt ${i + 1})`);
+        log(`[MCPManager] Chrome debug port ready ✓ (attempt ${i + 1})`);
         return true;
       }
       
       if (i < maxRetries - 1) {
-        console.log(`[MCPManager] Port not ready, retrying in ${delayMs}ms... (${i + 1}/${maxRetries})`);
+        log(`[MCPManager] Port not ready, retrying in ${delayMs}ms... (${i + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
     
-    console.warn(`[MCPManager] Chrome debug port not ready after ${maxRetries} attempts`);
+    logWarn(`[MCPManager] Chrome debug port not ready after ${maxRetries} attempts`);
     return false;
   }
 
@@ -184,13 +185,13 @@ export class MCPManager {
    * 3. If no, start a new Chrome instance with debugging enabled
    */
   private async ensureChromeReady(_serverId: string, serverName: string, client: Client): Promise<void> {
-    console.log(`[MCPManager] Ensuring Chrome is ready for ${serverName}...`);
+    log(`[MCPManager] Ensuring Chrome is ready for ${serverName}...`);
     
     // Step 1: Check if debugging port is accessible
     const portReady = await this.isChromeDebugPortReady();
     
     if (portReady) {
-      console.log(`[MCPManager] Chrome debug port (9222) is accessible`);
+      log(`[MCPManager] Chrome debug port (9222) is accessible`);
       
       // Verify tool connection works
       try {
@@ -198,14 +199,14 @@ export class MCPManager {
           name: 'list_pages',
           arguments: {},
         });
-        console.log(`[MCPManager] ✓ Chrome connected, using existing instance`);
+        log(`[MCPManager] ✓ Chrome connected, using existing instance`);
         return;
       } catch (error: any) {
-        console.warn(`[MCPManager] Port accessible but tool call failed:`, error.message);
-        console.log(`[MCPManager] Starting new Chrome instance...`);
+        logWarn(`[MCPManager] Port accessible but tool call failed:`, error.message);
+        log(`[MCPManager] Starting new Chrome instance...`);
       }
     } else {
-      console.log(`[MCPManager] Chrome debug port (9222) not accessible, starting new instance...`);
+      log(`[MCPManager] Chrome debug port (9222) not accessible, starting new instance...`);
     }
     
     // Step 2: Start Chrome with remote debugging
@@ -216,31 +217,31 @@ export class MCPManager {
       const portBecameReady = await this.waitForChromeDebugPort(15, 1000);
       
       if (!portBecameReady) {
-        console.error(`[MCPManager] ❌ Chrome startup failed or debug port not ready`);
+        logError(`[MCPManager] ❌ Chrome startup failed or debug port not ready`);
         return;
       }
       
       // Verify tool connection
-      console.log(`[MCPManager] Verifying tool connection...`);
+      log(`[MCPManager] Verifying tool connection...`);
       for (let i = 0; i < 5; i++) {
         try {
           await client.callTool({
             name: 'list_pages',
             arguments: {},
           });
-          console.log(`[MCPManager] ✓ Chrome started and ready!`);
+          log(`[MCPManager] ✓ Chrome started and ready!`);
           return;
         } catch (verifyError: any) {
           if (i < 4) {
-            console.log(`[MCPManager] Verifying connection... (${i + 1}/5)`);
+            log(`[MCPManager] Verifying connection... (${i + 1}/5)`);
             await new Promise(resolve => setTimeout(resolve, 1000));
           } else {
-            console.warn(`[MCPManager] ⚠️ Chrome started but verification failed:`, verifyError.message);
+            logWarn(`[MCPManager] ⚠️ Chrome started but verification failed:`, verifyError.message);
           }
         }
       }
     } catch (startError: any) {
-      console.error(`[MCPManager] ❌ Failed to start Chrome:`, startError.message || startError);
+      logError(`[MCPManager] ❌ Failed to start Chrome:`, startError.message || startError);
     }
   }
 
@@ -315,9 +316,9 @@ export class MCPManager {
       `.replace(/\s+/g, ' ').trim();
     }
 
-    console.log(`[MCPManager] Starting Chrome with remote debugging...`);
-    console.log(`[MCPManager] User data dir: ${userDataDir}`);
-    console.log(`[MCPManager] Command: ${startupCommand}`);
+    log(`[MCPManager] Starting Chrome with remote debugging...`);
+    log(`[MCPManager] User data dir: ${userDataDir}`);
+    log(`[MCPManager] Command: ${startupCommand}`);
 
     try {
       const shellPath = platform === 'win32' ? process.env.COMSPEC || 'cmd.exe' : '/bin/sh';
@@ -325,9 +326,9 @@ export class MCPManager {
         shell: shellPath,
         timeout: 10000,
       });
-      console.log(`[MCPManager] Chrome command executed successfully`);
+      log(`[MCPManager] Chrome command executed successfully`);
     } catch (error: any) {
-      console.warn(`[MCPManager] Chrome startup command completed with warning:`, error.message);
+      logWarn(`[MCPManager] Chrome startup command completed with warning:`, error.message);
     }
   }
 
@@ -343,7 +344,7 @@ export class MCPManager {
       try {
         await client.close();
       } catch (error) {
-        console.error(`[MCPManager] Error closing client for ${serverId}:`, error);
+        logError(`[MCPManager] Error closing client for ${serverId}:`, error);
       }
       this.clients.delete(serverId);
     }
@@ -352,7 +353,7 @@ export class MCPManager {
       try {
         await transport.close();
       } catch (error) {
-        console.error(`[MCPManager] Error closing transport for ${serverId}:`, error);
+        logError(`[MCPManager] Error closing transport for ${serverId}:`, error);
       }
       this.transports.delete(serverId);
     }
@@ -378,7 +379,7 @@ export class MCPManager {
       this.tools.delete(toolName);
     }
 
-    console.log(`[MCPManager] Disconnected from server ${serverId}`);
+    log(`[MCPManager] Disconnected from server ${serverId}`);
   }
 
   /**
@@ -395,7 +396,7 @@ export class MCPManager {
    * Refresh tools from all connected servers with timeout protection
    */
   async refreshTools(): Promise<void> {
-    console.log('[MCPManager] Refreshing tools from all servers');
+    log('[MCPManager] Refreshing tools from all servers');
     this.tools.clear();
 
     for (const [serverId, client] of this.clients.entries()) {
@@ -410,11 +411,11 @@ export class MCPManager {
           setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
         });
 
-        console.log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
+        log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
         
         const listToolsResult = await Promise.race([listToolsPromise, timeoutPromise]);
         
-        console.log(`[MCPManager] Raw tools from ${config.name}:`, listToolsResult);
+        log(`[MCPManager] Raw tools from ${config.name}:`, listToolsResult);
         
         for (const tool of listToolsResult.tools) {
           // Prefix tool name with server name to avoid conflicts
@@ -433,18 +434,18 @@ export class MCPManager {
           });
         }
 
-        console.log(`[MCPManager] ✓ Loaded ${listToolsResult.tools.length} tools from ${config.name}`);
+        log(`[MCPManager] ✓ Loaded ${listToolsResult.tools.length} tools from ${config.name}`);
       } catch (error: any) {
-        console.error(`[MCPManager] ❌ Error listing tools from ${serverId}:`, error.message || error);
+        logError(`[MCPManager] ❌ Error listing tools from ${serverId}:`, error.message || error);
         // If Chrome server, try to reconnect
         const config = this.serverConfigs.get(serverId);
         if (config && config.name.toLowerCase().includes('chrome')) {
-          console.log(`[MCPManager] Chrome server may need reconnection. Trying to refresh...`);
+          log(`[MCPManager] Chrome server may need reconnection. Trying to refresh...`);
         }
       }
     }
 
-    console.log(`[MCPManager] Total tools available: ${this.tools.size}`);
+    log(`[MCPManager] Total tools available: ${this.tools.size}`);
   }
 
   /**
@@ -478,7 +479,7 @@ export class MCPManager {
     // Extract the actual tool name (remove prefix)
     const actualToolName = toolName.replace(/^mcp_[^_]+_/, '');
 
-    console.log(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
+    log(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
 
     const maxRetries = 2;
     let lastError: any;
@@ -500,12 +501,12 @@ export class MCPManager {
       } catch (error: any) {
         lastError = error;
         const errorMsg = error.message || String(error);
-        console.error(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
+        logError(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
         
         // If connection closed, try to reconnect
         if (errorMsg.includes('Connection closed') || errorMsg.includes('timeout')) {
           if (attempt < maxRetries) {
-            console.log(`[MCPManager] Connection issue detected, waiting before retry...`);
+            log(`[MCPManager] Connection issue detected, waiting before retry...`);
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         } else {

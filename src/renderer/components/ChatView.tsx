@@ -176,8 +176,8 @@ export function ChatView() {
             })
           )}
 
-          {/* Status indicator */}
-          {hasActiveTurn && (
+          {/* Processing indicator */}
+          {hasActiveTurn && !partialMessage && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
               <span className="text-sm text-text-secondary">
@@ -185,7 +185,7 @@ export function ChatView() {
               </span>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type { MountedPath } from '../../renderer/types';
+import { logWarn, logError } from '../utils/logger';
 
 /**
  * PathResolver - Core security component for sandboxed file system access
@@ -106,7 +107,7 @@ export class PathResolver {
 
       // 2. Check if normalized path is within mount root
       if (!normalized.startsWith(normalizedMount)) {
-        console.warn(`Path escape attempt: ${resolvedPath} is outside ${mountRoot}`);
+        logWarn(`Path escape attempt: ${resolvedPath} is outside ${mountRoot}`);
         return false;
       }
 
@@ -114,14 +115,14 @@ export class PathResolver {
       if (fs.existsSync(normalized)) {
         const realPath = fs.realpathSync(normalized);
         if (!realPath.startsWith(normalizedMount)) {
-          console.warn(`Symlink escape attempt: ${normalized} -> ${realPath}`);
+          logWarn(`Symlink escape attempt: ${normalized} -> ${realPath}`);
           return false;
         }
       }
 
       return true;
     } catch (error) {
-      console.error('Path validation error:', error);
+      logError('Path validation error:', error);
       return false;
     }
   }
@@ -140,13 +141,13 @@ export class PathResolver {
 
     // Check for path traversal attempts
     if (normalized.includes('..')) {
-      console.warn(`Path traversal attempt detected: ${virtualPath}`);
+      logWarn(`Path traversal attempt detected: ${virtualPath}`);
       return null;
     }
 
     // Check for home directory references
     if (normalized.includes('~')) {
-      console.warn(`Home directory reference detected: ${virtualPath}`);
+      logWarn(`Home directory reference detected: ${virtualPath}`);
       return null;
     }
 

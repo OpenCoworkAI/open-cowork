@@ -1,4 +1,5 @@
 import Store from 'electron-store';
+import { log, logWarn } from '../utils/logger';
 
 /**
  * Application configuration schema
@@ -219,9 +220,9 @@ class ConfigStore {
       const fs = require('fs');
       if (fs.existsSync(config.claudeCodePath)) {
         process.env.CLAUDE_CODE_PATH = config.claudeCodePath;
-        console.log('[Config] Using configured Claude Code path:', config.claudeCodePath);
+        log('[Config] Using configured Claude Code path:', config.claudeCodePath);
       } else {
-        console.log('[Config] Configured Claude Code path not found, will use auto-detection:', config.claudeCodePath);
+        log('[Config] Configured Claude Code path not found, will use auto-detection:', config.claudeCodePath);
         // Don't set the env var, let auto-detection find it
       }
     }
@@ -230,7 +231,7 @@ class ConfigStore {
       process.env.COWORK_WORKDIR = config.defaultWorkdir;
     }
     
-    console.log('[Config] Applied env vars for provider:', config.provider, {
+    log('[Config] Applied env vars for provider:', config.provider, {
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '✓ Set' : '(empty/unset)',
       ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '(empty/unset)',
       ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '(default)',
