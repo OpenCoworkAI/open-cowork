@@ -10,6 +10,7 @@ import {
   Chrome,
   X,
   Paperclip,
+  BookOpen,
 } from 'lucide-react';
 
 export function WelcomeView() {
@@ -362,6 +363,13 @@ export function WelcomeView() {
       label: 'Check emails', 
       icon: Mail, 
       prompt: 'Help me use Chrome to summarize the new emails from the past three days in my Gmail and NetEase Mail. Note that the saved accounts already include the full email suffix. Therefore, if the email suffix is already pre-filled on the webpage or in a screenshot, do not enter it again, to avoid login failure. Also, first check whether the corresponding account credentials are saved. If the username or password for a given email service is not saved, you can skip that email account.',
+      requiresChrome: true 
+    },
+    { 
+      id: 'papers', 
+      label: 'Search & summarize papers', 
+      icon: BookOpen, 
+      prompt: 'Please help me use Chrome to search for and summarize papers related to [Agent] within two days.\nSource websites:\n1. HuggingFace Daily Papers. Please include the vote information and a brief summary. Note that it may not include papers in the weekend, so you may need to check the papers in previous days. But make sure that there is a total of two days.',
       requiresChrome: true 
     },
   ];
