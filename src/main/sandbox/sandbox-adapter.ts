@@ -182,28 +182,10 @@ export class SandboxAdapter implements SandboxExecutor {
       wslStatus.nodeAvailable = true;
     }
 
-    // claude-code installation is optional for WSL sandbox
-    // The main process uses Windows-side claude-code, WSL is for command execution
+    // claude-code in WSL is NOT needed - we use Windows-side claude-code
+    // WSL sandbox is only for command execution (Bash, file operations)
     if (!wslStatus.claudeCodeAvailable) {
-      log('[SandboxAdapter] claude-code not in WSL (optional - Windows claude-code will be used)');
-      // Try to install but don't fail if it doesn't work
-      if (!config.skipInstallPrompts) {
-        try {
-          log('[SandboxAdapter] Attempting to install claude-code in WSL (optional)...');
-          const installed = await Promise.race([
-            WSLBridge.installClaudeCodeInWSL(wslStatus.distro!),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 60000)) // 60s timeout
-          ]);
-          if (installed) {
-            wslStatus.claudeCodeAvailable = true;
-            log('[SandboxAdapter] claude-code installed in WSL');
-          } else {
-            log('[SandboxAdapter] claude-code installation skipped/timed out (not critical)');
-          }
-        } catch (error) {
-          log('[SandboxAdapter] claude-code installation failed (not critical):', error);
-        }
-      }
+      log('[SandboxAdapter] claude-code not in WSL (not needed - Windows claude-code is used)');
     }
 
     // Initialize WSL Bridge
