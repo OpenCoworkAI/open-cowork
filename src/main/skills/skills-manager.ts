@@ -41,36 +41,67 @@ export class SkillsManager {
    * Load built-in skills
    */
   private loadBuiltinSkills(): void {
-    const builtinSkills: Skill[] = [
-      {
-        id: 'builtin-filesystem',
-        name: 'File System',
-        description: 'Read, write, edit, and search files',
-        type: 'builtin',
-        enabled: true,
-        createdAt: Date.now(),
-      },
-      {
-        id: 'builtin-shell',
-        name: 'Shell',
-        description: 'Execute shell commands',
-        type: 'builtin',
-        enabled: true,
-        createdAt: Date.now(),
-      },
-      {
-        id: 'builtin-search',
-        name: 'Search',
-        description: 'Search files and content with glob and grep',
-        type: 'builtin',
-        enabled: true,
-        createdAt: Date.now(),
-      },
+    // Load skills from .claude/skills directory (like pdf, xlsx, docx, pptx)
+    const builtinSkillsPath = this.getBuiltinSkillsPath();
+    if (builtinSkillsPath) {
+      try {
+        const skillDirs = fs.readdirSync(builtinSkillsPath);
+
+        for (const dir of skillDirs) {
+          const skillPath = path.join(builtinSkillsPath, dir);
+          const stat = fs.statSync(skillPath);
+
+          if (!stat.isDirectory()) continue;
+
+          // Look for SKILL.md
+          const skillMdPath = path.join(skillPath, 'SKILL.md');
+          if (!fs.existsSync(skillMdPath)) continue;
+
+          // Parse metadata
+          const metadata = this.getSkillMetadata(skillPath);
+          if (!metadata) continue;
+
+          const skill: Skill = {
+            id: `builtin-${dir}`,
+            name: metadata.name,
+            description: metadata.description,
+            type: 'builtin',
+            enabled: true,
+            createdAt: Date.now(),
+          };
+
+          this.loadedSkills.set(skill.id, skill);
+          log(`Loaded built-in skill: ${skill.name}`);
+        }
+      } catch (error) {
+        logError('Failed to load built-in skills from .claude/skills:', error);
+      }
+    }
+  }
+
+  /**
+   * Get the built-in skills directory path
+   */
+  private getBuiltinSkillsPath(): string {
+    const appPath = app.getAppPath();
+    const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
+
+    const possiblePaths = [
+      // Development
+      path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
+      // Production (unpacked)
+      path.join(unpackedPath, '.claude', 'skills'),
+      // Fallback
+      path.join(appPath, '.claude', 'skills'),
     ];
 
-    for (const skill of builtinSkills) {
-      this.loadedSkills.set(skill.id, skill);
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
+
+    return '';
   }
 
   /**
@@ -99,8 +130,9 @@ export class SkillsManager {
    * Load global skills from user config directory
    */
   async loadGlobalSkills(): Promise<Skill[]> {
-    const globalSkillsPath = path.join(app.getPath('home'), '.open-cowork', 'skills');
-    
+    // Use ~/.claude/skills/ to match SDK's expected location
+    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+
     if (!fs.existsSync(globalSkillsPath)) {
       fs.mkdirSync(globalSkillsPath, { recursive: true });
     }
@@ -118,30 +150,55 @@ export class SkillsManager {
     const skills: Skill[] = [];
 
     try {
-      const files = fs.readdirSync(dir);
+      const entries = fs.readdirSync(dir);
 
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue;
+      for (const entry of entries) {
+        const entryPath = path.join(dir, entry);
+        const stat = fs.statSync(entryPath);
 
-        const filePath = path.join(dir, file);
-        try {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const config: SkillConfig = JSON.parse(content);
+        // Check if it's a directory with SKILL.md
+        if (stat.isDirectory()) {
+          const skillMdPath = path.join(entryPath, 'SKILL.md');
+          if (fs.existsSync(skillMdPath)) {
+            // Parse metadata from SKILL.md
+            const metadata = this.getSkillMetadata(entryPath);
+            if (!metadata) continue;
 
-          const skill: Skill = {
-            id: `${source}-${path.basename(file, '.json')}`,
-            name: config.name,
-            description: config.description,
-            type: config.type === 'mcp' ? 'mcp' : 'custom',
-            enabled: config.enabled !== false,
-            config: config.mcp ? { mcp: config.mcp } : undefined,
-            createdAt: Date.now(),
-          };
+            const skill: Skill = {
+              id: `${source}-${entry}`,
+              name: metadata.name,
+              description: metadata.description,
+              type: 'custom',
+              enabled: true,
+              createdAt: Date.now(),
+            };
 
-          skills.push(skill);
-          this.loadedSkills.set(skill.id, skill);
-        } catch (error) {
-          logError(`Failed to load skill from ${filePath}:`, error);
+            skills.push(skill);
+            this.loadedSkills.set(skill.id, skill);
+            log(`Loaded ${source} skill: ${skill.name}`);
+          }
+        }
+        // Also support legacy .json config files
+        else if (entry.endsWith('.json')) {
+          try {
+            const content = fs.readFileSync(entryPath, 'utf-8');
+            const config: SkillConfig = JSON.parse(content);
+
+            const skill: Skill = {
+              id: `${source}-${path.basename(entry, '.json')}`,
+              name: config.name,
+              description: config.description,
+              type: config.type === 'mcp' ? 'mcp' : 'custom',
+              enabled: config.enabled !== false,
+              config: config.mcp ? { mcp: config.mcp } : undefined,
+              createdAt: Date.now(),
+            };
+
+            skills.push(skill);
+            this.loadedSkills.set(skill.id, skill);
+          } catch (error) {
+            logError(`Failed to load skill from ${entryPath}:`, error);
+          }
         }
       }
     } catch (error) {
@@ -296,6 +353,244 @@ export class SkillsManager {
 
     const stmt = this.db.prepare('DELETE FROM skills WHERE id = ?');
     stmt.run(skillId);
+  }
+
+  /**
+   * List all skills with optional filters
+   */
+  async listSkills(filter?: { type?: 'builtin' | 'mcp' | 'custom'; enabled?: boolean }): Promise<Skill[]> {
+    // Load global skills first to ensure they're in loadedSkills
+    await this.loadGlobalSkills();
+
+    let skills = Array.from(this.loadedSkills.values());
+
+    if (filter) {
+      if (filter.type !== undefined) {
+        skills = skills.filter(s => s.type === filter.type);
+      }
+      if (filter.enabled !== undefined) {
+        skills = skills.filter(s => s.enabled === filter.enabled);
+      }
+    }
+
+    return skills;
+  }
+
+  /**
+   * Validate skill folder structure and SKILL.md
+   */
+  async validateSkillFolder(skillPath: string): Promise<{ valid: boolean; errors: string[] }> {
+    const errors: string[] = [];
+
+    // Check if path exists
+    if (!fs.existsSync(skillPath)) {
+      return { valid: false, errors: ['Path does not exist'] };
+    }
+
+    // Check if it's a directory
+    const stat = fs.statSync(skillPath);
+    if (!stat.isDirectory()) {
+      return { valid: false, errors: ['Path is not a directory'] };
+    }
+
+    // Check for SKILL.md
+    const skillMdPath = path.join(skillPath, 'SKILL.md');
+    if (!fs.existsSync(skillMdPath)) {
+      return { valid: false, errors: ['SKILL.md not found'] };
+    }
+
+    // Parse SKILL.md frontmatter
+    try {
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      const nameMatch = content.match(/name:\s*["']?([^"'\n]+)["']?/);
+      const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+
+      if (!nameMatch) {
+        errors.push('SKILL.md missing "name" in frontmatter');
+      }
+      if (!descMatch) {
+        errors.push('SKILL.md missing "description" in frontmatter');
+      }
+    } catch (err) {
+      errors.push('Failed to parse SKILL.md');
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Get skill metadata from SKILL.md file
+   */
+  getSkillMetadata(skillPath: string): { name: string; description: string } | null {
+    const skillMdPath = path.join(skillPath, 'SKILL.md');
+
+    if (!fs.existsSync(skillMdPath)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      const nameMatch = content.match(/name:\s*["']?([^"'\n]+)["']?/);
+      const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+
+      if (!nameMatch || !descMatch) {
+        return null;
+      }
+
+      return {
+        name: nameMatch[1].trim(),
+        description: descMatch[1].trim(),
+      };
+    } catch (error) {
+      logError(`Failed to parse SKILL.md from ${skillPath}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Copy skill folder to global skills directory
+   */
+  private async copySkillToGlobal(sourcePath: string, skillName: string): Promise<string> {
+    // Use ~/.claude/skills/ to match SDK's expected location
+    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+
+    // Ensure global skills directory exists
+    if (!fs.existsSync(globalSkillsPath)) {
+      fs.mkdirSync(globalSkillsPath, { recursive: true });
+    }
+
+    const targetPath = path.join(globalSkillsPath, skillName);
+
+    // Copy directory recursively (caller should handle existing files)
+    await this.copyDirectory(sourcePath, targetPath);
+
+    log(`Copied skill from ${sourcePath} to ${targetPath}`);
+    return targetPath;
+  }
+
+  /**
+   * Recursively copy directory
+   */
+  private async copyDirectory(source: string, target: string): Promise<void> {
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(target, { recursive: true });
+    }
+
+    const files = fs.readdirSync(source);
+
+    for (const file of files) {
+      const sourcePath = path.join(source, file);
+      const targetPath = path.join(target, file);
+      const stat = fs.statSync(sourcePath);
+
+      if (stat.isDirectory()) {
+        await this.copyDirectory(sourcePath, targetPath);
+      } else {
+        fs.copyFileSync(sourcePath, targetPath);
+      }
+    }
+  }
+
+  /**
+   * Install a skill from a directory
+   */
+  async installSkill(skillPath: string): Promise<Skill> {
+    // Validate skill folder
+    const validation = await this.validateSkillFolder(skillPath);
+    if (!validation.valid) {
+      throw new Error(`Invalid skill folder: ${validation.errors.join(', ')}`);
+    }
+
+    // Get skill metadata
+    const metadata = this.getSkillMetadata(skillPath);
+    if (!metadata) {
+      throw new Error('Failed to read skill metadata from SKILL.md');
+    }
+
+    // Load global skills to check for existing
+    await this.loadGlobalSkills();
+
+    // Check if skill with same name already exists in global directory
+    // Use ~/.claude/skills/ to match SDK's expected location
+    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    const targetPath = path.join(globalSkillsPath, metadata.name);
+
+    if (fs.existsSync(targetPath)) {
+      // Find and remove existing skill from loadedSkills
+      const existingSkill = Array.from(this.loadedSkills.values()).find(
+        s => s.name.toLowerCase() === metadata.name.toLowerCase()
+      );
+      if (existingSkill) {
+        this.loadedSkills.delete(existingSkill.id);
+        log(`Removing existing skill: ${existingSkill.name} (${existingSkill.id})`);
+      }
+
+      // Delete existing directory
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      log(`Deleted existing skill directory: ${targetPath}`);
+    }
+
+    // Copy skill to global directory
+    await this.copySkillToGlobal(skillPath, metadata.name);
+
+    // Create skill object
+    const skill: Skill = {
+      id: `custom-${Date.now()}`,
+      name: metadata.name,
+      description: metadata.description,
+      type: 'custom',
+      enabled: true,
+      createdAt: Date.now(),
+    };
+
+    // Add to loaded skills
+    this.loadedSkills.set(skill.id, skill);
+
+    // Save to database
+    this.saveSkill(skill);
+
+    log(`Installed skill: ${skill.name} (${skill.id})`);
+    return skill;
+  }
+
+  /**
+   * Uninstall a skill (delete from filesystem and database)
+   */
+  async uninstallSkill(skillId: string): Promise<void> {
+    const skill = this.loadedSkills.get(skillId);
+
+    if (!skill) {
+      throw new Error('Skill not found');
+    }
+
+    // Can't delete built-in skills
+    if (skill.type === 'builtin') {
+      throw new Error('Cannot delete built-in skills');
+    }
+
+    // Stop MCP server if running
+    await this.stopMcpServer(skillId);
+
+    // Remove from filesystem (only for custom skills in global directory)
+    if (skill.type === 'custom') {
+      // Use ~/.claude/skills/ to match SDK's expected location
+      const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+      const skillDir = path.join(globalSkillsPath, skill.name);
+
+      if (fs.existsSync(skillDir)) {
+        fs.rmSync(skillDir, { recursive: true, force: true });
+        log(`Deleted skill directory: ${skillDir}`);
+      }
+    }
+
+    // Remove from loaded skills
+    this.loadedSkills.delete(skillId);
+
+    // Delete from database
+    const stmt = this.db.prepare('DELETE FROM skills WHERE id = ?');
+    stmt.run(skillId);
+
+    log(`Uninstalled skill: ${skill.name} (${skillId})`);
   }
 }
 

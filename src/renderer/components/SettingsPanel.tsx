@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown } from 'lucide-react';
-import type { ProviderPresets } from '../types';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package } from 'lucide-react';
+import type { ProviderPresets, Skill } from '../types';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -41,10 +41,10 @@ interface MCPServerStatus {
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'api' | 'credentials' | 'connectors';
+  initialTab?: 'api' | 'credentials' | 'connectors' | 'skills';
 }
 
-type TabId = 'api' | 'credentials' | 'connectors';
+type TabId = 'api' | 'credentials' | 'connectors' | 'skills';
 
 const SERVICE_OPTIONS = [
   { value: 'gmail', label: 'Gmail' },
@@ -88,6 +88,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
     { id: 'api' as TabId, label: 'API Settings', icon: Settings, description: 'Configure API provider and key' },
     { id: 'credentials' as TabId, label: 'Saved Credentials', icon: Key, description: 'Manage login credentials' },
     { id: 'connectors' as TabId, label: 'MCP Connectors', icon: Plug, description: 'Browser & tool integrations' },
+    { id: 'skills' as TabId, label: 'Skills', icon: Package, description: 'Manage custom skills' },
   ];
 
   return (
@@ -151,6 +152,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
             </div>
             <div className={activeTab === 'connectors' ? '' : 'hidden'}>
               {viewedTabs.has('connectors') && <ConnectorsTab />}
+            </div>
+            <div className={activeTab === 'skills' ? '' : 'hidden'}>
+              {viewedTabs.has('skills') && <SkillsTab />}
             </div>
           </div>
         </div>
@@ -1393,5 +1397,208 @@ function ServerForm({
         </button>
       </div>
     </form>
+  );
+}
+
+
+// ==================== Skills Tab ====================
+
+function SkillsTab() {
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isElectron) {
+      loadSkills();
+    }
+  }, []);
+
+  async function loadSkills() {
+    try {
+      const loaded = await window.electronAPI.skills.getAll();
+      setSkills(loaded || []);
+      setError('');
+    } catch (err) {
+      console.error('Failed to load skills:', err);
+      setError('Failed to load skills');
+    }
+  }
+
+  async function handleInstall() {
+    try {
+      const folderPath = await window.electronAPI.invoke<string | null>({ type: 'folder.select', payload: {} });
+      if (!folderPath) return;
+
+      setIsLoading(true);
+      const validation = await window.electronAPI.skills.validate(folderPath);
+
+      if (!validation.valid) {
+        setError(`Invalid skill folder: ${validation.errors.join(', ')}`);
+        return;
+      }
+
+      const result = await window.electronAPI.skills.install(folderPath);
+      if (result.success) {
+        await loadSkills();
+        setError('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to install skill');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleDelete(skillId: string, skillName: string) {
+    if (!confirm(`Delete skill "${skillName}"?`)) return;
+
+    setIsLoading(true);
+    try {
+      await window.electronAPI.skills.delete(skillId);
+      await loadSkills();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete skill');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleToggleEnabled(skill: Skill) {
+    setIsLoading(true);
+    try {
+      await window.electronAPI.skills.setEnabled(skill.id, !skill.enabled);
+      await loadSkills();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle skill');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const builtinSkills = skills.filter(s => s.type === 'builtin');
+  const customSkills = skills.filter(s => s.type !== 'builtin');
+
+  return (
+    <div className="space-y-4">
+      {/* Info Banner */}
+      <div className="px-4 py-3 rounded-xl bg-purple-500/10 text-purple-600 text-sm">
+        <p className="font-medium mb-1">📦 Skills</p>
+        <p className="text-xs opacity-80">
+          Skills extend Claude's capabilities with specialized knowledge and tools.
+        </p>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      {/* Built-in Skills */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-text-primary px-2">Built-in Skills</h3>
+        {builtinSkills.map(skill => (
+          <SkillCard
+            key={skill.id}
+            skill={skill}
+            onToggleEnabled={() => handleToggleEnabled(skill)}
+            onDelete={null}
+            isLoading={isLoading}
+          />
+        ))}
+      </div>
+
+      {/* Custom Skills */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-text-primary px-2">Custom Skills</h3>
+        {customSkills.length === 0 ? (
+          <div className="text-center py-8 text-text-muted">
+            <Package className="w-10 h-10 mx-auto mb-3 opacity-50" />
+            <p>No custom skills installed</p>
+            <p className="text-sm mt-1">Install skills to extend Claude's capabilities</p>
+          </div>
+        ) : (
+          customSkills.map(skill => (
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              onToggleEnabled={() => handleToggleEnabled(skill)}
+              onDelete={() => handleDelete(skill.id, skill.name)}
+              isLoading={isLoading}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Install Button */}
+      <button
+        onClick={handleInstall}
+        disabled={isLoading}
+        className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
+      >
+        <Plus className="w-5 h-5" />
+        Install Skill from Folder
+      </button>
+    </div>
+  );
+}
+
+function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
+  skill: Skill;
+  onToggleEnabled: () => void;
+  onDelete: (() => void) | null;
+  isLoading: boolean;
+}) {
+  const isBuiltin = skill.type === 'builtin';
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`w-3 h-3 rounded-full ${skill.enabled ? 'bg-success' : 'bg-text-muted'}`} />
+            <h3 className="font-medium text-text-primary">{skill.name}</h3>
+            <span className={`px-2 py-0.5 text-xs rounded ${
+              isBuiltin
+                ? 'bg-blue-500/10 text-blue-500'
+                : skill.type === 'mcp'
+                  ? 'bg-purple-500/10 text-purple-500'
+                  : 'bg-green-500/10 text-green-500'
+            }`}>
+              {skill.type.toUpperCase()}
+            </span>
+          </div>
+          {skill.description && (
+            <p className="text-sm text-text-muted ml-6">{skill.description}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleEnabled}
+            disabled={isLoading}
+            className={`p-2 rounded-lg transition-colors ${
+              skill.enabled
+                ? 'bg-success/10 text-success hover:bg-success/20'
+                : 'bg-surface-muted text-text-muted hover:bg-surface-active'
+            }`}
+            title={skill.enabled ? 'Disable' : 'Enable'}
+          >
+            {skill.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
+          </button>
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              disabled={isLoading}
+              className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

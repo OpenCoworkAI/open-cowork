@@ -391,13 +391,6 @@ export class SandboxSync {
   }
 
   /**
-   * Get sandbox path for a session
-   */
-  static getSandboxPath(sessionId: string): string | undefined {
-    return sessions.get(sessionId)?.sandboxPath;
-  }
-
-  /**
    * Check if a path is within the sandbox
    */
   static isPathInSandbox(path: string, sessionId: string): boolean {

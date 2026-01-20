@@ -327,7 +327,7 @@ export function ChatView() {
     if (otherFiles.length > 0) {
       const newFiles = otherFiles.map(file => ({
         name: file.name,
-        path: file.path || '', // Electron provides path property
+        path: (file as any).path || '', // Electron provides path property
         size: file.size,
         type: file.type || 'application/octet-stream',
       }));

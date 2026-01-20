@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets } from '../renderer/types';
+import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets, Skill } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -102,6 +102,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (id: string): Promise<boolean> => ipcRenderer.invoke('credentials.delete', id),
   },
 
+  // Skills methods
+  skills: {
+    getAll: (): Promise<Skill[]> => ipcRenderer.invoke('skills.getAll'),
+    install: (skillPath: string): Promise<{ success: boolean; skill: Skill }> =>
+      ipcRenderer.invoke('skills.install', skillPath),
+    delete: (skillId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('skills.delete', skillId),
+    setEnabled: (skillId: string, enabled: boolean): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('skills.setEnabled', skillId, enabled),
+    validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
+      ipcRenderer.invoke('skills.validate', skillPath),
+  },
+
   // Sandbox methods
   sandbox: {
     getStatus: (): Promise<{
@@ -163,6 +176,13 @@ declare global {
         save: (credential: any) => Promise<any>;
         update: (id: string, updates: any) => Promise<any>;
         delete: (id: string) => Promise<boolean>;
+      };
+      skills: {
+        getAll: () => Promise<Skill[]>;
+        install: (skillPath: string) => Promise<{ success: boolean; skill: Skill }>;
+        delete: (skillId: string) => Promise<{ success: boolean }>;
+        setEnabled: (skillId: string, enabled: boolean) => Promise<{ success: boolean }>;
+        validate: (skillPath: string) => Promise<{ valid: boolean; errors: string[] }>;
       };
       sandbox: {
         getStatus: () => Promise<{

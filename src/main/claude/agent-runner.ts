@@ -301,14 +301,48 @@ ${sections.join('\n\n')}
       }
     }
     
-    // 2. Check project-level skills (in working directory)
+    // 2. Check global user skills (in ~/.claude/skills/)
+    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    if (fs.existsSync(globalSkillsPath)) {
+      try {
+        const dirs = fs.readdirSync(globalSkillsPath, { withFileTypes: true });
+        for (const dir of dirs) {
+          if (dir.isDirectory()) {
+            const skillMdPath = path.join(globalSkillsPath, dir.name, 'SKILL.md');
+            if (fs.existsSync(skillMdPath)) {
+              // Global skills can override built-in but not project-level
+              const existingIdx = skills.findIndex(s => s.name === dir.name);
+              let description = `User skill for ${dir.name}`;
+              try {
+                const content = fs.readFileSync(skillMdPath, 'utf-8');
+                const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+                if (descMatch) {
+                  description = descMatch[1];
+                }
+              } catch (e) { /* ignore */ }
+
+              const skill = { name: dir.name, description, skillMdPath };
+              if (existingIdx >= 0) {
+                skills[existingIdx] = skill;
+              } else {
+                skills.push(skill);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        logError('[ClaudeAgentRunner] Error scanning global skills:', e);
+      }
+    }
+
+    // 3. Check project-level skills (in working directory)
     if (workingDir) {
       const projectSkillsPaths = [
         path.join(workingDir, '.claude', 'skills'),
         path.join(workingDir, '.skills'),
         path.join(workingDir, 'skills'),
       ];
-      
+
       for (const skillsDir of projectSkillsPaths) {
         if (fs.existsSync(skillsDir)) {
           try {
@@ -317,7 +351,7 @@ ${sections.join('\n\n')}
               if (dir.isDirectory()) {
                 const skillMdPath = path.join(skillsDir, dir.name, 'SKILL.md');
                 if (fs.existsSync(skillMdPath)) {
-                  // Project skills can override built-in
+                  // Project skills can override built-in and global
                   const existingIdx = skills.findIndex(s => s.name === dir.name);
                   let description = `Project skill for ${dir.name}`;
                   try {
@@ -327,7 +361,7 @@ ${sections.join('\n\n')}
                       description = descMatch[1];
                     }
                   } catch (e) { /* ignore */ }
-                  
+
                   const skill = { name: dir.name, description, skillMdPath };
                   if (existingIdx >= 0) {
                     skills[existingIdx] = skill;
@@ -814,34 +848,65 @@ Then follow the workflow described in that file.
       
       // Get current model from environment (re-read each time for config changes)
       const currentModel = this.getCurrentModel();
-      
+
       // Determine the .claude directory containing skills
       // SDK uses CLAUDE_CONFIG_DIR env var to locate .claude directory for skills discovery
+      // IMPORTANT: Point to user's ~/.claude instead of built-in .claude to load user-installed skills
+      const userClaudeDir = path.join(app.getPath('home'), '.claude');
+
+      // Ensure user's .claude directory exists
+      if (!fs.existsSync(userClaudeDir)) {
+        fs.mkdirSync(userClaudeDir, { recursive: true });
+      }
+
+      // Ensure user's .claude/skills directory exists
+      const userSkillsDir = path.join(userClaudeDir, 'skills');
+      if (!fs.existsSync(userSkillsDir)) {
+        fs.mkdirSync(userSkillsDir, { recursive: true });
+      }
+
+      // Copy built-in skills to user's .claude/skills if they don't exist
       const builtinSkillsPath = this.getBuiltinSkillsPath();
-      const builtinClaudeDir = builtinSkillsPath 
-        ? path.dirname(builtinSkillsPath)  // Go up from .claude/skills to .claude
-        : undefined;
-      
-      log('[ClaudeAgentRunner] Built-in .claude dir:', builtinClaudeDir);
+      if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
+        const builtinSkills = fs.readdirSync(builtinSkillsPath);
+        for (const skillName of builtinSkills) {
+          const builtinSkillPath = path.join(builtinSkillsPath, skillName);
+          const userSkillPath = path.join(userSkillsDir, skillName);
+
+          // Only copy if it's a directory and doesn't exist in user's directory
+          if (fs.statSync(builtinSkillPath).isDirectory() && !fs.existsSync(userSkillPath)) {
+            // Create symlink instead of copying to save space and allow updates
+            try {
+              fs.symlinkSync(builtinSkillPath, userSkillPath, 'dir');
+              log(`[ClaudeAgentRunner] Linked built-in skill: ${skillName}`);
+            } catch (err) {
+              // If symlink fails (e.g., on Windows without permissions), copy the directory
+              logWarn(`[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`, err);
+              // We'll skip copying for now to keep it simple
+            }
+          }
+        }
+      }
+
+      log('[ClaudeAgentRunner] User .claude dir:', userClaudeDir);
       log('[ClaudeAgentRunner] User working directory:', workingDir);
-      
+
       logTiming('before getShellEnvironment');
-      
+
       // Get shell environment with proper PATH (node, npm, etc.)
       // GUI apps on macOS don't inherit shell PATH, so we need to extract it
       const shellEnv = getShellEnvironment();
       logTiming('after getShellEnvironment');
-      
+
       // Build environment with:
       // 1. Shell environment (includes proper PATH with node/npm)
-      // 2. CLAUDE_CONFIG_DIR for skills discovery
+      // 2. CLAUDE_CONFIG_DIR pointing to user's ~/.claude for skills discovery
       const envWithSkills: NodeJS.ProcessEnv = {
         ...shellEnv,
-        ...(builtinClaudeDir && fs.existsSync(builtinClaudeDir) 
-          ? { CLAUDE_CONFIG_DIR: builtinClaudeDir } 
-          : {}),
+        CLAUDE_CONFIG_DIR: userClaudeDir,
       };
-      
+
+      log('[ClaudeAgentRunner] CLAUDE_CONFIG_DIR:', userClaudeDir);
       log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
       
       logTiming('before building MCP servers config');

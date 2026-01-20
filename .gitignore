@@ -46,6 +46,8 @@ coverage/
 # Claude 
 .claude/*
 !.claude/skills/
+CLAUDE.md
+
 
 # codex
 .codex/*

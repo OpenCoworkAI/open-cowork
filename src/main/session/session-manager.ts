@@ -24,7 +24,7 @@ export class SessionManager {
   private sendToRenderer: (event: ServerEvent) => void;
   private pathResolver: PathResolver;
   private sandboxAdapter: SandboxAdapter;
-  private agentRunner: AgentRunner;
+  private agentRunner!: AgentRunner;
   private mcpManager: MCPManager;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
@@ -49,6 +49,17 @@ export class SessionManager {
     this.mcpManager = new MCPManager();
     this.initializeMCP();
 
+    // Create agent runner based on current config
+    this.createAgentRunner();
+
+    log('[SessionManager] Initialized with persistent database and MCP support');
+  }
+
+  /**
+   * Create agent runner based on current config
+   * Can be called to recreate runner when config changes
+   */
+  private createAgentRunner(): void {
     const provider = configStore.get('provider');
     const customProtocol = configStore.get('customProtocol');
     const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
@@ -64,7 +75,7 @@ export class SessionManager {
     } else {
       // Initialize Claude Agent Runner with message save callback
       this.agentRunner = new ClaudeAgentRunner(
-        { 
+        {
           sendToRenderer: this.sendToRenderer,
           saveMessage: (message: Message) => this.saveMessage(message),
         },
@@ -73,8 +84,25 @@ export class SessionManager {
       );
       log('[SessionManager] Using Claude Agent runner');
     }
-    
-    log('[SessionManager] Initialized with persistent database and MCP support');
+  }
+
+  /**
+   * Reload config and recreate agent runner
+   * This is safer than recreating the entire SessionManager
+   */
+  reloadConfig(): void {
+    log('[SessionManager] Reloading config and recreating agent runner');
+
+    // Stop all active sessions before recreating runner
+    for (const sessionId of this.activeSessions.keys()) {
+      log('[SessionManager] Stopping active session before config reload:', sessionId);
+      this.stopSession(sessionId);
+    }
+
+    // Recreate agent runner with new config
+    this.createAgentRunner();
+
+    log('[SessionManager] Config reloaded successfully');
   }
 
   /**

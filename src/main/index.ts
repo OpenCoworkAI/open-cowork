@@ -3,6 +3,7 @@ import { join, resolve } from 'path';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
+import { SkillsManager } from './skills/skills-manager';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
@@ -35,6 +36,7 @@ app.disableHardwareAcceleration();
 
 let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
+let skillsManager: SkillsManager | null = null;
 
 function createWindow() {
   // Theme colors (warm cream theme)
@@ -130,7 +132,10 @@ app.whenReady().then(async () => {
   
   // Initialize database
   const db = initDatabase();
-  
+
+  // Initialize skills manager
+  skillsManager = new SkillsManager(db);
+
   // Initialize session manager
   sessionManager = new SessionManager(db, sendToRenderer);
 
@@ -246,26 +251,37 @@ ipcMain.handle('config.getPresets', () => {
 
 ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
   log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
-  
+
   // Update config
   configStore.update(newConfig);
-  
+
   // Mark as configured if we have an API key
   if (newConfig.apiKey) {
     configStore.set('isConfigured', true);
   }
-  
+
   // Apply to environment
   configStore.applyToEnv();
-  
-  // Re-initialize session manager with new config
+
+  // Reload config in session manager (safer than recreating it)
   if (sessionManager) {
-    const db = initDatabase();
-    sessionManager = new SessionManager(db, sendToRenderer);
-    log('[Config] Session manager re-initialized');
+    sessionManager.reloadConfig();
+    log('[Config] Session manager config reloaded');
   }
-  
-  return { success: true, config: configStore.getAll() };
+
+  // Notify renderer of config update
+  const isConfigured = configStore.isConfigured();
+  const updatedConfig = configStore.getAll();
+  sendToRenderer({
+    type: 'config.status',
+    payload: {
+      isConfigured,
+      config: isConfigured ? updatedConfig : null,
+    },
+  });
+  log('[Config] Notified renderer of config update, isConfigured:', isConfigured);
+
+  return { success: true, config: updatedConfig };
 });
 
 ipcMain.handle('config.isConfigured', () => {
@@ -415,6 +431,73 @@ ipcMain.handle('credentials.delete', (_event, id: string) => {
   } catch (error) {
     logError('[Credentials] Error deleting credential:', error);
     return false;
+  }
+});
+
+// Skills API handlers
+ipcMain.handle('skills.getAll', async () => {
+  try {
+    if (!skillsManager) {
+      logError('[Skills] SkillsManager not initialized');
+      return [];
+    }
+    const skills = skillsManager.listSkills();
+    return skills;
+  } catch (error) {
+    logError('[Skills] Error getting skills:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('skills.install', async (_event, skillPath: string) => {
+  try {
+    if (!skillsManager) {
+      throw new Error('SkillsManager not initialized');
+    }
+    const skill = await skillsManager.installSkill(skillPath);
+    return { success: true, skill };
+  } catch (error) {
+    logError('[Skills] Error installing skill:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.delete', async (_event, skillId: string) => {
+  try {
+    if (!skillsManager) {
+      throw new Error('SkillsManager not initialized');
+    }
+    await skillsManager.uninstallSkill(skillId);
+    return { success: true };
+  } catch (error) {
+    logError('[Skills] Error deleting skill:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.setEnabled', async (_event, skillId: string, enabled: boolean) => {
+  try {
+    if (!skillsManager) {
+      throw new Error('SkillsManager not initialized');
+    }
+    skillsManager.setSkillEnabled(skillId, enabled);
+    return { success: true };
+  } catch (error) {
+    logError('[Skills] Error toggling skill:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
+  try {
+    if (!skillsManager) {
+      return { valid: false, errors: ['SkillsManager not initialized'] };
+    }
+    const result = await skillsManager.validateSkillFolder(skillPath);
+    return result;
+  } catch (error) {
+    logError('[Skills] Error validating skill:', error);
+    return { valid: false, errors: ['Validation failed'] };
   }
 });
 
