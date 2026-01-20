@@ -282,6 +282,72 @@ export class SandboxSync {
   }
 
   /**
+   * Sync a single file from Windows to sandbox
+   * Used for file attachments after sandbox is already initialized
+   */
+  static async syncFileToSandbox(
+    sessionId: string,
+    windowsSourcePath: string,
+    sandboxRelativePath: string
+  ): Promise<{ success: boolean; sandboxPath: string; error?: string }> {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return {
+        success: false,
+        sandboxPath: '',
+        error: 'Session not found',
+      };
+    }
+
+    const sandboxDestPath = `${session.sandboxPath}/${sandboxRelativePath}`;
+    log(`[SandboxSync] Syncing file to sandbox: ${windowsSourcePath} -> ${sandboxDestPath}`);
+
+    try {
+      // Convert Windows path to WSL /mnt/ path
+      const wslSourcePath = pathConverter.toWSL(windowsSourcePath);
+
+      // Ensure destination directory exists
+      const destDir = sandboxDestPath.substring(0, sandboxDestPath.lastIndexOf('/'));
+      await this.wslExec(session.distro, `mkdir -p "${destDir}"`);
+
+      // Copy file
+      const cpCmd = `cp "${wslSourcePath}" "${sandboxDestPath}"`;
+      log(`[SandboxSync] Running: ${cpCmd}`);
+      await this.wslExec(session.distro, cpCmd, 60000); // 1 min timeout
+
+      log(`[SandboxSync] File synced to sandbox: ${sandboxDestPath}`);
+
+      return {
+        success: true,
+        sandboxPath: sandboxDestPath,
+      };
+    } catch (error) {
+      logError('[SandboxSync] File sync failed:', error);
+      return {
+        success: false,
+        sandboxPath: sandboxDestPath,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Get the sandbox path for a session (if initialized)
+   */
+  static getSandboxPath(sessionId: string): string | null {
+    const session = sessions.get(sessionId);
+    return session?.sandboxPath || null;
+  }
+
+  /**
+   * Get the distro for a session (if initialized)
+   */
+  static getDistro(sessionId: string): string | null {
+    const session = sessions.get(sessionId);
+    return session?.distro || null;
+  }
+
+  /**
    * Cleanup all active sandbox sessions
    * Called on app shutdown
    */

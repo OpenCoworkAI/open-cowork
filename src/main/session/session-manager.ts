@@ -262,7 +262,7 @@ export class SessionManager {
     }
   }
 
-  // Helper: Copy files to session's .tmp directory
+  // Helper: Copy files to session's .tmp directory and sync to sandbox if needed
   private async processFileAttachments(session: Session, content: ContentBlock[]): Promise<ContentBlock[]> {
     const processedContent: ContentBlock[] = [];
 
@@ -280,7 +280,8 @@ export class SessionManager {
 
           // Get source file path from the file attachment
           const sourcePath = fileBlock.relativePath; // This is the full path from Electron
-          const destFilename = fileBlock.filename;
+          // IMPORTANT: Use path.basename() to extract only the filename, not the full path
+          const destFilename = path.basename(fileBlock.filename || sourcePath);
           const destPath = path.join(tmpDir, destFilename);
 
           // Copy file to .tmp directory
@@ -292,6 +293,21 @@ export class SessionManager {
             const actualSize = stats.size;
 
             log('[SessionManager] Copied file:', sourcePath, '->', destPath, `(${actualSize} bytes)`);
+
+            // If sandbox is already initialized, sync the file to sandbox as well
+            // This handles the case where user attaches files in subsequent messages
+            const sandboxPath = SandboxSync.getSandboxPath(session.id);
+            if (sandboxPath) {
+              const sandboxRelativePath = `.tmp/${destFilename}`;
+              log('[SessionManager] Syncing attached file to sandbox:', sandboxRelativePath);
+              const syncResult = await SandboxSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
+              if (syncResult.success) {
+                log('[SessionManager] File synced to sandbox:', syncResult.sandboxPath);
+              } else {
+                logError('[SessionManager] Failed to sync file to sandbox:', syncResult.error);
+                // Continue anyway - file is in Windows .tmp, agent might still work via /mnt/
+              }
+            }
 
             // Update the content block with the new relative path and actual size
             const relativePathFromCwd = path.join('.tmp', destFilename);
