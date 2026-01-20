@@ -35,6 +35,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type ContentBlock =
   | TextContent
   | ImageContent
+  | FileAttachmentContent
   | ToolUseContent
   | ToolResultContent
   | ThinkingContent;
@@ -51,6 +52,14 @@ export interface ImageContent {
     media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
     data: string;
   };
+}
+
+export interface FileAttachmentContent {
+  type: 'file_attachment';
+  filename: string;
+  relativePath: string; // Path relative to session's .tmp folder
+  size: number;
+  mimeType?: string;
 }
 
 export interface ToolUseContent {

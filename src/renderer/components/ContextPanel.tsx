@@ -88,7 +88,7 @@ export function ContextPanel() {
 
   return (
     <div className="w-80 bg-surface border-l border-border flex flex-col overflow-hidden">
-      <div className="px-3 py-2 border-b border-border flex items-center justify-end">
+      <div className="px-3 py-2 border-b border-border flex items-center justify-start">
         <button
           onClick={toggleContextPanel}
           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"

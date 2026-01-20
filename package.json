@@ -11,14 +11,14 @@
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "test": "vitest",
-    "rebuild": "electron-builder install-app-deps"
+    "rebuild": "node -e \"const {execSync}=require('node:child_process'); const v=require('electron/package.json').version; execSync('npm rebuild better-sqlite3 --runtime=electron --target='+v+' --disturl=https://electronjs.org/headers',{stdio:'inherit'})\""
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.77",
     "@anthropic-ai/claude-code": "^2.1.7",
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "better-sqlite3": "^11.6.0",
+    "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.1",
     "dotenv": "^17.2.3",
     "electron-store": "^11.0.2",
@@ -45,18 +45,21 @@
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "postcss": "^8.4.49",
     "prettier": "^3.4.2",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.3.3",
-    "vite": "^5.4.11",
+    "vite": "^7.3.1",
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6",
-    "vitest": "^2.1.8"
+    "vitest": "^4.0.17"
+  },
+  "overrides": {
+    "tar": "^7.5.3"
   },
   "author": "Open Cowork Team",
   "license": "MIT"

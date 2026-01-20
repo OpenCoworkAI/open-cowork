@@ -221,6 +221,19 @@ ipcMain.handle('shell.openExternal', async (_event, url: string) => {
   return shell.openExternal(url);
 });
 
+ipcMain.handle('dialog.selectFiles', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    title: 'Select Files',
+  });
+
+  if (result.canceled) {
+    return [];
+  }
+
+  return result.filePaths;
+});
+
 // Config IPC handlers
 ipcMain.handle('config.get', () => {
   return configStore.getAll();

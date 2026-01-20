@@ -6,6 +6,8 @@ directories:
   output: release
   buildResources: resources
 
+npmRebuild: false
+
 files:
   - dist/**/*
   - dist-electron/**/*
@@ -82,4 +84,3 @@ publish:
   provider: github
   owner: your-username
   repo: open-cowork
-

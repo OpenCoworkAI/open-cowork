@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 dist-electron/
+dist-wsl-agent/
 release/
 
 # IDE

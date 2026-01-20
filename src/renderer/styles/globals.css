@@ -259,8 +259,11 @@
 
   .prose-chat a {
     color: theme('colors.accent.DEFAULT');
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.22em;
+    text-decoration-color: currentColor;
+    text-decoration-skip-ink: none;
   }
 
   .prose-chat blockquote {
