@@ -14,6 +14,7 @@
 import { dialog, BrowserWindow } from 'electron';
 import { log, logWarn, logError } from '../utils/logger';
 import { WSLBridge, pathConverter } from './wsl-bridge';
+import { LimaBridge, limaPathConverter } from './lima-bridge';
 import { NativeExecutor } from './native-executor';
 import type {
   SandboxConfig,
@@ -21,10 +22,11 @@ import type {
   ExecutionResult,
   DirectoryEntry,
   WSLStatus,
+  LimaStatus,
   PathConverter,
 } from './types';
 
-export type SandboxMode = 'wsl' | 'native' | 'none';
+export type SandboxMode = 'wsl' | 'lima' | 'native' | 'none';
 
 export interface SandboxAdapterConfig extends SandboxConfig {
   /** Force native execution even on Windows (not recommended) */
@@ -38,6 +40,7 @@ export interface SandboxAdapterConfig extends SandboxConfig {
 interface SandboxState {
   mode: SandboxMode;
   wslStatus?: WSLStatus;
+  limaStatus?: LimaStatus;
   initialized: boolean;
   workspacePath: string;
 }
@@ -71,6 +74,13 @@ export class SandboxAdapter implements SandboxExecutor {
   }
 
   /**
+   * Check if sandbox is using Lima
+   */
+  get isLima(): boolean {
+    return this.state.mode === 'lima';
+  }
+
+  /**
    * Check if sandbox is initialized
    */
   get initialized(): boolean {
@@ -82,6 +92,13 @@ export class SandboxAdapter implements SandboxExecutor {
    */
   get wslStatus(): WSLStatus | undefined {
     return this.state.wslStatus;
+  }
+
+  /**
+   * Get Lima status (if applicable)
+   */
+  get limaStatus(): LimaStatus | undefined {
+    return this.state.limaStatus;
   }
 
   /**
@@ -107,8 +124,11 @@ export class SandboxAdapter implements SandboxExecutor {
     if (platform === 'win32' && !config.forceNative) {
       // Windows: Try to use WSL2
       await this.initializeWSL(config);
+    } else if (platform === 'darwin' && !config.forceNative) {
+      // macOS: Try to use Lima
+      await this.initializeLima(config);
     } else {
-      // Mac/Linux: Use native execution
+      // Linux or force native: Use native execution
       await this.initializeNative(config);
     }
 
@@ -205,11 +225,55 @@ export class SandboxAdapter implements SandboxExecutor {
   }
 
   /**
+   * Initialize Lima-based sandbox (macOS)
+   */
+  private async initializeLima(config: SandboxAdapterConfig): Promise<void> {
+    log('[SandboxAdapter] Checking Lima availability...');
+
+    const limaStatus = await LimaBridge.checkLimaStatus();
+    this.state.limaStatus = limaStatus;
+
+    log('[SandboxAdapter] Lima Status:', JSON.stringify(limaStatus, null, 2));
+
+    if (!limaStatus.available) {
+      log('[SandboxAdapter] [X] Lima not available');
+      await this.showLimaNotAvailableWarning(config);
+      await this.initializeNative(config);
+      return;
+    }
+
+    log('[SandboxAdapter] [OK] Lima detected');
+    log('[SandboxAdapter]   Instance:', limaStatus.instanceName || 'claude-sandbox');
+    log('[SandboxAdapter]   Exists:', limaStatus.instanceExists ? '[OK]' : '[X] not created');
+    log('[SandboxAdapter]   Running:', limaStatus.instanceRunning ? '[OK]' : '[X] not running');
+    log('[SandboxAdapter]   Node.js:', limaStatus.nodeAvailable ? `[OK] ${limaStatus.version || 'available'}` : '[X] not found');
+    log('[SandboxAdapter]   Python:', limaStatus.pythonAvailable ? `[OK] ${limaStatus.pythonVersion || 'available'}` : '[X] not found');
+
+    // Initialize Lima Bridge
+    try {
+      const limaBridge = new LimaBridge();
+      await limaBridge.initialize(config);
+
+      this.executor = limaBridge;
+      this.state.mode = 'lima';
+      log('[SandboxAdapter] [OK] Lima sandbox initialized successfully');
+      log('[SandboxAdapter] =============================================');
+      log('[SandboxAdapter] SANDBOX MODE: Lima (Isolated Linux Environment)');
+      log('[SandboxAdapter] =============================================');
+    } catch (error) {
+      logError('[SandboxAdapter] Failed to initialize Lima bridge:', error);
+      await this.showLimaInitFailedWarning(config, error);
+      await this.initializeNative(config);
+    }
+  }
+
+  /**
    * Initialize native execution (Mac/Linux/fallback)
    */
   private async initializeNative(config: SandboxAdapterConfig): Promise<void> {
     const isWindows = process.platform === 'win32';
-    
+    const isMac = process.platform === 'darwin';
+
     if (isWindows) {
       // On Windows without WSL, show security warning
       await this.showNativeFallbackWarning(config);
@@ -220,12 +284,14 @@ export class SandboxAdapter implements SandboxExecutor {
 
     this.executor = nativeExecutor;
     this.state.mode = 'native';
-    
+
     log('[SandboxAdapter] =============================================');
     if (isWindows) {
       log('[SandboxAdapter] [!] SANDBOX MODE: Native (Windows - No WSL Isolation)');
+    } else if (isMac) {
+      log('[SandboxAdapter] SANDBOX MODE: Native (macOS - No Lima Isolation)');
     } else {
-      log('[SandboxAdapter] SANDBOX MODE: Native (Mac/Linux)');
+      log('[SandboxAdapter] SANDBOX MODE: Native (Linux)');
     }
     log('[SandboxAdapter] =============================================');
   }
@@ -351,6 +417,45 @@ export class SandboxAdapter implements SandboxExecutor {
     });
   }
 
+  private async showLimaNotAvailableWarning(config: SandboxAdapterConfig): Promise<void> {
+    if (!config.mainWindow) {
+      logWarn('[SandboxAdapter] Lima not available, no window to show dialog');
+      return;
+    }
+
+    await dialog.showMessageBox(config.mainWindow, {
+      type: 'warning',
+      title: 'Lima Not Available',
+      message: 'Lima is not installed on this system.',
+      detail: 'For better security, we recommend installing Lima for isolated execution.\n\n' +
+        'To install Lima, run:\n' +
+        'brew install lima\n\n' +
+        'Commands will be executed directly on macOS without sandbox isolation.',
+      buttons: ['Continue Anyway'],
+    });
+  }
+
+  private async showLimaInitFailedWarning(
+    config: SandboxAdapterConfig,
+    error: unknown
+  ): Promise<void> {
+    if (!config.mainWindow) {
+      logWarn('[SandboxAdapter] Lima init failed, no window to show dialog');
+      return;
+    }
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    await dialog.showMessageBox(config.mainWindow, {
+      type: 'warning',
+      title: 'Lima Initialization Failed',
+      message: 'Failed to initialize Lima sandbox.',
+      detail: `Error: ${errorMessage}\n\n` +
+        'Commands will be executed directly on macOS without sandbox isolation.',
+      buttons: ['OK'],
+    });
+  }
+
   // ==================== Executor Interface ====================
 
   /**
@@ -463,30 +568,40 @@ export class SandboxAdapter implements SandboxExecutor {
   // ==================== Path Utilities ====================
 
   /**
-   * Get path converter (for Windows <-> WSL path conversion)
+   * Get path converter (for Windows <-> WSL or macOS <-> Lima path conversion)
    */
   getPathConverter(): PathConverter {
+    if (this.state.mode === 'lima') {
+      return limaPathConverter;
+    }
     return pathConverter;
   }
 
   /**
    * Convert path for current execution environment
    * - On WSL mode: converts Windows paths to WSL paths
+   * - On Lima mode: paths are the same (Lima mounts /Users directly)
    * - On native mode: returns path as-is
    */
   resolvePath(inputPath: string): string {
     if (this.state.mode === 'wsl') {
       return pathConverter.toWSL(inputPath);
     }
+    if (this.state.mode === 'lima') {
+      return limaPathConverter.toWSL(inputPath);
+    }
     return inputPath;
   }
 
   /**
-   * Convert result path back to Windows format (if needed)
+   * Convert result path back to host format (if needed)
    */
   unresolveResultPath(resultPath: string): string {
     if (this.state.mode === 'wsl') {
       return pathConverter.toWindows(resultPath);
+    }
+    if (this.state.mode === 'lima') {
+      return limaPathConverter.toWindows(resultPath);
     }
     return resultPath;
   }
@@ -514,9 +629,13 @@ export class SandboxAdapter implements SandboxExecutor {
       return (this.executor as WSLBridge).runClaudeCode(prompt, options);
     }
 
+    if (this.state.mode === 'lima' && this.executor instanceof LimaBridge) {
+      return (this.executor as LimaBridge).runClaudeCode(prompt, options);
+    }
+
     // For native mode, we need to spawn claude-code directly
     // This is a simplified implementation - full streaming would be more complex
-    throw new Error('Claude Code execution is only supported in WSL mode');
+    throw new Error('Claude Code execution is only supported in WSL/Lima mode');
   }
 }
 

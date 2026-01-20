@@ -57,6 +57,19 @@ export interface WSLStatus {
   pythonVersion?: string;
 }
 
+export interface LimaStatus {
+  available: boolean;
+  instanceExists?: boolean;
+  instanceRunning?: boolean;
+  instanceName?: string;
+  nodeAvailable?: boolean;
+  pythonAvailable?: boolean;
+  pipAvailable?: boolean;
+  claudeCodeAvailable?: boolean;
+  version?: string;
+  pythonVersion?: string;
+}
+
 export interface SandboxExecutor {
   initialize(config: SandboxConfig): Promise<void>;
   executeCommand(command: string, cwd?: string, env?: Record<string, string>): Promise<ExecutionResult>;

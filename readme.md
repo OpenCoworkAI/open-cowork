@@ -45,6 +45,35 @@ It provides a sandboxed workspace where AI can manage files, read documents, and
 - **Skills System**: Built-in workflows for PPTX, DOCX, PDF, XLSX generation and processing.
 - **Real-time Trace**: Watch AI reasoning and tool execution in the trace panel.
 - **Sandboxed Security**: All operations confined to your chosen workspace folder.
+- **VM-Level Isolation**: Optional WSL2 (Windows) and Lima (macOS) sandbox for enhanced security—AI commands run in an isolated Linux VM, completely separated from your host system.
+
+---
+
+## 🔒 Sandbox Support
+
+Open Cowork provides **multi-level sandbox protection** to keep your system safe:
+
+| Level | Platform | Technology | Description |
+|-------|----------|------------|-------------|
+| **Basic** | All | Path Guard | File operations restricted to workspace folder |
+| **Enhanced** | Windows | WSL2 | Commands execute in isolated Linux VM |
+| **Enhanced** | macOS | Lima | Commands execute in isolated Linux VM |
+
+### How It Works
+
+- **Windows (WSL2)**: When WSL2 is detected, all Bash commands are automatically routed to a Linux VM. The workspace is synced bidirectionally.
+- **macOS (Lima)**: When [Lima](https://lima-vm.io/) is installed (`brew install lima`), commands run in an Ubuntu VM with `/Users` mounted.
+- **Fallback**: If no VM is available, commands run natively with path-based restrictions.
+
+### Setup (Optional)
+
+**Windows**: WSL2 is auto-detected if installed. [Install WSL2](https://docs.microsoft.com/en-us/windows/wsl/install)
+
+**macOS**:
+```bash
+brew install lima
+# Open Cowork will automatically create and manage a 'claude-sandbox' VM
+```
 
 ---
 
@@ -189,6 +218,7 @@ open-cowork/
 - [x] **Core**: Stable Windows & macOS Installers
 - [x] **Security**: Full Filesystem Sandboxing
 - [x] **Skills**: PPTX, DOCX, PDF, XLSX Support
+- [x] **VM Sandbox**: WSL2 (Windows) and Lima (macOS) isolation support
 - [ ] **Better Memory Handling**: Improved context management for longer sessions and cross-session memory.
 
 ---

@@ -982,10 +982,11 @@ Then follow the workflow described in that file.
               // Get sandbox adapter status (used for both file ops and Bash)
               const sandboxAdapter = getSandboxAdapter();
               const isWSLMode = sandboxAdapter.isWSL && sandboxAdapter.wslStatus?.distro;
-              
+              const isLimaMode = sandboxAdapter.isLima && sandboxAdapter.limaStatus?.instanceRunning;
+
               // Handle file operations when sandbox isolation is active
               // Files are written to WSL sandbox, then synced back to Windows via SandboxSync
-              
+
               if (useSandboxIsolation && sandboxPath && isWSLMode) {
                 const distro = sandboxAdapter.wslStatus!.distro!;
                 const sandboxPathNonNull = sandboxPath;
@@ -1198,11 +1199,38 @@ Then follow the workflow described in that file.
                 }
               }
               
-              // Only intercept Bash tool for WSL wrapping
+              // Only intercept Bash tool for WSL/Lima wrapping
               if (toolName !== 'Bash') {
                 return { continue: true };
               }
-              
+
+              // Handle Lima mode - wrap commands to run in Lima VM
+              if (isLimaMode) {
+                const originalCommand = String(toolInput.command || '');
+                const limaCwd = workingDir || '/tmp';
+
+                // Escape single quotes for bash -c
+                const escapedCommand = originalCommand.replace(/'/g, "'\\''");
+                // Run command in Lima VM with nvm sourced for Node.js access
+                const wrappedCommand = `limactl shell claude-sandbox -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; cd "${limaCwd}" && ${escapedCommand}'`;
+
+                log(`[Sandbox/Lima] Bash in Lima VM: ${originalCommand.substring(0, 60)}...`);
+                log(`[Sandbox/Lima] Working directory: ${limaCwd}`);
+
+                return {
+                  continue: true,
+                  hookSpecificOutput: {
+                    hookEventName: 'PreToolUse',
+                    permissionDecision: 'allow',
+                    updatedInput: {
+                      ...toolInput,
+                      command: wrappedCommand,
+                      _limaWrapped: true,
+                    },
+                  },
+                };
+              }
+
               // sandboxAdapter and isWSLMode already defined above
               if (!isWSLMode) {
                 log('[Sandbox/WSL] WSL not active, Bash runs natively');

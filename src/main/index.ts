@@ -9,6 +9,7 @@ import { credentialsStore, type UserCredential } from './credentials/credentials
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
+import { LimaBridge } from './sandbox/lima-bridge';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
 import { log, logWarn, logError } from './utils/logger';
@@ -438,22 +439,33 @@ ipcMain.on('window.close', () => {
 ipcMain.handle('sandbox.getStatus', async () => {
   try {
     const adapter = getSandboxAdapter();
-    const isWindows = process.platform === 'win32';
-    
-    if (isWindows) {
+    const platform = process.platform;
+
+    if (platform === 'win32') {
       const wslStatus = await WSLBridge.checkWSLStatus();
       return {
         platform: 'win32',
         mode: adapter.initialized ? adapter.mode : 'none',
         initialized: adapter.initialized,
         wsl: wslStatus,
+        lima: null,
       };
-    } else {
+    } else if (platform === 'darwin') {
+      const limaStatus = await LimaBridge.checkLimaStatus();
       return {
-        platform: process.platform,
+        platform: 'darwin',
         mode: adapter.initialized ? adapter.mode : 'native',
         initialized: adapter.initialized,
         wsl: null,
+        lima: limaStatus,
+      };
+    } else {
+      return {
+        platform,
+        mode: adapter.initialized ? adapter.mode : 'native',
+        initialized: adapter.initialized,
+        wsl: null,
+        lima: null,
       };
     }
   } catch (error) {
@@ -467,6 +479,7 @@ ipcMain.handle('sandbox.getStatus', async () => {
   }
 });
 
+// WSL IPC handlers (Windows)
 ipcMain.handle('sandbox.checkWSL', async () => {
   try {
     return await WSLBridge.checkWSLStatus();
@@ -490,6 +503,61 @@ ipcMain.handle('sandbox.installClaudeCodeInWSL', async (_event, distro: string) 
     return await WSLBridge.installClaudeCodeInWSL(distro);
   } catch (error) {
     logError('[Sandbox] Error installing claude-code:', error);
+    return false;
+  }
+});
+
+// Lima IPC handlers (macOS)
+ipcMain.handle('sandbox.checkLima', async () => {
+  try {
+    return await LimaBridge.checkLimaStatus();
+  } catch (error) {
+    logError('[Sandbox] Error checking Lima:', error);
+    return { available: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('sandbox.createLimaInstance', async () => {
+  try {
+    return await LimaBridge.createLimaInstance();
+  } catch (error) {
+    logError('[Sandbox] Error creating Lima instance:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('sandbox.startLimaInstance', async () => {
+  try {
+    return await LimaBridge.startLimaInstance();
+  } catch (error) {
+    logError('[Sandbox] Error starting Lima instance:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('sandbox.stopLimaInstance', async () => {
+  try {
+    return await LimaBridge.stopLimaInstance();
+  } catch (error) {
+    logError('[Sandbox] Error stopping Lima instance:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('sandbox.installNodeInLima', async () => {
+  try {
+    return await LimaBridge.installNodeInLima();
+  } catch (error) {
+    logError('[Sandbox] Error installing Node.js in Lima:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('sandbox.installClaudeCodeInLima', async () => {
+  try {
+    return await LimaBridge.installClaudeCodeInLima();
+  } catch (error) {
+    logError('[Sandbox] Error installing claude-code in Lima:', error);
     return false;
   }
 });

@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 dist-wsl-agent/
+dist-lima-agent/
 release/
 
 # IDE

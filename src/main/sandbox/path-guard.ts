@@ -17,8 +17,8 @@ export interface ValidationResult {
   sanitizedPath?: string;
 }
 
-// Forbidden path patterns - these should never be accessed
-const FORBIDDEN_PATTERNS = [
+// Forbidden path patterns for Linux/WSL - these should never be accessed
+const FORBIDDEN_PATTERNS_LINUX = [
   /^\/mnt\//,              // Windows filesystem mounts
   /^\/home\/(?!.*\/\.claude\/sandbox)/,  // User home (except ~/.claude/sandbox)
   /^\/root\/(?!\.claude\/sandbox|\.nvm)/,  // Root directory (except .claude/sandbox and .nvm)
@@ -34,6 +34,29 @@ const FORBIDDEN_PATTERNS = [
   /^\/sys\//,              // System info
   /^\/dev\//,              // Device files
 ];
+
+// Forbidden path patterns for macOS/Lima - these should never be accessed
+const FORBIDDEN_PATTERNS_MAC = [
+  /^\/System\//,           // macOS system
+  /^\/Library\//,          // System library
+  /^\/private\//,          // Private system files
+  /^\/var\/(?!folders)/,   // System variable (allow /var/folders for temp)
+  /^\/usr\//,              // System binaries
+  /^\/bin\//,              // Essential binaries
+  /^\/sbin\//,             // System binaries
+  /^\/etc\//,              // System configuration
+  /^\/opt\//,              // Optional software
+  /^\/tmp\//,              // Temp directory (use /var/folders instead)
+  /^\/dev\//,              // Device files
+  /^\/Volumes\/(?!Macintosh HD\/Users)/,  // External volumes
+  /^\/Applications\//,     // Applications folder
+  /^\/cores\//,            // Core dumps
+];
+
+// Use platform-appropriate patterns
+const FORBIDDEN_PATTERNS = process.platform === 'darwin'
+  ? FORBIDDEN_PATTERNS_MAC
+  : FORBIDDEN_PATTERNS_LINUX;
 
 // Dangerous command patterns
 const DANGEROUS_COMMAND_PATTERNS = [

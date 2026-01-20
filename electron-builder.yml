@@ -18,9 +18,14 @@ files:
   - .claude/skills/**/*
 
 # WSL Agent resources (for Windows sandbox)
+# Lima Agent resources (for macOS sandbox)
 extraResources:
   - from: dist-wsl-agent
     to: wsl-agent
+    filter:
+      - "**/*"
+  - from: dist-lima-agent
+    to: lima-agent
     filter:
       - "**/*"
 

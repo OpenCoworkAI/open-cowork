@@ -45,6 +45,35 @@
 - **Skills 系统**：内置 PPTX、DOCX、PDF、XLSX 生成和处理工作流。
 - **实时追踪**：在 Trace Panel 中观察 AI 推理和工具调用过程。
 - **沙盒安全**：所有操作限制在你选择的工作区文件夹内。
+- **虚拟机级别隔离**：可选的 WSL2 (Windows) 和 Lima (macOS) 沙盒，AI 命令在隔离的 Linux 虚拟机中执行，与宿主系统完全隔离。
+
+---
+
+## 🔒 沙盒支持
+
+Open Cowork 提供**多级沙盒保护**，确保系统安全：
+
+| 级别 | 平台 | 技术 | 说明 |
+|------|------|------|------|
+| **基础** | 全平台 | 路径守卫 | 文件操作限制在工作区文件夹内 |
+| **增强** | Windows | WSL2 | 命令在隔离的 Linux 虚拟机中执行 |
+| **增强** | macOS | Lima | 命令在隔离的 Linux 虚拟机中执行 |
+
+### 工作原理
+
+- **Windows (WSL2)**：检测到 WSL2 后，所有 Bash 命令自动路由到 Linux 虚拟机，工作区双向同步。
+- **macOS (Lima)**：安装 [Lima](https://lima-vm.io/) (`brew install lima`) 后，命令在挂载了 `/Users` 的 Ubuntu 虚拟机中运行。
+- **回退模式**：如果没有可用的虚拟机，命令将在本机执行，受路径限制保护。
+
+### 配置方法（可选）
+
+**Windows**：如已安装 WSL2，会自动检测。[安装 WSL2](https://docs.microsoft.com/zh-cn/windows/wsl/install)
+
+**macOS**：
+```bash
+brew install lima
+# Open Cowork 会自动创建和管理 'claude-sandbox' 虚拟机
+```
 
 ---
 
@@ -189,6 +218,7 @@ open-cowork/
 - [x] **核心**：稳定的 Windows & macOS 安装包
 - [x] **安全**：完整的文件系统沙盒
 - [x] **技能**：支持 PPTX, DOCX, PDF, XLSX
+- [x] **虚拟机沙盒**：WSL2 (Windows) 和 Lima (macOS) 隔离支持
 - [ ] **记忆优化**：改进长会话的上下文管理和跨会话记忆。
 
 ---

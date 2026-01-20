@@ -13,6 +13,7 @@ export type { SandboxMode, SandboxAdapterConfig } from './sandbox-adapter';
 
 // Platform-specific executors
 export { WSLBridge, pathConverter } from './wsl-bridge';
+export { LimaBridge, limaPathConverter } from './lima-bridge';
 export { NativeExecutor } from './native-executor';
 
 // Path resolver (existing)

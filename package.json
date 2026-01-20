@@ -5,8 +5,9 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:wsl-agent && tsc && vite build && electron-builder",
+    "build": "npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
+    "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
