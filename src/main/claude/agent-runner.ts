@@ -672,6 +672,23 @@ Then follow the workflow described in that file.
 
       if (sandbox.isWSL && sandbox.wslStatus?.distro && workingDir) {
         log('[ClaudeAgentRunner] WSL mode active, initializing sandbox sync...');
+        
+        // Only show sync UI for new sessions (first message)
+        const isNewSession = !SandboxSync.hasSession(session.id);
+        
+        if (isNewSession) {
+          // Notify UI: syncing files (only for new sessions)
+          this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'syncing_files',
+              message: 'Syncing files to sandbox...',
+              detail: 'Copying project files to isolated WSL environment',
+            },
+          });
+        }
+        
         const syncResult = await SandboxSync.initSync(
           workingDir,
           session.id,
@@ -683,6 +700,21 @@ Then follow the workflow described in that file.
           useSandboxIsolation = true;
           log(`[ClaudeAgentRunner] Sandbox initialized: ${sandboxPath}`);
           log(`[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`);
+          
+          if (isNewSession) {
+            // Update UI with file count (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'syncing_skills',
+              message: 'Configuring skills...',
+              detail: 'Copying built-in skills to sandbox',
+              fileCount: syncResult.fileCount,
+              totalSize: syncResult.totalSize,
+            },
+          });
+          }
 
           // Copy built-in skills to sandbox ~/.claude/skills/
           const builtinSkillsPath = this.getBuiltinSkillsPath();
@@ -720,16 +752,62 @@ Then follow the workflow described in that file.
               logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
             }
           }
+          
+          if (isNewSession) {
+            // Notify UI: sync complete (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'ready',
+              message: 'Sandbox ready',
+              detail: `Synced ${syncResult.fileCount} files`,
+              fileCount: syncResult.fileCount,
+              totalSize: syncResult.totalSize,
+            },
+          });
+          }
         } else {
           logError('[ClaudeAgentRunner] Sandbox sync failed:', syncResult.error);
           log('[ClaudeAgentRunner] Falling back to /mnt/ access (less secure)');
+          
+          if (isNewSession) {
+            // Notify UI: error (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'error',
+              message: 'Sandbox sync failed',
+              detail: 'Falling back to direct access mode (less secure)',
+            },
+          });
+          }
         }
       }
 
       // Initialize sandbox sync if Lima mode is active
       if (sandbox.isLima && sandbox.limaStatus?.instanceRunning && workingDir) {
         log('[ClaudeAgentRunner] Lima mode active, initializing sandbox sync...');
+        
         const { LimaSync } = await import('../sandbox/lima-sync');
+        
+        // Only show sync UI for new sessions (first message)
+        const isNewLimaSession = !LimaSync.hasSession(session.id);
+        
+        if (isNewLimaSession) {
+          // Notify UI: syncing files (only for new sessions)
+          this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'syncing_files',
+              message: 'Syncing files to sandbox...',
+              detail: 'Copying project files to isolated Lima environment',
+            },
+          });
+        }
+        
         const syncResult = await LimaSync.initSync(
           workingDir,
           session.id
@@ -740,6 +818,21 @@ Then follow the workflow described in that file.
           useSandboxIsolation = true;
           log(`[ClaudeAgentRunner] Sandbox initialized: ${sandboxPath}`);
           log(`[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`);
+          
+          if (isNewLimaSession) {
+            // Update UI with file count (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'syncing_skills',
+              message: 'Configuring skills...',
+              detail: 'Copying built-in skills to sandbox',
+              fileCount: syncResult.fileCount,
+              totalSize: syncResult.totalSize,
+            },
+          });
+          }
 
           // Copy built-in skills to sandbox ~/.claude/skills/
           const builtinSkillsPath = this.getBuiltinSkillsPath();
@@ -776,9 +869,37 @@ Then follow the workflow described in that file.
               logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
             }
           }
+          
+          if (isNewLimaSession) {
+            // Notify UI: sync complete (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'ready',
+              message: 'Sandbox ready',
+              detail: `Synced ${syncResult.fileCount} files`,
+              fileCount: syncResult.fileCount,
+              totalSize: syncResult.totalSize,
+            },
+          });
+          }
         } else {
           logError('[ClaudeAgentRunner] Sandbox sync failed:', syncResult.error);
           log('[ClaudeAgentRunner] Falling back to direct access (less secure)');
+          
+          if (isNewLimaSession) {
+            // Notify UI: error (only for new sessions)
+            this.sendToRenderer({
+            type: 'sandbox.sync',
+            payload: {
+              sessionId: session.id,
+              phase: 'error',
+              message: 'Sandbox sync failed',
+              detail: 'Falling back to direct access mode (less secure)',
+            },
+          });
+          }
         }
       }
 

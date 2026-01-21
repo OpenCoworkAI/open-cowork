@@ -187,6 +187,43 @@ export type ClientEvent =
   | { type: 'settings.update'; payload: Record<string, unknown> }
   | { type: 'folder.select'; payload: Record<string, never> };
 
+// Sandbox setup types (app startup)
+export type SandboxSetupPhase = 
+  | 'checking'      // Checking WSL/Lima availability
+  | 'creating'      // Creating Lima instance (macOS only)
+  | 'starting'      // Starting Lima instance (macOS only)  
+  | 'installing_node'   // Installing Node.js
+  | 'installing_python' // Installing Python
+  | 'installing_pip'    // Installing pip
+  | 'ready'         // Ready to use
+  | 'skipped'       // No sandbox needed (native mode)
+  | 'error';        // Setup failed
+
+export interface SandboxSetupProgress {
+  phase: SandboxSetupPhase;
+  message: string;
+  detail?: string;
+  progress?: number; // 0-100
+  error?: string;
+}
+
+// Sandbox sync types (per-session file sync)
+export type SandboxSyncPhase =
+  | 'starting_agent'  // Starting WSL/Lima agent
+  | 'syncing_files'   // Syncing files to sandbox
+  | 'syncing_skills'  // Copying skills
+  | 'ready'           // Sync complete
+  | 'error';          // Sync failed
+
+export interface SandboxSyncStatus {
+  sessionId: string;
+  phase: SandboxSyncPhase;
+  message: string;
+  detail?: string;
+  fileCount?: number;
+  totalSize?: number;
+}
+
 export type ServerEvent =
   | { type: 'stream.message'; payload: { sessionId: string; message: Message } }
   | { type: 'stream.partial'; payload: { sessionId: string; delta: string } }
@@ -198,6 +235,8 @@ export type ServerEvent =
   | { type: 'trace.update'; payload: { sessionId: string; stepId: string; updates: Partial<TraceStep> } }
   | { type: 'folder.selected'; payload: { path: string } }
   | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
+  | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
+  | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types

@@ -106,6 +106,16 @@ export function useIPC() {
           }
           break;
 
+        case 'sandbox.progress':
+          console.log('[useIPC] sandbox.progress received:', event.payload.phase, event.payload.message);
+          store.setSandboxSetupProgress(event.payload);
+          break;
+
+        case 'sandbox.sync':
+          console.log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
+          store.setSandboxSyncStatus(event.payload);
+          break;
+
         case 'error':
           console.error('[useIPC] Server error:', event.payload.message);
           store.setLoading(false);

@@ -26,6 +26,16 @@ import type {
   PathConverter,
 } from './types';
 
+// Import lazily to avoid circular dependency
+let getSandboxBootstrap: (() => { getCachedWSLStatus(): WSLStatus | null }) | null = null;
+async function loadBootstrap() {
+  if (!getSandboxBootstrap) {
+    const mod = await import('./sandbox-bootstrap');
+    getSandboxBootstrap = mod.getSandboxBootstrap;
+  }
+  return getSandboxBootstrap();
+}
+
 const execAsync = promisify(exec);
 
 /**
@@ -564,8 +574,22 @@ export class WSLBridge implements SandboxExecutor {
   private async _initialize(config: SandboxConfig): Promise<void> {
     this.config = config;
 
-    // Check WSL status
-    const status = await WSLBridge.checkWSLStatus();
+    // Try to use cached status from bootstrap first (much faster)
+    let status: WSLStatus;
+    try {
+      const bootstrap = await loadBootstrap();
+      const cachedStatus = bootstrap.getCachedWSLStatus();
+      if (cachedStatus && cachedStatus.available) {
+        log('[WSL] Using cached status from bootstrap');
+        status = cachedStatus;
+      } else {
+        log('[WSL] No cached status, checking WSL...');
+        status = await WSLBridge.checkWSLStatus();
+      }
+    } catch {
+      log('[WSL] Bootstrap not available, checking WSL...');
+      status = await WSLBridge.checkWSLStatus();
+    }
     
     if (!status.available) {
       throw new Error('WSL2 is not available on this system');
@@ -574,7 +598,8 @@ export class WSLBridge implements SandboxExecutor {
     this.distro = status.distro || 'Ubuntu';
     log('[WSL] Using distro:', this.distro);
 
-    // Install Node.js if not available
+    // Dependencies should already be installed by bootstrap
+    // Only install if bootstrap didn't run or failed
     if (!status.nodeAvailable) {
       log('[WSL] Node.js not found, installing...');
       const installed = await WSLBridge.installNodeInWSL(this.distro);
@@ -583,16 +608,13 @@ export class WSLBridge implements SandboxExecutor {
       }
     }
 
-    // Install Python if not available
     if (!status.pythonAvailable) {
       log('[WSL] Python not found, installing...');
       const installed = await WSLBridge.installPythonInWSL(this.distro);
       if (!installed) {
         log('[WSL] Failed to install Python in WSL (non-critical, continuing...)');
-        // Python is optional - some skills may not work but core functionality is OK
       }
     } else if (!status.pipAvailable) {
-      // Python is available but pip is not - install pip separately
       log('[WSL] pip not found, installing...');
       const pipInstalled = await WSLBridge.installPipInWSL(this.distro);
       if (!pipInstalled) {
@@ -600,11 +622,8 @@ export class WSLBridge implements SandboxExecutor {
       }
     }
 
-    // Install claude-code if not available (optional for WSL sandbox)
     if (!status.claudeCodeAvailable) {
       log('[WSL] claude-code not found in WSL (optional, Windows claude-code will be used)');
-      // Don't install claude-code in WSL - we use Windows claude-code
-      // This is intentional for the hybrid mode
     }
 
     // Start the WSL agent process

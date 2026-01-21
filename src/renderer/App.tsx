@@ -8,6 +8,8 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
 import { Titlebar } from './components/Titlebar';
+import { SandboxSetupDialog } from './components/SandboxSetupDialog';
+import { SandboxSyncToast } from './components/SandboxSyncToast';
 import type { AppConfig } from './types';
 
 // Check if running in Electron
@@ -21,9 +23,13 @@ function App() {
     showConfigModal,
     isConfigured,
     appConfig,
+    sandboxSetupProgress,
+    isSandboxSetupComplete,
+    sandboxSyncStatus,
     setShowConfigModal,
     setIsConfigured,
     setAppConfig,
+    setSandboxSetupComplete,
   } = useAppStore();
   const { listSessions, isElectron } = useIPC();
   const initialized = useRef(false);
@@ -66,6 +72,15 @@ function App() {
     setShowConfigModal(false);
   }, [setShowConfigModal]);
 
+  // Handle sandbox setup complete
+  const handleSandboxSetupComplete = useCallback(() => {
+    setSandboxSetupComplete(true);
+  }, [setSandboxSetupComplete]);
+
+  // Determine if we should show the sandbox setup dialog
+  // Show if there's progress and setup is not complete
+  const showSandboxSetup = sandboxSetupProgress && !isSandboxSetupComplete;
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-background">
       {/* Titlebar - draggable region */}
@@ -96,6 +111,17 @@ function App() {
         initialConfig={appConfig}
         isFirstRun={!isConfigured}
       />
+      
+      {/* Sandbox Setup Dialog */}
+      {showSandboxSetup && (
+        <SandboxSetupDialog 
+          progress={sandboxSetupProgress}
+          onComplete={handleSandboxSetupComplete}
+        />
+      )}
+      
+      {/* Sandbox Sync Toast */}
+      <SandboxSyncToast status={sandboxSyncStatus} />
       
       {/* AskUserQuestion is now rendered inline in MessageCard */}
     </div>

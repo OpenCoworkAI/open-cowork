@@ -11,6 +11,7 @@ import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
+import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
 import { log, logWarn, logError } from './utils/logger';
@@ -103,7 +104,41 @@ function createWindow() {
         config: isConfigured ? configStore.getAll() : null,
       },
     });
+
+    // Start sandbox bootstrap after window is loaded
+    startSandboxBootstrap();
   });
+}
+
+/**
+ * Start sandbox bootstrap in the background
+ * This pre-initializes WSL/Lima environment at app startup
+ */
+async function startSandboxBootstrap(): Promise<void> {
+  const bootstrap = getSandboxBootstrap();
+  
+  // Skip if already complete
+  if (bootstrap.isComplete()) {
+    log('[App] Sandbox bootstrap already complete');
+    return;
+  }
+
+  // Set up progress callback to notify renderer
+  bootstrap.setProgressCallback((progress) => {
+    sendToRenderer({
+      type: 'sandbox.progress',
+      payload: progress,
+    });
+  });
+
+  // Start bootstrap (non-blocking)
+  log('[App] Starting sandbox bootstrap...');
+  try {
+    const result = await bootstrap.bootstrap();
+    log('[App] Sandbox bootstrap complete:', result.mode);
+  } catch (error) {
+    logError('[App] Sandbox bootstrap error:', error);
+  }
 }
 
 // Send event to renderer

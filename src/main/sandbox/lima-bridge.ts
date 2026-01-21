@@ -26,6 +26,16 @@ import type {
   PathConverter,
 } from './types';
 
+// Import lazily to avoid circular dependency
+let getSandboxBootstrap: (() => { getCachedLimaStatus(): LimaStatus | null }) | null = null;
+async function loadBootstrap() {
+  if (!getSandboxBootstrap) {
+    const mod = await import('./sandbox-bootstrap');
+    getSandboxBootstrap = mod.getSandboxBootstrap;
+  }
+  return getSandboxBootstrap();
+}
+
 const execAsync = promisify(exec);
 
 const LIMA_INSTANCE_NAME = 'claude-sandbox';
@@ -459,14 +469,28 @@ export class LimaBridge implements SandboxExecutor {
   private async _initialize(config: SandboxConfig): Promise<void> {
     this.config = config;
 
-    // Check Lima status
-    let status = await LimaBridge.checkLimaStatus();
+    // Try to use cached status from bootstrap first (much faster)
+    let status: LimaStatus;
+    try {
+      const bootstrap = await loadBootstrap();
+      const cachedStatus = bootstrap.getCachedLimaStatus();
+      if (cachedStatus && cachedStatus.available && cachedStatus.instanceRunning) {
+        log('[Lima] Using cached status from bootstrap');
+        status = cachedStatus;
+      } else {
+        log('[Lima] No cached status or instance not running, checking Lima...');
+        status = await LimaBridge.checkLimaStatus();
+      }
+    } catch {
+      log('[Lima] Bootstrap not available, checking Lima...');
+      status = await LimaBridge.checkLimaStatus();
+    }
 
     if (!status.available) {
       throw new Error('Lima is not installed. Please install with: brew install lima');
     }
 
-    // Create instance if needed
+    // Create instance if needed (should be done by bootstrap)
     if (!status.instanceExists) {
       log('[Lima] Creating new instance...');
       const created = await LimaBridge.createLimaInstance();
@@ -475,7 +499,7 @@ export class LimaBridge implements SandboxExecutor {
       }
     }
 
-    // Start instance if needed
+    // Start instance if needed (should be done by bootstrap)
     if (!status.instanceRunning) {
       log('[Lima] Starting instance...');
       const started = await LimaBridge.startLimaInstance();
@@ -486,7 +510,7 @@ export class LimaBridge implements SandboxExecutor {
       status = await LimaBridge.checkLimaStatus();
     }
 
-    // Install Node.js if needed
+    // Dependencies should already be installed by bootstrap
     if (!status.nodeAvailable) {
       log('[Lima] Installing Node.js...');
       const installed = await LimaBridge.installNodeInLima();
@@ -495,7 +519,6 @@ export class LimaBridge implements SandboxExecutor {
       }
     }
 
-    // Install Python if not available (optional)
     if (!status.pythonAvailable) {
       log('[Lima] Python not found, installing...');
       const installed = await LimaBridge.installPythonInLima();

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig } from '../types';
+import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus } from '../types';
 
 interface AppState {
   // Sessions
@@ -33,6 +33,13 @@ interface AppState {
   appConfig: AppConfig | null;
   isConfigured: boolean;
   showConfigModal: boolean;
+  
+  // Sandbox setup
+  sandboxSetupProgress: SandboxSetupProgress | null;
+  isSandboxSetupComplete: boolean;
+  
+  // Sandbox sync (per-session)
+  sandboxSyncStatus: SandboxSyncStatus | null;
   
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -68,6 +75,13 @@ interface AppState {
   setAppConfig: (config: AppConfig | null) => void;
   setIsConfigured: (configured: boolean) => void;
   setShowConfigModal: (show: boolean) => void;
+  
+  // Sandbox setup actions
+  setSandboxSetupProgress: (progress: SandboxSetupProgress | null) => void;
+  setSandboxSetupComplete: (complete: boolean) => void;
+  
+  // Sandbox sync actions
+  setSandboxSyncStatus: (status: SandboxSyncStatus | null) => void;
 }
 
 const defaultSettings: Settings = {
@@ -116,6 +130,9 @@ export const useAppStore = create<AppState>((set) => ({
   appConfig: null,
   isConfigured: false,
   showConfigModal: false,
+  sandboxSetupProgress: null,
+  isSandboxSetupComplete: false,
+  sandboxSyncStatus: null,
   
   // Session actions
   setSessions: (sessions) => set({ sessions }),
@@ -377,4 +394,11 @@ export const useAppStore = create<AppState>((set) => ({
   setAppConfig: (config) => set({ appConfig: config }),
   setIsConfigured: (configured) => set({ isConfigured: configured }),
   setShowConfigModal: (show) => set({ showConfigModal: show }),
+  
+  // Sandbox setup actions
+  setSandboxSetupProgress: (progress) => set({ sandboxSetupProgress: progress }),
+  setSandboxSetupComplete: (complete) => set({ isSandboxSetupComplete: complete }),
+  
+  // Sandbox sync actions
+  setSandboxSyncStatus: (status) => set({ sandboxSyncStatus: status }),
 }));

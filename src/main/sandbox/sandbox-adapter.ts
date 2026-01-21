@@ -16,6 +16,7 @@ import { log, logWarn, logError } from '../utils/logger';
 import { WSLBridge, pathConverter } from './wsl-bridge';
 import { LimaBridge, limaPathConverter } from './lima-bridge';
 import { NativeExecutor } from './native-executor';
+import { getSandboxBootstrap } from './sandbox-bootstrap';
 import type {
   SandboxConfig,
   SandboxExecutor,
@@ -142,7 +143,17 @@ export class SandboxAdapter implements SandboxExecutor {
   private async initializeWSL(config: SandboxAdapterConfig): Promise<void> {
     log('[SandboxAdapter] Checking WSL2 availability...');
     
-    const wslStatus = await WSLBridge.checkWSLStatus();
+    // Try to use cached status from bootstrap first (much faster)
+    const bootstrap = getSandboxBootstrap();
+    let wslStatus = bootstrap.getCachedWSLStatus();
+    
+    if (wslStatus) {
+      log('[SandboxAdapter] Using cached WSL status from bootstrap');
+    } else {
+      log('[SandboxAdapter] No cached status, checking WSL...');
+      wslStatus = await WSLBridge.checkWSLStatus();
+    }
+    
     this.state.wslStatus = wslStatus;
 
     log('[SandboxAdapter] WSL Status:', JSON.stringify(wslStatus, null, 2));
@@ -212,7 +223,17 @@ export class SandboxAdapter implements SandboxExecutor {
   private async initializeLima(config: SandboxAdapterConfig): Promise<void> {
     log('[SandboxAdapter] Checking Lima availability...');
 
-    const limaStatus = await LimaBridge.checkLimaStatus();
+    // Try to use cached status from bootstrap first (much faster)
+    const bootstrap = getSandboxBootstrap();
+    let limaStatus = bootstrap.getCachedLimaStatus();
+    
+    if (limaStatus) {
+      log('[SandboxAdapter] Using cached Lima status from bootstrap');
+    } else {
+      log('[SandboxAdapter] No cached status, checking Lima...');
+      limaStatus = await LimaBridge.checkLimaStatus();
+    }
+    
     this.state.limaStatus = limaStatus;
 
     log('[SandboxAdapter] Lima Status:', JSON.stringify(limaStatus, null, 2));
