@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 
 export function ChatView() {
+  const { t } = useTranslation();
   const {
     activeSessionId,
     sessions,
@@ -327,7 +329,7 @@ export function ChatView() {
     if (otherFiles.length > 0) {
       const newFiles = otherFiles.map(file => ({
         name: file.name,
-        path: file.path || '', // Electron provides path property
+        path: ('path' in file && typeof file.path === 'string') ? file.path : '', // Electron may provide path property
         size: file.size,
         type: file.type || 'application/octet-stream',
       }));
@@ -452,7 +454,7 @@ export function ChatView() {
   if (!activeSession) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
-        <span>Loading conversation...</span>
+        <span>{t('chat.loadingConversation')}</span>
       </div>
     );
   }
@@ -478,18 +480,17 @@ export function ChatView() {
               <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-purple-500/20">
                 <Plug className="w-3.5 h-3.5" />
                 <span className="text-xs font-medium whitespace-nowrap">
-                  {activeConnectors.length} connector{activeConnectors.length !== 1 ? 's' : ''}
+                  {t('chat.connectorCount', { count: activeConnectors.length })}
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 justify-self-end">
               <Plug className="w-3.5 h-3.5 text-purple-500" />
               <span className="text-xs text-purple-500 font-medium">
-                {activeConnectors.length}
-                {showConnectorLabel && (
-                  <span>
-                    {' '}connector{activeConnectors.length !== 1 ? 's' : ''}
-                  </span>
+                {showConnectorLabel ? (
+                  t('chat.connectorCount', { count: activeConnectors.length })
+                ) : (
+                  activeConnectors.length
                 )}
               </span>
             </div>
@@ -502,7 +503,7 @@ export function ChatView() {
         <div className="max-w-3xl mx-auto py-6 px-4 space-y-4">
           {displayedMessages.length === 0 ? (
             <div className="text-center py-12 text-text-muted">
-              <p>Start the conversation</p>
+              <p>{t('chat.startConversation')}</p>
             </div>
           ) : (
             displayedMessages.map((message) => {
@@ -515,12 +516,12 @@ export function ChatView() {
             })
           )}
 
-          {/* Processing indicator */}
-          {hasActiveTurn && !partialMessage && (
+          {/* Processing indicator - show when we have an active turn but no partial message yet */}
+          {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
               <span className="text-sm text-text-secondary">
-                Processing...
+                {t('chat.processing')}
               </span>
             </div>
           )}
@@ -594,7 +595,7 @@ export function ChatView() {
                 type="button"
                 onClick={handleFileSelect}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                title="Attach files"
+                title={t('welcome.attachFiles')}
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -620,7 +621,7 @@ export function ChatView() {
                     handleSubmit();
                   }
                 }}
-                placeholder="Reply..."
+                placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
                 className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-1.5"

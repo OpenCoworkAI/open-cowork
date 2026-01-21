@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import type { PermissionRequest } from '../types';
 import {
@@ -12,23 +13,18 @@ interface PermissionDialogProps {
 }
 
 export function PermissionDialog({ permission }: PermissionDialogProps) {
+  const { t } = useTranslation();
   const { respondToPermission } = useIPC();
 
-  const toolDescriptions: Record<string, string> = {
-    write: 'Write to files on your system',
-    edit: 'Edit existing files on your system',
-    bash: 'Execute shell commands',
-    webFetch: 'Fetch data from the web',
-    webSearch: 'Search the web',
-    TodoRead: 'Read the current todo list',
-    TodoWrite: 'Update the current todo list',
-    read_file: 'Read files in the workspace',
-    write_file: 'Write files in the workspace',
-    edit_file: 'Edit files in the workspace',
-    list_directory: 'List directory contents in the workspace',
-    execute_command: 'Execute shell commands in the workspace',
-    glob: 'Search files by pattern',
-    grep: 'Search file contents',
+  const getToolDescription = (toolName: string): string => {
+    const key = `permission.toolDescriptions.${toolName}`;
+    const translated = t(key);
+    // If translation exists (not the same as key), return it
+    if (translated !== key) {
+      return translated;
+    }
+    // Otherwise fallback to default message
+    return t('permission.useTool', { toolName });
   };
 
   const isHighRisk = [
@@ -57,10 +53,10 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-text-primary">
-              Permission Required
+              {t('permission.permissionRequired')}
             </h2>
             <p className="text-sm text-text-secondary mt-1">
-              {toolDescriptions[permission.toolName] || `Use the ${permission.toolName} tool`}
+              {getToolDescription(permission.toolName)}
             </p>
           </div>
         </div>
@@ -68,12 +64,12 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
         {/* Tool Details */}
         <div className="mt-4 p-4 bg-surface-muted rounded-xl">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-medium text-text-primary">Tool:</span>
+            <span className="text-sm font-medium text-text-primary">{t('permission.tool')}</span>
             <span className="font-mono text-accent text-sm">{permission.toolName}</span>
           </div>
           
           <div className="text-sm text-text-secondary">
-            <span className="font-medium text-text-primary">Input:</span>
+            <span className="font-medium text-text-primary">{t('permission.input')}</span>
             <pre className="mt-1 text-xs code-block max-h-32 overflow-auto">
               {JSON.stringify(permission.input, null, 2)}
             </pre>
@@ -86,7 +82,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
               <p className="text-sm text-warning">
-                This action may modify your system. Review carefully.
+                {t('permission.warning')}
               </p>
             </div>
           </div>
@@ -99,7 +95,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             className="flex-1 btn btn-secondary"
           >
             <X className="w-4 h-4" />
-            Deny
+            {t('permission.deny')}
           </button>
           
           <button
@@ -107,7 +103,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             className="flex-1 btn btn-primary"
           >
             <Check className="w-4 h-4" />
-            Allow
+            {t('permission.allow')}
           </button>
         </div>
 
@@ -116,7 +112,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           onClick={() => respondToPermission(permission.toolUseId, 'allow_always')}
           className="w-full mt-2 btn btn-ghost text-sm"
         >
-          Always allow this tool
+          {t('permission.alwaysAllow')}
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { SettingsPanel } from './SettingsPanel';
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const {
     sessions,
     activeSessionId,
@@ -153,17 +155,17 @@ export function Sidebar() {
               <h1 className="text-lg font-semibold text-text-primary whitespace-nowrap">Open Cowork</h1>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={toggleTheme}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
-                title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {settings.theme === 'dark' ? (
-                  <Sun className="w-4 h-4" />
-                ) : (
-                  <Moon className="w-4 h-4" />
-                )}
-              </button>
+        <button
+          onClick={toggleTheme}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
+          title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {settings.theme === 'dark' ? (
+            <Sun className="w-4 h-4" />
+          ) : (
+            <Moon className="w-4 h-4" />
+          )}
+        </button>
               <button
                 onClick={toggleSidebar}
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
@@ -183,13 +185,13 @@ export function Sidebar() {
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors ${
             sidebarCollapsed ? 'justify-center' : ''
           }`}
-          title="New task"
+          title={t('sidebar.newTask')}
         >
           <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-accent" />
           </div>
           {!sidebarCollapsed && (
-            <span className="font-medium text-text-primary">New task</span>
+            <span className="font-medium text-text-primary">{t('sidebar.newTask')}</span>
           )}
         </button>
       </div>
@@ -200,12 +202,12 @@ export function Sidebar() {
         {!sidebarCollapsed && sessions.length > 0 && (
           <div className="flex items-center justify-between px-3 py-2 mb-1">
             <span className="text-xs font-medium text-text-muted tracking-wide">
-              Recents ({sessions.length})
+              {t('sidebar.recents')} ({sessions.length})
             </span>
             <button
               onClick={handleDeleteAllSessions}
               className="w-6 h-6 rounded flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-error transition-colors"
-              title="删除所有对话"
+              title={t('sidebar.deleteAll')}
             >
               <Trash className="w-3.5 h-3.5" />
             </button>
@@ -215,11 +217,11 @@ export function Sidebar() {
         <div className="space-y-1">
           {sidebarCollapsed ? (
             <div className="text-center py-6 text-text-muted text-xs">
-              <p>Expand to view tasks</p>
+              <p>{t('sidebar.expandToView')}</p>
             </div>
           ) : sessions.length === 0 ? (
             <div className="text-center py-6 text-text-muted text-sm">
-              <p>No tasks yet</p>
+              <p>{t('sidebar.noTasks')}</p>
             </div>
           ) : (
             sessions.map((session) => (
@@ -262,9 +264,9 @@ export function Sidebar() {
 
         {/* Info text */}
         {!sidebarCollapsed && (
-          <p className="text-xs text-text-muted px-3 py-4">
-            These tasks run locally and aren't synced across devices.
-          </p>
+        <p className="text-xs text-text-muted px-3 py-4">
+            {t('sidebar.localTasks')}
+        </p>
         )}
       </div>
       
@@ -288,18 +290,18 @@ export function Sidebar() {
             </div>
             <div className="flex-1 min-w-0 text-left">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-text-primary">User</span>
+                <span className="text-sm font-medium text-text-primary">{t('sidebar.user')}</span>
                 <span
                   className={`w-2 h-2 rounded-full flex-shrink-0 ${isConfigured ? 'bg-success' : 'bg-amber-500'}`}
-                  title={isConfigured ? 'API configured' : 'API not configured'}
+                  title={isConfigured ? t('sidebar.apiConfigured') : t('sidebar.apiNotConfigured')}
                 />
               </div>
               <p className="text-xs text-text-muted">
-                {isConfigured ? 'API Configured' : 'API Not Configured'}
+                {isConfigured ? t('sidebar.apiConfigured') : t('sidebar.apiNotConfigured')}
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-text-muted group-hover:text-text-primary transition-colors">
-              <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4" />
             </div>
           </button>
         )}

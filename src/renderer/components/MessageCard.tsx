@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -106,11 +107,11 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
       const text = textBlock.text || '';
-
+      
       if (!text) {
         return <span className="text-text-muted italic">(empty text)</span>;
       }
-
+      
       // Simple text display for user messages, Markdown for assistant
       if (isUser) {
         return (
@@ -120,7 +121,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
           </p>
         );
       }
-
+      
       return (
         <div className="prose-chat max-w-none text-text-primary">
           <ReactMarkdown
@@ -276,6 +277,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
 }
 
 function ToolUseBlock({ block }: { block: ToolUseContent }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   // Check if this is AskUserQuestion - render inline question UI
@@ -367,7 +369,7 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
       {expanded && (
         <div className="p-4 space-y-4 bg-surface">
           <div>
-            <p className="text-xs font-medium text-text-muted mb-2">Request</p>
+            <p className="text-xs font-medium text-text-muted mb-2">{t('messageCard.request')}</p>
             <pre className="code-block text-xs">
               {JSON.stringify(block.input, null, 2)}
             </pre>

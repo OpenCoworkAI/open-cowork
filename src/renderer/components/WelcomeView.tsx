@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
 import {
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export function WelcomeView() {
+  const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const [cwd, setCwd] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -357,26 +359,26 @@ export function WelcomeView() {
   }, [prompt]);
 
   const quickTags = [
-    { id: 'create', label: 'Create a file', icon: FileText, prompt: 'Create a new file for me' },
-    { id: 'crunch', label: 'Crunch data', icon: BarChart3, prompt: 'Help me analyze and process data' },
-    { id: 'organize', label: 'Organize files', icon: FolderOpen, prompt: 'Help me organize my files and folders' },
+    { id: 'create', label: t('welcome.createFile'), icon: FileText, prompt: 'Create a new file for me' },
+    { id: 'crunch', label: t('welcome.crunchData'), icon: BarChart3, prompt: 'Help me analyze and process data' },
+    { id: 'organize', label: t('welcome.organizeFiles'), icon: FolderOpen, prompt: 'Help me organize my files and folders' },
     { 
       id: 'email', 
-      label: 'Check emails', 
+      label: t('welcome.checkEmails'), 
       icon: Mail, 
       prompt: 'Help me use Chrome to summarize the new emails from the past three days in my Gmail and NetEase Mail. Note that the saved accounts already include the full email suffix. Therefore, if the email suffix is already pre-filled on the webpage or in a screenshot, do not enter it again, to avoid login failure. Also, first check whether the corresponding account credentials are saved. If the username or password for a given email service is not saved, you can skip that email account.',
       requiresChrome: true 
     },
     { 
       id: 'papers', 
-      label: 'Search & summarize papers', 
+      label: t('welcome.searchPapers'), 
       icon: BookOpen, 
       prompt: 'Please help me use Chrome to search for and summarize papers related to [Agent] within two days.\nSource websites:\n1. HuggingFace Daily Papers. Please include the vote information and a brief summary. Note that it may not include papers in the weekend, so you may need to check the papers in previous days. But make sure that there is a total of two days.',
       requiresChrome: true 
     },
     { 
       id: 'research-notion', 
-      label: 'Research Agent surveys', 
+      label: t('welcome.summarizePapersToNotion'), 
       icon: FileSearch, 
       prompt: 'Help me research three representative survey papers related to agents, and add them under a Notion page titled "Agent Survey". For each paper, include the title, authors, publication venue/year, and a brief summary of the main contributions.',
       requiresNotion: true 
@@ -401,13 +403,13 @@ export function WelcomeView() {
               {'requiresChrome' in tag && tag.requiresChrome && (
                 <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
                   <Chrome className="w-3 h-3" />
-                  <span>Chrome</span>
+                  <span>{t('welcome.chromeRequired')}</span>
                 </span>
               )}
               {'requiresNotion' in tag && tag.requiresNotion && (
                 <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800/10 text-gray-700 border border-gray-800/20">
                   <span className="text-sm">📝</span>
-                  <span>Notion</span>
+                  <span>{t('welcome.notionRequired')}</span>
                 </span>
               )}
             </button>
@@ -484,7 +486,7 @@ export function WelcomeView() {
               isComposingRef.current = false;
             }}
             onPaste={handlePaste}
-            placeholder="How can I help you today?"
+            placeholder={t('welcome.title')}
             rows={1}
             style={{ minHeight: '72px', maxHeight: '200px' }}
             className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
@@ -503,18 +505,18 @@ export function WelcomeView() {
           {/* Bottom Actions */}
           <div className="flex items-center justify-between pt-2 border-t border-border">
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleSelectFolder}
-                className={`flex items-center gap-2 text-sm transition-colors ${
-                  cwd
-                    ? 'text-text-secondary hover:text-text-primary'
-                    : 'text-accent hover:text-accent-hover'
-                }`}
-              >
-                <FolderOpen className="w-4 h-4" />
-                <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select Working Folder (required)'}</span>
-              </button>
+            <button
+              type="button"
+              onClick={handleSelectFolder}
+              className={`flex items-center gap-2 text-sm transition-colors ${
+                cwd
+                  ? 'text-text-secondary hover:text-text-primary'
+                  : 'text-accent hover:text-accent-hover'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4" />
+                <span>{cwd ? cwd.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}</span>
+            </button>
 
               {isElectron && (
                 <button
@@ -523,7 +525,7 @@ export function WelcomeView() {
                   className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
                 >
                   <Paperclip className="w-4 h-4" />
-                  <span>Attach Files</span>
+                  <span>{t('welcome.attachFiles')}</span>
                 </button>
               )}
             </div>
@@ -533,7 +535,7 @@ export function WelcomeView() {
               disabled={isSubmitting}
               className="btn btn-primary px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{isSubmitting ? 'Starting...' : "Let's go"}</span>
+              <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

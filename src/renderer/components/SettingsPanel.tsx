@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages } from 'lucide-react';
 import type { ProviderPresets, Skill } from '../types';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -41,10 +42,10 @@ interface MCPServerStatus {
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'api' | 'credentials' | 'connectors' | 'skills';
+  initialTab?: 'api' | 'credentials' | 'connectors' | 'skills' | 'language';
 }
 
-type TabId = 'api' | 'credentials' | 'connectors' | 'skills';
+type TabId = 'api' | 'credentials' | 'connectors' | 'skills' | 'language';
 
 const SERVICE_OPTIONS = [
   { value: 'gmail', label: 'Gmail' },
@@ -64,6 +65,7 @@ const SERVICE_OPTIONS = [
 // ==================== Main Component ====================
 
 export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsPanelProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   // Track which tabs have been viewed at least once (for lazy loading)
   const [viewedTabs, setViewedTabs] = useState<Set<TabId>>(new Set([initialTab]));
@@ -85,10 +87,11 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
   if (!isOpen) return null;
 
   const tabs = [
-    { id: 'api' as TabId, label: 'API Settings', icon: Settings, description: 'Configure API provider and key' },
-    { id: 'credentials' as TabId, label: 'Saved Credentials', icon: Key, description: 'Manage login credentials' },
-    { id: 'connectors' as TabId, label: 'MCP Connectors', icon: Plug, description: 'Browser & tool integrations' },
-    { id: 'skills' as TabId, label: 'Skills', icon: Package, description: 'Manage custom skills' },
+    { id: 'api' as TabId, label: t('settings.apiSettings'), icon: Settings, description: t('settings.apiSettingsDesc') },
+    { id: 'credentials' as TabId, label: t('settings.credentials'), icon: Key, description: t('settings.credentialsDesc') },
+    { id: 'connectors' as TabId, label: t('settings.connectors'), icon: Plug, description: t('settings.connectorsDesc') },
+    { id: 'skills' as TabId, label: t('settings.skills'), icon: Package, description: t('settings.skillsDesc') },
+    { id: 'language' as TabId, label: t('settings.language'), icon: Languages, description: t('settings.languageDesc') },
   ];
 
   return (
@@ -97,7 +100,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
         {/* Sidebar */}
         <div className="w-72 bg-surface-hover border-r border-border flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-border">
-            <h2 className="text-lg font-semibold text-text-primary">Settings</h2>
+            <h2 className="text-lg font-semibold text-text-primary">{t('settings.title')}</h2>
           </div>
           <div className="flex-1 p-2 space-y-1">
             {tabs.map((tab) => (
@@ -124,7 +127,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
               onClick={onClose}
               className="w-full py-2 px-4 rounded-lg bg-surface hover:bg-surface-active transition-colors text-text-secondary text-sm"
             >
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>
@@ -156,6 +159,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
             <div className={activeTab === 'skills' ? '' : 'hidden'}>
               {viewedTabs.has('skills') && <SkillsTab />}
             </div>
+            <div className={activeTab === 'language' ? '' : 'hidden'}>
+              {viewedTabs.has('language') && <LanguageTab />}
+            </div>
           </div>
         </div>
       </div>
@@ -166,6 +172,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
 // ==================== API Settings Tab (Full version from ConfigModal) ====================
 
 function APISettingsTab() {
+  const { t } = useTranslation();
   const [provider, setProvider] = useState<'openrouter' | 'anthropic' | 'custom' | 'openai'>('openrouter');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -249,13 +256,13 @@ function APISettingsTab() {
 
   async function handleSave() {
     if (!apiKey.trim()) {
-      setError('Please enter API Key');
+      setError(t('api.apiKey') + ' is required');
       return;
     }
 
     const finalModel = useCustomModel ? customModel.trim() : model;
     if (!finalModel) {
-      setError('Please select or enter a model name');
+      setError(t('api.model') + ' is required');
       return;
     }
 
@@ -306,7 +313,7 @@ function APISettingsTab() {
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
           <Server className="w-4 h-4" />
-          API Provider
+          {t('api.provider')}
         </label>
         <div className="grid grid-cols-3 gap-2">
           {(['openrouter', 'anthropic', 'openai', 'custom'] as const).map((p) => (
@@ -320,7 +327,7 @@ function APISettingsTab() {
                   : 'bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50'
               }`}
             >
-              {presets?.[p]?.name || p}
+              {p === 'custom' ? t('api.moreModels') : (presets?.[p]?.name || p)}
             </button>
           ))}
         </div>
@@ -330,7 +337,7 @@ function APISettingsTab() {
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
           <Key className="w-4 h-4" />
-          API Key
+          {t('api.apiKey')}
         </label>
         <input
           type="password"
@@ -349,7 +356,7 @@ function APISettingsTab() {
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
             <Server className="w-4 h-4" />
-            Protocol
+            {t('api.protocol')}
           </label>
           <div className="grid grid-cols-2 gap-2">
             {([
@@ -369,7 +376,7 @@ function APISettingsTab() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-text-muted">Select the compatible protocol for the service</p>
+          <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
         </div>
       )}
 
@@ -378,7 +385,7 @@ function APISettingsTab() {
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
             <Server className="w-4 h-4" />
-            Base URL
+            {t('api.baseUrl')}
           </label>
           <input
             type="text"
@@ -393,8 +400,8 @@ function APISettingsTab() {
           />
           <p className="text-xs text-text-muted">
             {customProtocol === 'openai'
-              ? 'Enter OpenAI-compatible service URL'
-              : 'Enter Anthropic-compatible service URL'}
+              ? t('api.enterOpenAIUrl')
+              : t('api.enterAnthropicUrl')}
           </p>
         </div>
       )}
@@ -404,7 +411,7 @@ function APISettingsTab() {
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
             <Cpu className="w-4 h-4" />
-            Model
+            {t('api.model')}
           </label>
           <button
             type="button"
@@ -416,7 +423,7 @@ function APISettingsTab() {
             }`}
           >
             <Edit3 className="w-3 h-3" />
-            {useCustomModel ? 'Use Preset' : 'Custom'}
+            {useCustomModel ? t('api.usePreset') : t('api.custom')}
           </button>
         </div>
         {useCustomModel ? (
@@ -448,7 +455,7 @@ function APISettingsTab() {
         )}
         {useCustomModel && (
           <p className="text-xs text-text-muted">
-            Enter model ID, e.g., moonshotai/kimi-k2-0905, openai/gpt-4o
+            {t('api.enterModelId')}
           </p>
         )}
       </div>
@@ -463,7 +470,7 @@ function APISettingsTab() {
       {success && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          Saved successfully!
+          {t('common.saved')}
         </div>
       )}
 
@@ -476,12 +483,12 @@ function APISettingsTab() {
         {isSaving ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Saving...
+            {t('common.saving')}
           </>
         ) : (
           <>
             <CheckCircle className="w-4 h-4" />
-            Save Settings
+            {t('api.saveSettings')}
           </>
         )}
       </button>
@@ -492,6 +499,7 @@ function APISettingsTab() {
 // ==================== Credentials Tab ====================
 
 function CredentialsTab() {
+  const { t } = useTranslation();
   const [credentials, setCredentials] = useState<UserCredential[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -511,7 +519,7 @@ function CredentialsTab() {
       setError('');
     } catch (err) {
       console.error('Failed to load credentials:', err);
-      setError('Failed to load credentials');
+      setError(t('credentials.failedToLoad'));
     }
   }
 
@@ -529,20 +537,20 @@ function CredentialsTab() {
       setShowForm(false);
       setEditingCredential(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save credential');
+      setError(err instanceof Error ? err.message : t('credentials.failedToSave'));
     } finally {
       setIsLoading(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this credential?')) return;
+    if (!confirm(t('credentials.deleteConfirm'))) return;
     setIsLoading(true);
     try {
       await window.electronAPI.credentials.delete(id);
       await loadCredentials();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete credential');
+      setError(err instanceof Error ? err.message : t('credentials.failedToDelete'));
     } finally {
       setIsLoading(false);
     }
@@ -561,9 +569,9 @@ function CredentialsTab() {
     <div className="space-y-4">
       {/* Info */}
       <div className="px-4 py-3 rounded-xl bg-blue-500/10 text-blue-600 text-sm">
-        <p className="font-medium mb-1">🔐 Securely Encrypted</p>
+        <p className="font-medium mb-1">{t('credentials.encrypted')}</p>
         <p className="text-xs opacity-80">
-          Credentials are encrypted locally. The agent can use these to automatically log in to your accounts.
+          {t('credentials.encryptedDesc')}
         </p>
       </div>
 
@@ -590,8 +598,8 @@ function CredentialsTab() {
           {credentials.length === 0 ? (
             <div className="text-center py-8 text-text-muted">
               <Key className="w-10 h-10 mx-auto mb-3 opacity-50" />
-              <p>No saved credentials</p>
-              <p className="text-sm mt-1">Add credentials for the agent to use</p>
+              <p>{t('credentials.noCredentials')}</p>
+              <p className="text-sm mt-1">{t('credentials.addCredential')}</p>
             </div>
           ) : (
             credentials.map((cred) => (
@@ -624,7 +632,7 @@ function CredentialsTab() {
                       onClick={() => { setEditingCredential(cred); setShowForm(true); }}
                       disabled={isLoading}
                       className="p-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
-                      title="Edit"
+                      title={t('common.edit')}
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
@@ -632,7 +640,7 @@ function CredentialsTab() {
                       onClick={() => handleDelete(cred.id)}
                       disabled={isLoading}
                       className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
-                      title="Delete"
+                      title={t('common.delete')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -651,7 +659,7 @@ function CredentialsTab() {
           className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent"
         >
           <Plus className="w-5 h-5" />
-          Add Credential
+          {t('credentials.addNewCredential')}
         </button>
       )}
     </div>
@@ -664,6 +672,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
   onCancel: () => void;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(credential?.name || '');
   const [type, setType] = useState<UserCredential['type']>(credential?.type || 'email');
   const [service, setService] = useState(credential?.service || '');
@@ -676,11 +685,11 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !username.trim()) {
-      alert('Name and username are required');
+      alert(t('credentials.nameRequired'));
       return;
     }
     if (!credential && !password.trim()) {
-      alert('Password is required for new credentials');
+      alert(t('credentials.passwordRequired'));
       return;
     }
 
@@ -698,12 +707,12 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-4 space-y-4">
       <h3 className="font-medium text-text-primary">
-        {credential ? 'Edit Credential' : 'Add New Credential'}
+        {credential ? t('credentials.editCredential') : t('credentials.addNewCredential')}
       </h3>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">Name *</label>
+          <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.name')} *</label>
           <input
             type="text"
             value={name}
@@ -714,7 +723,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">Type</label>
+          <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.type')}</label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as any)}
@@ -729,13 +738,13 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Service</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.service')}</label>
         <select
           value={service}
           onChange={(e) => setService(e.target.value)}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
         >
-          <option value="">Select a service...</option>
+          <option value="">{t('credentials.selectService')}</option>
           {SERVICE_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
@@ -743,7 +752,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Username / Email *</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.username')} *</label>
         <input
           type="text"
           value={username}
@@ -756,7 +765,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
 
       <div>
         <label className="block text-sm font-medium text-text-primary mb-2">
-          Password {credential ? '(leave empty to keep current)' : '*'}
+          {t('credentials.password')} {credential ? t('credentials.passwordKeepCurrent') : '*'}
         </label>
         <div className="relative">
           <input
@@ -778,7 +787,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Login URL (optional)</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.loginUrl')}</label>
         <input
           type="url"
           value={url}
@@ -789,7 +798,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Notes (optional)</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.notes')}</label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -806,7 +815,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
           className="flex-1 py-2 px-4 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
         >
           <Save className="w-4 h-4" />
-          {isLoading ? 'Saving...' : 'Save'}
+          {isLoading ? t('common.saving') : t('common.save')}
         </button>
         <button
           type="button"
@@ -814,7 +823,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
           disabled={isLoading}
           className="px-4 py-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </form>
@@ -824,6 +833,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
 // ==================== Connectors Tab (Full version from MCPConnectorsModal) ====================
 
 function ConnectorsTab() {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [statuses, setStatuses] = useState<MCPServerStatus[]>([]);
   const [tools, setTools] = useState<any[]>([]);
@@ -953,7 +963,7 @@ function ConnectorsTab() {
   }
 
   async function handleDeleteServer(serverId: string) {
-    if (!confirm('Delete this connector?')) return;
+    if (!confirm(t('common.delete') + ' this connector?')) return;
     setIsLoading(true);
     try {
       await window.electronAPI.mcp.deleteServer(serverId);
@@ -981,9 +991,9 @@ function ConnectorsTab() {
     <div className="space-y-4">
       {/* Info */}
       <div className="px-4 py-3 rounded-xl bg-purple-500/10 text-purple-600 text-sm">
-        <p className="font-medium mb-1">🔌 MCP Connectors</p>
+        <p className="font-medium mb-1">🔌 {t('settings.connectors')}</p>
         <p className="text-xs opacity-80">
-          Connect external tools like Chrome browser for web automation.
+          {t('settings.connectorsDesc')}
         </p>
       </div>
 
@@ -1010,8 +1020,8 @@ function ConnectorsTab() {
           {servers.length === 0 ? (
             <div className="text-center py-8 text-text-muted">
               <Plug className="w-10 h-10 mx-auto mb-3 opacity-50" />
-              <p>No connectors configured</p>
-              <p className="text-sm mt-1">Add a connector to enable MCP tools</p>
+              <p>{t('mcp.noConnectors')}</p>
+              <p className="text-sm mt-1">{t('mcp.addConnector')}</p>
             </div>
           ) : (
             servers.map((server) => {
@@ -1041,7 +1051,7 @@ function ConnectorsTab() {
         <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-text-primary">
-              Configure {configuringPreset.preset.name}
+              {t('mcp.configure')} {configuringPreset.preset.name}
             </h3>
             <button
               onClick={() => {
@@ -1080,14 +1090,14 @@ function ConnectorsTab() {
               }}
               className="px-3 py-1.5 rounded-md text-sm text-text-secondary hover:text-text-primary transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               onClick={() => addPresetServer(configuringPreset.key, configuringPreset.preset, presetEnvValues)}
               disabled={isLoading || configuringPreset.preset.requiresEnv?.some((key: string) => !presetEnvValues[key]?.trim())}
               className="px-4 py-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
-              Add Connector
+              {t('common.add')}
             </button>
           </div>
         </div>
@@ -1096,16 +1106,16 @@ function ConnectorsTab() {
       {/* Preset Servers */}
       {!showAddForm && !editingServer && !configuringPreset && Object.keys(presets).length > 0 && (
         <div className="space-y-3">
-          <button
-            onClick={() => setShowPresets(!showPresets)}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-muted hover:bg-surface transition-colors"
-          >
-            <h3 className="text-sm font-medium text-text-primary">Quick Add Presets</h3>
-            <div className="flex items-center gap-1.5 text-text-muted">
-              <span className="text-xs">{showPresets ? 'Hide' : 'Show'}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
-            </div>
-          </button>
+            <button
+              onClick={() => setShowPresets(!showPresets)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-muted hover:bg-surface transition-colors"
+            >
+              <h3 className="text-sm font-medium text-text-primary">{t('mcp.quickAddPresets')}</h3>
+              <div className="flex items-center gap-1.5 text-text-muted">
+                <span className="text-xs">{showPresets ? t('mcp.hide') : t('mcp.show')}</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
+              </div>
+            </button>
           {showPresets && (
             <div className="grid grid-cols-1 gap-2">
               {Object.entries(presets).map(([key, preset]) => {
@@ -1125,7 +1135,7 @@ function ConnectorsTab() {
                         <span className="font-medium text-sm text-text-primary">{preset.name}</span>
                         {requiresConfig && !isAdded && (
                           <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                            Requires Token
+                            {t('mcp.requiresToken')}
                           </span>
                         )}
                       </div>
@@ -1139,7 +1149,7 @@ function ConnectorsTab() {
                     {isAdded ? (
                       <div className="flex items-center gap-1 text-success text-xs whitespace-nowrap">
                         <CheckCircle className="w-4 h-4" />
-                        <span>Added</span>
+                        <span>{t('mcp.added')}</span>
                       </div>
                     ) : (
                       <button
@@ -1148,7 +1158,7 @@ function ConnectorsTab() {
                         className="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 whitespace-nowrap flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        {requiresConfig ? 'Configure' : 'Add'}
+                        {requiresConfig ? t('mcp.configure') : t('common.add')}
                       </button>
                     )}
                   </div>
@@ -1166,13 +1176,13 @@ function ConnectorsTab() {
           className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent"
         >
           <Plus className="w-5 h-5" />
-          Add Custom Connector
+          {t('mcp.addCustomConnector')}
         </button>
       )}
 
       {/* Footer info */}
       <div className="text-sm text-text-muted text-center pt-2">
-        {tools.length} tool{tools.length !== 1 ? 's' : ''} available
+        {t('mcp.toolsAvailable', { count: tools.length })}
       </div>
     </div>
   );
@@ -1197,6 +1207,7 @@ function ServerCard({
   onToggleEnabled: () => void;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const isConnected = status?.connected || false;
   const [showTools, setShowTools] = useState(false);
 
@@ -1231,10 +1242,10 @@ function ServerCard({
                       : 'bg-blue-500/10 text-blue-600'
                 }`}>
                   {isConnected 
-                    ? '✓ Connected to Chrome debug port (9222)' 
+                    ? `✓ ${t('mcp.connected')} to Chrome debug port (9222)` 
                     : server.enabled
-                      ? '⏳ Connecting...'
-                      : '💡 A new Chrome debug window will open automatically if port is unavailable'
+                      ? `⏳ ${t('mcp.connecting')}`
+                      : `💡 ${t('mcp.chromeHint')}`
                   }
                 </div>
               )}
@@ -1244,13 +1255,13 @@ function ServerCard({
                   className="flex items-center gap-1 hover:text-accent transition-colors"
                 >
                   <Plug className="w-3 h-3" />
-                  <span>{toolCount} tool{toolCount !== 1 ? 's' : ''}</span>
+                  <span>{t('mcp.toolsAvailable', { count: toolCount })}</span>
                   {showTools ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 </button>
                 {isConnected && (
                   <span className="flex items-center gap-1 text-success">
                     <CheckCircle className="w-3 h-3" />
-                    Connected
+                    {t('mcp.connected')}
                   </span>
                 )}
               </div>
@@ -1258,7 +1269,7 @@ function ServerCard({
               {/* Tools List */}
               {showTools && tools.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-surface-muted border border-border">
-                  <div className="text-xs font-medium text-text-primary mb-2">Available Tools:</div>
+                  <div className="text-xs font-medium text-text-primary mb-2">{t('mcp.toolsAvailable', { count: tools.length }).split(' ').slice(1).join(' ')}:</div>
                   <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                     {tools.map((tool, idx) => (
                       <div
@@ -1277,7 +1288,7 @@ function ServerCard({
               )}
               {showTools && tools.length === 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-surface-muted text-xs text-text-muted">
-                  No tools available. Make sure the server is connected.
+                  {t('mcp.notConnected')}
                 </div>
               )}
             </div>
@@ -1291,7 +1302,7 @@ function ServerCard({
                   ? 'bg-success/10 text-success hover:bg-success/20'
                   : 'bg-surface-muted text-text-muted hover:bg-surface-active'
               }`}
-              title={server.enabled ? 'Disable' : 'Enable'}
+              title={server.enabled ? t('common.disable') || 'Disable' : t('common.enable') || 'Enable'}
             >
               {server.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
             </button>
@@ -1299,7 +1310,7 @@ function ServerCard({
               onClick={onEdit}
               disabled={isLoading}
               className="p-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
-              title="Edit"
+              title={t('common.edit')}
             >
               <Edit3 className="w-4 h-4" />
             </button>
@@ -1307,7 +1318,7 @@ function ServerCard({
               onClick={onDelete}
               disabled={isLoading}
               className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
-              title="Delete"
+              title={t('common.delete')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -1329,6 +1340,7 @@ function ServerForm({
   onCancel: () => void;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(server?.name || '');
   const [type, setType] = useState<'stdio' | 'sse'>(server?.type || 'stdio');
   const [command, setCommand] = useState(server?.command || '');
@@ -1343,12 +1355,12 @@ function ServerForm({
     setEnvVars(prev => ({ ...prev, [key]: value }));
   }
 
-  function handleAddEnvVar() {
-    const key = prompt('Enter environment variable name (e.g., NOTION_TOKEN):');
+  const handleAddEnvVar = () => {
+    const key = prompt(t('credentials.enterEnvVar'));
     if (key && key.trim()) {
       setEnvVars(prev => ({ ...prev, [key.trim()]: '' }));
     }
-  }
+  };
 
   function handleRemoveEnvVar(key: string) {
     setEnvVars(prev => {
@@ -1370,7 +1382,7 @@ function ServerForm({
 
     if (type === 'stdio') {
       if (!command.trim()) {
-        alert('Command is required for STDIO servers');
+        alert(t('mcp.command') + ' is required');
         return;
       }
       config.command = command.trim();
@@ -1381,7 +1393,7 @@ function ServerForm({
       }
     } else {
       if (!url.trim()) {
-        alert('URL is required for SSE servers');
+        alert(t('mcp.url') + ' is required');
         return;
       }
       config.url = url.trim();
@@ -1393,11 +1405,11 @@ function ServerForm({
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-4 space-y-4">
       <h3 className="font-medium text-text-primary">
-        {server ? 'Edit Connector' : 'Add Custom Connector'}
+        {server ? t('mcp.editConnector') : t('mcp.addConnectorTitle')}
       </h3>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Name</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.name')}</label>
         <input
           type="text"
           value={name}
@@ -1409,7 +1421,7 @@ function ServerForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">Type</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.type')}</label>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -1439,7 +1451,7 @@ function ServerForm({
       {type === 'stdio' ? (
         <>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">Command</label>
+            <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.command')}</label>
             <input
               type="text"
               value={command}
@@ -1450,7 +1462,7 @@ function ServerForm({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">Arguments</label>
+            <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.arguments')}</label>
             <input
               type="text"
               value={args}
@@ -1458,19 +1470,19 @@ function ServerForm({
               placeholder="-y chrome-devtools-mcp@latest --browser-url http://localhost:9222"
               className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
             />
-            <p className="text-xs text-text-muted mt-1">Space-separated arguments</p>
+            <p className="text-xs text-text-muted mt-1">{t('mcp.spaceSeparated')}</p>
           </div>
           
           {/* Environment Variables Section */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-text-primary">Environment Variables</label>
+              <label className="text-sm font-medium text-text-primary">{t('credentials.envVars')}</label>
               <button
                 type="button"
                 onClick={() => setShowEnvSection(!showEnvSection)}
                 className="text-xs text-accent hover:text-accent-hover"
               >
-                {showEnvSection ? 'Hide' : 'Show'}
+                {showEnvSection ? t('mcp.hide') : t('mcp.show')}
               </button>
             </div>
             {showEnvSection && (
@@ -1498,7 +1510,7 @@ function ServerForm({
                   </div>
                 ))}
                 {Object.keys(envVars).length === 0 && (
-                  <p className="text-xs text-text-muted text-center py-2">No environment variables configured</p>
+                  <p className="text-xs text-text-muted text-center py-2">{t('credentials.noEnvVars')}</p>
                 )}
                 <button
                   type="button"
@@ -1506,18 +1518,18 @@ function ServerForm({
                   className="w-full mt-2 py-1.5 px-3 rounded border border-dashed border-border hover:border-accent hover:bg-accent/5 text-xs text-text-secondary hover:text-accent transition-colors flex items-center justify-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Add Environment Variable
+                  {t('credentials.envVars')}
                 </button>
               </div>
             )}
             <p className="text-xs text-text-muted">
-              Used for tokens and secrets (e.g., NOTION_TOKEN)
+              {t('credentials.usedForTokens')}
             </p>
           </div>
         </>
       ) : (
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">URL</label>
+          <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.url')}</label>
           <input
             type="url"
             value={url}
@@ -1538,7 +1550,7 @@ function ServerForm({
           className="w-4 h-4 rounded border-border text-accent focus:ring-accent"
         />
         <label htmlFor="enabled" className="text-sm text-text-primary">
-          Enable this connector
+          {t('mcp.enableConnector')}
         </label>
       </div>
 
@@ -1551,10 +1563,10 @@ function ServerForm({
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Saving...
+              {t('common.saving')}
             </>
           ) : (
-            'Save'
+            t('common.save')
           )}
         </button>
         <button
@@ -1563,7 +1575,7 @@ function ServerForm({
           disabled={isLoading}
           className="px-4 py-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </form>
@@ -1574,6 +1586,7 @@ function ServerForm({
 // ==================== Skills Tab ====================
 
 function SkillsTab() {
+  const { t } = useTranslation();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1621,7 +1634,7 @@ function SkillsTab() {
   }
 
   async function handleDelete(skillId: string, skillName: string) {
-    if (!confirm(`Delete skill "${skillName}"?`)) return;
+    if (!confirm(t('skills.deleteSkill', { name: skillName }))) return;
 
     setIsLoading(true);
     try {
@@ -1653,9 +1666,9 @@ function SkillsTab() {
     <div className="space-y-4">
       {/* Info Banner */}
       <div className="px-4 py-3 rounded-xl bg-purple-500/10 text-purple-600 text-sm">
-        <p className="font-medium mb-1">📦 Skills</p>
+        <p className="font-medium mb-1">{t('skills.title')}</p>
         <p className="text-xs opacity-80">
-          Skills extend Claude's capabilities with specialized knowledge and tools.
+          {t('skills.description')}
         </p>
       </div>
 
@@ -1668,7 +1681,7 @@ function SkillsTab() {
 
       {/* Built-in Skills */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-text-primary px-2">Built-in Skills</h3>
+        <h3 className="text-sm font-medium text-text-primary px-2">{t('skills.builtinSkills')}</h3>
         {builtinSkills.map(skill => (
           <SkillCard
             key={skill.id}
@@ -1682,12 +1695,12 @@ function SkillsTab() {
 
       {/* Custom Skills */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-text-primary px-2">Custom Skills</h3>
+        <h3 className="text-sm font-medium text-text-primary px-2">{t('skills.customSkills')}</h3>
         {customSkills.length === 0 ? (
           <div className="text-center py-8 text-text-muted">
             <Package className="w-10 h-10 mx-auto mb-3 opacity-50" />
-            <p>No custom skills installed</p>
-            <p className="text-sm mt-1">Install skills to extend Claude's capabilities</p>
+            <p>{t('skills.noCustomSkills')}</p>
+            <p className="text-sm mt-1">{t('skills.installSkillsDesc')}</p>
           </div>
         ) : (
           customSkills.map(skill => (
@@ -1709,7 +1722,7 @@ function SkillsTab() {
         className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-border hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
       >
         <Plus className="w-5 h-5" />
-        Install Skill from Folder
+        {t('skills.installSkillFromFolder')}
       </button>
     </div>
   );
@@ -1768,6 +1781,56 @@ function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== Language Tab ====================
+
+function LanguageTab() {
+  const { i18n, t } = useTranslation();
+  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+
+  const languages = [
+    { code: 'en', nativeName: 'English' },
+    { code: 'zh', nativeName: '中文' },
+  ];
+
+  const handleLanguageChange = (langCode: string) => {
+    i18n.changeLanguage(langCode);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Info Banner */}
+      <div className="px-4 py-3 rounded-xl bg-blue-500/10 text-blue-600 text-sm">
+        <p className="font-medium mb-1">🌐 {t('language.selectLanguage')}</p>
+        <p className="text-xs opacity-80">
+          {t('language.currentLanguage')}: {currentLang === 'zh' ? t('language.chinese') : t('language.english')}
+        </p>
+      </div>
+
+      {/* Language Options */}
+      <div className="space-y-2">
+        {languages.map((lang) => (
+          <button
+            key={lang.code}
+            onClick={() => handleLanguageChange(lang.code)}
+            className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+              currentLang === lang.code
+                ? 'border-accent bg-accent/5'
+                : 'border-border bg-surface hover:border-accent/50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-medium text-text-primary">{lang.nativeName}</div>
+              {currentLang === lang.code && (
+                <CheckCircle className="w-5 h-5 text-accent" />
+              )}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
