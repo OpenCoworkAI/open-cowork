@@ -185,7 +185,10 @@ export type ClientEvent =
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'question.response'; payload: UserQuestionResponse }
   | { type: 'settings.update'; payload: Record<string, unknown> }
-  | { type: 'folder.select'; payload: Record<string, never> };
+  | { type: 'folder.select'; payload: Record<string, never> }
+  | { type: 'workdir.get'; payload: Record<string, never> }
+  | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
+  | { type: 'workdir.select'; payload: { sessionId?: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase = 
@@ -237,6 +240,7 @@ export type ServerEvent =
   | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
   | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
+  | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types

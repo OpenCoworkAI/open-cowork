@@ -17,6 +17,7 @@ interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
   cancel(sessionId: string): void;
   handleQuestionResponse(questionId: string, answer: string): void;
+  clearSdkSession?(sessionId: string): void;
 }
 
 export class SessionManager {
@@ -518,6 +519,25 @@ export class SessionManager {
       type: 'session.status',
       payload: { sessionId, status },
     });
+  }
+
+  // Update session's working directory
+  // Also clears SDK session cache because Claude SDK sessions are bound to cwd
+  updateSessionCwd(sessionId: string, cwd: string): void {
+    // Clear claude_session_id in DB so next query creates a new SDK session
+    // (Claude SDK sessions cannot change cwd mid-session)
+    this.db.sessions.update(sessionId, { 
+      cwd, 
+      claude_session_id: null,
+      updated_at: Date.now() 
+    });
+    
+    // Also clear the in-memory SDK session cache
+    if (this.agentRunner?.clearSdkSession) {
+      this.agentRunner.clearSdkSession(sessionId);
+    }
+    
+    log('[SessionManager] Session cwd updated:', sessionId, '->', cwd, '(SDK session cleared)');
   }
 
   // Save message to database

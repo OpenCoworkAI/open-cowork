@@ -119,6 +119,17 @@ export class ClaudeAgentRunner {
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
 
   /**
+   * Clear SDK session cache for a session
+   * Called when session's cwd changes - SDK sessions are bound to cwd
+   */
+  clearSdkSession(sessionId: string): void {
+    if (this.sdkSessions.has(sessionId)) {
+      this.sdkSessions.delete(sessionId);
+      log('[ClaudeAgentRunner] Cleared SDK session cache for:', sessionId);
+    }
+  }
+
+  /**
    * Get MCP tools prompt for system instructions
    */
   private getMCPToolsPrompt(): string {
@@ -664,7 +675,8 @@ Then follow the workflow described in that file.
       });
       logTiming('sendTraceStep (thinking)');
 
-      const workingDir = session.cwd ||  undefined;
+      // Use session's cwd - each session has its own working directory
+      const workingDir = session.cwd || undefined;
       log('[ClaudeAgentRunner] Working directory:', workingDir || '(none)');
 
       // Initialize sandbox sync if WSL mode is active

@@ -34,6 +34,9 @@ interface AppState {
   isConfigured: boolean;
   showConfigModal: boolean;
   
+  // Working directory
+  workingDir: string | null;
+  
   // Sandbox setup
   sandboxSetupProgress: SandboxSetupProgress | null;
   isSandboxSetupComplete: boolean;
@@ -75,6 +78,9 @@ interface AppState {
   setAppConfig: (config: AppConfig | null) => void;
   setIsConfigured: (configured: boolean) => void;
   setShowConfigModal: (show: boolean) => void;
+  
+  // Working directory actions
+  setWorkingDir: (path: string | null) => void;
   
   // Sandbox setup actions
   setSandboxSetupProgress: (progress: SandboxSetupProgress | null) => void;
@@ -130,6 +136,7 @@ export const useAppStore = create<AppState>((set) => ({
   appConfig: null,
   isConfigured: false,
   showConfigModal: false,
+  workingDir: null,
   sandboxSetupProgress: null,
   isSandboxSetupComplete: false,
   sandboxSyncStatus: null,
@@ -394,6 +401,9 @@ export const useAppStore = create<AppState>((set) => ({
   setAppConfig: (config) => set({ appConfig: config }),
   setIsConfigured: (configured) => set({ isConfigured: configured }),
   setShowConfigModal: (show) => set({ showConfigModal: show }),
+  
+  // Working directory actions
+  setWorkingDir: (path) => set({ workingDir: path }),
   
   // Sandbox setup actions
   setSandboxSetupProgress: (progress) => set({ sandboxSetupProgress: progress }),

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join, resolve } from 'path';
+import * as fs from 'fs';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
@@ -15,6 +16,9 @@ import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
 import { log, logWarn, logError } from './utils/logger';
+
+// Current working directory (persisted between sessions)
+let currentWorkingDir: string | null = null;
 
 // Load .env file from project root (for development)
 const envPath = resolve(__dirname, '../../.env');
@@ -105,9 +109,79 @@ function createWindow() {
       },
     });
 
+    // Send current working directory to renderer
+    sendToRenderer({
+      type: 'workdir.changed',
+      payload: { path: currentWorkingDir || '' },
+    });
+
     // Start sandbox bootstrap after window is loaded
     startSandboxBootstrap();
   });
+}
+
+/**
+ * Initialize default working directory
+ * This is always the app's default_working_dir in userData - it never changes
+ * Each session can have its own cwd that differs from this default
+ */
+function initializeDefaultWorkingDir(): string {
+  // Create default working directory in user data path (this is the permanent global default)
+  const userDataPath = app.getPath('userData');
+  const defaultDir = join(userDataPath, 'default_working_dir');
+  
+  if (!fs.existsSync(defaultDir)) {
+    fs.mkdirSync(defaultDir, { recursive: true });
+    log('[App] Created default working directory:', defaultDir);
+  }
+  
+  currentWorkingDir = defaultDir;
+  
+  log('[App] Global default working directory:', currentWorkingDir);
+  return currentWorkingDir;
+}
+
+/**
+ * Get current working directory
+ */
+function getWorkingDir(): string | null {
+  return currentWorkingDir;
+}
+
+/**
+ * Set working directory
+ * - If sessionId is provided: update only that session's cwd (for switching directories within a chat)
+ * - If no sessionId: update UI display only (for WelcomeView - will be used when creating new session)
+ * 
+ * Note: The global default (currentWorkingDir) is NEVER changed after initialization.
+ * It is always app.getPath('userData')/default_working_dir
+ */
+async function setWorkingDir(newDir: string, sessionId?: string): Promise<{ success: boolean; path: string; error?: string }> {
+  if (!fs.existsSync(newDir)) {
+    return { success: false, path: newDir, error: 'Directory does not exist' };
+  }
+  
+  if (sessionId && sessionManager) {
+    // Update only this session's cwd - don't change the global default
+    log('[App] Updating session cwd:', sessionId, '->', newDir);
+    sessionManager.updateSessionCwd(sessionId, newDir);
+    
+    // Clear this session's sandbox mapping so next query uses the new directory
+    SandboxSync.clearSession(sessionId);
+    const { LimaSync } = await import('./sandbox/lima-sync');
+    LimaSync.clearSession(sessionId);
+  }
+  
+  // Notify renderer of workdir change (for UI display)
+  // This updates what the user sees, and will be passed to startSession for new sessions
+  sendToRenderer({
+    type: 'workdir.changed',
+    payload: { path: newDir },
+  });
+  
+  log('[App] Working directory for UI updated:', newDir, sessionId ? `(session: ${sessionId})` : '(pending new session)');
+  
+  return { success: true, path: newDir };
 }
 
 /**
@@ -164,6 +238,10 @@ app.whenReady().then(async () => {
   log('  OPENAI_MODEL:', process.env.OPENAI_MODEL || '(not set)');
   log('  OPENAI_API_MODE:', process.env.OPENAI_API_MODE || '(default)');
   log('===========================');
+  
+  // Initialize default working directory
+  initializeDefaultWorkingDir();
+  log('Working directory:', currentWorkingDir);
   
   // Initialize database
   const db = initDatabase();
@@ -755,17 +833,35 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       );
 
     case 'folder.select':
-      const result = await dialog.showOpenDialog(mainWindow!, {
+      const folderResult = await dialog.showOpenDialog(mainWindow!, {
         properties: ['openDirectory'],
       });
-      if (!result.canceled && result.filePaths.length > 0) {
+      if (!folderResult.canceled && folderResult.filePaths.length > 0) {
         sendToRenderer({
           type: 'folder.selected',
-          payload: { path: result.filePaths[0] },
+          payload: { path: folderResult.filePaths[0] },
         });
-        return result.filePaths[0];
+        return folderResult.filePaths[0];
       }
       return null;
+
+    case 'workdir.get':
+      return getWorkingDir();
+
+    case 'workdir.set':
+      return setWorkingDir(event.payload.path, event.payload.sessionId);
+
+    case 'workdir.select':
+      const workdirResult = await dialog.showOpenDialog(mainWindow!, {
+        properties: ['openDirectory'],
+        title: 'Select Working Directory',
+        defaultPath: currentWorkingDir || undefined,
+      });
+      if (!workdirResult.canceled && workdirResult.filePaths.length > 0) {
+        const selectedPath = workdirResult.filePaths[0];
+        return setWorkingDir(selectedPath, event.payload.sessionId);
+      }
+      return { success: false, path: '', error: 'User cancelled' };
 
     case 'settings.update':
       // TODO: Implement settings update

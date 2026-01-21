@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
 import {
@@ -16,7 +17,6 @@ import {
 
 export function WelcomeView() {
   const [prompt, setPrompt] = useState('');
-  const [cwd, setCwd] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComposingRef = useRef(false);
@@ -24,13 +24,11 @@ export function WelcomeView() {
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { startSession, selectFolder, isElectron } = useIPC();
+  const { startSession, changeWorkingDir, isElectron } = useIPC();
+  const workingDir = useAppStore((state) => state.workingDir);
 
   const handleSelectFolder = async () => {
-    const folder = await selectFolder();
-    if (folder) {
-      setCwd(folder);
-    }
+    await changeWorkingDir();
   };
 
   // Handle paste event for images
@@ -282,36 +280,11 @@ export function WelcomeView() {
       });
     }
 
-    // Security: Require a working directory to be selected
-    if (!cwd) {
-      // Prompt user to select a folder first
-      const folder = await selectFolder();
-      if (!folder) {
-        return; // User cancelled folder selection
-      }
-      setCwd(folder);
-      // Continue with the selected folder
-      setIsSubmitting(true);
-      try {
-        const sessionTitle = currentPrompt.slice(0, 50) + (currentPrompt.length > 50 ? '...' : '');
-        await startSession(sessionTitle, contentBlocks, folder);
-        setPrompt('');
-        if (textareaRef.current) {
-          textareaRef.current.value = '';
-        }
-        pastedImages.forEach(img => URL.revokeObjectURL(img.url));
-        setPastedImages([]);
-        setAttachedFiles([]);
-      } finally {
-        setIsSubmitting(false);
-      }
-      return;
-    }
-
+    // Use the global working directory (always available after app startup)
     setIsSubmitting(true);
     try {
       const sessionTitle = currentPrompt.slice(0, 50) + (currentPrompt.length > 50 ? '...' : '');
-      await startSession(sessionTitle, contentBlocks, cwd);
+      await startSession(sessionTitle, contentBlocks, workingDir || undefined);
       setPrompt('');
       if (textareaRef.current) {
         textareaRef.current.value = '';
@@ -506,14 +479,11 @@ export function WelcomeView() {
               <button
                 type="button"
                 onClick={handleSelectFolder}
-                className={`flex items-center gap-2 text-sm transition-colors ${
-                  cwd
-                    ? 'text-text-secondary hover:text-text-primary'
-                    : 'text-accent hover:text-accent-hover'
-                }`}
+                className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                title={workingDir || 'No working directory'}
               >
                 <FolderOpen className="w-4 h-4" />
-                <span>{cwd ? cwd.split(/[/\\]/).pop() : 'Select Working Folder (required)'}</span>
+                <span>{workingDir ? workingDir.split(/[/\\]/).pop() : 'No folder selected'}</span>
               </button>
 
               {isElectron && (

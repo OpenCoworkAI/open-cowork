@@ -384,6 +384,31 @@ export class SandboxSync {
   }
 
   /**
+   * Clear all session mappings without syncing or cleanup
+   * Used when workingDir changes - no need to preserve old sandbox data
+   */
+  static clearAllSessions(): void {
+    const count = sessions.size;
+    if (count === 0) {
+      log('[SandboxSync] No sessions to clear');
+      return;
+    }
+    sessions.clear();
+    log(`[SandboxSync] Cleared ${count} session(s) from map`);
+  }
+
+  /**
+   * Clear a specific session mapping without syncing or cleanup
+   * Used when a session's workingDir changes
+   */
+  static clearSession(sessionId: string): void {
+    if (sessions.has(sessionId)) {
+      sessions.delete(sessionId);
+      log(`[SandboxSync] Cleared session ${sessionId} from map`);
+    }
+  }
+
+  /**
    * Get session info
    */
   static getSession(sessionId: string): SyncSession | undefined {
