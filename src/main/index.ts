@@ -768,6 +768,36 @@ ipcMain.handle('sandbox.installClaudeCodeInLima', async () => {
   }
 });
 
+ipcMain.handle('sandbox.retryLimaSetup', async () => {
+  if (process.platform !== 'darwin') {
+    return { success: false, error: 'Lima is only available on macOS' };
+  }
+
+  try {
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.setProgressCallback((progress) => {
+      sendToRenderer({
+        type: 'sandbox.progress',
+        payload: progress,
+      });
+    });
+
+    try {
+      await LimaBridge.stopLimaInstance();
+    } catch (error) {
+      logError('[Sandbox] Error stopping Lima before retry:', error);
+    }
+
+    bootstrap.reset();
+    const result = await bootstrap.bootstrap();
+    const success = !result.error;
+    return { success, result, error: result.error };
+  } catch (error) {
+    logError('[Sandbox] Error retrying Lima setup:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   // Check if configured before starting sessions
   if (event.type === 'session.start' && !configStore.isConfigured()) {

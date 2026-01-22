@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
     installClaudeCodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installClaudeCodeInWSL', distro),
+    retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
+      ipcRenderer.invoke('sandbox.retryLimaSetup'),
   },
 });
 
@@ -200,6 +202,7 @@ declare global {
         }>;
         installNodeInWSL: (distro: string) => Promise<boolean>;
         installClaudeCodeInWSL: (distro: string) => Promise<boolean>;
+        retryLimaSetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
       };
     };
   }

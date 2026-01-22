@@ -39,6 +39,47 @@ async function loadBootstrap() {
 const execAsync = promisify(exec);
 
 const LIMA_INSTANCE_NAME = 'claude-sandbox';
+const LIMA_SHELL_RETRY_DELAY_MS = 1000;
+const LIMA_SHELL_RETRY_COUNT = 12;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getErrorText = (error: unknown): string => {
+  if (error instanceof Error) {
+    const stderr = (error as { stderr?: string }).stderr;
+    return `${error.message}${stderr ? `\n${stderr}` : ''}`;
+  }
+  if (typeof error === 'object' && error && 'stderr' in error) {
+    const stderr = (error as { stderr?: string }).stderr;
+    return stderr ? String(stderr) : String(error);
+  }
+  return String(error);
+};
+
+const isLimaShellConnectionError = (error: unknown): boolean => {
+  const text = getErrorText(error);
+  return text.includes('Connection refused') || text.includes('ssh: connect to host');
+};
+
+const execLimaShellWithRetry = async (
+  command: string,
+  timeout: number,
+  retries: number = LIMA_SHELL_RETRY_COUNT
+): Promise<{ stdout: string; stderr: string }> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await execAsync(`limactl shell ${LIMA_INSTANCE_NAME} -- ${command}`, { timeout });
+    } catch (error) {
+      lastError = error;
+      if (!isLimaShellConnectionError(error) || attempt === retries) {
+        throw error;
+      }
+      await delay(LIMA_SHELL_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
 
 /**
  * Path conversion utilities for macOS <-> Lima
@@ -152,30 +193,31 @@ export class LimaBridge implements SandboxExecutor {
       let nodeAvailable = false;
       let nodeVersion = '';
       try {
-        const { stdout } = await execAsync(
-          `limactl shell ${LIMA_INSTANCE_NAME} -- node --version`,
-          { timeout: 10000 }
-        );
+        const { stdout } = await execLimaShellWithRetry('node --version', 10000);
         nodeVersion = stdout.trim();
         if (nodeVersion.startsWith('v')) {
           nodeAvailable = true;
           log('[Lima] Node.js found:', nodeVersion);
         }
-      } catch {
-        // Try with nvm
-        try {
-          const { stdout } = await execAsync(
-            `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"`,
-            { timeout: 10000 }
-          );
-          nodeVersion = stdout.trim();
-          if (nodeVersion.startsWith('v')) {
-            nodeAvailable = true;
-            nodeVersion += ' (nvm)';
-            log('[Lima] Node.js found via nvm:', nodeVersion);
+      } catch (error) {
+        if (!isLimaShellConnectionError(error)) {
+          // Try with nvm
+          try {
+            const { stdout } = await execLimaShellWithRetry(
+              'bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"',
+              10000
+            );
+            nodeVersion = stdout.trim();
+            if (nodeVersion.startsWith('v')) {
+              nodeAvailable = true;
+              nodeVersion += ' (nvm)';
+              log('[Lima] Node.js found via nvm:', nodeVersion);
+            }
+          } catch {
+            log('[Lima] Node.js not found');
           }
-        } catch {
-          log('[Lima] Node.js not found');
+        } else {
+          log('[Lima] Node.js check failed: SSH not ready');
         }
       }
 
@@ -184,10 +226,7 @@ export class LimaBridge implements SandboxExecutor {
       let pipAvailable = false;
       let pythonVersion = '';
       try {
-        const { stdout } = await execAsync(
-          `limactl shell ${LIMA_INSTANCE_NAME} -- python3 --version`,
-          { timeout: 10000 }
-        );
+        const { stdout } = await execLimaShellWithRetry('python3 --version', 10000);
         pythonVersion = stdout.trim();
         if (pythonVersion.startsWith('Python')) {
           pythonAvailable = true;
@@ -195,10 +234,7 @@ export class LimaBridge implements SandboxExecutor {
 
           // Check pip
           try {
-            await execAsync(
-              `limactl shell ${LIMA_INSTANCE_NAME} -- python3 -m pip --version`,
-              { timeout: 10000 }
-            );
+            await execLimaShellWithRetry('python3 -m pip --version', 10000);
             pipAvailable = true;
           } catch {
             log('[Lima] pip not available');
@@ -212,9 +248,9 @@ export class LimaBridge implements SandboxExecutor {
       let claudeCodeAvailable = false;
       if (nodeAvailable) {
         try {
-          await execAsync(
-            `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude"`,
-            { timeout: 10000 }
+          await execLimaShellWithRetry(
+            'bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude"',
+            10000
           );
           claudeCodeAvailable = true;
           log('[Lima] claude-code found');
@@ -415,21 +451,21 @@ export class LimaBridge implements SandboxExecutor {
     log('[Lima] Installing Node.js via nvm...');
     try {
       // Install nvm
-      await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"`,
-        { timeout: 120000 }
+      await execLimaShellWithRetry(
+        'bash -c "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"',
+        120000
       );
 
       // Install Node.js 20
-      await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20"`,
-        { timeout: 180000 }
+      await execLimaShellWithRetry(
+        'bash -c "source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20"',
+        180000
       );
 
       // Verify
-      const { stdout } = await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "source ~/.nvm/nvm.sh && node --version"`,
-        { timeout: 10000 }
+      const { stdout } = await execLimaShellWithRetry(
+        'bash -c "source ~/.nvm/nvm.sh && node --version"',
+        10000
       );
       log('[Lima] Node.js installed:', stdout.trim());
       return true;
@@ -445,15 +481,12 @@ export class LimaBridge implements SandboxExecutor {
   static async installPythonInLima(): Promise<boolean> {
     log('[Lima] Installing Python...');
     try {
-      await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv`,
-        { timeout: 180000 }
+      await execLimaShellWithRetry(
+        'sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv',
+        180000
       );
 
-      const { stdout } = await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- python3 --version`,
-        { timeout: 10000 }
-      );
+      const { stdout } = await execLimaShellWithRetry('python3 --version', 10000);
       log('[Lima] Python installed:', stdout.trim());
       return true;
     } catch (error) {
@@ -468,9 +501,9 @@ export class LimaBridge implements SandboxExecutor {
   static async installClaudeCodeInLima(): Promise<boolean> {
     log('[Lima] Installing claude-code...');
     try {
-      await execAsync(
-        `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c "source ~/.nvm/nvm.sh && npm install -g @anthropic-ai/claude-code"`,
-        { timeout: 180000 }
+      await execLimaShellWithRetry(
+        'bash -c "source ~/.nvm/nvm.sh && npm install -g @anthropic-ai/claude-code"',
+        180000
       );
       log('[Lima] claude-code installed');
       return true;

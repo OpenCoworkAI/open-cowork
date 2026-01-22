@@ -102,6 +102,13 @@ export class SandboxBootstrap {
     return this.result !== null;
   }
 
+  reset(): void {
+    this.setupPromise = null;
+    this.result = null;
+    this.cachedWSLStatus = null;
+    this.cachedLimaStatus = null;
+  }
+
   /**
    * Get the bootstrap result (if complete)
    */
@@ -332,12 +339,17 @@ export class SandboxBootstrap {
 
       const nodeInstalled = await LimaBridge.installNodeInLima();
       if (!nodeInstalled) {
-        this.reportProgress({
-          phase: 'error',
-          message: 'Node.js installation failed',
-          error: 'Failed to install Node.js in Lima',
-        });
-        return { mode: 'native', limaStatus, error: 'Node.js installation failed' };
+        const refreshedStatus = await LimaBridge.checkLimaStatus();
+        if (refreshedStatus.nodeAvailable) {
+          limaStatus = refreshedStatus;
+        } else {
+          this.reportProgress({
+            phase: 'error',
+            message: 'Node.js installation failed',
+            error: 'Failed to install Node.js in Lima',
+          });
+          return { mode: 'native', limaStatus, error: 'Node.js installation failed' };
+        }
       }
       limaStatus.nodeAvailable = true;
     }
@@ -376,4 +388,3 @@ export class SandboxBootstrap {
 export function getSandboxBootstrap(): SandboxBootstrap {
   return SandboxBootstrap.getInstance();
 }
-

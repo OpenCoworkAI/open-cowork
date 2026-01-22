@@ -27,6 +27,7 @@ const phaseConfig: Record<SandboxSetupPhase, { icon: string }> = {
 export function SandboxSetupDialog({ progress, onComplete }: Props) {
   const [isVisible, setIsVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const handleClose = () => {
     setFadeOut(true);
@@ -34,6 +35,22 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
       setIsVisible(false);
       onComplete?.();
     }, 500);
+  };
+
+  const handleRetryLima = async () => {
+    if (!window.electronAPI?.sandbox?.retryLimaSetup) {
+      return;
+    }
+    setIsRetrying(true);
+    try {
+      const result = await window.electronAPI.sandbox.retryLimaSetup();
+      if (!result?.success) {
+        setIsRetrying(false);
+      }
+    } catch (error) {
+      console.error('[SandboxSetupDialog] Retry Lima failed:', error);
+      setIsRetrying(false);
+    }
   };
 
   useEffect(() => {
@@ -46,6 +63,12 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
     }
   }, [progress?.phase, onComplete]);
 
+  useEffect(() => {
+    if (progress && progress.phase !== 'error') {
+      setIsRetrying(false);
+    }
+  }, [progress]);
+
   if (!progress || !isVisible) {
     return null;
   }
@@ -53,6 +76,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
   const config = phaseConfig[progress.phase];
   const isComplete = progress.phase === 'ready' || progress.phase === 'skipped';
   const isError = progress.phase === 'error';
+  const isMac = window.electronAPI?.platform === 'darwin';
 
   return (
     <div 
@@ -133,14 +157,29 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
             </div>
           )}
 
-          {/* Continue Button for Error State */}
+          {/* Continue / Retry Buttons for Error State */}
           {isError && (
-            <button
-              onClick={handleClose}
-              className="mt-4 w-full py-2.5 px-4 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors"
-            >
-              Continue with Native Mode
-            </button>
+            <div className="mt-4 flex flex-col gap-3">
+              {isMac && (
+                <button
+                  onClick={handleRetryLima}
+                  disabled={isRetrying}
+                  className="w-full py-2.5 px-4 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isRetrying ? 'Restarting Lima...' : 'Try Restarting Lima'}
+                </button>
+              )}
+              <button
+                onClick={handleClose}
+                className={`w-full py-2.5 px-4 rounded-xl font-medium transition-colors ${
+                  isMac
+                    ? 'bg-surface hover:bg-surface-muted text-text-primary border border-border'
+                    : 'bg-accent hover:bg-accent/90 text-white'
+                }`}
+              >
+                Continue with Native Mode
+              </button>
+            </div>
           )}
 
           {/* Completion Message */}
