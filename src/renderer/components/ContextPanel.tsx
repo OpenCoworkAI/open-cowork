@@ -483,22 +483,22 @@ function TraceStepGroupItem({ group }: { group: StepGroup }) {
               {count > 1 && (
                 <p className="text-xs font-medium text-text-muted">{t('context.callNumber', { number: index + 1 })}</p>
               )}
-              {step.toolInput && (
-                <div>
+          {step.toolInput && (
+            <div>
                   <p className="text-xs font-medium text-text-muted mb-1">{t('context.input')}</p>
-                  <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
-                    {JSON.stringify(step.toolInput, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {step.toolOutput && (
-                <div>
+              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
+                {JSON.stringify(step.toolInput, null, 2)}
+              </pre>
+            </div>
+          )}
+          {step.toolOutput && (
+            <div>
                   <p className="text-xs font-medium text-text-muted mb-1">{t('context.output')}</p>
-                  <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                    {step.toolOutput}
-                  </pre>
-                </div>
-              )}
+              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+                {step.toolOutput}
+              </pre>
+            </div>
+          )}
             </div>
           ))}
         </div>

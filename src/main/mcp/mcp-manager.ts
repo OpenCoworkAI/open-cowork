@@ -1,6 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { app } from 'electron';
+import path from 'path';
 import { log, logError, logWarn } from '../utils/logger';
 
 /**
@@ -124,6 +126,55 @@ export class MCPManager {
   }
 
   /**
+   * Get the path to the Software Development MCP server file
+   */
+  private getSoftwareDevServerPath(): string {
+    const fs = require('fs');
+    
+    // In development: __dirname points to dist-electron/main
+    // In production: appPath points to the app.asar or unpacked app
+    if (app.isPackaged) {
+      // Production: look for the file in app.asar.unpacked or resources
+      const unpackedPath = path.join(process.resourcesPath || '', 'app.asar.unpacked', 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+      const resourcesPath = path.join(process.resourcesPath || '', 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+      
+      // Check if file exists in unpacked location
+      try {
+        if (fs.existsSync(unpackedPath)) {
+          return unpackedPath;
+        }
+        if (fs.existsSync(resourcesPath)) {
+          return resourcesPath;
+        }
+      } catch {
+        // Fall through to development path
+      }
+    }
+    
+    // Development: __dirname is dist-electron/main
+    // Need to go up 2 levels to get to project root (dist-electron/main -> dist-electron -> project root)
+    // Then navigate to src/main/mcp/software-dev-server-example.ts
+    const projectRoot = path.join(__dirname, '..', '..');
+    const sourcePath = path.join(projectRoot, 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+    
+    // Verify file exists and log for debugging
+    try {
+      if (fs.existsSync(sourcePath)) {
+        log('[MCPManager] Software Dev Server path resolved:', sourcePath);
+        return sourcePath;
+      } else {
+        logError('[MCPManager] File not found at:', sourcePath);
+        logError('[MCPManager] __dirname:', __dirname);
+        logError('[MCPManager] projectRoot:', projectRoot);
+      }
+    } catch (error) {
+      logError('[MCPManager] Error checking file:', error);
+    }
+    
+    return sourcePath;
+  }
+
+  /**
    * Connect to a single MCP server
    */
   private async connectServer(config: MCPServerConfig): Promise<void> {
@@ -137,7 +188,13 @@ export class MCPManager {
       }
 
       const command = config.command;
-      const args = config.args || [];
+      // Resolve path placeholders for software-development preset
+      let args = config.args || [];
+      if (config.name === 'Software_Development' || config.name === 'Software Development') {
+        args = args.map(arg => 
+          arg === '{SOFTWARE_DEV_SERVER_PATH}' ? this.getSoftwareDevServerPath() : arg
+        );
+      }
       const env = { ...process.env, ...(config.env || {}) } as Record<string, string>;
 
       log(`[MCPManager] Creating STDIO transport: ${command} ${args.join(' ')}`);
@@ -469,7 +526,9 @@ export class MCPManager {
         
         for (const tool of listToolsResult.tools) {
           // Prefix tool name with server name to avoid conflicts
-          const prefixedName = `mcp_${config.name.toLowerCase().replace(/\s+/g, '_')}_${tool.name}`;
+          // Format: mcp__<ServerName>__<toolName> (double underscores, preserve case)
+          const serverKey = config.name.replace(/\s+/g, '_');
+          const prefixedName = `mcp__${serverKey}__${tool.name}`;
           
           this.tools.set(prefixedName, {
             name: prefixedName,
@@ -527,7 +586,8 @@ export class MCPManager {
     }
 
     // Extract the actual tool name (remove prefix)
-    const actualToolName = toolName.replace(/^mcp_[^_]+_/, '');
+    // Format: mcp__<ServerName>__<toolName> -> <toolName>
+    const actualToolName = toolName.replace(/^mcp__[^_]+__/, '');
 
     log(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
 

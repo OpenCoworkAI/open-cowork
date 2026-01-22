@@ -32,12 +32,14 @@ extraResources:
 # Unpack claude-code so it can be executed as a CLI
 # Also unpack skills so they can be read/written at runtime
 # Sharp native modules must also be unpacked for image processing
+# Software Development MCP server example file must be unpacked
 asarUnpack:
   - node_modules/@anthropic-ai/claude-code/**/*
   - node_modules/@anthropic-ai/claude-agent-sdk/**/*
   - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
   - .claude/skills/**/*
+  - src/main/mcp/software-dev-server-example.ts
 
 win:
   target:

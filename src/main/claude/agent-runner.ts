@@ -1107,14 +1107,25 @@ Then follow the workflow described in that file.
           const serverKey = config.name;
           
           if (config.type === 'stdio') {
+            // Resolve path placeholders for software-development preset
+            let resolvedArgs = config.args || [];
+            if (config.name === 'Software_Development' || config.name === 'Software Development') {
+              // Import the path resolution function
+              const { mcpConfigStore } = await import('../mcp/mcp-config-store');
+              const preset = mcpConfigStore.createFromPreset('software-development', true);
+              if (preset && preset.args) {
+                resolvedArgs = preset.args;
+              }
+            }
+            
             mcpServers[serverKey] = {
               type: 'stdio',
               command: config.command,
-              args: config.args || [],
+              args: resolvedArgs,
               env: config.env || {},
             };
             log(`[ClaudeAgentRunner] Added STDIO MCP server: ${serverKey}`);
-            log(`[ClaudeAgentRunner]   Command: ${config.command} ${(config.args || []).join(' ')}`);
+            log(`[ClaudeAgentRunner]   Command: ${config.command} ${resolvedArgs.join(' ')}`);
             log(`[ClaudeAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
           } else if (config.type === 'sse') {
             mcpServers[serverKey] = {

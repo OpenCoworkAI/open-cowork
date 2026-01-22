@@ -1,4 +1,6 @@
 import Store from 'electron-store';
+import { app } from 'electron';
+import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
 
 /**
@@ -23,6 +25,21 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
     requiresEnv: ['NOTION_TOKEN'],
     envDescription: {
       NOTION_TOKEN: 'Notion Internal Integration Token (get from notion.so/profile/integrations)',
+    },
+  },
+  'software-development': {
+    name: 'Software_Development',
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', 'tsx', '{SOFTWARE_DEV_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      WORKSPACE_DIR: '',
+      TEST_ENV: 'development',
+    },
+    requiresEnv: [],
+    envDescription: {
+      WORKSPACE_DIR: 'Workspace directory for code development (optional)',
+      TEST_ENV: 'Test environment: development, staging, or production (optional)',
     },
   },
 };
@@ -104,6 +121,55 @@ class MCPConfigStore {
   }
 
   /**
+   * Get the path to the Software Development MCP server file
+   */
+  private getSoftwareDevServerPath(): string {
+    const fs = require('fs');
+    
+    // In development: __dirname points to dist-electron/main
+    // In production: appPath points to the app.asar or unpacked app
+    if (app.isPackaged) {
+      // Production: look for the file in app.asar.unpacked or resources
+      const unpackedPath = path.join(process.resourcesPath || '', 'app.asar.unpacked', 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+      const resourcesPath = path.join(process.resourcesPath || '', 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+      
+      // Check if file exists in unpacked location
+      try {
+        if (fs.existsSync(unpackedPath)) {
+          return unpackedPath;
+        }
+        if (fs.existsSync(resourcesPath)) {
+          return resourcesPath;
+        }
+      } catch {
+        // Fall through to development path
+      }
+    }
+    
+    // Development: __dirname is dist-electron/main
+    // Need to go up 2 levels to get to project root (dist-electron/main -> dist-electron -> project root)
+    // Then navigate to src/main/mcp/software-dev-server-example.ts
+    const projectRoot = path.join(__dirname, '..', '..');
+    const sourcePath = path.join(projectRoot, 'src', 'main', 'mcp', 'software-dev-server-example.ts');
+    
+    // Verify file exists and log for debugging
+    try {
+      if (fs.existsSync(sourcePath)) {
+        console.log('[MCPConfigStore] Software Dev Server path resolved:', sourcePath);
+        return sourcePath;
+      } else {
+        console.error('[MCPConfigStore] File not found at:', sourcePath);
+        console.error('[MCPConfigStore] __dirname:', __dirname);
+        console.error('[MCPConfigStore] projectRoot:', projectRoot);
+      }
+    } catch (error) {
+      console.error('[MCPConfigStore] Error checking file:', error);
+    }
+    
+    return sourcePath;
+  }
+
+  /**
    * Create a server config from a preset
    */
   createFromPreset(presetKey: string, enabled: boolean = false): MCPServerConfig | null {
@@ -112,8 +178,20 @@ class MCPConfigStore {
       return null;
     }
 
+    // Resolve path placeholders for software-development preset
+    let resolvedPreset = { ...preset };
+    if (presetKey === 'software-development' && preset.args) {
+      const serverPath = this.getSoftwareDevServerPath();
+      resolvedPreset = {
+        ...preset,
+        args: preset.args.map(arg => 
+          arg === '{SOFTWARE_DEV_SERVER_PATH}' ? serverPath : arg
+        ),
+      };
+    }
+
     return {
-      ...preset,
+      ...resolvedPreset,
       id: `mcp-${presetKey}-${Date.now()}`,
       enabled,
     };
