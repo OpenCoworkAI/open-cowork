@@ -45,131 +45,52 @@ export class MCPManager {
   private npxPath: string | null = null; // Cached npx path
 
   /**
-   * Resolve npx path for packaged app
-   * In development, npx is in PATH. In production .app, we need to find it.
+   * Check if npx is available in PATH
+   * Throws an error with bilingual message if not found
+   * Supports Linux, macOS, and Windows
    */
-  private async resolveNpxPath(): Promise<string | null> {
-    // Return cached path if available
-    if (this.npxPath) {
-      return this.npxPath;
-    }
-
+  private async checkNpxInPath(): Promise<void> {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
     const os = await import('os');
-    const path = await import('path');
-
-    // Try 'which npx' first (works in dev and if PATH is set correctly)
+    
+    const platform = os.platform();
+    
+    // Use appropriate command based on platform
+    // Windows: where, Linux/macOS: which
+    const checkCommand = platform === 'win32' ? 'where npx' : 'which npx';
+    
     try {
-      const { stdout } = await execAsync('which npx', { timeout: 5000 });
-      const npxPath = stdout.trim();
+      const { stdout } = await execAsync(checkCommand, { timeout: 5000 });
+      const npxPath = stdout.trim().split('\n')[0]; // Take first line on Windows (where can return multiple paths)
+      
       if (npxPath && npxPath.length > 0) {
-        log(`[MCPManager] Found npx via 'which': ${npxPath}`);
+        log(`[MCPManager] Found npx in PATH: ${npxPath}`);
         this.npxPath = npxPath;
-        return npxPath;
+        return;
       }
     } catch (error) {
-      log(`[MCPManager] 'which npx' failed, trying common paths...`);
+      // npx not found in PATH
+      const errorMessage = 
+        'npx is not found in PATH. Please add Node.js/npm to your PATH environment variable.\n' +
+        'npx 未在 PATH 中找到。请将 Node.js/npm 添加到您的 PATH 环境变量中。\n\n' +
+        'Common solutions / 常见解决方案:\n' +
+        '1. Install Node.js from https://nodejs.org / 从 https://nodejs.org 安装 Node.js\n' +
+        '2. Add Node.js bin directory to PATH / 将 Node.js bin 目录添加到 PATH\n' +
+        '3. Restart your terminal/application after installation / 安装后重启终端/应用程序';
+      
+      logError('[MCPManager] npx not found in PATH');
+      throw new Error(errorMessage);
     }
-
-    // Common npx locations to check
-    const homeDir = os.homedir();
-    const commonPaths = [
-      // NVM paths
-      path.join(homeDir, '.nvm/versions/node/v24.13.0/bin/npx'),
-      path.join(homeDir, '.nvm/versions/node/v24.11.1/bin/npx'),
-      path.join(homeDir, '.nvm/versions/node/v22.0.0/bin/npx'),
-      path.join(homeDir, '.nvm/versions/node/v20.0.0/bin/npx'),
-      // Homebrew paths
-      '/opt/homebrew/bin/npx',
-      '/usr/local/bin/npx',
-      // System paths
-      '/usr/bin/npx',
-      // Windows paths
-      path.join(process.env.APPDATA || '', 'npm/npx.cmd'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs/npx.cmd'),
-    ];
-
-    // Check NVM current version dynamically
-    try {
-      const nvmCurrentPath = path.join(homeDir, '.nvm/versions/node');
-      const fs = await import('fs');
-      if (fs.existsSync(nvmCurrentPath)) {
-        const versions = fs.readdirSync(nvmCurrentPath);
-        for (const version of versions) {
-          commonPaths.unshift(path.join(nvmCurrentPath, version, 'bin/npx'));
-        }
-      }
-    } catch (error) {
-      // Ignore errors reading NVM directory
-    }
-
-    // Try each path
-    const fs = await import('fs');
-    for (const testPath of commonPaths) {
-      try {
-        if (fs.existsSync(testPath)) {
-          log(`[MCPManager] Found npx at: ${testPath}`);
-          this.npxPath = testPath;
-          return testPath;
-        }
-      } catch (error) {
-        // Continue to next path
-      }
-    }
-
-    logWarn(`[MCPManager] Could not resolve npx path, will use 'npx' and hope it's in PATH`);
-    return null;
   }
 
   /**
    * Get enhanced environment with proper PATH for packaged app
    */
   private async getEnhancedEnv(configEnv: Record<string, string>): Promise<Record<string, string>> {
-    const os = await import('os');
-    const path = await import('path');
-    const homeDir = os.homedir();
-
     // Start with current process env
     const env = { ...process.env } as Record<string, string>;
-
-    // Add common Node.js paths to PATH
-    const additionalPaths = [
-      // NVM paths
-      path.join(homeDir, '.nvm/versions/node/v24.13.0/bin'),
-      path.join(homeDir, '.nvm/versions/node/v24.11.1/bin'),
-      path.join(homeDir, '.nvm/versions/node/v22.0.0/bin'),
-      path.join(homeDir, '.nvm/versions/node/v20.0.0/bin'),
-      // Homebrew paths
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      // System paths
-      '/usr/bin',
-      '/bin',
-    ];
-
-    // Check NVM current version dynamically
-    try {
-      const nvmCurrentPath = path.join(homeDir, '.nvm/versions/node');
-      const fs = await import('fs');
-      if (fs.existsSync(nvmCurrentPath)) {
-        const versions = fs.readdirSync(nvmCurrentPath);
-        for (const version of versions) {
-          additionalPaths.unshift(path.join(nvmCurrentPath, version, 'bin'));
-        }
-      }
-    } catch (error) {
-      // Ignore errors
-    }
-
-    // Prepend additional paths to PATH
-    const currentPath = env.PATH || '';
-    const newPaths = additionalPaths.filter(p => !currentPath.includes(p));
-    if (newPaths.length > 0) {
-      env.PATH = [...newPaths, currentPath].join(path.delimiter);
-      log(`[MCPManager] Enhanced PATH with ${newPaths.length} additional directories`);
-    }
 
     // Merge with config env (config env takes precedence)
     return { ...env, ...configEnv };
@@ -271,19 +192,20 @@ export class MCPManager {
       let command = config.command;
       const args = config.args || [];
       
-      // Fix PATH for packaged app: resolve npx/node paths
-      const env = await this.getEnhancedEnv(config.env || {});
-      
-      // If command is 'npx', try to resolve its full path
+      // If command is 'npx', check if it's in PATH
       if (command === 'npx' || command.endsWith('/npx')) {
-        const resolvedNpx = await this.resolveNpxPath();
-        if (resolvedNpx) {
-          command = resolvedNpx;
-          log(`[MCPManager] Resolved npx path: ${command}`);
-        } else {
-          logWarn(`[MCPManager] Could not resolve npx path, using: ${command}`);
+        // Check if npx is in PATH, throw error if not found
+        await this.checkNpxInPath();
+        
+        // Use the resolved npx path
+        if (this.npxPath) {
+          command = this.npxPath;
+          log(`[MCPManager] Using npx from PATH: ${command}`);
         }
       }
+      
+      // Get environment variables
+      const env = await this.getEnhancedEnv(config.env || {});
 
       log(`[MCPManager] Creating STDIO transport: ${command} ${args.join(' ')}`);
 
