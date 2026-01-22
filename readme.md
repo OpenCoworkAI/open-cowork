@@ -36,6 +36,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 
 ---
 
+<a id="features"></a>
 ## ✨ Key Features
 
 - **One-Click Install, Ready to Use**: Pre-built installers for Windows and macOS, no environment setup needed—just download and start using.
@@ -49,6 +50,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 - **VM-Level Isolation**: WSL2 (Windows) and Lima (macOS) VM isolation—all commands execute in an isolated VM to protect your host system.
 - **UI Enhancements**: Beautiful and flexible UI design, system language switching, comprehensive MCP/Skills/Tools call display.
 
+<a id="demo"></a>
 ## 🎬 Demo
 
 See Open Cowork in action:
@@ -64,6 +66,7 @@ https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 
 ---
 
+<a id="installation"></a>
 ## 📦 Installation
 
 ### Option 1: Download Installer (Recommended)
@@ -116,6 +119,7 @@ brew install lima
 
 ---
 
+<a id="quick-start"></a>
 ## 🚀 Quick Start Guide
 
 ### 1. Get an API Key
@@ -142,8 +146,24 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
 
 ### 📝 Important Notes
 
-1.  **macOS Installation**: If you see a security warning when opening the app, go to **System Settings > Privacy & Security** and click **Open Anyway**.
+1.  **macOS Installation**: If you see a security warning when opening the app, go to **System Settings > Privacy & Security** and click **Open Anyway**. If it is still blocked, run:
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
+```
 2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
+
+---
+
+<a id="skills"></a>
+## 🧰 Skills Library
+
+Open Cowork ships with built-in skills under `.claude/skills/`, and supports user-added or custom skills, including:
+- `pptx` for PowerPoint generation
+- `docx` for Word document processing
+- `pdf` for PDF handling and forms
+- `xlsx` for Excel spreadsheet support
+- `skill-creator` for creating custom skills
 
 ---
 

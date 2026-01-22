@@ -36,6 +36,7 @@
 
 ---
 
+<a id="核心特性"></a>
 ## ✨ 核心特性
 
 - **一键安装，开箱即用**：提供 Windows 和 macOS 预构建安装包，无需配置环境，下载即可开始使用。。
@@ -49,6 +50,7 @@
 - **虚拟机级别安全隔离**：基于 WSL2 (Windows) 和 Lima (macOS) 的虚拟机隔离，所有命令在隔离的虚拟机中执行，保障宿主机安全。
 - **UI优化**：灵活优美的UI设计、切换系统语言、完善的MCP/Skills/Tools调用展示。
 
+<a id="演示"></a>
 ## 🎬 演示
 
 观看 Open Cowork 实战演示 ：
@@ -64,6 +66,7 @@ https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 
 ---
 
+<a id="下载与安装"></a>
 ## 📦 下载与安装
 
 ### 方式一：下载安装包（推荐）
@@ -116,6 +119,7 @@ brew install lima
 
 ---
 
+<a id="快速开始"></a>
 ## 🚀 快速开始
 
 ### 1. 获取 API Key
@@ -142,8 +146,22 @@ brew install lima
 
 ### 📝 重要提示
 
-1.  **macOS 安装问题**：安装后若打不开，提示隐私安全问题，请前往 **系统设置 > 隐私与安全性** 进行授权（点击“仍要打开”）。
+1.  **macOS 安装问题**：安装后若打不开，提示隐私安全问题，请前往 **系统设置 > 隐私与安全性** 进行授权（点击“仍要打开”）。若仍被拦截，可运行：
+
+```bash
+sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
+```
 2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
+
+<a id="技能库"></a>
+## 🧰 技能库
+
+Open Cowork 内置技能位于 `.claude/skills/`，并支持用户自行添加/自定义技能，包含：
+- `pptx`：PowerPoint 生成
+- `docx`：Word 文档处理
+- `pdf`：PDF 处理与表单
+- `xlsx`：Excel 电子表格支持
+- `skill-creator`：技能开发工具包
 
 ---
 
