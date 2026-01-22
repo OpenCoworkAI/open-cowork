@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
     installClaudeCodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installClaudeCodeInWSL', distro),
+    retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
+      ipcRenderer.invoke('sandbox.retryLimaSetup'),
   },
 
   // Logs methods
@@ -148,6 +150,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('logs.open'),
     clear: (): Promise<{ success: boolean; deletedCount?: number; error?: string }> => 
       ipcRenderer.invoke('logs.clear'),
+    setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('logs.setEnabled', enabled),
+    isEnabled: (): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('logs.isEnabled'),
   },
 });
 
@@ -214,6 +220,7 @@ declare global {
         }>;
         installNodeInWSL: (distro: string) => Promise<boolean>;
         installClaudeCodeInWSL: (distro: string) => Promise<boolean>;
+        retryLimaSetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
       };
       logs: {
         getPath: () => Promise<string | null>;
@@ -222,6 +229,8 @@ declare global {
         export: () => Promise<{ success: boolean; path?: string; size?: number; error?: string }>;
         open: () => Promise<{ success: boolean; error?: string }>;
         clear: () => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
+        setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
+        isEnabled: () => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
       };
     };
   }

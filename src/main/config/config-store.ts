@@ -25,6 +25,9 @@ export interface AppConfig {
   // Optional: Default working directory
   defaultWorkdir?: string;
   
+  // Developer logs
+  enableDevLogs: boolean;
+  
   // First run flag
   isConfigured: boolean;
 }
@@ -38,6 +41,7 @@ const defaultConfig: AppConfig = {
   openaiMode: 'responses',
   claudeCodePath: '',
   defaultWorkdir: '',
+  enableDevLogs: true,
   isConfigured: false,
 };
 
@@ -115,6 +119,7 @@ class ConfigStore {
       openaiMode: this.store.get('openaiMode'),
       claudeCodePath: this.store.get('claudeCodePath'),
       defaultWorkdir: this.store.get('defaultWorkdir'),
+      enableDevLogs: this.store.get('enableDevLogs'),
       isConfigured: this.store.get('isConfigured'),
     };
   }

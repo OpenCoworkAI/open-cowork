@@ -15,7 +15,7 @@ import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent } from '../renderer/types';
-import { log, logWarn, logError, getLogFilePath, getLogsDirectory, getAllLogFiles, closeLogFile } from './utils/logger';
+import { log, logWarn, logError, getLogFilePath, getLogsDirectory, getAllLogFiles, closeLogFile, setDevLogsEnabled, isDevLogsEnabled } from './utils/logger';
 
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
@@ -224,10 +224,15 @@ function sendToRenderer(event: ServerEvent) {
 
 // Initialize app
 app.whenReady().then(async () => {
+  // Apply dev logs setting from config
+  const enableDevLogs = configStore.get('enableDevLogs');
+  setDevLogsEnabled(enableDevLogs);
+  
   // Log environment variables for debugging
   log('=== Open Cowork Starting ===');
   log('Config file:', configStore.getPath());
   log('Is configured:', configStore.isConfigured());
+  log('Developer logs:', enableDevLogs ? 'Enabled' : 'Disabled');
   log('Environment Variables:');
   log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
   log('  ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(not set)');
@@ -904,6 +909,57 @@ ipcMain.handle('logs.clear', async () => {
     return { success: true, deletedCount: logFiles.length };
   } catch (error) {
     logError('[Logs] Error clearing logs:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.setEnabled', async (_event, enabled: boolean) => {
+  try {
+    setDevLogsEnabled(enabled);
+    configStore.set('enableDevLogs', enabled);
+    log('[Logs] Developer logs', enabled ? 'enabled' : 'disabled');
+    return { success: true, enabled };
+  } catch (error) {
+    logError('[Logs] Error setting dev logs enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.isEnabled', () => {
+  try {
+    return { success: true, enabled: isDevLogsEnabled() };
+  } catch (error) {
+    logError('[Logs] Error getting dev logs enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('sandbox.retryLimaSetup', async () => {
+  if (process.platform !== 'darwin') {
+    return { success: false, error: 'Lima is only available on macOS' };
+  }
+
+  try {
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.setProgressCallback((progress) => {
+      sendToRenderer({
+        type: 'sandbox.progress',
+        payload: progress,
+      });
+    });
+
+    try {
+      await LimaBridge.stopLimaInstance();
+    } catch (error) {
+      logError('[Sandbox] Error stopping Lima before retry:', error);
+    }
+
+    bootstrap.reset();
+    const result = await bootstrap.bootstrap();
+    const success = !result.error;
+    return { success, result, error: result.error };
+  } catch (error) {
+    logError('[Sandbox] Error retrying Lima setup:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

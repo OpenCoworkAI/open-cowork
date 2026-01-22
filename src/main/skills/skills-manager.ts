@@ -24,7 +24,7 @@ interface SkillConfig {
  * 
  * Skills loading priority:
  * 1. Project-level: <project>/.skills/ or <project>/skills/
- * 2. Global: ~/.open-cowork/skills/
+ * 2. Global: <userData>/claude/skills/ (includes ~/.claude/skills read-only)
  * 3. Built-in skills
  */
 export class SkillsManager {
@@ -104,6 +104,42 @@ export class SkillsManager {
     return '';
   }
 
+  private getGlobalSkillsPath(): string {
+    return path.join(app.getPath('userData'), 'claude', 'skills');
+  }
+
+  private getUserSkillsPath(): string {
+    return path.join(app.getPath('home'), '.claude', 'skills');
+  }
+
+  private async importUserSkills(globalSkillsPath: string): Promise<void> {
+    const userSkillsPath = this.getUserSkillsPath();
+    if (!fs.existsSync(userSkillsPath)) {
+      return;
+    }
+
+    const entries = fs.readdirSync(userSkillsPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sourcePath = path.join(userSkillsPath, entry.name);
+      const targetPath = path.join(globalSkillsPath, entry.name);
+
+      if (fs.existsSync(targetPath)) {
+        continue;
+      }
+
+      try {
+        fs.symlinkSync(sourcePath, targetPath, 'dir');
+      } catch (err) {
+        try {
+          await this.copyDirectory(sourcePath, targetPath);
+        } catch (copyErr) {
+          logError(`Failed to import user skill from ${sourcePath}:`, copyErr);
+        }
+      }
+    }
+  }
+
   /**
    * Load skills from a project directory
    */
@@ -130,12 +166,14 @@ export class SkillsManager {
    * Load global skills from user config directory
    */
   async loadGlobalSkills(): Promise<Skill[]> {
-    // Use ~/.claude/skills/ to match SDK's expected location
-    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    // Use app-specific skills directory to avoid conflicts with user settings
+    const globalSkillsPath = this.getGlobalSkillsPath();
 
     if (!fs.existsSync(globalSkillsPath)) {
       fs.mkdirSync(globalSkillsPath, { recursive: true });
     }
+
+    await this.importUserSkills(globalSkillsPath);
 
     return this.loadSkillsFromDirectory(globalSkillsPath, 'global');
   }
@@ -451,8 +489,8 @@ export class SkillsManager {
    * Copy skill folder to global skills directory
    */
   private async copySkillToGlobal(sourcePath: string, skillName: string): Promise<string> {
-    // Use ~/.claude/skills/ to match SDK's expected location
-    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    // Use app-specific skills directory to avoid conflicts with user settings
+    const globalSkillsPath = this.getGlobalSkillsPath();
 
     // Ensure global skills directory exists
     if (!fs.existsSync(globalSkillsPath)) {
@@ -511,8 +549,8 @@ export class SkillsManager {
     await this.loadGlobalSkills();
 
     // Check if skill with same name already exists in global directory
-    // Use ~/.claude/skills/ to match SDK's expected location
-    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    // Use app-specific skills directory to avoid conflicts with user settings
+    const globalSkillsPath = this.getGlobalSkillsPath();
     const targetPath = path.join(globalSkillsPath, metadata.name);
 
     if (fs.existsSync(targetPath)) {
@@ -573,8 +611,8 @@ export class SkillsManager {
 
     // Remove from filesystem (only for custom skills in global directory)
     if (skill.type === 'custom') {
-      // Use ~/.claude/skills/ to match SDK's expected location
-      const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+      // Use app-specific skills directory to avoid conflicts with user settings
+      const globalSkillsPath = this.getGlobalSkillsPath();
       const skillDir = path.join(globalSkillsPath, skill.name);
 
       if (fs.existsSync(skillDir)) {
@@ -593,4 +631,3 @@ export class SkillsManager {
     log(`Uninstalled skill: ${skill.name} (${skillId})`);
   }
 }
-

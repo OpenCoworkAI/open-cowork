@@ -12,6 +12,9 @@ let logStream: fs.WriteStream | null = null;
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_LOG_FILES = 5; // Keep last 5 log files
 
+// Developer logs enabled flag (can be toggled by user)
+let devLogsEnabled = true;
+
 /**
  * Initialize log file
  */
@@ -117,6 +120,11 @@ function rotateLogIfNeeded(): void {
  * Write to log file
  */
 function writeToFile(level: string, ...args: any[]): void {
+  // Skip if dev logs are disabled
+  if (!devLogsEnabled) {
+    return;
+  }
+
   if (!logStream) {
     initLogFile();
   }
@@ -212,6 +220,33 @@ export function getAllLogFiles(): Array<{ name: string; path: string; size: numb
     console.error('[Logger] Failed to get log files:', error);
     return [];
   }
+}
+
+/**
+ * Set whether developer logs are enabled
+ */
+export function setDevLogsEnabled(enabled: boolean): void {
+  devLogsEnabled = enabled;
+  console.log(`[Logger] Developer logs ${enabled ? 'enabled' : 'disabled'}`);
+  
+  // If disabling, close the log file
+  if (!enabled && logStream) {
+    try {
+      logStream.end();
+      logStream = null;
+      logFilePath = null;
+      console.log('[Logger] Log file closed (dev logs disabled)');
+    } catch (error) {
+      console.error('[Logger] Failed to close log file:', error);
+    }
+  }
+}
+
+/**
+ * Get whether developer logs are enabled
+ */
+export function isDevLogsEnabled(): boolean {
+  return devLogsEnabled;
 }
 
 /**

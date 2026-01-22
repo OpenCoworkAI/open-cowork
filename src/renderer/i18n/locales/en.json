@@ -136,6 +136,11 @@
   "logs": {
     "title": "Application Logs",
     "description": "View and export application logs for debugging. Logs are automatically rotated when they exceed 10MB.",
+    "enableDevLogs": "Enable Developer Logs",
+    "enableDevLogsDesc": "Record detailed logs for debugging. Disable to reduce disk usage.",
+    "devLogsEnabled": "Developer logs enabled",
+    "devLogsDisabled": "Developer logs disabled",
+    "toggleFailed": "Failed to toggle developer logs",
     "logFiles": "Log Files",
     "totalSize": "Total Size",
     "noLogFiles": "No log files found",

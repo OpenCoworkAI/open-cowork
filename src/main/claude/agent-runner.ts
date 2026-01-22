@@ -274,6 +274,69 @@ ${sections.join('\n\n')}
     return '';
   }
 
+  private getAppClaudeDir(): string {
+    return path.join(app.getPath('userData'), 'claude');
+  }
+
+  private getUserClaudeSkillsDir(): string {
+    return path.join(app.getPath('home'), '.claude', 'skills');
+  }
+
+  private syncUserSkillsToAppDir(appSkillsDir: string): void {
+    const userSkillsDir = this.getUserClaudeSkillsDir();
+    if (!fs.existsSync(userSkillsDir)) {
+      return;
+    }
+
+    const entries = fs.readdirSync(userSkillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sourcePath = path.join(userSkillsDir, entry.name);
+      const targetPath = path.join(appSkillsDir, entry.name);
+
+      if (fs.existsSync(targetPath)) {
+        try {
+          const stat = fs.lstatSync(targetPath);
+          if (!stat.isSymbolicLink()) {
+            continue;
+          }
+          fs.unlinkSync(targetPath);
+        } catch {
+          continue;
+        }
+      }
+
+      try {
+        fs.symlinkSync(sourcePath, targetPath, 'dir');
+      } catch (err) {
+        try {
+          this.copyDirectorySync(sourcePath, targetPath);
+        } catch (copyErr) {
+          logWarn('[ClaudeAgentRunner] Failed to import user skill:', entry.name, copyErr);
+        }
+      }
+    }
+  }
+
+  private copyDirectorySync(source: string, target: string): void {
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(target, { recursive: true });
+    }
+
+    const entries = fs.readdirSync(source);
+    for (const entry of entries) {
+      const sourcePath = path.join(source, entry);
+      const targetPath = path.join(target, entry);
+      const stat = fs.statSync(sourcePath);
+
+      if (stat.isDirectory()) {
+        this.copyDirectorySync(sourcePath, targetPath);
+      } else {
+        fs.copyFileSync(sourcePath, targetPath);
+      }
+    }
+  }
+
   /**
    * Scan for available skills and return formatted list for system prompt
    */
@@ -312,8 +375,8 @@ ${sections.join('\n\n')}
       }
     }
     
-    // 2. Check global user skills (in ~/.claude/skills/)
-    const globalSkillsPath = path.join(app.getPath('home'), '.claude', 'skills');
+    // 2. Check global skills (app-specific directory)
+    const globalSkillsPath = path.join(this.getAppClaudeDir(), 'skills');
     if (fs.existsSync(globalSkillsPath)) {
       try {
         const dirs = fs.readdirSync(globalSkillsPath, { withFileTypes: true });
@@ -728,20 +791,20 @@ Then follow the workflow described in that file.
           });
           }
 
-          // Copy built-in skills to sandbox ~/.claude/skills/
+          // Copy skills to sandbox ~/.claude/skills/
           const builtinSkillsPath = this.getBuiltinSkillsPath();
-          if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-            try {
-              const distro = sandbox.wslStatus!.distro!;
-              const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
+          try {
+            const distro = sandbox.wslStatus!.distro!;
+            const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
-              // Create .claude/skills directory in sandbox
-              const { execSync } = require('child_process');
-              execSync(`wsl -d ${distro} -e mkdir -p "${sandboxSkillsPath}"`, {
-                encoding: 'utf-8',
-                timeout: 10000
-              });
+            // Create .claude/skills directory in sandbox
+            const { execSync } = require('child_process');
+            execSync(`wsl -d ${distro} -e mkdir -p "${sandboxSkillsPath}"`, {
+              encoding: 'utf-8',
+              timeout: 10000
+            });
 
+            if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               const wslSourcePath = pathConverter.toWSL(builtinSkillsPath);
               const rsyncCmd = `rsync -av "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
@@ -751,18 +814,36 @@ Then follow the workflow described in that file.
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
-
-              // List copied skills for verification
-              const copiedSkills = execSync(`wsl -d ${distro} -e ls "${sandboxSkillsPath}"`, {
-                encoding: 'utf-8',
-                timeout: 10000
-              }).trim().split('\n').filter(Boolean);
-
-              log(`[ClaudeAgentRunner] Built-in skills copied to sandbox: ${sandboxSkillsPath}`);
-              log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
-            } catch (error) {
-              logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
             }
+
+            const appClaudeDir = this.getAppClaudeDir();
+            const appSkillsDir = path.join(appClaudeDir, 'skills');
+            if (!fs.existsSync(appSkillsDir)) {
+              fs.mkdirSync(appSkillsDir, { recursive: true });
+            }
+            this.syncUserSkillsToAppDir(appSkillsDir);
+
+            if (fs.existsSync(appSkillsDir)) {
+              const wslSourcePath = pathConverter.toWSL(appSkillsDir);
+              const rsyncCmd = `rsync -avL "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
+              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+
+              execSync(`wsl -d ${distro} -e bash -c "${rsyncCmd}"`, {
+                encoding: 'utf-8',
+                timeout: 120000  // 2 min timeout for large skill directories
+              });
+            }
+
+            // List copied skills for verification
+            const copiedSkills = execSync(`wsl -d ${distro} -e ls "${sandboxSkillsPath}"`, {
+              encoding: 'utf-8',
+              timeout: 10000
+            }).trim().split('\n').filter(Boolean);
+
+            log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
+            log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
+          } catch (error) {
+            logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
           }
           
           if (isNewSession) {
@@ -846,19 +927,19 @@ Then follow the workflow described in that file.
           });
           }
 
-          // Copy built-in skills to sandbox ~/.claude/skills/
+          // Copy skills to sandbox ~/.claude/skills/
           const builtinSkillsPath = this.getBuiltinSkillsPath();
-          if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-            try {
-              const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
+          try {
+            const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
-              // Create .claude/skills directory in sandbox
-              const { execSync } = require('child_process');
-              execSync(`limactl shell claude-sandbox -- mkdir -p "${sandboxSkillsPath}"`, {
-                encoding: 'utf-8',
-                timeout: 10000
-              });
+            // Create .claude/skills directory in sandbox
+            const { execSync } = require('child_process');
+            execSync(`limactl shell claude-sandbox -- mkdir -p "${sandboxSkillsPath}"`, {
+              encoding: 'utf-8',
+              timeout: 10000
+            });
 
+            if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               // Lima mounts /Users directly, so paths are the same
               const rsyncCmd = `rsync -av "${builtinSkillsPath}/" "${sandboxSkillsPath}/"`;
@@ -868,18 +949,35 @@ Then follow the workflow described in that file.
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
-
-              // List copied skills for verification
-              const copiedSkills = execSync(`limactl shell claude-sandbox -- ls "${sandboxSkillsPath}"`, {
-                encoding: 'utf-8',
-                timeout: 10000
-              }).trim().split('\n').filter(Boolean);
-
-              log(`[ClaudeAgentRunner] Built-in skills copied to sandbox: ${sandboxSkillsPath}`);
-              log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
-            } catch (error) {
-              logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
             }
+
+            const appClaudeDir = this.getAppClaudeDir();
+            const appSkillsDir = path.join(appClaudeDir, 'skills');
+            if (!fs.existsSync(appSkillsDir)) {
+              fs.mkdirSync(appSkillsDir, { recursive: true });
+            }
+            this.syncUserSkillsToAppDir(appSkillsDir);
+
+            if (fs.existsSync(appSkillsDir)) {
+              const rsyncCmd = `rsync -avL "${appSkillsDir}/" "${sandboxSkillsPath}/"`;
+              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+
+              execSync(`limactl shell claude-sandbox -- bash -c "${rsyncCmd.replace(/"/g, '\\"')}"`, {
+                encoding: 'utf-8',
+                timeout: 120000  // 2 min timeout for large skill directories
+              });
+            }
+
+            // List copied skills for verification
+            const copiedSkills = execSync(`limactl shell claude-sandbox -- ls "${sandboxSkillsPath}"`, {
+              encoding: 'utf-8',
+              timeout: 10000
+            }).trim().split('\n').filter(Boolean);
+
+            log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
+            log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
+          } catch (error) {
+            logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
           }
           
           if (isNewLimaSession) {
@@ -1032,37 +1130,33 @@ Then follow the workflow described in that file.
       // Build options with resume support and SANDBOX via canUseTool
       const resumeId = this.sdkSessions.get(session.id);
       
-      // Build available skills section dynamically
-      const availableSkillsPrompt = this.getAvailableSkillsPrompt(workingDir);
-      
       // Get current model from environment (re-read each time for config changes)
       const currentModel = this.getCurrentModel();
 
-      // Determine the .claude directory containing skills
-      // SDK uses CLAUDE_CONFIG_DIR env var to locate .claude directory for skills discovery
-      // IMPORTANT: Point to user's ~/.claude instead of built-in .claude to load user-installed skills
-      const userClaudeDir = path.join(app.getPath('home'), '.claude');
+      // Use app-specific Claude config directory to avoid conflicts with user settings
+      // SDK uses CLAUDE_CONFIG_DIR to locate skills
+      const userClaudeDir = this.getAppClaudeDir();
 
-      // Ensure user's .claude directory exists
+      // Ensure app Claude config directory exists
       if (!fs.existsSync(userClaudeDir)) {
         fs.mkdirSync(userClaudeDir, { recursive: true });
       }
 
-      // Ensure user's .claude/skills directory exists
-      const userSkillsDir = path.join(userClaudeDir, 'skills');
-      if (!fs.existsSync(userSkillsDir)) {
-        fs.mkdirSync(userSkillsDir, { recursive: true });
+      // Ensure app Claude skills directory exists
+      const appSkillsDir = path.join(userClaudeDir, 'skills');
+      if (!fs.existsSync(appSkillsDir)) {
+        fs.mkdirSync(appSkillsDir, { recursive: true });
       }
 
-      // Copy built-in skills to user's .claude/skills if they don't exist
+      // Copy built-in skills to app Claude skills directory if they don't exist
       const builtinSkillsPath = this.getBuiltinSkillsPath();
       if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
         const builtinSkills = fs.readdirSync(builtinSkillsPath);
         for (const skillName of builtinSkills) {
           const builtinSkillPath = path.join(builtinSkillsPath, skillName);
-          const userSkillPath = path.join(userSkillsDir, skillName);
+          const userSkillPath = path.join(appSkillsDir, skillName);
 
-          // Only copy if it's a directory and doesn't exist in user's directory
+          // Only copy if it's a directory and doesn't exist in app directory
           if (fs.statSync(builtinSkillPath).isDirectory() && !fs.existsSync(userSkillPath)) {
             // Create symlink instead of copying to save space and allow updates
             try {
@@ -1077,7 +1171,12 @@ Then follow the workflow described in that file.
         }
       }
 
-      log('[ClaudeAgentRunner] User .claude dir:', userClaudeDir);
+      this.syncUserSkillsToAppDir(appSkillsDir);
+
+      // Build available skills section dynamically
+      const availableSkillsPrompt = this.getAvailableSkillsPrompt(workingDir);
+
+      log('[ClaudeAgentRunner] App claude dir:', userClaudeDir);
       log('[ClaudeAgentRunner] User working directory:', workingDir);
 
       logTiming('before getShellEnvironment');
@@ -1089,7 +1188,7 @@ Then follow the workflow described in that file.
 
       // Build environment with:
       // 1. Shell environment (includes proper PATH with node/npm)
-      // 2. CLAUDE_CONFIG_DIR pointing to user's ~/.claude for skills discovery
+      // 2. CLAUDE_CONFIG_DIR pointing to app-specific config directory for skills
       const envWithSkills: NodeJS.ProcessEnv = {
         ...shellEnv,
         CLAUDE_CONFIG_DIR: userClaudeDir,
@@ -1172,9 +1271,12 @@ Then follow the workflow described in that file.
           // Using Electron causes a visible "exec" icon in macOS menu bar
           if (command === 'node') {
             // Check if system node is available in PATH
+            // On Windows, executable is 'node.exe', on Unix it's 'node'
+            const isWindows = process.platform === 'win32';
+            const nodeExeName = isWindows ? 'node.exe' : 'node';
             const pathDirs = (spawnEnv?.PATH || process.env.PATH || '').split(path.delimiter);
             const systemNodePath = pathDirs
-              .map(p => path.join(p, 'node'))
+              .map(p => path.join(p, nodeExeName))
               .find(p => fs.existsSync(p));
             
             if (systemNodePath) {
@@ -1256,6 +1358,7 @@ Then follow the workflow described in that file.
                 // Get built-in skills path for detection
                 const builtinSkillsPath = this.getBuiltinSkillsPath();
                 const normalizedBuiltinSkills = builtinSkillsPath ? builtinSkillsPath.replace(/\\/g, '/').toLowerCase() : '';
+                const normalizedAppSkills = appSkillsDir.replace(/\\/g, '/').toLowerCase();
                 
                 // Helper to ensure path is within sandbox and convert to Windows UNC
                 const ensureSandboxPathUNC = (inputPath: string): string => {
@@ -1277,6 +1380,10 @@ Then follow the workflow described in that file.
                       const relativePath = inputPath.substring(builtinSkillsPath.length).replace(/\\/g, '/').replace(/^\//, '');
                       sandboxWslPath = `${sandboxPathNonNull}/.claude/skills/${relativePath}`;
                       log(`[Sandbox] Built-in skills path mapped: ${inputPath} -> ${sandboxWslPath}`);
+                    } else if (normalizedAppSkills && normalizedInput.startsWith(normalizedAppSkills)) {
+                      const relativePath = inputPath.substring(appSkillsDir.length).replace(/\\/g, '/').replace(/^\//, '');
+                      sandboxWslPath = `${sandboxPathNonNull}/.claude/skills/${relativePath}`;
+                      log(`[Sandbox] App skills path mapped: ${inputPath} -> ${sandboxWslPath}`);
                     } else if (normalizedWorkDir && normalizedInput.startsWith(normalizedWorkDir)) {
                       // Path is within workspace - extract relative path
                       const relativePath = inputPath.substring(workingDir!.length).replace(/\\/g, '/').replace(/^\//, '');

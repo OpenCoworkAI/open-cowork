@@ -61,8 +61,12 @@ export function useIPC() {
           ) {
             const currentState = useAppStore.getState();
             const pending = currentState.pendingTurnsBySession[event.payload.sessionId] || [];
+            const activeTurn = currentState.activeTurnsBySession[event.payload.sessionId];
             if (pending.length > 0) {
               store.activateNextTurn(event.payload.sessionId, event.payload.step.id);
+            } else if (activeTurn) {
+              // 绑定真实 stepId，避免 mock stepId 导致无法清理
+              store.updateActiveTurnStep(event.payload.sessionId, event.payload.step.id);
             }
           }
           store.addTraceStep(event.payload.sessionId, event.payload.step);

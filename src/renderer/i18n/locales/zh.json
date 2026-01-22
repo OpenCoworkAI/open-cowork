@@ -136,6 +136,11 @@
   "logs": {
     "title": "应用日志",
     "description": "查看和导出应用日志以进行调试。日志超过 10MB 时会自动轮转。",
+    "enableDevLogs": "启用开发者日志",
+    "enableDevLogsDesc": "记录详细的调试日志。关闭可减少磁盘占用。",
+    "devLogsEnabled": "开发者日志已启用",
+    "devLogsDisabled": "开发者日志已禁用",
+    "toggleFailed": "切换开发者日志失败",
     "logFiles": "日志文件",
     "totalSize": "总大小",
     "noLogFiles": "未找到日志文件",

@@ -1849,10 +1849,19 @@ function LogsTab() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [logsDirectory, setLogsDirectory] = useState('');
+  const [devLogsEnabled, setDevLogsEnabled] = useState(true);
 
   useEffect(() => {
     if (isElectron) {
       loadLogs();
+      loadDevLogsStatus();
+      
+      // Auto-refresh logs every 3 seconds
+      const interval = setInterval(() => {
+        loadLogs();
+      }, 3000);
+      
+      return () => clearInterval(interval);
     }
   }, []);
 
@@ -1868,6 +1877,38 @@ function LogsTab() {
     } catch (err) {
       console.error('Failed to load logs:', err);
       setError(t('logs.exportFailed'));
+    }
+  }
+
+  async function loadDevLogsStatus() {
+    try {
+      const result = await window.electronAPI.logs.isEnabled();
+      if (result.success && typeof result.enabled === 'boolean') {
+        setDevLogsEnabled(result.enabled);
+      }
+    } catch (err) {
+      console.error('Failed to load dev logs status:', err);
+    }
+  }
+
+  async function handleToggleDevLogs() {
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const newEnabled = !devLogsEnabled;
+      const result = await window.electronAPI.logs.setEnabled(newEnabled);
+      if (result.success) {
+        setDevLogsEnabled(newEnabled);
+        setSuccess(newEnabled ? t('logs.devLogsEnabled') : t('logs.devLogsDisabled'));
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.error || t('logs.toggleFailed'));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('logs.toggleFailed'));
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -1960,6 +2001,29 @@ function LogsTab() {
           {success}
         </div>
       )}
+
+      {/* Developer Logs Toggle */}
+      <div className="p-4 rounded-xl bg-surface border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-text-primary mb-1">{t('logs.enableDevLogs')}</h3>
+            <p className="text-xs text-text-muted">{t('logs.enableDevLogsDesc')}</p>
+          </div>
+          <button
+            onClick={handleToggleDevLogs}
+            disabled={isLoading}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 ${
+              devLogsEnabled ? 'bg-accent' : 'bg-surface-muted'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                devLogsEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">

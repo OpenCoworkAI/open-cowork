@@ -56,6 +56,7 @@ interface AppState {
   setPartialMessage: (sessionId: string, partial: string) => void;
   clearPartialMessage: (sessionId: string) => void;
   activateNextTurn: (sessionId: string, stepId: string) => void;
+  updateActiveTurnStep: (sessionId: string, stepId: string) => void;
   clearActiveTurn: (sessionId: string, stepId?: string) => void;
   clearPendingTurns: (sessionId: string) => void;
   clearQueuedMessages: (sessionId: string) => void;
@@ -288,6 +289,18 @@ export const useAppStore = create<AppState>((set) => ({
         activeTurnsBySession: {
           ...state.activeTurnsBySession,
           [sessionId]: { stepId, userMessageId: nextMessageId },
+        },
+      };
+    }),
+
+  updateActiveTurnStep: (sessionId, stepId) =>
+    set((state) => {
+      const activeTurn = state.activeTurnsBySession[sessionId];
+      if (!activeTurn || activeTurn.stepId === stepId) return {};
+      return {
+        activeTurnsBySession: {
+          ...state.activeTurnsBySession,
+          [sessionId]: { ...activeTurn, stepId },
         },
       };
     }),
