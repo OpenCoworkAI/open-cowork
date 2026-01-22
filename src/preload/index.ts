@@ -123,19 +123,70 @@ contextBridge.exposeInMainWorld('electronAPI', {
       platform: string;
       mode: string;
       initialized: boolean;
-      wsl?: { available: boolean; distro?: string; nodeAvailable?: boolean; claudeCodeAvailable?: boolean };
+      wsl?: { 
+        available: boolean; 
+        distro?: string; 
+        nodeAvailable?: boolean; 
+        version?: string;
+        pythonAvailable?: boolean;
+        pythonVersion?: string;
+        pipAvailable?: boolean;
+        claudeCodeAvailable?: boolean;
+      };
+      lima?: {
+        available: boolean;
+        instanceExists?: boolean;
+        instanceRunning?: boolean;
+        instanceName?: string;
+        nodeAvailable?: boolean;
+        version?: string;
+        pythonAvailable?: boolean;
+        pythonVersion?: string;
+        pipAvailable?: boolean;
+        claudeCodeAvailable?: boolean;
+      };
       error?: string;
     }> => ipcRenderer.invoke('sandbox.getStatus'),
     checkWSL: (): Promise<{
       available: boolean;
       distro?: string;
       nodeAvailable?: boolean;
+      version?: string;
+      pythonAvailable?: boolean;
+      pythonVersion?: string;
+      pipAvailable?: boolean;
       claudeCodeAvailable?: boolean;
     }> => ipcRenderer.invoke('sandbox.checkWSL'),
+    checkLima: (): Promise<{
+      available: boolean;
+      instanceExists?: boolean;
+      instanceRunning?: boolean;
+      instanceName?: string;
+      nodeAvailable?: boolean;
+      version?: string;
+      pythonAvailable?: boolean;
+      pythonVersion?: string;
+      pipAvailable?: boolean;
+      claudeCodeAvailable?: boolean;
+    }> => ipcRenderer.invoke('sandbox.checkLima'),
     installNodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
+    installPythonInWSL: (distro: string): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installPythonInWSL', distro),
     installClaudeCodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installClaudeCodeInWSL', distro),
+    installNodeInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installNodeInLima'),
+    installPythonInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installPythonInLima'),
+    installClaudeCodeInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installClaudeCodeInLima'),
+    startLimaInstance: (): Promise<boolean> =>
+      ipcRenderer.invoke('sandbox.startLimaInstance'),
+    stopLimaInstance: (): Promise<boolean> =>
+      ipcRenderer.invoke('sandbox.stopLimaInstance'),
+    retrySetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
+      ipcRenderer.invoke('sandbox.retrySetup'),
     retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
       ipcRenderer.invoke('sandbox.retryLimaSetup'),
   },
@@ -212,17 +263,61 @@ declare global {
           platform: string;
           mode: string;
           initialized: boolean;
-          wsl?: { available: boolean; distro?: string; nodeAvailable?: boolean; claudeCodeAvailable?: boolean };
+          wsl?: { 
+            available: boolean; 
+            distro?: string; 
+            nodeAvailable?: boolean; 
+            version?: string;
+            pythonAvailable?: boolean;
+            pythonVersion?: string;
+            pipAvailable?: boolean;
+            claudeCodeAvailable?: boolean;
+          };
+          lima?: {
+            available: boolean;
+            instanceExists?: boolean;
+            instanceRunning?: boolean;
+            instanceName?: string;
+            nodeAvailable?: boolean;
+            version?: string;
+            pythonAvailable?: boolean;
+            pythonVersion?: string;
+            pipAvailable?: boolean;
+            claudeCodeAvailable?: boolean;
+          };
           error?: string;
         }>;
         checkWSL: () => Promise<{
           available: boolean;
           distro?: string;
           nodeAvailable?: boolean;
+          version?: string;
+          pythonAvailable?: boolean;
+          pythonVersion?: string;
+          pipAvailable?: boolean;
+          claudeCodeAvailable?: boolean;
+        }>;
+        checkLima: () => Promise<{
+          available: boolean;
+          instanceExists?: boolean;
+          instanceRunning?: boolean;
+          instanceName?: string;
+          nodeAvailable?: boolean;
+          version?: string;
+          pythonAvailable?: boolean;
+          pythonVersion?: string;
+          pipAvailable?: boolean;
           claudeCodeAvailable?: boolean;
         }>;
         installNodeInWSL: (distro: string) => Promise<boolean>;
+        installPythonInWSL: (distro: string) => Promise<boolean>;
         installClaudeCodeInWSL: (distro: string) => Promise<boolean>;
+        installNodeInLima: () => Promise<boolean>;
+        installPythonInLima: () => Promise<boolean>;
+        installClaudeCodeInLima: () => Promise<boolean>;
+        startLimaInstance: () => Promise<boolean>;
+        stopLimaInstance: () => Promise<boolean>;
+        retrySetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
         retryLimaSetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
       };
       logs: {

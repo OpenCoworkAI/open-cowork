@@ -28,6 +28,9 @@ export interface AppConfig {
   // Developer logs
   enableDevLogs: boolean;
   
+  // Sandbox mode (WSL/Lima isolation)
+  sandboxEnabled: boolean;
+  
   // First run flag
   isConfigured: boolean;
 }
@@ -42,6 +45,7 @@ const defaultConfig: AppConfig = {
   claudeCodePath: '',
   defaultWorkdir: '',
   enableDevLogs: true,
+  sandboxEnabled: true,
   isConfigured: false,
 };
 
@@ -120,6 +124,7 @@ class ConfigStore {
       claudeCodePath: this.store.get('claudeCodePath'),
       defaultWorkdir: this.store.get('defaultWorkdir'),
       enableDevLogs: this.store.get('enableDevLogs'),
+      sandboxEnabled: this.store.get('sandboxEnabled'),
       isConfigured: this.store.get('isConfigured'),
     };
   }

@@ -17,6 +17,7 @@ import { WSLBridge, pathConverter } from './wsl-bridge';
 import { LimaBridge, limaPathConverter } from './lima-bridge';
 import { NativeExecutor } from './native-executor';
 import { getSandboxBootstrap } from './sandbox-bootstrap';
+import { configStore } from '../config/config-store';
 import type {
   SandboxConfig,
   SandboxExecutor,
@@ -56,7 +57,6 @@ export class SandboxAdapter implements SandboxExecutor {
     initialized: false,
     workspacePath: '',
   };
-  // @ts-expect-error Reserved for future use
   private _config: SandboxAdapterConfig | null = null;
   private initPromise: Promise<void> | null = null;
 
@@ -121,6 +121,16 @@ export class SandboxAdapter implements SandboxExecutor {
 
     const platform = process.platform;
     log('[SandboxAdapter] Initializing on platform:', platform);
+
+    // Check if sandbox is enabled in config
+    const sandboxEnabled = configStore.get('sandboxEnabled');
+    if (sandboxEnabled === false) {
+      log('[SandboxAdapter] Sandbox disabled by user configuration, using native mode');
+      await this.initializeNative(config);
+      this.state.initialized = true;
+      log('[SandboxAdapter] Initialized with mode:', this.state.mode);
+      return;
+    }
 
     if (platform === 'win32' && !config.forceNative) {
       // Windows: Try to use WSL2
@@ -568,6 +578,23 @@ export class SandboxAdapter implements SandboxExecutor {
     log('[SandboxAdapter] Shutdown complete');
   }
 
+  /**
+   * Reinitialize the sandbox (shutdown and init again)
+   * Call this when sandbox settings change
+   */
+  async reinitialize(config?: SandboxAdapterConfig): Promise<void> {
+    log('[SandboxAdapter] Reinitializing...');
+    await this.shutdown();
+    
+    // Also reset bootstrap cache so it will re-check WSL/Lima status
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.reset();
+    
+    const initConfig = config || this._config || { workspacePath: this.state.workspacePath };
+    await this.initialize(initConfig);
+    log('[SandboxAdapter] Reinitialized with mode:', this.state.mode);
+  }
+
   // ==================== Path Utilities ====================
 
   /**
@@ -672,5 +699,15 @@ export async function shutdownSandbox(): Promise<void> {
     await globalSandboxAdapter.shutdown();
     globalSandboxAdapter = null;
   }
+}
+
+/**
+ * Reinitialize the global sandbox adapter
+ * Call this when sandbox settings change
+ */
+export async function reinitializeSandbox(config?: SandboxAdapterConfig): Promise<SandboxAdapter> {
+  const adapter = getSandboxAdapter();
+  await adapter.reinitialize(config);
+  return adapter;
 }
 

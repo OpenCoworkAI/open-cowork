@@ -4,7 +4,7 @@ import * as path from 'path';
 import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
-import { SandboxAdapter, getSandboxAdapter, initializeSandbox } from '../sandbox/sandbox-adapter';
+import { SandboxAdapter, getSandboxAdapter, initializeSandbox, reinitializeSandbox } from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
 import { OpenAIResponsesRunner } from '../openai/responses-runner';
@@ -103,7 +103,24 @@ export class SessionManager {
     // Recreate agent runner with new config
     this.createAgentRunner();
 
+    // Reinitialize sandbox adapter to pick up sandboxEnabled changes
+    this.reinitializeSandboxAsync();
+
     log('[SessionManager] Config reloaded successfully');
+  }
+
+  /**
+   * Reinitialize sandbox adapter asynchronously
+   */
+  private async reinitializeSandboxAsync(): Promise<void> {
+    try {
+      log('[SessionManager] Reinitializing sandbox adapter...');
+      await reinitializeSandbox();
+      this.sandboxAdapter = getSandboxAdapter();
+      log('[SessionManager] Sandbox adapter reinitialized, mode:', this.sandboxAdapter.mode);
+    } catch (error) {
+      logError('[SessionManager] Failed to reinitialize sandbox:', error);
+    }
   }
 
   /**

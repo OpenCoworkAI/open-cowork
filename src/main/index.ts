@@ -734,6 +734,15 @@ ipcMain.handle('sandbox.installNodeInWSL', async (_event, distro: string) => {
   }
 });
 
+ipcMain.handle('sandbox.installPythonInWSL', async (_event, distro: string) => {
+  try {
+    return await WSLBridge.installPythonInWSL(distro);
+  } catch (error) {
+    logError('[Sandbox] Error installing Python:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('sandbox.installClaudeCodeInWSL', async (_event, distro: string) => {
   try {
     return await WSLBridge.installClaudeCodeInWSL(distro);
@@ -785,6 +794,15 @@ ipcMain.handle('sandbox.installNodeInLima', async () => {
     return await LimaBridge.installNodeInLima();
   } catch (error) {
     logError('[Sandbox] Error installing Node.js in Lima:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('sandbox.installPythonInLima', async () => {
+  try {
+    return await LimaBridge.installPythonInLima();
+  } catch (error) {
+    logError('[Sandbox] Error installing Python in Lima:', error);
     return false;
   }
 });
@@ -984,6 +1002,28 @@ ipcMain.handle('sandbox.retryLimaSetup', async () => {
     return { success, result, error: result.error };
   } catch (error) {
     logError('[Sandbox] Error retrying Lima setup:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Generic retry setup for both WSL and Lima
+ipcMain.handle('sandbox.retrySetup', async () => {
+  try {
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.setProgressCallback((progress) => {
+      sendToRenderer({
+        type: 'sandbox.progress',
+        payload: progress,
+      });
+    });
+
+    // Reset and re-run bootstrap
+    bootstrap.reset();
+    const result = await bootstrap.bootstrap();
+    const success = !result.error;
+    return { success, result, error: result.error };
+  } catch (error) {
+    logError('[Sandbox] Error retrying setup:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

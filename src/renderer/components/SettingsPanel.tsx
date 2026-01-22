@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages } from 'lucide-react';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield } from 'lucide-react';
 import type { ProviderPresets, Skill, ApiTestResult } from '../types';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -42,10 +42,10 @@ interface MCPServerStatus {
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'api' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
+  initialTab?: 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
 }
 
-type TabId = 'api' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
+type TabId = 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
 
 const SERVICE_OPTIONS = [
   { value: 'gmail', label: 'Gmail' },
@@ -88,6 +88,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
 
   const tabs = [
     { id: 'api' as TabId, label: t('settings.apiSettings'), icon: Settings, description: t('settings.apiSettingsDesc') },
+    { id: 'sandbox' as TabId, label: t('settings.sandbox'), icon: Shield, description: t('settings.sandboxDesc') },
     { id: 'credentials' as TabId, label: t('settings.credentials'), icon: Key, description: t('settings.credentialsDesc') },
     { id: 'connectors' as TabId, label: t('settings.connectors'), icon: Plug, description: t('settings.connectorsDesc') },
     { id: 'skills' as TabId, label: t('settings.skills'), icon: Package, description: t('settings.skillsDesc') },
@@ -150,6 +151,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
             {/* Lazy load tabs - only mount when first viewed, then keep mounted */}
             <div className={activeTab === 'api' ? '' : 'hidden'}>
               {viewedTabs.has('api') && <APISettingsTab />}
+            </div>
+            <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
+              {viewedTabs.has('sandbox') && <SandboxTab />}
             </div>
             <div className={activeTab === 'credentials' ? '' : 'hidden'}>
               {viewedTabs.has('credentials') && <CredentialsTab />}
@@ -597,6 +601,623 @@ function APISettingsTab() {
           )}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ==================== Sandbox Tab ====================
+
+interface SandboxStatus {
+  platform: string;
+  mode: string;
+  initialized: boolean;
+  wsl?: {
+    available: boolean;
+    distro?: string;
+    nodeAvailable?: boolean;
+    version?: string;
+    pythonAvailable?: boolean;
+    pythonVersion?: string;
+    pipAvailable?: boolean;
+    claudeCodeAvailable?: boolean;
+  };
+  lima?: {
+    available: boolean;
+    instanceExists?: boolean;
+    instanceRunning?: boolean;
+    instanceName?: string;
+    nodeAvailable?: boolean;
+    version?: string;
+    pythonAvailable?: boolean;
+    pythonVersion?: string;
+    pipAvailable?: boolean;
+    claudeCodeAvailable?: boolean;
+  };
+  error?: string;
+}
+
+function SandboxTab() {
+  const { t } = useTranslation();
+  const [sandboxEnabled, setSandboxEnabled] = useState(true);
+  const [status, setStatus] = useState<SandboxStatus | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isInstalling, setIsInstalling] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  const platform = window.electronAPI?.platform || 'unknown';
+  const isWindows = platform === 'win32';
+  const isMac = platform === 'darwin';
+
+  // Single initialization effect - load config and status together
+  useEffect(() => {
+    if (!isElectron) {
+      setIsLoading(false);
+      setIsInitialized(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function initialize() {
+      try {
+        // Load both config and status in parallel
+        const [cfg, s] = await Promise.all([
+          window.electronAPI.config.get(),
+          window.electronAPI.sandbox.getStatus()
+        ]);
+        
+        if (cancelled) return;
+        
+        setSandboxEnabled(cfg.sandboxEnabled !== false);
+        setStatus(s);
+        setError('');
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to initialize sandbox tab:', err);
+        setError(t('sandbox.failedToLoad'));
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
+      }
+    }
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  async function loadStatus() {
+    try {
+      const s = await window.electronAPI.sandbox.getStatus();
+      setStatus(s);
+      setError('');
+    } catch (err) {
+      console.error('Failed to load sandbox status:', err);
+      setError(t('sandbox.failedToLoad'));
+    }
+  }
+
+  async function handleToggleSandbox() {
+    const newEnabled = !sandboxEnabled;
+    
+    // Optimistically update UI
+    setSandboxEnabled(newEnabled);
+    setError('');
+    setSuccess('');
+
+    try {
+      await window.electronAPI.config.save({ sandboxEnabled: newEnabled });
+      setSuccess(newEnabled ? t('sandbox.enabledWillSetup') : t('sandbox.disabled'));
+      
+      // Clear success message after delay
+      const timer = setTimeout(() => setSuccess(''), 3000);
+      return () => clearTimeout(timer);
+    } catch (err) {
+      // Revert on error
+      setSandboxEnabled(!newEnabled);
+      setError(err instanceof Error ? err.message : t('sandbox.failedToSave'));
+    }
+  }
+
+  async function handleCheckStatus() {
+    if (isChecking) return; // Prevent double-click
+    
+    setIsChecking(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      // Fresh check based on platform - this forces a re-check on the backend
+      if (isWindows) {
+        await window.electronAPI.sandbox.checkWSL();
+      } else if (isMac) {
+        await window.electronAPI.sandbox.checkLima();
+      }
+      
+      // Get full status after check
+      const fullStatus = await window.electronAPI.sandbox.getStatus();
+      setStatus(fullStatus);
+      
+      setSuccess(t('sandbox.statusRefreshed'));
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.checkFailed'));
+    } finally {
+      setIsChecking(false);
+    }
+  }
+
+  async function handleInstallNode() {
+    if (!status || isInstalling) return;
+    setIsInstalling('node');
+    setError('');
+    setSuccess('');
+
+    try {
+      let result = false;
+      if (isWindows && status.wsl?.distro) {
+        result = await window.electronAPI.sandbox.installNodeInWSL(status.wsl.distro);
+      } else if (isMac) {
+        result = await window.electronAPI.sandbox.installNodeInLima();
+      }
+
+      if (result) {
+        setSuccess(t('sandbox.nodeInstalled'));
+        // Refresh status after a short delay to allow backend to update
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+      } else {
+        setError(t('sandbox.nodeInstallFailed'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.nodeInstallFailed'));
+    } finally {
+      setIsInstalling(null);
+    }
+  }
+
+  async function handleInstallPython() {
+    if (!status || isInstalling) return;
+    setIsInstalling('python');
+    setError('');
+    setSuccess('');
+
+    try {
+      let result = false;
+      if (isWindows && status.wsl?.distro) {
+        result = await window.electronAPI.sandbox.installPythonInWSL(status.wsl.distro);
+      } else if (isMac) {
+        result = await window.electronAPI.sandbox.installPythonInLima();
+      }
+
+      if (result) {
+        setSuccess(t('sandbox.pythonInstalled'));
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+      } else {
+        setError(t('sandbox.pythonInstallFailed'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.pythonInstallFailed'));
+    } finally {
+      setIsInstalling(null);
+    }
+  }
+
+  async function handleRetrySetup() {
+    if (isInstalling) return;
+    setIsInstalling('setup');
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await window.electronAPI.sandbox.retrySetup();
+      if (result.success) {
+        setSuccess(t('sandbox.setupComplete'));
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+      } else {
+        setError(result.error || t('sandbox.setupFailed'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.setupFailed'));
+    } finally {
+      setIsInstalling(null);
+    }
+  }
+
+  async function handleStartLima() {
+    if (isInstalling) return;
+    setIsInstalling('start');
+    setError('');
+    setSuccess('');
+    
+    try {
+      const result = await window.electronAPI.sandbox.startLimaInstance();
+      if (result) {
+        setSuccess(t('sandbox.limaStarted'));
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+      } else {
+        setError(t('sandbox.limaStartFailed'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.limaStartFailed'));
+    } finally {
+      setIsInstalling(null);
+    }
+  }
+
+  async function handleStopLima() {
+    if (isInstalling) return;
+    setIsInstalling('stop');
+    setError('');
+    setSuccess('');
+    
+    try {
+      const result = await window.electronAPI.sandbox.stopLimaInstance();
+      if (result) {
+        setSuccess(t('sandbox.limaStopped'));
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+      } else {
+        setError(t('sandbox.limaStopFailed'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('sandbox.limaStopFailed'));
+    } finally {
+      setIsInstalling(null);
+    }
+  }
+
+  // Show loading only on initial load
+  if (isLoading && !isInitialized) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        <span className="ml-2 text-text-secondary">{t('common.loading')}</span>
+      </div>
+    );
+  }
+
+  const sandboxAvailable = isWindows ? status?.wsl?.available : isMac ? status?.lima?.available : false;
+  const sandboxReady = isWindows 
+    ? status?.wsl?.available && status?.wsl?.nodeAvailable
+    : isMac 
+      ? status?.lima?.available && status?.lima?.instanceRunning && status?.lima?.nodeAvailable
+      : false;
+
+  return (
+    <div className="space-y-4">
+      {/* Info Banner */}
+      <div className="px-4 py-3 rounded-xl bg-blue-500/10 text-blue-600 text-sm">
+        <p className="font-medium mb-1">🛡️ {t('sandbox.title')}</p>
+        <p className="text-xs opacity-80">
+          {isWindows ? t('sandbox.wslDesc') : isMac ? t('sandbox.limaDesc') : t('sandbox.nativeDesc')}
+        </p>
+      </div>
+
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          {success}
+        </div>
+      )}
+
+      {/* Enable/Disable Toggle */}
+      <div className="p-4 rounded-xl bg-surface border-2 border-border">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+              sandboxEnabled && sandboxReady ? 'bg-success/15 text-success' : 
+              sandboxEnabled ? 'bg-amber-500/15 text-amber-500' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+            }`}>
+              <Shield className="w-6 h-6" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-text-primary">{t('sandbox.enableSandbox')}</h3>
+              <p className="text-sm text-text-muted mt-0.5 truncate">
+                {sandboxEnabled 
+                  ? sandboxReady 
+                    ? t('sandbox.readyStatus') 
+                    : t('sandbox.notReadyStatus')
+                  : t('sandbox.disabledStatus')
+                }
+              </p>
+            </div>
+          </div>
+          {/* Larger, more visible toggle switch */}
+          <button
+            onClick={handleToggleSandbox}
+            disabled={isInstalling !== null}
+            aria-label={sandboxEnabled ? 'Disable sandbox' : 'Enable sandbox'}
+            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 flex-shrink-0 ${
+              sandboxEnabled 
+                ? 'bg-accent shadow-inner' 
+                : 'bg-gray-300 dark:bg-gray-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                sandboxEnabled ? 'translate-x-7' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Status Details */}
+      {sandboxEnabled && (
+        <div className="p-4 rounded-xl bg-surface border border-border space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-text-primary">{t('sandbox.environmentStatus')}</h3>
+            <button
+              onClick={handleCheckStatus}
+              disabled={isChecking || isInstalling !== null}
+              className="px-3 py-1.5 rounded-lg bg-surface-hover text-text-secondary text-xs hover:bg-surface-active transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {isChecking ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Settings className="w-3.5 h-3.5" />
+              )}
+              {t('sandbox.checkStatus')}
+            </button>
+          </div>
+
+          {/* Platform Info */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-surface-muted">
+              <div className="text-xs text-text-muted mb-1">{t('sandbox.platform')}</div>
+              <div className="text-sm font-medium text-text-primary">
+                {isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-surface-muted">
+              <div className="text-xs text-text-muted mb-1">{t('sandbox.mode')}</div>
+              <div className="text-sm font-medium text-text-primary">
+                {status?.mode === 'wsl' ? 'WSL2' : status?.mode === 'lima' ? 'Lima VM' : t('sandbox.native')}
+              </div>
+            </div>
+          </div>
+
+          {/* WSL Status (Windows) */}
+          {isWindows && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+                WSL2 {t('sandbox.status')}
+              </div>
+              <div className="space-y-2">
+                <StatusItem 
+                  label={t('sandbox.wslAvailable')} 
+                  available={status?.wsl?.available || false} 
+                  detail={status?.wsl?.distro}
+                />
+                <StatusItem 
+                  label="Node.js" 
+                  available={status?.wsl?.nodeAvailable || false}
+                  detail={status?.wsl?.version}
+                  action={!status?.wsl?.nodeAvailable && status?.wsl?.available ? {
+                    label: t('common.install'),
+                    onClick: handleInstallNode,
+                    loading: isInstalling === 'node'
+                  } : undefined}
+                />
+                <StatusItem 
+                  label="Python" 
+                  available={status?.wsl?.pythonAvailable || false}
+                  detail={status?.wsl?.pythonVersion}
+                  optional
+                  action={!status?.wsl?.pythonAvailable && status?.wsl?.available ? {
+                    label: t('common.install'),
+                    onClick: handleInstallPython,
+                    loading: isInstalling === 'python'
+                  } : undefined}
+                />
+                <StatusItem 
+                  label="pip" 
+                  available={status?.wsl?.pipAvailable || false}
+                  optional
+                />
+              </div>
+              
+              {!status?.wsl?.available && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-500/10 text-amber-600 text-xs">
+                  <p className="font-medium mb-1">{t('sandbox.wslNotInstalled')}</p>
+                  <p className="opacity-80">{t('sandbox.wslInstallHint')}</p>
+                  <code className="block mt-2 p-2 rounded bg-background font-mono text-xs">
+                    wsl --install
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Lima Status (macOS) */}
+          {isMac && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+                Lima VM {t('sandbox.status')}
+              </div>
+              <div className="space-y-2">
+                <StatusItem 
+                  label={t('sandbox.limaAvailable')} 
+                  available={status?.lima?.available || false}
+                />
+                <StatusItem 
+                  label={t('sandbox.vmCreated')} 
+                  available={status?.lima?.instanceExists || false}
+                  detail={status?.lima?.instanceName}
+                />
+                <StatusItem 
+                  label={t('sandbox.vmRunning')} 
+                  available={status?.lima?.instanceRunning || false}
+                  action={status?.lima?.instanceExists && !status?.lima?.instanceRunning ? {
+                    label: t('sandbox.start'),
+                    onClick: handleStartLima,
+                    loading: isInstalling === 'start'
+                  } : status?.lima?.instanceRunning ? {
+                    label: t('sandbox.stop'),
+                    onClick: handleStopLima,
+                    loading: isInstalling === 'stop',
+                    variant: 'secondary'
+                  } : undefined}
+                />
+                <StatusItem 
+                  label="Node.js" 
+                  available={status?.lima?.nodeAvailable || false}
+                  detail={status?.lima?.version}
+                  action={!status?.lima?.nodeAvailable && status?.lima?.instanceRunning ? {
+                    label: t('common.install'),
+                    onClick: handleInstallNode,
+                    loading: isInstalling === 'node'
+                  } : undefined}
+                />
+                <StatusItem 
+                  label="Python" 
+                  available={status?.lima?.pythonAvailable || false}
+                  detail={status?.lima?.pythonVersion}
+                  optional
+                  action={!status?.lima?.pythonAvailable && status?.lima?.instanceRunning ? {
+                    label: t('common.install'),
+                    onClick: handleInstallPython,
+                    loading: isInstalling === 'python'
+                  } : undefined}
+                />
+              </div>
+
+              {!status?.lima?.available && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-500/10 text-amber-600 text-xs">
+                  <p className="font-medium mb-1">{t('sandbox.limaNotInstalled')}</p>
+                  <p className="opacity-80">{t('sandbox.limaInstallHint')}</p>
+                  <code className="block mt-2 p-2 rounded bg-background font-mono text-xs">
+                    brew install lima
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Linux - Native Mode */}
+          {!isWindows && !isMac && (
+            <div className="p-3 rounded-lg bg-surface-muted text-text-secondary text-sm">
+              {t('sandbox.linuxNative')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Retry Setup Button */}
+      {sandboxEnabled && sandboxAvailable && !sandboxReady && (
+        <button
+          onClick={handleRetrySetup}
+          disabled={isInstalling !== null}
+          className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+        >
+          {isInstalling === 'setup' ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {t('sandbox.settingUp')}
+            </>
+          ) : (
+            <>
+              <Settings className="w-4 h-4" />
+              {t('sandbox.retrySetup')}
+            </>
+          )}
+        </button>
+      )}
+
+      {/* Help Text */}
+      <div className="text-xs text-text-muted text-center space-y-1">
+        <p>{t('sandbox.helpText1')}</p>
+        <p>{t('sandbox.helpText2')}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusItem({ 
+  label, 
+  available, 
+  detail, 
+  optional,
+  action 
+}: { 
+  label: string; 
+  available: boolean; 
+  detail?: string;
+  optional?: boolean;
+  action?: { 
+    label: string; 
+    onClick: () => void; 
+    loading?: boolean;
+    variant?: 'primary' | 'secondary';
+  };
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-background">
+      <div className="flex items-center gap-2">
+        <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+          available 
+            ? 'bg-success/10 text-success' 
+            : optional 
+              ? 'bg-surface-muted text-text-muted'
+              : 'bg-error/10 text-error'
+        }`}>
+          {available ? (
+            <CheckCircle className="w-3.5 h-3.5" />
+          ) : (
+            <AlertCircle className="w-3.5 h-3.5" />
+          )}
+        </div>
+        <span className="text-sm text-text-primary">{label}</span>
+        {detail && (
+          <span className="text-xs text-text-muted">({detail})</span>
+        )}
+        {optional && !available && (
+          <span className="text-xs text-text-muted">({t('common.optional')})</span>
+        )}
+      </div>
+      {action && (
+        <button
+          onClick={action.onClick}
+          disabled={action.loading}
+          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 ${
+            action.variant === 'secondary'
+              ? 'bg-surface-muted text-text-secondary hover:bg-surface-active'
+              : 'bg-accent text-white hover:bg-accent-hover'
+          }`}
+        >
+          {action.loading && <Loader2 className="w-3 h-3 animate-spin" />}
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }

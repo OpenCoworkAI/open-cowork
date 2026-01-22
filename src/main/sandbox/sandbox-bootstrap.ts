@@ -9,6 +9,7 @@
 import { log, logError } from '../utils/logger';
 import { WSLBridge } from './wsl-bridge';
 import { LimaBridge } from './lima-bridge';
+import { configStore } from '../config/config-store';
 import type { WSLStatus, LimaStatus } from './types';
 
 export type SandboxSetupPhase = 
@@ -132,6 +133,19 @@ export class SandboxBootstrap {
   private async _bootstrap(): Promise<SandboxBootstrapResult> {
     const platform = process.platform;
     log('[SandboxBootstrap] Starting bootstrap for platform:', platform);
+
+    // Check if sandbox is enabled in config
+    const sandboxEnabled = configStore.get('sandboxEnabled');
+    if (sandboxEnabled === false) {
+      log('[SandboxBootstrap] Sandbox disabled by user configuration');
+      this.reportProgress({
+        phase: 'skipped',
+        message: 'Sandbox disabled',
+        detail: 'Using native execution mode (sandbox disabled in settings)',
+        progress: 100,
+      });
+      return { mode: 'native' };
+    }
 
     try {
       if (platform === 'win32') {

@@ -281,6 +281,7 @@ export interface AppConfig {
   openaiMode?: 'responses' | 'chat';
   claudeCodePath?: string;
   defaultWorkdir?: string;
+  sandboxEnabled?: boolean;
   isConfigured: boolean;
 }
 
