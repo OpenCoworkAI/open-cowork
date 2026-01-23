@@ -8,6 +8,9 @@ dist-wsl-agent/
 dist-lima-agent/
 release/
 
+# Bundled Node.js binaries
+resources/node/
+
 # IDE
 .vscode/
 .idea/

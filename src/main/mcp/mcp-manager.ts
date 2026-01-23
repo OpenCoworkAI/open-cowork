@@ -45,117 +45,77 @@ export class MCPManager {
   private npxPath: string | null = null; // Cached npx path
 
   /**
-   * Check if npx is available in PATH
-   * Throws an error with bilingual message if not found
-   * Supports Linux, macOS, and Windows
+   * Get bundled Node.js path
+   * Returns the path to the bundled node/npx binaries
    */
-  private async checkNpxInPath(): Promise<void> {
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-    const os = await import('os');
-    const path = await import('path');
+  private getBundledNodePath(): { node: string; npx: string } | null {
+    const path = require('path');
+    const fs = require('fs');
+    const os = require('os');
     
     const platform = os.platform();
-    const homeDir = os.homedir();
+    const arch = os.arch();
     
-    // Use appropriate command based on platform
-    // Windows: where, Linux/macOS: which
-    const checkCommand = platform === 'win32' ? 'where npx' : 'which npx';
+    // In production, resources are in app.asar.unpacked or extraResources
+    let resourcesPath: string;
     
-    // Try 1: Direct which/where npx
-    try {
-      const { stdout } = await execAsync(checkCommand, { timeout: 5000 });
-      const npxPath = stdout.trim().split('\n')[0]; // Take first line on Windows (where can return multiple paths)
-      
-      if (npxPath && npxPath.length > 0) {
-        log(`[MCPManager] Found npx in PATH: ${npxPath}`);
-        this.npxPath = npxPath;
-        return;
-      }
-    } catch (error) {
-      log(`[MCPManager] Direct ${checkCommand} failed, trying from shell...`);
+    if (process.env.NODE_ENV === 'development') {
+      // Development: use downloaded node in resources/node
+      // __dirname is dist-electron/main, so go up to project root
+      log('[MCPManager] Development mode, using downloaded node in resources/node');
+      const projectRoot = path.join(__dirname, '..', '..');
+      resourcesPath = path.join(projectRoot, 'resources', 'node', `${platform}-${arch}`);
+    } else {
+      // Production: use bundled node in extraResources
+      log('[MCPManager] Production mode, using bundled node in extraResources');
+      resourcesPath = path.join(process.resourcesPath, 'node');
     }
     
-    // Try 2: Call which/where from user's shell
-    if (platform === 'darwin' || platform === 'linux') {
-      // macOS/Linux: use SHELL environment variable
-      try {
-        log(`[MCPManager] SHELL: ${process.env.SHELL}`);
-        const shell = process.env.SHELL || '/bin/zsh';
-        const shellName = path.basename(shell);
-        
-        log(`[MCPManager] Trying to find npx from ${shellName}...`);
-        
-        // Use login shell to run which command with full PATH
-        const { stdout } = await execAsync(`${shell} -l -c 'which npx'`, { 
-          timeout: 5000,
-          env: { HOME: homeDir }
-        });
-        
-        const npxPath = stdout.trim();
-        if (npxPath && npxPath.length > 0) {
-          log(`[MCPManager] Found npx via ${shellName}: ${npxPath}`);
-          this.npxPath = npxPath;
-          return;
-        }
-      } catch (error) {
-        log(`[MCPManager] Could not find npx from shell`);
-      }
-    } else if (platform === 'win32') {
-      // Windows: use COMSPEC or try PowerShell
-      try {
-        // First try cmd.exe (COMSPEC)
-        const comspec = process.env.COMSPEC || 'cmd.exe';
-        const shellName = path.basename(comspec);
-        
-        log(`[MCPManager] Trying to find npx from ${shellName}...`);
-        
-        const { stdout } = await execAsync(`${comspec} /c where npx`, { 
-          timeout: 5000
-        });
-        
-        const npxPath = stdout.trim().split('\n')[0];
-        if (npxPath && npxPath.length > 0) {
-          log(`[MCPManager] Found npx via ${shellName}: ${npxPath}`);
-          this.npxPath = npxPath;
-          return;
-        }
-      } catch (error) {
-        log(`[MCPManager] Could not find npx from cmd.exe, trying PowerShell...`);
-      }
-      
-      // Try PowerShell as fallback
-      try {
-        log(`[MCPManager] Trying to find npx from PowerShell...`);
-        
-        const { stdout } = await execAsync('powershell -Command "Get-Command npx | Select-Object -ExpandProperty Source"', { 
-          timeout: 5000
-        });
-        
-        const npxPath = stdout.trim();
-        if (npxPath && npxPath.length > 0) {
-          log(`[MCPManager] Found npx via PowerShell: ${npxPath}`);
-          this.npxPath = npxPath;
-          return;
-        }
-      } catch (error) {
-        log(`[MCPManager] Could not find npx from PowerShell`);
-      }
+    log(`[MCPManager] Looking for bundled Node.js at: ${resourcesPath}`);
+    
+    if (!fs.existsSync(resourcesPath)) {
+      logWarn(`[MCPManager] Bundled Node.js not found at: ${resourcesPath}`);
+      return null;
     }
     
-    // All attempts failed - throw error
-    const errorMessage = 
-      'npx is not found in PATH. Please add Node.js/npm to your PATH environment variable.\n' +
-      'npx 未在 PATH 中找到。请将 Node.js/npm 添加到您的 PATH 环境变量中。\n\n' +
-      'Common solutions / 常见解决方案:\n' +
-      '1. Install Node.js from https://nodejs.org / 从 https://nodejs.org 安装 Node.js\n' +
-      '2. Add Node.js bin directory to PATH / 将 Node.js bin 目录添加到 PATH\n' +
-      '3. Restart your terminal/application after installation / 安装后重启终端/应用程序\n' +
-      '4. For macOS: Make sure Node.js is installed system-wide, not just in terminal / macOS：确保 Node.js 是系统级安装，而不仅在终端中可用';
+    // Determine binary paths based on platform
+    const binDir = platform === 'win32' ? resourcesPath : path.join(resourcesPath, 'bin');
+    const nodeExe = platform === 'win32' ? 'node.exe' : 'node';
+    const npxExe = platform === 'win32' ? 'npx.cmd' : 'npx';
     
-    logError('[MCPManager] npx not found in PATH after all attempts');
-    throw new Error(errorMessage);
+    const nodePath = path.join(binDir, nodeExe);
+    const npxPath = path.join(binDir, npxExe);
+    
+    // Verify files exist
+    if (fs.existsSync(nodePath) && fs.existsSync(npxPath)) {
+      log(`[MCPManager] Found bundled Node.js: ${nodePath}`);
+      log(`[MCPManager] Found bundled npx: ${npxPath}`);
+      return { node: nodePath, npx: npxPath };
+    } else {
+      logWarn(`[MCPManager] Bundled binaries incomplete - node: ${fs.existsSync(nodePath)}, npx: ${fs.existsSync(npxPath)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get npx path from bundled Node.js
+   * Throws an error if bundled Node.js is not found
+   */
+  private async checkNpxInPath(): Promise<void> {
+    const bundledNode = this.getBundledNodePath();
+    if (!bundledNode) {
+      const errorMessage = 
+        'Bundled Node.js not found. Please reinstall the application.\n' +
+        '未找到内置的 Node.js。请重新安装应用。\n\n' +
+        'The application requires bundled Node.js to run MCP servers.\n' +
+        '应用需要内置的 Node.js 来运行 MCP 服务器。';
+      
+      logError('[MCPManager] Bundled Node.js not found');
+      throw new Error(errorMessage);
+    }
+    
+    this.npxPath = bundledNode.npx;
+    log(`[MCPManager] Using bundled npx: ${this.npxPath}`);
   }
 
   /**
@@ -373,7 +333,9 @@ export class MCPManager {
         const execAsync = promisify(exec);
         
         log(`[MCPManager] Testing npx execution: ${command} --version`);
-        const testResult = await execAsync(`${command} --version`, { 
+        // Quote the command path to handle spaces
+        const quotedCommand = `"${command}"`;
+        const testResult = await execAsync(`${quotedCommand} --version`, { 
           timeout: 5000,
           env: env
         });

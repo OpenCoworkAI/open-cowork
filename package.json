@@ -4,10 +4,11 @@
   "description": "Desktop Agent application with sandboxed environment for AI Agent interaction",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "npm run build:wsl-agent && npm run build:lima-agent && vite",
-    "build": "npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
+    "dev": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && vite",
+    "build": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
     "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
+    "download:node": "node scripts/download-node.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",

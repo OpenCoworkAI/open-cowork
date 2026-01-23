@@ -46,6 +46,11 @@ win:
         - x64
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
+  extraResources:
+    - from: resources/node/win32-x64
+      to: node
+      filter:
+        - "**/*"
 
 mac:
   target:
@@ -59,6 +64,11 @@ mac:
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  extraResources:
+    - from: resources/node/darwin-${arch}
+      to: node
+      filter:
+        - "**/*"
 
 linux:
   target:
@@ -66,6 +76,11 @@ linux:
       arch:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: resources/node/linux-x64
+      to: node
+      filter:
+        - "**/*"
 
 nsis:
   oneClick: false
