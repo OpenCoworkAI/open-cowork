@@ -51,6 +51,10 @@ win:
       to: node
       filter:
         - "**/*"
+    - from: resources/node/win32-x64/node_modules
+      to: node/node_modules
+      filter:
+        - "**/*"
 
 mac:
   target:
