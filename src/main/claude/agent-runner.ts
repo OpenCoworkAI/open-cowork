@@ -14,6 +14,9 @@ import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { PathGuard } from '../sandbox/path-guard';
 
+// Virtual workspace path shown to the model (hides real sandbox path)
+const VIRTUAL_WORKSPACE_PATH = '/workspace';
+
 // Cache for shell environment (loaded once at startup)
 let cachedShellEnv: NodeJS.ProcessEnv | null = null;
 
@@ -719,6 +722,13 @@ Then follow the workflow described in that file.
     
     // Track last executed tool for completion message generation
     let lastExecutedToolName: string | null = null;
+    
+    // Helper to convert real sandbox paths back to virtual workspace paths in output
+    const sanitizeOutputPaths = (content: string): string => {
+      if (!sandboxPath || !useSandboxIsolation) return content;
+      // Replace real sandbox path with virtual workspace path
+      return content.replace(new RegExp(sandboxPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), VIRTUAL_WORKSPACE_PATH);
+    };
 
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
@@ -1366,6 +1376,11 @@ Then follow the workflow described in that file.
                   
                   if (!inputPath) {
                     sandboxWslPath = sandboxPathNonNull;
+                  } else if (inputPath.startsWith(VIRTUAL_WORKSPACE_PATH)) {
+                    // Virtual workspace path (e.g., /workspace/src/index.ts) -> convert to real sandbox path
+                    const relativePath = inputPath.substring(VIRTUAL_WORKSPACE_PATH.length).replace(/^\//, '');
+                    sandboxWslPath = relativePath ? `${sandboxPathNonNull}/${relativePath}` : sandboxPathNonNull;
+                    log(`[Sandbox] Virtual path converted: ${inputPath} -> ${sandboxWslPath}`);
                   } else if (inputPath.startsWith(sandboxPathNonNull)) {
                     // Already in sandbox WSL path
                     sandboxWslPath = inputPath;
@@ -1575,9 +1590,16 @@ Then follow the workflow described in that file.
                 if (useSandboxIsolation && sandboxPath) {
                   // SECURE MODE: Use isolated sandbox path
                   limaCwd = sandboxPath;
+                  const sandboxPathNonNull = sandboxPath; // For closure
+
+                  // Convert virtual workspace paths to real sandbox paths
+                  let sandboxCommand = originalCommand.replace(
+                    new RegExp(VIRTUAL_WORKSPACE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(/[^\\s;|&"\'<>]*)?', 'g'),
+                    (_match, rest) => rest ? `${sandboxPathNonNull}${rest}` : sandboxPathNonNull
+                  );
 
                   // Escape single quotes for bash -c
-                  const escapedCommand = originalCommand.replace(/'/g, "'\\''");
+                  const escapedCommand = sandboxCommand.replace(/'/g, "'\\''");
                   // Run command in Lima VM with nvm sourced for Node.js access
                   const wrappedCommand = `limactl shell claude-sandbox -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; cd "${limaCwd}" && ${escapedCommand}'`;
 
@@ -1639,12 +1661,18 @@ Then follow the workflow described in that file.
               if (useSandboxIsolation && sandboxPath) {
                 // SECURE MODE: Use isolated sandbox path
                 wslCwd = sandboxPath;
+                const sandboxPathForCmd = sandboxPath; // For closure
                 
-                // Convert Windows paths in the command to sandbox paths
-                let sandboxCommand = originalCommand;
+                // Convert virtual workspace paths to real sandbox paths
+                let sandboxCommand = originalCommand.replace(
+                  new RegExp(VIRTUAL_WORKSPACE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(/[^\\s;|&"\'<>]*)?', 'g'),
+                  (_match, rest) => rest ? `${sandboxPathForCmd}${rest}` : sandboxPathForCmd
+                );
+                
+                // Also convert Windows paths in the command to sandbox paths
                 if (workingDir) {
                   sandboxCommand = PathGuard.convertPathInCommand(
-                    originalCommand,
+                    sandboxCommand,
                     session.id,
                     workingDir
                   );
@@ -1727,10 +1755,14 @@ You are a Claude agent, built on Anthropic's Claude Agent SDK.==
 
 ${useSandboxIsolation && sandboxPath 
   ? `<workspace_info>
-Your current workspace is located at: ${sandboxPath}
+Your current workspace is located at: ${VIRTUAL_WORKSPACE_PATH}
 This is an isolated sandbox environment. All file operations are confined to this directory.
-Do NOT assume, ask about, or mention any Windows paths or the user's real file system location.
-Treat ${sandboxPath} as the root of the user's project.
+IMPORTANT: Always use ${VIRTUAL_WORKSPACE_PATH} as the root path for all operations. Do NOT reference or use any other absolute paths.
+When using file tools (read, write, list), use paths relative to ${VIRTUAL_WORKSPACE_PATH} or use ${VIRTUAL_WORKSPACE_PATH} as prefix.
+Examples:
+- To read src/index.ts: use "${VIRTUAL_WORKSPACE_PATH}/src/index.ts" or "src/index.ts"
+- To list files: use "${VIRTUAL_WORKSPACE_PATH}" or "."
+- Never use paths like /home/ubuntu/... or any Windows paths
 </workspace_info>`
   : workingDir 
     ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
@@ -2143,12 +2175,14 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
               if (block.type === 'tool_result') {
                 const isError = block.is_error === true;
 
+                // Sanitize output to replace real sandbox paths with virtual workspace paths
+                const rawContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+                const sanitizedContent = sanitizeOutputPaths(rawContent);
+                
                 // Update the existing tool_call trace step instead of creating a new one
                 this.sendTraceUpdate(session.id, block.tool_use_id, {
                   status: isError ? 'error' : 'completed',
-                  toolOutput: typeof block.content === 'string'
-                    ? block.content.slice(0, 800)
-                    : JSON.stringify(block.content).slice(0, 800),
+                  toolOutput: sanitizedContent.slice(0, 800),
                 });
 
                 // Send tool result message
@@ -2159,7 +2193,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
                   content: [{
                     type: 'tool_result',
                     toolUseId: block.tool_use_id,
-                    content: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
+                    content: sanitizedContent,
                     isError
                   }],
                   timestamp: Date.now(),

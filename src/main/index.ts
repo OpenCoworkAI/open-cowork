@@ -200,6 +200,13 @@ async function setWorkingDir(newDir: string, sessionId?: string): Promise<{ succ
  * This pre-initializes WSL/Lima environment at app startup
  */
 async function startSandboxBootstrap(): Promise<void> {
+  // Skip sandbox bootstrap if disabled - use native mode directly
+  const sandboxEnabled = configStore.get('sandboxEnabled');
+  if (sandboxEnabled === false) {
+    log('[App] Sandbox disabled, skipping bootstrap (using native mode)');
+    return;
+  }
+
   const bootstrap = getSandboxBootstrap();
   
   // Skip if already complete

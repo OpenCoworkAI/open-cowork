@@ -45,7 +45,7 @@ const defaultConfig: AppConfig = {
   claudeCodePath: '',
   defaultWorkdir: '',
   enableDevLogs: true,
-  sandboxEnabled: true,
+  sandboxEnabled: false,
   isConfigured: false,
 };
 

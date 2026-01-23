@@ -81,8 +81,15 @@ async function downloadAndExtract(platform, arch) {
     fs.mkdirSync(extractDir, { recursive: true });
 
     if (platform === 'win32') {
-      // Use unzip for Windows
-      execSync(`unzip -q "${archivePath}" -d "${extractDir}"`, { stdio: 'inherit' });
+      // Use PowerShell Expand-Archive for Windows zip files
+      const isWindows = process.platform === 'win32';
+      if (isWindows) {
+        // PowerShell on Windows
+        execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}' -Force"`, { stdio: 'inherit' });
+      } else {
+        // unzip on Unix
+        execSync(`unzip -q "${archivePath}" -d "${extractDir}"`, { stdio: 'inherit' });
+      }
       // Move contents up one level
       const innerDir = path.join(extractDir, nodeName);
       if (fs.existsSync(innerDir)) {
@@ -93,7 +100,8 @@ async function downloadAndExtract(platform, arch) {
         fs.rmdirSync(innerDir);
       }
     } else {
-      // Use tar for Unix
+      // Use tar for Unix packages
+      // Note: On Windows, extracting Unix tar.gz may fail due to symlinks - that's OK
       execSync(`tar -xzf "${archivePath}" -C "${extractDir}" --strip-components=1`, { stdio: 'inherit' });
     }
 
