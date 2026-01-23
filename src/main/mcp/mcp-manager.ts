@@ -192,12 +192,31 @@ export class MCPManager {
         }
         
         log(`[MCPManager] Enhanced environment with ${Object.keys(shellEnv).length} variables from shell`);
-        log(`[MCPManager] Final PATH: ${env.PATH?.substring(0, 150)}...`);
       } catch (error: any) {
         logWarn(`[MCPManager] Could not get environment from shell: ${error.message}`);
         logWarn(`[MCPManager] Using limited process.env, MCP servers may fail`);
       }
     }
+    
+    // Add bundled Node.js bin directory to PATH (highest priority)
+    // This ensures npx can find the bundled node executable
+    const bundledNode = this.getBundledNodePath();
+    if (bundledNode && env.PATH) {
+      const nodeBinDir = path.dirname(bundledNode.node);
+      const pathDelimiter = platform === 'win32' ? ';' : ':';
+      
+      // Prepend bundled node bin directory to PATH
+      const pathParts = env.PATH.split(pathDelimiter).filter(p => p.trim());
+      
+      // Remove bundled path if it already exists (to avoid duplicates)
+      const filteredPaths = pathParts.filter(p => p !== nodeBinDir);
+      
+      // Add bundled path at the beginning
+      env.PATH = [nodeBinDir, ...filteredPaths].join(pathDelimiter);
+      log(`[MCPManager] Prepended bundled Node.js bin to PATH: ${nodeBinDir}`);
+    }
+    
+    log(`[MCPManager] Final PATH: ${env.PATH?.substring(0, 150)}...`);
 
     // Merge with config env (config env takes precedence)
     return { ...env, ...configEnv };
