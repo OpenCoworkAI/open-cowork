@@ -17,7 +17,7 @@ Extract the html2pptx library next to your script before proceeding:
 
 ```bash
 # Extract the library to a html2pptx subdirectory
-mkdir -p html2pptx && tar -xzf skills/public/pptx/html2pptx.tgz -C html2pptx
+mkdir -p html2pptx && tar -xzf skills/pptx/html2pptx.tgz -C html2pptx
 ```
 
 This creates a `html2pptx/` directory with the library files and CLI binaries. Then use `require("./html2pptx")` in your script.
