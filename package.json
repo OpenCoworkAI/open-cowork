@@ -37,6 +37,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "uuid": "^11.0.3",
+    "webdriverio": "^9.23.2",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
