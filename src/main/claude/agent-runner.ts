@@ -12,7 +12,7 @@ import { spawn, execSync, type ChildProcess } from 'child_process';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
-import { PathGuard } from '../sandbox/path-guard';
+// import { PathGuard } from '../sandbox/path-guard';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -1277,47 +1277,43 @@ Then follow the workflow described in that file.
             signal,
           };
           
-          // If the command is 'node', try to find system Node.js first
-          // Using Electron causes a visible "exec" icon in macOS menu bar
+          // If the command is 'node', use bundled Node.js from resources
           if (command === 'node') {
-            // Check if system node is available in PATH
-            // On Windows, executable is 'node.exe', on Unix it's 'node'
-            const isWindows = process.platform === 'win32';
-            const nodeExeName = isWindows ? 'node.exe' : 'node';
-            const pathDirs = (spawnEnv?.PATH || process.env.PATH || '').split(path.delimiter);
-            const systemNodePath = pathDirs
-              .map(p => path.join(p, nodeExeName))
-              .find(p => fs.existsSync(p));
+            // Get bundled Node.js path (same logic as MCPManager)
+            const platform = process.platform;
+            const arch = process.arch;
             
-            if (systemNodePath) {
-              // Use system Node.js - no Dock icon
-              actualCommand = systemNodePath;
-              log('[ClaudeAgentRunner] Using system Node.js:', systemNodePath);
+            let resourcesPath: string;
+            if (process.env.NODE_ENV === 'development') {
+              // Development: use downloaded node in resources/node
+              const projectRoot = path.join(__dirname, '..', '..');
+              resourcesPath = path.join(projectRoot, 'resources', 'node', `${platform}-${arch}`);
             } else {
-              // Fallback to Electron as Node.js
-              // Use shell wrapper on macOS to hide Dock icon
+              // Production: use bundled node in extraResources
+              resourcesPath = path.join(process.resourcesPath, 'node');
+            }
+            
+            const binDir = platform === 'win32' ? resourcesPath : path.join(resourcesPath, 'bin');
+            const nodeExe = platform === 'win32' ? 'node.exe' : 'node';
+            const bundledNodePath = path.join(binDir, nodeExe);
+            
+            if (fs.existsSync(bundledNodePath)) {
+              actualCommand = bundledNodePath;
+              log('[ClaudeAgentRunner] Using bundled Node.js:', bundledNodePath);
+            } else {
+              // Fallback to Electron as Node.js if bundled node not found
+              log('[ClaudeAgentRunner] Bundled Node.js not found, using Electron as fallback');
               if (process.platform === 'darwin') {
-                // On macOS, use shell to run Electron with ELECTRON_RUN_AS_NODE
-                // This prevents the Dock icon from appearing
-                const electronPath = process.execPath.replace(/'/g, "'\\''");
-                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+                const electronPath = process.execPath.replace(/'/g, "'\''");
+                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\''")}'`).join(' ');
                 const shellCommand = `ELECTRON_RUN_AS_NODE=1 '${electronPath}' ${quotedArgs}`;
-                
                 actualCommand = '/bin/bash';
                 actualArgs = ['-c', shellCommand];
-                // Don't pass ELECTRON_RUN_AS_NODE in env since it's in the shell command
-                log('[ClaudeAgentRunner] Using shell wrapper to hide Dock icon');
               } else {
-                // On other platforms, use Electron directly
                 actualCommand = process.execPath;
-                actualEnv = {
-                  ...spawnEnv,
-                  ELECTRON_RUN_AS_NODE: '1',
-                };
+                actualEnv = { ...spawnEnv, ELECTRON_RUN_AS_NODE: '1' };
               }
-              
               spawnOptions2.env = actualEnv;
-              log('[ClaudeAgentRunner] System Node.js not found, using Electron as Node.js');
             }
           }
           
@@ -1327,423 +1323,6 @@ Then follow the workflow described in that file.
           const childProcess = spawn(actualCommand, actualArgs, spawnOptions2) as ChildProcess;
 
           return childProcess;
-        },
-        
-        // Skills support: load from user and project .claude/skills/ directories
-        settingSources: ['project', 'user'],
-        
-        // Enable Skill tool along with other commonly used tools
-        // MCP tools are automatically available through mcpServers configuration
-        // Bash is also here - we use PreToolUse hook to intercept and wrap for WSL
-        allowedTools: ['Skill', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'TodoRead', 'TodoWrite', 'AskUserQuestion', 'Task', 'Bash'],
-        
-        // WSL Sandbox: Use PreToolUse hook to intercept tools for sandbox path translation
-        hooks: {
-          PreToolUse: [{
-            // Match all tools - we filter by tool_name inside the hook
-            hooks: [async (hookInput: any, _toolUseID: string | undefined, _options: { signal: AbortSignal }) => {
-              const toolName = hookInput.tool_name;
-              const toolInput = hookInput.tool_input as Record<string, unknown>;
-              
-              // Get sandbox adapter status (used for both file ops and Bash)
-              const sandboxAdapter = getSandboxAdapter();
-              const isWSLMode = sandboxAdapter.isWSL && sandboxAdapter.wslStatus?.distro;
-              const isLimaMode = sandboxAdapter.isLima && sandboxAdapter.limaStatus?.instanceRunning;
-
-              // Handle file operations when sandbox isolation is active
-              // Files are written to WSL sandbox, then synced back to Windows via SandboxSync
-
-              if (useSandboxIsolation && sandboxPath && isWSLMode) {
-                const distro = sandboxAdapter.wslStatus!.distro!;
-                const sandboxPathNonNull = sandboxPath;
-                
-                // Helper to convert WSL sandbox path to Windows UNC path
-                // e.g., /home/user/.claude/sandbox/xxx -> \\wsl$\Ubuntu\home\user\.claude\sandbox\xxx
-                const sandboxToWindowsUNC = (wslPath: string): string => {
-                  // Remove leading slash and convert to UNC format
-                  const pathWithoutLeadingSlash = wslPath.startsWith('/') ? wslPath.substring(1) : wslPath;
-                  return `\\\\wsl$\\${distro}\\${pathWithoutLeadingSlash.replace(/\//g, '\\')}`;
-                };
-                
-                // Get built-in skills path for detection
-                const builtinSkillsPath = this.getBuiltinSkillsPath();
-                const normalizedBuiltinSkills = builtinSkillsPath ? builtinSkillsPath.replace(/\\/g, '/').toLowerCase() : '';
-                const normalizedAppSkills = appSkillsDir.replace(/\\/g, '/').toLowerCase();
-                
-                // Helper to ensure path is within sandbox and convert to Windows UNC
-                const ensureSandboxPathUNC = (inputPath: string): string => {
-                  let sandboxWslPath: string;
-                  
-                  if (!inputPath) {
-                    sandboxWslPath = sandboxPathNonNull;
-                  } else if (inputPath.startsWith(VIRTUAL_WORKSPACE_PATH)) {
-                    // Virtual workspace path (e.g., /workspace/src/index.ts) -> convert to real sandbox path
-                    const relativePath = inputPath.substring(VIRTUAL_WORKSPACE_PATH.length).replace(/^\//, '');
-                    sandboxWslPath = relativePath ? `${sandboxPathNonNull}/${relativePath}` : sandboxPathNonNull;
-                    log(`[Sandbox] Virtual path converted: ${inputPath} -> ${sandboxWslPath}`);
-                  } else if (inputPath.startsWith(sandboxPathNonNull)) {
-                    // Already in sandbox WSL path
-                    sandboxWslPath = inputPath;
-                  } else if (/^[A-Za-z]:[\\/]/.test(inputPath)) {
-                    // Windows absolute path (e.g., D:\DeskTop\project\file.txt)
-                    const normalizedInput = inputPath.replace(/\\/g, '/').toLowerCase();
-                    const normalizedWorkDir = (workingDir || '').replace(/\\/g, '/').toLowerCase();
-                    
-                    // Check if this is a built-in skills path
-                    if (normalizedBuiltinSkills && normalizedInput.startsWith(normalizedBuiltinSkills)) {
-                      // Built-in skills path - map to sandbox/.claude/skills/
-                      const relativePath = inputPath.substring(builtinSkillsPath.length).replace(/\\/g, '/').replace(/^\//, '');
-                      sandboxWslPath = `${sandboxPathNonNull}/.claude/skills/${relativePath}`;
-                      log(`[Sandbox] Built-in skills path mapped: ${inputPath} -> ${sandboxWslPath}`);
-                    } else if (normalizedAppSkills && normalizedInput.startsWith(normalizedAppSkills)) {
-                      const relativePath = inputPath.substring(appSkillsDir.length).replace(/\\/g, '/').replace(/^\//, '');
-                      sandboxWslPath = `${sandboxPathNonNull}/.claude/skills/${relativePath}`;
-                      log(`[Sandbox] App skills path mapped: ${inputPath} -> ${sandboxWslPath}`);
-                    } else if (normalizedWorkDir && normalizedInput.startsWith(normalizedWorkDir)) {
-                      // Path is within workspace - extract relative path
-                      const relativePath = inputPath.substring(workingDir!.length).replace(/\\/g, '/').replace(/^\//, '');
-                      sandboxWslPath = `${sandboxPathNonNull}/${relativePath}`;
-                      log(`[Sandbox] Windows path converted: ${inputPath} -> ${sandboxWslPath}`);
-                    } else {
-                      // Check if path contains .claude/skills pattern (for other skill paths)
-                      const skillsMatch = inputPath.match(/[\\\/]\.claude[\\\/]skills[\\\/](.*)/i);
-                      if (skillsMatch) {
-                        sandboxWslPath = `${sandboxPathNonNull}/.claude/skills/${skillsMatch[1].replace(/\\/g, '/')}`;
-                        log(`[Sandbox] Skills path pattern matched: ${inputPath} -> ${sandboxWslPath}`);
-                      } else {
-                        // Path outside workspace - try to use as-is (may fail)
-                        log(`[Sandbox] Warning: Windows path outside workspace: ${inputPath}`);
-                        sandboxWslPath = `${sandboxPathNonNull}/${inputPath.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')}`;
-                      }
-                    }
-                  } else if (!inputPath.startsWith('/')) {
-                    // Relative path - prepend sandbox path
-                    sandboxWslPath = `${sandboxPathNonNull}/${inputPath}`;
-                  } else {
-                    // Unix absolute path - treat as relative to sandbox
-                    sandboxWslPath = `${sandboxPathNonNull}${inputPath}`;
-                  }
-                  
-                  return sandboxToWindowsUNC(sandboxWslPath);
-                };
-                
-                // Handle Write tool - redirect to WSL sandbox via UNC path
-                // Use updatedInput to let SDK's native Write tool handle it
-                if (toolName === 'Write') {
-                  const filePath = String(toolInput.file_path || toolInput.filePath || toolInput.path || '');
-                  const uncPath = ensureSandboxPathUNC(filePath);
-                  
-                  log(`[Sandbox/Write] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  // Ensure parent directory exists via WSL
-                  const sandboxWslPath = !filePath.startsWith('/') 
-                    ? `${sandboxPathNonNull}/${filePath}`
-                    : filePath.startsWith(sandboxPathNonNull) ? filePath : `${sandboxPathNonNull}${filePath}`;
-                  const parentDir = sandboxWslPath.substring(0, sandboxWslPath.lastIndexOf('/'));
-                  
-                  try {
-                    const { execSync } = require('child_process');
-                    execSync(`wsl -d ${distro} -e mkdir -p "${parentDir}"`, { encoding: 'utf-8', timeout: 10000 });
-                  } catch (error: any) {
-                    log(`[Sandbox/Write] Warning: mkdir failed (may already exist): ${error.message}`);
-                  }
-                  
-                  // Return continue: true with updated file path to UNC
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        file_path: uncPath,
-                        filePath: uncPath,
-                        path: uncPath,
-                      },
-                    },
-                  };
-                }
-                
-                // Handle Edit tool - redirect to WSL sandbox via UNC path
-                if (toolName === 'Edit') {
-                  const filePath = String(toolInput.file_path || toolInput.filePath || toolInput.path || '');
-                  const uncPath = ensureSandboxPathUNC(filePath);
-                  
-                  log(`[Sandbox/Edit] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        file_path: uncPath,
-                        filePath: uncPath,
-                        path: uncPath,
-                      },
-                    },
-                  };
-                }
-                
-                // Handle Read tool - redirect to WSL sandbox via UNC path
-                if (toolName === 'Read') {
-                  const filePath = String(toolInput.file_path || toolInput.filePath || toolInput.path || '');
-                  const uncPath = ensureSandboxPathUNC(filePath);
-                  
-                  log(`[Sandbox/Read] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        file_path: uncPath,
-                        filePath: uncPath,
-                        path: uncPath,
-                      },
-                    },
-                  };
-                }
-                
-                // Handle LS tool - redirect to WSL sandbox via UNC path
-                if (toolName === 'LS') {
-                  const directory = String(toolInput.directory || toolInput.path || toolInput.file_path || '');
-                  const uncPath = ensureSandboxPathUNC(directory);
-                  
-                  log(`[Sandbox/LS] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        directory: uncPath,
-                        path: uncPath,
-                        file_path: uncPath,
-                      },
-                    },
-                  };
-                }
-                
-                // Handle Glob tool - redirect to WSL sandbox via UNC path
-                if (toolName === 'Glob') {
-                  const directory = String(toolInput.directory || toolInput.path || toolInput.file_path || '');
-                  const uncPath = ensureSandboxPathUNC(directory);
-                  
-                  log(`[Sandbox/Glob] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        directory: uncPath,
-                        path: uncPath,
-                        file_path: uncPath,
-                      },
-                    },
-                  };
-                }
-                
-                // Handle Grep tool - redirect to WSL sandbox via UNC path
-                if (toolName === 'Grep') {
-                  const directory = String(toolInput.directory || toolInput.path || toolInput.file_path || '');
-                  const uncPath = ensureSandboxPathUNC(directory);
-                  
-                  log(`[Sandbox/Grep] Redirecting to WSL sandbox via UNC: ${uncPath}`);
-                  
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        directory: uncPath,
-                        path: uncPath,
-                        file_path: uncPath,
-                      },
-                    },
-                  };
-                }
-              }
-              
-              // Only intercept Bash tool for WSL/Lima wrapping
-              if (toolName !== 'Bash') {
-                return { continue: true };
-              }
-
-              // Handle Lima mode - wrap commands to run in Lima VM
-              if (isLimaMode) {
-                const originalCommand = String(toolInput.command || '');
-
-                // Determine the working directory for Lima
-                let limaCwd: string;
-
-                if (useSandboxIsolation && sandboxPath) {
-                  // SECURE MODE: Use isolated sandbox path
-                  limaCwd = sandboxPath;
-                  const sandboxPathNonNull = sandboxPath; // For closure
-
-                  // Convert virtual workspace paths to real sandbox paths
-                  let sandboxCommand = originalCommand.replace(
-                    new RegExp(VIRTUAL_WORKSPACE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(/[^\\s;|&"\'<>]*)?', 'g'),
-                    (_match, rest) => rest ? `${sandboxPathNonNull}${rest}` : sandboxPathNonNull
-                  );
-
-                  // Escape single quotes for bash -c
-                  const escapedCommand = sandboxCommand.replace(/'/g, "'\\''");
-                  // Run command in Lima VM with nvm sourced for Node.js access
-                  const wrappedCommand = `limactl shell claude-sandbox -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; cd "${limaCwd}" && ${escapedCommand}'`;
-
-                  log(`[Sandbox/Lima] SECURE: Bash in sandbox: ${originalCommand.substring(0, 60)}...`);
-                  log(`[Sandbox/Lima] Sandbox path: ${sandboxPath}`);
-
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        command: wrappedCommand,
-                        _limaWrapped: true,
-                        _sandboxIsolated: true,
-                      },
-                    },
-                  };
-                } else {
-                  // FALLBACK MODE: Use direct paths (less secure, but functional)
-                  limaCwd = workingDir || '/tmp';
-
-                  // Escape single quotes for bash -c
-                  const escapedCommand = originalCommand.replace(/'/g, "'\\''");
-                  // Run command in Lima VM with nvm sourced for Node.js access
-                  const wrappedCommand = `limactl shell claude-sandbox -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; cd "${limaCwd}" && ${escapedCommand}'`;
-
-                  log(`[Sandbox/Lima] Bash in Lima VM: ${originalCommand.substring(0, 60)}...`);
-                  log(`[Sandbox/Lima] Working directory: ${limaCwd}`);
-
-                  return {
-                    continue: true,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'allow',
-                      updatedInput: {
-                        ...toolInput,
-                        command: wrappedCommand,
-                        _limaWrapped: true,
-                      },
-                    },
-                  };
-                }
-              }
-
-              // sandboxAdapter and isWSLMode already defined above
-              if (!isWSLMode) {
-                log('[Sandbox/WSL] WSL not active, Bash runs natively');
-                return { continue: true };
-              }
-              
-              const distro = sandboxAdapter.wslStatus!.distro!;
-              const originalCommand = String(toolInput.command || '');
-              
-              // Determine the working directory for WSL
-              let wslCwd: string;
-              
-              if (useSandboxIsolation && sandboxPath) {
-                // SECURE MODE: Use isolated sandbox path
-                wslCwd = sandboxPath;
-                const sandboxPathForCmd = sandboxPath; // For closure
-                
-                // Convert virtual workspace paths to real sandbox paths
-                let sandboxCommand = originalCommand.replace(
-                  new RegExp(VIRTUAL_WORKSPACE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(/[^\\s;|&"\'<>]*)?', 'g'),
-                  (_match, rest) => rest ? `${sandboxPathForCmd}${rest}` : sandboxPathForCmd
-                );
-                
-                // Also convert Windows paths in the command to sandbox paths
-                if (workingDir) {
-                  sandboxCommand = PathGuard.convertPathInCommand(
-                    sandboxCommand,
-                    session.id,
-                    workingDir
-                  );
-                }
-                
-                // Validate command with PathGuard
-                const validation = PathGuard.validateCommand(sandboxCommand, session.id);
-                if (!validation.allowed) {
-                  log(`[Sandbox/WSL] Command blocked: ${validation.reason}`);
-                  // Return error to prevent execution
-                  return {
-                    continue: false,
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'deny',
-                      reason: validation.reason,
-                    },
-                  };
-                }
-                
-                // Use the sanitized command (which includes cd to sandbox)
-                const escapedCommand = validation.sanitizedCommand!.replace(/'/g, "'\\''");
-                const wrappedCommand = `wsl -d ${distro} -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; ${escapedCommand}'`;
-                
-                log(`[Sandbox/WSL] SECURE: Bash in sandbox: ${originalCommand.substring(0, 60)}...`);
-                log(`[Sandbox/WSL] Sandbox path: ${sandboxPath}`);
-                
-                return {
-                  continue: true,
-                  hookSpecificOutput: {
-                    hookEventName: 'PreToolUse',
-                    permissionDecision: 'allow',
-                    updatedInput: {
-                      ...toolInput,
-                      command: wrappedCommand,
-                      _wslWrapped: true,
-                      _sandboxIsolated: true,
-                    },
-                  },
-                };
-              } else {
-                // FALLBACK MODE: Use /mnt/ paths (less secure, but functional)
-                wslCwd = workingDir ? pathConverter.toWSL(workingDir) : '/mnt/c';
-                
-                // Convert Windows paths in the command to WSL /mnt/ paths
-                let wslCommand = originalCommand.replace(/([A-Za-z]):[\\\/]([^\s;|&"'<>]*)/g, (_match, drive, rest) => {
-                  return `/mnt/${drive.toLowerCase()}/${rest.replace(/\\/g, '/')}`;
-                });
-                
-                // Escape single quotes for bash -c
-                const escapedCommand = wslCommand.replace(/'/g, "'\\''");
-                const wrappedCommand = `wsl -d ${distro} -- bash -c 'source ~/.nvm/nvm.sh 2>/dev/null; cd "${wslCwd}" && ${escapedCommand}'`;
-                
-                log(`[Sandbox/WSL] FALLBACK: Bash via /mnt/: ${originalCommand.substring(0, 60)}...`);
-                
-                return {
-                  continue: true,
-                  hookSpecificOutput: {
-                    hookEventName: 'PreToolUse',
-                    permissionDecision: 'allow',
-                    updatedInput: {
-                      ...toolInput,
-                      command: wrappedCommand,
-                      _wslWrapped: true,
-                      _sandboxIsolated: false,
-                    },
-                  },
-                };
-              }
-            }],
-          }],
         },
         
         // System prompt: use Claude Code default + custom instructions

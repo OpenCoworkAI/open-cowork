@@ -2068,11 +2068,28 @@ function ServerForm({
     setEnvVars(prev => ({ ...prev, [key]: value }));
   }
 
+  const [isAddingEnvVar, setIsAddingEnvVar] = useState(false);
+  const [newEnvKey, setNewEnvKey] = useState('');
+  const [newEnvValue, setNewEnvValue] = useState('');
+
   const handleAddEnvVar = () => {
-    const key = prompt(t('credentials.enterEnvVar'));
-    if (key && key.trim()) {
-      setEnvVars(prev => ({ ...prev, [key.trim()]: '' }));
+    setIsAddingEnvVar(true);
+    setShowEnvSection(true);
+  };
+
+  const handleSaveNewEnvVar = () => {
+    if (newEnvKey.trim()) {
+      setEnvVars(prev => ({ ...prev, [newEnvKey.trim()]: newEnvValue.trim() }));
+      setNewEnvKey('');
+      setNewEnvValue('');
+      setIsAddingEnvVar(false);
     }
+  };
+
+  const handleCancelNewEnvVar = () => {
+    setNewEnvKey('');
+    setNewEnvValue('');
+    setIsAddingEnvVar(false);
   };
 
   function handleRemoveEnvVar(key: string) {
@@ -2222,9 +2239,46 @@ function ServerForm({
                     </button>
                   </div>
                 ))}
-                {Object.keys(envVars).length === 0 && (
+                {Object.keys(envVars).length === 0 && !isAddingEnvVar && (
                   <p className="text-xs text-text-muted text-center py-2">{t('credentials.noEnvVars')}</p>
                 )}
+                {isAddingEnvVar && (
+                  <div className="space-y-2 p-2 rounded bg-background border border-accent/30">
+                    <input
+                      type="text"
+                      value={newEnvKey}
+                      onChange={(e) => setNewEnvKey(e.target.value)}
+                      placeholder="NOTION_TOKEN"
+                      className="w-full px-3 py-1.5 rounded bg-surface border border-border text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
+                      autoFocus
+                    />
+                    <input
+                      type="password"
+                      value={newEnvValue}
+                      onChange={(e) => setNewEnvValue(e.target.value)}
+                      placeholder="输入值"
+                      className="w-full px-3 py-1.5 rounded bg-surface border border-border text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveNewEnvVar}
+                        disabled={!newEnvKey.trim()}
+                        className="flex-1 py-1 px-3 rounded bg-accent text-white text-xs hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {t('common.save')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelNewEnvVar}
+                        className="flex-1 py-1 px-3 rounded bg-surface-muted text-text-secondary text-xs hover:bg-surface-active transition-colors"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {!isAddingEnvVar && (
                 <button
                   type="button"
                   onClick={handleAddEnvVar}
@@ -2233,6 +2287,7 @@ function ServerForm({
                   <Plus className="w-3.5 h-3.5" />
                   {t('credentials.envVars')}
                 </button>
+                )}
               </div>
             )}
             <p className="text-xs text-text-muted">
