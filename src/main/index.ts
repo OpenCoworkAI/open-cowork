@@ -1,10 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join, resolve } from 'path';
+import * as fs from 'fs';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
+import { testApiConnection } from './config/api-tester';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
@@ -13,8 +15,21 @@ import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
-import type { ClientEvent, ServerEvent } from '../renderer/types';
-import { log, logWarn, logError } from './utils/logger';
+import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult } from '../renderer/types';
+import {
+  log,
+  logWarn,
+  logError,
+  getLogFilePath,
+  getLogsDirectory,
+  getAllLogFiles,
+  closeLogFile,
+  setDevLogsEnabled,
+  isDevLogsEnabled,
+} from './utils/logger';
+
+// Current working directory (persisted between sessions)
+let currentWorkingDir: string | null = null;
 
 // Load .env file from project root (for development)
 const envPath = resolve(__dirname, '../../.env');
@@ -105,9 +120,79 @@ function createWindow() {
       },
     });
 
+    // Send current working directory to renderer
+    sendToRenderer({
+      type: 'workdir.changed',
+      payload: { path: currentWorkingDir || '' },
+    });
+
     // Start sandbox bootstrap after window is loaded
     startSandboxBootstrap();
   });
+}
+
+/**
+ * Initialize default working directory
+ * This is always the app's default_working_dir in userData - it never changes
+ * Each session can have its own cwd that differs from this default
+ */
+function initializeDefaultWorkingDir(): string {
+  // Create default working directory in user data path (this is the permanent global default)
+  const userDataPath = app.getPath('userData');
+  const defaultDir = join(userDataPath, 'default_working_dir');
+  
+  if (!fs.existsSync(defaultDir)) {
+    fs.mkdirSync(defaultDir, { recursive: true });
+    log('[App] Created default working directory:', defaultDir);
+  }
+  
+  currentWorkingDir = defaultDir;
+  
+  log('[App] Global default working directory:', currentWorkingDir);
+  return currentWorkingDir;
+}
+
+/**
+ * Get current working directory
+ */
+function getWorkingDir(): string | null {
+  return currentWorkingDir;
+}
+
+/**
+ * Set working directory
+ * - If sessionId is provided: update only that session's cwd (for switching directories within a chat)
+ * - If no sessionId: update UI display only (for WelcomeView - will be used when creating new session)
+ * 
+ * Note: The global default (currentWorkingDir) is NEVER changed after initialization.
+ * It is always app.getPath('userData')/default_working_dir
+ */
+async function setWorkingDir(newDir: string, sessionId?: string): Promise<{ success: boolean; path: string; error?: string }> {
+  if (!fs.existsSync(newDir)) {
+    return { success: false, path: newDir, error: 'Directory does not exist' };
+  }
+  
+  if (sessionId && sessionManager) {
+    // Update only this session's cwd - don't change the global default
+    log('[App] Updating session cwd:', sessionId, '->', newDir);
+    sessionManager.updateSessionCwd(sessionId, newDir);
+    
+    // Clear this session's sandbox mapping so next query uses the new directory
+    SandboxSync.clearSession(sessionId);
+    const { LimaSync } = await import('./sandbox/lima-sync');
+    LimaSync.clearSession(sessionId);
+  }
+  
+  // Notify renderer of workdir change (for UI display)
+  // This updates what the user sees, and will be passed to startSession for new sessions
+  sendToRenderer({
+    type: 'workdir.changed',
+    payload: { path: newDir },
+  });
+  
+  log('[App] Working directory for UI updated:', newDir, sessionId ? `(session: ${sessionId})` : '(pending new session)');
+  
+  return { success: true, path: newDir };
 }
 
 /**
@@ -115,6 +200,13 @@ function createWindow() {
  * This pre-initializes WSL/Lima environment at app startup
  */
 async function startSandboxBootstrap(): Promise<void> {
+  // Skip sandbox bootstrap if disabled - use native mode directly
+  const sandboxEnabled = configStore.get('sandboxEnabled');
+  if (sandboxEnabled === false) {
+    log('[App] Sandbox disabled, skipping bootstrap (using native mode)');
+    return;
+  }
+
   const bootstrap = getSandboxBootstrap();
   
   // Skip if already complete
@@ -150,10 +242,15 @@ function sendToRenderer(event: ServerEvent) {
 
 // Initialize app
 app.whenReady().then(async () => {
+  // Apply dev logs setting from config
+  const enableDevLogs = configStore.get('enableDevLogs');
+  setDevLogsEnabled(enableDevLogs);
+  
   // Log environment variables for debugging
   log('=== Open Cowork Starting ===');
   log('Config file:', configStore.getPath());
   log('Is configured:', configStore.isConfigured());
+  log('Developer logs:', enableDevLogs ? 'Enabled' : 'Disabled');
   log('Environment Variables:');
   log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
   log('  ANTHROPIC_BASE_URL:', process.env.ANTHROPIC_BASE_URL || '(not set)');
@@ -164,6 +261,10 @@ app.whenReady().then(async () => {
   log('  OPENAI_MODEL:', process.env.OPENAI_MODEL || '(not set)');
   log('  OPENAI_API_MODE:', process.env.OPENAI_API_MODE || '(default)');
   log('===========================');
+  
+  // Initialize default working directory
+  initializeDefaultWorkingDir();
+  log('Working directory:', currentWorkingDir);
   
   // Initialize database
   const db = initDatabase();
@@ -236,6 +337,7 @@ app.on('before-quit', async (event) => {
   if (!isCleaningUp) {
     event.preventDefault();
     await cleanupSandboxResources();
+    closeLogFile(); // Close log file before quitting
     app.quit();
   }
 });
@@ -328,6 +430,19 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
 
 ipcMain.handle('config.isConfigured', () => {
   return configStore.isConfigured();
+});
+
+ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<ApiTestResult> => {
+  try {
+    return await testApiConnection(payload);
+  } catch (error) {
+    logError('[Config] API test failed:', error);
+    return {
+      ok: false,
+      errorType: 'unknown',
+      details: error instanceof Error ? error.message : String(error),
+    };
+  }
 });
 
 // MCP Server IPC handlers
@@ -626,6 +741,15 @@ ipcMain.handle('sandbox.installNodeInWSL', async (_event, distro: string) => {
   }
 });
 
+ipcMain.handle('sandbox.installPythonInWSL', async (_event, distro: string) => {
+  try {
+    return await WSLBridge.installPythonInWSL(distro);
+  } catch (error) {
+    logError('[Sandbox] Error installing Python:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('sandbox.installClaudeCodeInWSL', async (_event, distro: string) => {
   try {
     return await WSLBridge.installClaudeCodeInWSL(distro);
@@ -681,12 +805,233 @@ ipcMain.handle('sandbox.installNodeInLima', async () => {
   }
 });
 
+ipcMain.handle('sandbox.installPythonInLima', async () => {
+  try {
+    return await LimaBridge.installPythonInLima();
+  } catch (error) {
+    logError('[Sandbox] Error installing Python in Lima:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('sandbox.installClaudeCodeInLima', async () => {
   try {
     return await LimaBridge.installClaudeCodeInLima();
   } catch (error) {
     logError('[Sandbox] Error installing claude-code in Lima:', error);
     return false;
+  }
+});
+
+// Logs IPC handlers
+ipcMain.handle('logs.getPath', () => {
+  try {
+    return getLogFilePath();
+  } catch (error) {
+    logError('[Logs] Error getting log path:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('logs.getDirectory', () => {
+  try {
+    return getLogsDirectory();
+  } catch (error) {
+    logError('[Logs] Error getting logs directory:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('logs.getAll', () => {
+  try {
+    return getAllLogFiles();
+  } catch (error) {
+    logError('[Logs] Error getting all log files:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('logs.export', async () => {
+  try {
+    const logFiles = getAllLogFiles();
+    
+    if (logFiles.length === 0) {
+      return { success: false, error: 'No log files found' };
+    }
+
+    // Show save dialog
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Logs',
+      defaultPath: `opencowork-logs-${new Date().toISOString().split('T')[0]}.zip`,
+      filters: [
+        { name: 'ZIP Archive', extensions: ['zip'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'User cancelled' };
+    }
+
+    // Dynamic import archiver
+    const archiver = await import('archiver');
+    const output = fs.createWriteStream(result.filePath);
+    const archive = archiver.default('zip', { zlib: { level: 9 } });
+
+    return new Promise((resolve) => {
+      output.on('close', () => {
+        log('[Logs] Exported logs to:', result.filePath);
+        resolve({ 
+          success: true, 
+          path: result.filePath,
+          size: archive.pointer()
+        });
+      });
+
+      archive.on('error', (err: Error) => {
+        logError('[Logs] Error creating archive:', err);
+        resolve({ success: false, error: err.message });
+      });
+
+      archive.pipe(output);
+
+      // Add all log files
+      for (const logFile of logFiles) {
+        archive.file(logFile.path, { name: logFile.name });
+      }
+
+      // Add system info
+      const systemInfo = {
+        platform: process.platform,
+        arch: process.arch,
+        nodeVersion: process.version,
+        electronVersion: process.versions.electron,
+        appVersion: app.getVersion(),
+        exportDate: new Date().toISOString(),
+        logFiles: logFiles.map(f => ({
+          name: f.name,
+          size: f.size,
+          modified: f.mtime
+        }))
+      };
+      archive.append(JSON.stringify(systemInfo, null, 2), { name: 'system-info.json' });
+
+      archive.finalize();
+    });
+  } catch (error) {
+    logError('[Logs] Error exporting logs:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.open', async () => {
+  try {
+    const logsDir = getLogsDirectory();
+    await shell.openPath(logsDir);
+    return { success: true };
+  } catch (error) {
+    logError('[Logs] Error opening logs directory:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.clear', async () => {
+  try {
+    const logFiles = getAllLogFiles();
+    
+    // Close current log file
+    closeLogFile();
+    
+    // Delete all log files
+    for (const logFile of logFiles) {
+      try {
+        fs.unlinkSync(logFile.path);
+        log('[Logs] Deleted log file:', logFile.name);
+      } catch (err) {
+        logError('[Logs] Failed to delete log file:', logFile.name, err);
+      }
+    }
+    
+    // Log will automatically reinitialize on next log call
+    log('[Logs] Log files cleared and reinitialized');
+    
+    return { success: true, deletedCount: logFiles.length };
+  } catch (error) {
+    logError('[Logs] Error clearing logs:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.setEnabled', async (_event, enabled: boolean) => {
+  try {
+    setDevLogsEnabled(enabled);
+    configStore.set('enableDevLogs', enabled);
+    log('[Logs] Developer logs', enabled ? 'enabled' : 'disabled');
+    return { success: true, enabled };
+  } catch (error) {
+    logError('[Logs] Error setting dev logs enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.isEnabled', () => {
+  try {
+    return { success: true, enabled: isDevLogsEnabled() };
+  } catch (error) {
+    logError('[Logs] Error getting dev logs enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('sandbox.retryLimaSetup', async () => {
+  if (process.platform !== 'darwin') {
+    return { success: false, error: 'Lima is only available on macOS' };
+  }
+
+  try {
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.setProgressCallback((progress) => {
+      sendToRenderer({
+        type: 'sandbox.progress',
+        payload: progress,
+      });
+    });
+
+    try {
+      await LimaBridge.stopLimaInstance();
+    } catch (error) {
+      logError('[Sandbox] Error stopping Lima before retry:', error);
+    }
+
+    bootstrap.reset();
+    const result = await bootstrap.bootstrap();
+    const success = !result.error;
+    return { success, result, error: result.error };
+  } catch (error) {
+    logError('[Sandbox] Error retrying Lima setup:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Generic retry setup for both WSL and Lima
+ipcMain.handle('sandbox.retrySetup', async () => {
+  try {
+    const bootstrap = getSandboxBootstrap();
+    bootstrap.setProgressCallback((progress) => {
+      sendToRenderer({
+        type: 'sandbox.progress',
+        payload: progress,
+      });
+    });
+
+    // Reset and re-run bootstrap
+    bootstrap.reset();
+    const result = await bootstrap.bootstrap();
+    const success = !result.error;
+    return { success, result, error: result.error };
+  } catch (error) {
+    logError('[Sandbox] Error retrying setup:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
 
@@ -755,17 +1100,35 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       );
 
     case 'folder.select':
-      const result = await dialog.showOpenDialog(mainWindow!, {
+      const folderResult = await dialog.showOpenDialog(mainWindow!, {
         properties: ['openDirectory'],
       });
-      if (!result.canceled && result.filePaths.length > 0) {
+      if (!folderResult.canceled && folderResult.filePaths.length > 0) {
         sendToRenderer({
           type: 'folder.selected',
-          payload: { path: result.filePaths[0] },
+          payload: { path: folderResult.filePaths[0] },
         });
-        return result.filePaths[0];
+        return folderResult.filePaths[0];
       }
       return null;
+
+    case 'workdir.get':
+      return getWorkingDir();
+
+    case 'workdir.set':
+      return setWorkingDir(event.payload.path, event.payload.sessionId);
+
+    case 'workdir.select':
+      const workdirResult = await dialog.showOpenDialog(mainWindow!, {
+        properties: ['openDirectory'],
+        title: 'Select Working Directory',
+        defaultPath: currentWorkingDir || undefined,
+      });
+      if (!workdirResult.canceled && workdirResult.filePaths.length > 0) {
+        const selectedPath = workdirResult.filePaths[0];
+        return setWorkingDir(selectedPath, event.payload.sessionId);
+      }
+      return { success: false, path: '', error: 'User cancelled' };
 
     case 'settings.update':
       // TODO: Implement settings update

@@ -439,6 +439,18 @@ export class WSLBridge implements SandboxExecutor {
         { timeout: 180000, encoding: 'utf-8' }
       );
 
+      // Create python symlink (many tools expect 'python' command)
+      log('[WSL] Creating python symlink...');
+      try {
+        await execAsync(
+          `wsl -d ${distro} -e bash -c "sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true"`,
+          { timeout: 10000, encoding: 'utf-8' }
+        );
+        log('[WSL] Created python -> python3 symlink');
+      } catch {
+        log('[WSL] Could not create python symlink (non-critical)');
+      }
+
       // Verify installation
       const verifyResult = await execAsync(
         `wsl -d ${distro} -e python3 --version`,
@@ -448,6 +460,10 @@ export class WSLBridge implements SandboxExecutor {
       const version = verifyResult.stdout.trim();
       if (version.startsWith('Python')) {
         log('[WSL] Python installed:', version);
+        
+        // Install commonly needed packages for skills (PDF, PPTX processing)
+        await WSLBridge.installSkillDependencies(distro);
+        
         return true;
       } else {
         log('[WSL] Python installation verification failed:', version);
@@ -456,6 +472,36 @@ export class WSLBridge implements SandboxExecutor {
     } catch (error) {
       logError('[WSL] Failed to install Python:', error);
       return false;
+    }
+  }
+
+  /**
+   * Install Python packages commonly needed by skills (PDF, PPTX, etc.)
+   */
+  static async installSkillDependencies(distro: string): Promise<void> {
+    log('[WSL] Installing skill dependencies (markitdown, pypdf, etc.)...');
+    
+    // These packages are required by the built-in PDF and PPTX skills
+    const packages = [
+      'markitdown[pptx]',  // PDF/PPTX text extraction
+      'pypdf',             // PDF manipulation
+      'pdfplumber',        // PDF table extraction  
+      'reportlab',         // PDF creation
+      'defusedxml',        // Secure XML parsing for OOXML
+      'python-pptx',       // PPTX manipulation
+    ];
+    
+    try {
+      // Install packages with pip (user install to avoid permission issues)
+      const packagesStr = packages.map(p => `"${p}"`).join(' ');
+      await execAsync(
+        `wsl -d ${distro} -e bash -c "python3 -m pip install --user ${packagesStr} 2>&1 | tail -5"`,
+        { timeout: 300000, encoding: 'utf-8' }  // 5 min timeout for package install
+      );
+      log('[WSL] Skill dependencies installed successfully');
+    } catch (error) {
+      // Non-critical - Claude can install packages on demand
+      log('[WSL] Failed to pre-install skill dependencies (will install on demand):', (error as Error).message);
     }
   }
 

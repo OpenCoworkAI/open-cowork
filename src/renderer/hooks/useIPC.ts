@@ -61,8 +61,12 @@ export function useIPC() {
           ) {
             const currentState = useAppStore.getState();
             const pending = currentState.pendingTurnsBySession[event.payload.sessionId] || [];
+            const activeTurn = currentState.activeTurnsBySession[event.payload.sessionId];
             if (pending.length > 0) {
               store.activateNextTurn(event.payload.sessionId, event.payload.step.id);
+            } else if (activeTurn) {
+              // 绑定真实 stepId，避免 mock stepId 导致无法清理
+              store.updateActiveTurnStep(event.payload.sessionId, event.payload.step.id);
             }
           }
           store.addTraceStep(event.payload.sessionId, event.payload.step);
@@ -114,6 +118,11 @@ export function useIPC() {
         case 'sandbox.sync':
           console.log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
           store.setSandboxSyncStatus(event.payload);
+          break;
+
+        case 'workdir.changed':
+          console.log('[useIPC] workdir.changed received:', event.payload.path);
+          store.setWorkingDir(event.payload.path || null);
           break;
 
         case 'error':
@@ -452,6 +461,20 @@ export function useIPC() {
     return invoke<string | null>({ type: 'folder.select', payload: {} });
   }, [invoke]);
 
+  const getWorkingDir = useCallback(async (): Promise<string | null> => {
+    if (!isElectron) {
+      return '/mock/working/dir';
+    }
+    return invoke<string | null>({ type: 'workdir.get', payload: {} });
+  }, [invoke]);
+
+  const changeWorkingDir = useCallback(async (sessionId?: string): Promise<{ success: boolean; path: string; error?: string }> => {
+    if (!isElectron) {
+      return { success: true, path: '/mock/working/dir' };
+    }
+    return invoke<{ success: boolean; path: string; error?: string }>({ type: 'workdir.select', payload: { sessionId } });
+  }, [invoke]);
+
   const getMCPServers = useCallback(async () => {
     if (!isElectron) {
       return [];
@@ -473,6 +496,8 @@ export function useIPC() {
     respondToPermission,
     respondToQuestion,
     selectFolder,
+    getWorkingDir,
+    changeWorkingDir,
     getMCPServers,
     isElectron,
   };

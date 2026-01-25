@@ -9,6 +9,7 @@
 import { log, logError } from '../utils/logger';
 import { WSLBridge } from './wsl-bridge';
 import { LimaBridge } from './lima-bridge';
+import { configStore } from '../config/config-store';
 import type { WSLStatus, LimaStatus } from './types';
 
 export type SandboxSetupPhase = 
@@ -18,6 +19,7 @@ export type SandboxSetupPhase =
   | 'installing_node'   // Installing Node.js
   | 'installing_python' // Installing Python
   | 'installing_pip'    // Installing pip
+  | 'installing_deps'   // Installing skill dependencies (markitdown, pypdf, etc.)
   | 'ready'         // Ready to use
   | 'skipped'       // No sandbox needed (native mode)
   | 'error';        // Setup failed
@@ -102,6 +104,13 @@ export class SandboxBootstrap {
     return this.result !== null;
   }
 
+  reset(): void {
+    this.setupPromise = null;
+    this.result = null;
+    this.cachedWSLStatus = null;
+    this.cachedLimaStatus = null;
+  }
+
   /**
    * Get the bootstrap result (if complete)
    */
@@ -125,6 +134,19 @@ export class SandboxBootstrap {
   private async _bootstrap(): Promise<SandboxBootstrapResult> {
     const platform = process.platform;
     log('[SandboxBootstrap] Starting bootstrap for platform:', platform);
+
+    // Check if sandbox is enabled in config
+    const sandboxEnabled = configStore.get('sandboxEnabled');
+    if (sandboxEnabled === false) {
+      log('[SandboxBootstrap] Sandbox disabled by user configuration');
+      this.reportProgress({
+        phase: 'skipped',
+        message: 'Sandbox disabled',
+        detail: 'Using native execution mode (sandbox disabled in settings)',
+        progress: 100,
+      });
+      return { mode: 'native' };
+    }
 
     try {
       if (platform === 'win32') {
@@ -210,13 +232,21 @@ export class SandboxBootstrap {
         phase: 'installing_python',
         message: 'Installing Python...',
         detail: `Installing Python runtime in ${wslStatus.distro}`,
-        progress: 60,
+        progress: 50,
       });
 
       const pythonInstalled = await WSLBridge.installPythonInWSL(wslStatus.distro!);
       if (pythonInstalled) {
         wslStatus.pythonAvailable = true;
         wslStatus.pipAvailable = true;
+        
+        // Python install also installs skill deps, so report progress
+        this.reportProgress({
+          phase: 'installing_deps',
+          message: 'Installing skill dependencies...',
+          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          progress: 80,
+        });
       } else {
         log('[SandboxBootstrap] Python installation failed (non-critical)');
       }
@@ -226,12 +256,21 @@ export class SandboxBootstrap {
         phase: 'installing_pip',
         message: 'Installing pip...',
         detail: `Installing Python package manager in ${wslStatus.distro}`,
-        progress: 70,
+        progress: 60,
       });
 
       const pipInstalled = await WSLBridge.installPipInWSL(wslStatus.distro!);
       if (pipInstalled) {
         wslStatus.pipAvailable = true;
+        
+        // After pip install, also install skill dependencies
+        this.reportProgress({
+          phase: 'installing_deps',
+          message: 'Installing skill dependencies...',
+          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          progress: 80,
+        });
+        await WSLBridge.installSkillDependencies(wslStatus.distro!);
       }
     }
 
@@ -332,12 +371,17 @@ export class SandboxBootstrap {
 
       const nodeInstalled = await LimaBridge.installNodeInLima();
       if (!nodeInstalled) {
-        this.reportProgress({
-          phase: 'error',
-          message: 'Node.js installation failed',
-          error: 'Failed to install Node.js in Lima',
-        });
-        return { mode: 'native', limaStatus, error: 'Node.js installation failed' };
+        const refreshedStatus = await LimaBridge.checkLimaStatus();
+        if (refreshedStatus.nodeAvailable) {
+          limaStatus = refreshedStatus;
+        } else {
+          this.reportProgress({
+            phase: 'error',
+            message: 'Node.js installation failed',
+            error: 'Failed to install Node.js in Lima',
+          });
+          return { mode: 'native', limaStatus, error: 'Node.js installation failed' };
+        }
       }
       limaStatus.nodeAvailable = true;
     }
@@ -348,13 +392,21 @@ export class SandboxBootstrap {
         phase: 'installing_python',
         message: 'Installing Python...',
         detail: 'Installing Python runtime in Lima VM',
-        progress: 80,
+        progress: 75,
       });
 
       const pythonInstalled = await LimaBridge.installPythonInLima();
       if (pythonInstalled) {
         limaStatus.pythonAvailable = true;
         limaStatus.pipAvailable = true;
+        
+        // Python install also installs skill deps, so report progress
+        this.reportProgress({
+          phase: 'installing_deps',
+          message: 'Installing skill dependencies...',
+          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          progress: 90,
+        });
       }
     }
 
@@ -376,4 +428,3 @@ export class SandboxBootstrap {
 export function getSandboxBootstrap(): SandboxBootstrap {
   return SandboxBootstrap.getInstance();
 }
-

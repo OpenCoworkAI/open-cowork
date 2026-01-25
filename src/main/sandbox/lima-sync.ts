@@ -200,8 +200,9 @@ export class LimaSync {
       const excludeArgs = SYNC_EXCLUDES.map(e => `--exclude="${e}"`).join(' ');
 
       // Sync back to macOS (Lima mounts /Users directly)
-      // NOTE: We use --update instead of --delete to preserve user's local changes
-      const rsyncCmd = `rsync -av --update ${excludeArgs} "${session.sandboxPath}/" "${limaDestPath}/"`;
+      // NOTE: We use --delete to ensure files deleted/moved in sandbox are also deleted locally
+      // This is important for file organization tasks where files are moved to new locations
+      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${session.sandboxPath}/" "${limaDestPath}/"`;
       log(`[LimaSync] Running: ${rsyncCmd}`);
 
       await this.limaExec(rsyncCmd, 300000); // 5 min timeout
@@ -354,6 +355,31 @@ export class LimaSync {
     const failed = results.length - succeeded;
 
     log(`[LimaSync] Cleanup complete: ${succeeded} succeeded, ${failed} failed`);
+  }
+
+  /**
+   * Clear all session mappings without syncing or cleanup
+   * Used when workingDir changes - no need to preserve old sandbox data
+   */
+  static clearAllSessions(): void {
+    const count = sessions.size;
+    if (count === 0) {
+      log('[LimaSync] No sessions to clear');
+      return;
+    }
+    sessions.clear();
+    log(`[LimaSync] Cleared ${count} session(s) from map`);
+  }
+
+  /**
+   * Clear a specific session mapping without syncing or cleanup
+   * Used when a session's workingDir changes
+   */
+  static clearSession(sessionId: string): void {
+    if (sessions.has(sessionId)) {
+      sessions.delete(sessionId);
+      log(`[LimaSync] Cleared session ${sessionId} from map`);
+    }
   }
 
   /**

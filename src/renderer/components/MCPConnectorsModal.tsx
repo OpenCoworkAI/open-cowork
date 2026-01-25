@@ -610,6 +610,12 @@ function ServerForm({
   const [args, setArgs] = useState(server?.args?.join(' ') || '');
   const [url, setUrl] = useState(server?.url || '');
   const [enabled, setEnabled] = useState(server?.enabled ?? true);
+  const [env, setEnv] = useState<Array<{ key: string; value: string }>>(
+    server?.env ? Object.entries(server.env).map(([key, value]) => ({ key, value })) : []
+  );
+  const [headers, setHeaders] = useState<Array<{ key: string; value: string }>>(
+    server?.headers ? Object.entries(server.headers).map(([key, value]) => ({ key, value })) : []
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -628,15 +634,63 @@ function ServerForm({
       }
       config.command = command.trim();
       config.args = args.trim() ? args.trim().split(/\s+/) : [];
+      
+      // Add environment variables
+      if (env.length > 0) {
+        config.env = {};
+        env.forEach(({ key, value }) => {
+          if (key.trim() && value.trim()) {
+            config.env![key.trim()] = value.trim();
+          }
+        });
+      }
     } else {
       if (!url.trim()) {
         alert('URL is required for SSE servers');
         return;
       }
       config.url = url.trim();
+      
+      // Add headers
+      if (headers.length > 0) {
+        config.headers = {};
+        headers.forEach(({ key, value }) => {
+          if (key.trim() && value.trim()) {
+            config.headers![key.trim()] = value.trim();
+          }
+        });
+      }
     }
 
     onSave(config);
+  }
+
+  function addEnvVar() {
+    setEnv([...env, { key: '', value: '' }]);
+  }
+
+  function removeEnvVar(index: number) {
+    setEnv(env.filter((_, i) => i !== index));
+  }
+
+  function updateEnvVar(index: number, field: 'key' | 'value', value: string) {
+    const newEnv = [...env];
+    newEnv[index][field] = value;
+    setEnv(newEnv);
+  }
+
+  function addHeader() {
+    setHeaders([...headers, { key: '', value: '' }]);
+  }
+
+  function removeHeader(index: number) {
+    setHeaders(headers.filter((_, i) => i !== index));
+  }
+
+  function updateHeader(index: number, field: 'key' | 'value', value: string) {
+    const newHeaders = [...headers];
+    newHeaders[index][field] = value;
+    setHeaders(newHeaders);
   }
 
   return (
@@ -705,8 +759,53 @@ function ServerForm({
             />
             <p className="text-xs text-text-muted mt-1">Space-separated arguments</p>
           </div>
+          
+          {/* Environment Variables */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-text-primary">环境变量</label>
+              <button
+                type="button"
+                onClick={addEnvVar}
+                className="text-xs text-accent hover:text-accent-hover flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                添加环境变量
+              </button>
+            </div>
+            {env.length > 0 && (
+              <div className="space-y-2">
+                {env.map((item, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={item.key}
+                      onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
+                      placeholder="NOTION_TOKEN"
+                      className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
+                    />
+                    <input
+                      type="password"
+                      value={item.value}
+                      onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
+                      placeholder="••••••••••••••••"
+                      className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeEnvVar(index)}
+                      className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       ) : (
+        <>
         <div>
           <label className="block text-sm font-medium text-text-primary mb-2">URL</label>
           <input
@@ -718,6 +817,51 @@ function ServerForm({
             required
           />
         </div>
+          
+          {/* Headers */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-text-primary">Headers</label>
+              <button
+                type="button"
+                onClick={addHeader}
+                className="text-xs text-accent hover:text-accent-hover flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add Header
+              </button>
+            </div>
+            {headers.length > 0 && (
+              <div className="space-y-2">
+                {headers.map((item, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={item.key}
+                      onChange={(e) => updateHeader(index, 'key', e.target.value)}
+                      placeholder="Authorization"
+                      className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={item.value}
+                      onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                      placeholder="Bearer token..."
+                      className="flex-1 px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeHeader(index)}
+                      className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       <div className="flex items-center gap-2">

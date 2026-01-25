@@ -9,6 +9,7 @@ import {
   ChevronRight,
   FileText,
   FolderOpen,
+  FolderSync,
   Globe,
   File,
   Check,
@@ -33,14 +34,16 @@ export function ContextPanel() {
     pendingTurnsBySession,
     contextPanelCollapsed,
     toggleContextPanel,
+    workingDir,
   } = useAppStore();
-  const { getMCPServers } = useIPC();
+  const { getMCPServers, changeWorkingDir } = useIPC();
   const [progressOpen, setProgressOpen] = useState(true);
   const [artifactsOpen, setArtifactsOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(true);
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [isChangingDir, setIsChangingDir] = useState(false);
 
   const handleCopyPath = async (path: string) => {
     try {
@@ -52,11 +55,12 @@ export function ContextPanel() {
     }
   };
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
   const steps = activeSessionId ? traceStepsBySession[activeSessionId] || [] : [];
   const activeTurn = activeSessionId ? activeTurnsBySession[activeSessionId] : null;
   const pendingCount = activeSessionId ? pendingTurnsBySession[activeSessionId]?.length ?? 0 : 0;
   const isRunning = Boolean(activeTurn || pendingCount > 0);
+  const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
+  const currentWorkingDir = activeSession?.cwd || workingDir;
 
   // Load MCP servers on mount
   useEffect(() => {
@@ -194,15 +198,37 @@ export function ContextPanel() {
           <div className="px-4 pb-4 space-y-4">
             {/* Working Directory */}
             <div>
-              <p className="text-xs text-text-muted mb-2">{t('context.workingDirectory')}</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-text-muted">{t('context.workingDirectory')}</p>
+                <button
+                  onClick={async () => {
+                    setIsChangingDir(true);
+                    try {
+                      await changeWorkingDir(activeSessionId || undefined);
+                    } finally {
+                      setIsChangingDir(false);
+                    }
+                  }}
+                  disabled={isChangingDir}
+                  className="text-xs text-accent hover:text-accent-hover disabled:opacity-50 flex items-center gap-1 transition-colors"
+                  title={t('context.workingDirectory')}
+                >
+                  {isChangingDir ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <FolderSync className="w-3 h-3" />
+                  )}
+                  <span>{t('common.edit')}</span>
+                </button>
+              </div>
               <div className="space-y-1">
-                {activeSession?.cwd ? (
+                {currentWorkingDir ? (
                   <div 
                     className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
                       copiedPath ? 'bg-success/10' : 'bg-surface-muted hover:bg-surface-active'
                     }`}
-                    title={copiedPath ? t('context.copied') : `${activeSession.cwd}\nClick to copy`}
-                    onClick={() => handleCopyPath(activeSession.cwd || '')}
+                    title={copiedPath ? t('context.copied') : `${currentWorkingDir}\nClick to copy`}
+                    onClick={() => handleCopyPath(currentWorkingDir)}
                   >
                     {copiedPath ? (
                       <Check className="w-4 h-4 text-success flex-shrink-0" />
@@ -210,7 +236,7 @@ export function ContextPanel() {
                       <FolderOpen className="w-4 h-4 text-accent flex-shrink-0" />
                     )}
                     <span className={`text-sm break-all leading-relaxed ${copiedPath ? 'text-success' : 'text-text-primary'}`}>
-                      {copiedPath ? t('context.copied') : formatPath(activeSession.cwd)}
+                      {copiedPath ? t('context.copied') : formatPath(currentWorkingDir)}
                     </span>
                   </div>
                 ) : (
@@ -523,14 +549,18 @@ function getUniqueNonMCPTools(steps: TraceStep[]): string[] {
 function formatPath(path: string): string {
   if (!path) return '';
   
-  // Replace home directory with ~
-  const home = '/Users/';
-  if (path.startsWith(home)) {
-    const afterUsers = path.slice(home.length);
-    const firstSlash = afterUsers.indexOf('/');
-    if (firstSlash > 0) {
-      return '~' + afterUsers.slice(firstSlash);
-    }
+  // Windows: Replace C:\Users\username with ~
+  const winHome = /^[A-Z]:\\Users\\[^\\]+/i;
+  const winMatch = path.match(winHome);
+  if (winMatch) {
+    return '~' + path.slice(winMatch[0].length).replace(/\\/g, '/');
+  }
+  
+  // macOS/Linux: Replace /Users/username or /home/username with ~
+  const unixHome = /^\/(?:Users|home)\/[^/]+/;
+  const unixMatch = path.match(unixHome);
+  if (unixMatch) {
+    return '~' + path.slice(unixMatch[0].length);
   }
   
   return path;

@@ -206,10 +206,9 @@ export class SandboxSync {
       const excludeArgs = SYNC_EXCLUDES.map(e => `--exclude="${e}"`).join(' ');
 
       // Sync back to Windows (via /mnt/)
-      // NOTE: We use --update instead of --delete to preserve user's local changes
-      // --update: skip files that are newer on the receiver (Windows)
-      // This prevents overwriting files the user modified during agent run
-      const rsyncCmd = `rsync -av --update ${excludeArgs} "${session.sandboxPath}/" "${wslDestPath}/"`;
+      // NOTE: We use --delete to ensure files deleted/moved in sandbox are also deleted locally
+      // This is important for file organization tasks where files are moved to new locations
+      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${session.sandboxPath}/" "${wslDestPath}/"`;
       log(`[SandboxSync] Running: ${rsyncCmd}`);
 
       await this.wslExec(session.distro, rsyncCmd, 300000); // 5 min timeout
@@ -381,6 +380,31 @@ export class SandboxSync {
     const failed = results.length - succeeded;
 
     log(`[SandboxSync] Cleanup complete: ${succeeded} succeeded, ${failed} failed`);
+  }
+
+  /**
+   * Clear all session mappings without syncing or cleanup
+   * Used when workingDir changes - no need to preserve old sandbox data
+   */
+  static clearAllSessions(): void {
+    const count = sessions.size;
+    if (count === 0) {
+      log('[SandboxSync] No sessions to clear');
+      return;
+    }
+    sessions.clear();
+    log(`[SandboxSync] Cleared ${count} session(s) from map`);
+  }
+
+  /**
+   * Clear a specific session mapping without syncing or cleanup
+   * Used when a session's workingDir changes
+   */
+  static clearSession(sessionId: string): void {
+    if (sessions.has(sessionId)) {
+      sessions.delete(sessionId);
+      log(`[SandboxSync] Cleared session ${sessionId} from map`);
+    }
   }
 
   /**

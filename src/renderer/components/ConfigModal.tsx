@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3 } from 'lucide-react';
-import type { AppConfig, ProviderPresets } from '../types';
+import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3, Plug } from 'lucide-react';
+import type { AppConfig, ProviderPresets, ApiTestResult } from '../types';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -83,6 +83,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
+  const [useLiveTest, setUseLiveTest] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const skipPresetApplyRef = useRef(false);
   const previousProviderRef = useRef(provider);
@@ -167,6 +170,10 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     }
   }, [provider, customProtocol]);
 
+  useEffect(() => {
+    setTestResult(null);
+  }, [provider, apiKey, baseUrl, customProtocol, model, customModel, useCustomModel]);
+
   async function loadPresets() {
     try {
       const loadedPresets = await window.electronAPI.config.getPresets();
@@ -174,6 +181,48 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     } catch (err) {
       console.error('Failed to load presets:', err);
       setPresets(FALLBACK_PRESETS);
+    }
+  }
+
+  async function handleTest() {
+    if (!apiKey.trim()) {
+      setError('请输入 API Key');
+      return;
+    }
+
+    const finalModel = useCustomModel ? customModel.trim() : model;
+    if (!finalModel) {
+      setError('请选择或输入模型名称');
+      return;
+    }
+
+    setError('');
+    setIsTesting(true);
+    setTestResult(null);
+
+    try {
+      const presetBaseUrl = presets?.[provider]?.baseUrl;
+      const resolvedBaseUrl = provider === 'custom'
+        ? baseUrl.trim()
+        : (presetBaseUrl || baseUrl).trim();
+
+      const result = await window.electronAPI.config.test({
+        provider,
+        apiKey: apiKey.trim(),
+        baseUrl: resolvedBaseUrl || undefined,
+        customProtocol,
+        model: finalModel,
+        useLiveRequest: useLiveTest,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        ok: false,
+        errorType: 'unknown',
+        details: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsTesting(false);
     }
   }
 
@@ -228,6 +277,26 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   if (!isOpen) return null;
 
   const currentPreset = presets?.[provider];
+  const testErrorMessage = (result: ApiTestResult) => {
+    switch (result.errorType) {
+      case 'missing_key':
+        return '请填写 API Key';
+      case 'missing_base_url':
+        return '请填写 Base URL';
+      case 'unauthorized':
+        return 'API Key 无效或无权限';
+      case 'not_found':
+        return '接口未找到，请检查 Base URL';
+      case 'rate_limited':
+        return '请求过于频繁或额度不足';
+      case 'server_error':
+        return '服务端错误，请稍后再试';
+      case 'network_error':
+        return '网络连接失败，请检查地址或网络';
+      default:
+        return '连接失败';
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -428,27 +497,78 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               保存成功！
             </div>
           )}
+          {testResult && (
+            <div className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+              {testResult.ok ? (
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              )}
+              <div className="flex-1">
+                <div>
+                  {testResult.ok
+                    ? `连接成功（${typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--'}ms）`
+                    : testErrorMessage(testResult)}
+                </div>
+                {!testResult.ok && testResult.details && (
+                  <div className="mt-1 text-xs text-text-muted">{testResult.details}</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 bg-surface-hover border-t border-border">
-          <button
-            onClick={handleSave}
-            disabled={isSaving || !apiKey.trim()}
-            className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                保存中...
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-4 h-4" />
-                {isFirstRun ? '开始使用' : '保存配置'}
-              </>
-            )}
-          </button>
+          <div className="flex items-start gap-2 text-xs text-text-muted mb-3">
+            <input
+              type="checkbox"
+              id="api-live-test-modal"
+              checked={useLiveTest}
+              onChange={(e) => setUseLiveTest(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
+            />
+            <label htmlFor="api-live-test-modal" className="space-y-0.5">
+              <div className="text-text-primary">真实请求验证</div>
+              <div>会发送一次最小请求，可能消耗少量额度</div>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handleTest}
+              disabled={isTesting || !apiKey.trim()}
+              className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            >
+              {isTesting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  测试中...
+                </>
+              ) : (
+                <>
+                  <Plug className="w-4 h-4" />
+                  测试连接
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving || !apiKey.trim()}
+              className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  保存中...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  {isFirstRun ? '开始使用' : '保存配置'}
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

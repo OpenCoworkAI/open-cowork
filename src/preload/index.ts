@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets, Skill } from '../renderer/types';
+import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets, Skill, ApiTestInput, ApiTestResult } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (config: Partial<AppConfig>): Promise<{ success: boolean; config: AppConfig }> => 
       ipcRenderer.invoke('config.save', config),
     isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
+    test: (config: ApiTestInput): Promise<ApiTestResult> =>
+      ipcRenderer.invoke('config.test', config),
   },
 
   // Window control methods
@@ -121,19 +123,90 @@ contextBridge.exposeInMainWorld('electronAPI', {
       platform: string;
       mode: string;
       initialized: boolean;
-      wsl?: { available: boolean; distro?: string; nodeAvailable?: boolean; claudeCodeAvailable?: boolean };
+      wsl?: { 
+        available: boolean; 
+        distro?: string; 
+        nodeAvailable?: boolean; 
+        version?: string;
+        pythonAvailable?: boolean;
+        pythonVersion?: string;
+        pipAvailable?: boolean;
+        claudeCodeAvailable?: boolean;
+      };
+      lima?: {
+        available: boolean;
+        instanceExists?: boolean;
+        instanceRunning?: boolean;
+        instanceName?: string;
+        nodeAvailable?: boolean;
+        version?: string;
+        pythonAvailable?: boolean;
+        pythonVersion?: string;
+        pipAvailable?: boolean;
+        claudeCodeAvailable?: boolean;
+      };
       error?: string;
     }> => ipcRenderer.invoke('sandbox.getStatus'),
     checkWSL: (): Promise<{
       available: boolean;
       distro?: string;
       nodeAvailable?: boolean;
+      version?: string;
+      pythonAvailable?: boolean;
+      pythonVersion?: string;
+      pipAvailable?: boolean;
       claudeCodeAvailable?: boolean;
     }> => ipcRenderer.invoke('sandbox.checkWSL'),
+    checkLima: (): Promise<{
+      available: boolean;
+      instanceExists?: boolean;
+      instanceRunning?: boolean;
+      instanceName?: string;
+      nodeAvailable?: boolean;
+      version?: string;
+      pythonAvailable?: boolean;
+      pythonVersion?: string;
+      pipAvailable?: boolean;
+      claudeCodeAvailable?: boolean;
+    }> => ipcRenderer.invoke('sandbox.checkLima'),
     installNodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
+    installPythonInWSL: (distro: string): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installPythonInWSL', distro),
     installClaudeCodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installClaudeCodeInWSL', distro),
+    installNodeInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installNodeInLima'),
+    installPythonInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installPythonInLima'),
+    installClaudeCodeInLima: (): Promise<boolean> => 
+      ipcRenderer.invoke('sandbox.installClaudeCodeInLima'),
+    startLimaInstance: (): Promise<boolean> =>
+      ipcRenderer.invoke('sandbox.startLimaInstance'),
+    stopLimaInstance: (): Promise<boolean> =>
+      ipcRenderer.invoke('sandbox.stopLimaInstance'),
+    retrySetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
+      ipcRenderer.invoke('sandbox.retrySetup'),
+    retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
+      ipcRenderer.invoke('sandbox.retryLimaSetup'),
+  },
+
+  // Logs methods
+  logs: {
+    getPath: (): Promise<string | null> => ipcRenderer.invoke('logs.getPath'),
+    getDirectory: (): Promise<string> => ipcRenderer.invoke('logs.getDirectory'),
+    getAll: (): Promise<Array<{ name: string; path: string; size: number; mtime: Date }>> => 
+      ipcRenderer.invoke('logs.getAll'),
+    export: (): Promise<{ success: boolean; path?: string; size?: number; error?: string }> => 
+      ipcRenderer.invoke('logs.export'),
+    open: (): Promise<{ success: boolean; error?: string }> => 
+      ipcRenderer.invoke('logs.open'),
+    clear: (): Promise<{ success: boolean; deletedCount?: number; error?: string }> => 
+      ipcRenderer.invoke('logs.clear'),
+    setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('logs.setEnabled', enabled),
+    isEnabled: (): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('logs.isEnabled'),
   },
 });
 
@@ -153,6 +226,7 @@ declare global {
         getPresets: () => Promise<ProviderPresets>;
         save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
+        test: (config: ApiTestInput) => Promise<ApiTestResult>;
       };
       window: {
         minimize: () => void;
@@ -189,17 +263,72 @@ declare global {
           platform: string;
           mode: string;
           initialized: boolean;
-          wsl?: { available: boolean; distro?: string; nodeAvailable?: boolean; claudeCodeAvailable?: boolean };
+          wsl?: { 
+            available: boolean; 
+            distro?: string; 
+            nodeAvailable?: boolean; 
+            version?: string;
+            pythonAvailable?: boolean;
+            pythonVersion?: string;
+            pipAvailable?: boolean;
+            claudeCodeAvailable?: boolean;
+          };
+          lima?: {
+            available: boolean;
+            instanceExists?: boolean;
+            instanceRunning?: boolean;
+            instanceName?: string;
+            nodeAvailable?: boolean;
+            version?: string;
+            pythonAvailable?: boolean;
+            pythonVersion?: string;
+            pipAvailable?: boolean;
+            claudeCodeAvailable?: boolean;
+          };
           error?: string;
         }>;
         checkWSL: () => Promise<{
           available: boolean;
           distro?: string;
           nodeAvailable?: boolean;
+          version?: string;
+          pythonAvailable?: boolean;
+          pythonVersion?: string;
+          pipAvailable?: boolean;
+          claudeCodeAvailable?: boolean;
+        }>;
+        checkLima: () => Promise<{
+          available: boolean;
+          instanceExists?: boolean;
+          instanceRunning?: boolean;
+          instanceName?: string;
+          nodeAvailable?: boolean;
+          version?: string;
+          pythonAvailable?: boolean;
+          pythonVersion?: string;
+          pipAvailable?: boolean;
           claudeCodeAvailable?: boolean;
         }>;
         installNodeInWSL: (distro: string) => Promise<boolean>;
+        installPythonInWSL: (distro: string) => Promise<boolean>;
         installClaudeCodeInWSL: (distro: string) => Promise<boolean>;
+        installNodeInLima: () => Promise<boolean>;
+        installPythonInLima: () => Promise<boolean>;
+        installClaudeCodeInLima: () => Promise<boolean>;
+        startLimaInstance: () => Promise<boolean>;
+        stopLimaInstance: () => Promise<boolean>;
+        retrySetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
+        retryLimaSetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;
+      };
+      logs: {
+        getPath: () => Promise<string | null>;
+        getDirectory: () => Promise<string>;
+        getAll: () => Promise<Array<{ name: string; path: string; size: number; mtime: Date }>>;
+        export: () => Promise<{ success: boolean; path?: string; size?: number; error?: string }>;
+        open: () => Promise<{ success: boolean; error?: string }>;
+        clear: () => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
+        setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
+        isEnabled: () => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
       };
     };
   }

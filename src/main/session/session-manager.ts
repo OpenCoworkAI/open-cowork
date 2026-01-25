@@ -4,7 +4,7 @@ import * as path from 'path';
 import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
-import { SandboxAdapter, getSandboxAdapter, initializeSandbox } from '../sandbox/sandbox-adapter';
+import { SandboxAdapter, getSandboxAdapter, initializeSandbox, reinitializeSandbox } from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
 import { OpenAIResponsesRunner } from '../openai/responses-runner';
@@ -17,6 +17,7 @@ interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
   cancel(sessionId: string): void;
   handleQuestionResponse(questionId: string, answer: string): void;
+  clearSdkSession?(sessionId: string): void;
 }
 
 export class SessionManager {
@@ -102,7 +103,24 @@ export class SessionManager {
     // Recreate agent runner with new config
     this.createAgentRunner();
 
+    // Reinitialize sandbox adapter to pick up sandboxEnabled changes
+    this.reinitializeSandboxAsync();
+
     log('[SessionManager] Config reloaded successfully');
+  }
+
+  /**
+   * Reinitialize sandbox adapter asynchronously
+   */
+  private async reinitializeSandboxAsync(): Promise<void> {
+    try {
+      log('[SessionManager] Reinitializing sandbox adapter...');
+      await reinitializeSandbox();
+      this.sandboxAdapter = getSandboxAdapter();
+      log('[SessionManager] Sandbox adapter reinitialized, mode:', this.sandboxAdapter.mode);
+    } catch (error) {
+      logError('[SessionManager] Failed to reinitialize sandbox:', error);
+    }
   }
 
   /**
@@ -518,6 +536,25 @@ export class SessionManager {
       type: 'session.status',
       payload: { sessionId, status },
     });
+  }
+
+  // Update session's working directory
+  // Also clears SDK session cache because Claude SDK sessions are bound to cwd
+  updateSessionCwd(sessionId: string, cwd: string): void {
+    // Clear claude_session_id in DB so next query creates a new SDK session
+    // (Claude SDK sessions cannot change cwd mid-session)
+    this.db.sessions.update(sessionId, { 
+      cwd, 
+      claude_session_id: null,
+      updated_at: Date.now() 
+    });
+    
+    // Also clear the in-memory SDK session cache
+    if (this.agentRunner?.clearSdkSession) {
+      this.agentRunner.clearSdkSession(sessionId);
+    }
+    
+    log('[SessionManager] Session cwd updated:', sessionId, '->', cwd, '(SDK session cleared)');
   }
 
   // Save message to database

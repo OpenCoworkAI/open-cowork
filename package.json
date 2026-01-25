@@ -1,13 +1,14 @@
 {
   "name": "open-cowork",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Desktop Agent application with sandboxed environment for AI Agent interaction",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "npm run build:wsl-agent && npm run build:lima-agent && vite",
-    "build": "npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
+    "dev": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && vite",
+    "build": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
     "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
+    "download:node": "node scripts/download-node.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
@@ -19,6 +20,7 @@
     "@anthropic-ai/claude-code": "^2.1.7",
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "archiver": "^7.0.1",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.1",
     "dotenv": "^17.2.3",
@@ -41,6 +43,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@types/archiver": "^6.0.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.10.0",
     "@types/react": "^18.3.12",
@@ -64,7 +67,7 @@
     "vitest": "^4.0.17"
   },
   "overrides": {
-    "tar": "^7.5.3"
+    "tar": "6.2.1"
   },
   "author": "Open Cowork Team",
   "license": "MIT"

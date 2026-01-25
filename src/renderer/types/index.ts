@@ -185,7 +185,10 @@ export type ClientEvent =
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'question.response'; payload: UserQuestionResponse }
   | { type: 'settings.update'; payload: Record<string, unknown> }
-  | { type: 'folder.select'; payload: Record<string, never> };
+  | { type: 'folder.select'; payload: Record<string, never> }
+  | { type: 'workdir.get'; payload: Record<string, never> }
+  | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
+  | { type: 'workdir.select'; payload: { sessionId?: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase = 
@@ -195,6 +198,7 @@ export type SandboxSetupPhase =
   | 'installing_node'   // Installing Node.js
   | 'installing_python' // Installing Python
   | 'installing_pip'    // Installing pip
+  | 'installing_deps'   // Installing skill dependencies (markitdown, pypdf, etc.)
   | 'ready'         // Ready to use
   | 'skipped'       // No sandbox needed (native mode)
   | 'error';        // Setup failed
@@ -237,6 +241,7 @@ export type ServerEvent =
   | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
   | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
+  | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types
@@ -277,6 +282,7 @@ export interface AppConfig {
   openaiMode?: 'responses' | 'chat';
   claudeCodePath?: string;
   defaultWorkdir?: string;
+  sandboxEnabled?: boolean;
   isConfigured: boolean;
 }
 
@@ -293,6 +299,31 @@ export interface ProviderPresets {
   anthropic: ProviderPreset;
   custom: ProviderPreset;
   openai: ProviderPreset;
+}
+
+export interface ApiTestInput {
+  provider: AppConfig['provider'];
+  apiKey: string;
+  baseUrl?: string;
+  customProtocol?: AppConfig['customProtocol'];
+  model?: string;
+  useLiveRequest?: boolean;
+}
+
+export interface ApiTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  status?: number;
+  errorType?:
+    | 'missing_key'
+    | 'missing_base_url'
+    | 'unauthorized'
+    | 'not_found'
+    | 'rate_limited'
+    | 'server_error'
+    | 'network_error'
+    | 'unknown';
+  details?: string;
 }
 
 // MCP types

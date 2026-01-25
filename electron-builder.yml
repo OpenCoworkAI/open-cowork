@@ -6,7 +6,7 @@ directories:
   output: release
   buildResources: resources
 
-npmRebuild: false
+npmRebuild: true
 
 files:
   - dist/**/*
@@ -48,6 +48,15 @@ win:
         - x64
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
+  extraResources:
+    - from: resources/node/win32-x64
+      to: node
+      filter:
+        - "**/*"
+    - from: resources/node/win32-x64/node_modules
+      to: node/node_modules
+      filter:
+        - "**/*"
 
 mac:
   target:
@@ -61,6 +70,11 @@ mac:
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  extraResources:
+    - from: resources/node/darwin-${arch}
+      to: node
+      filter:
+        - "**/*"
 
 linux:
   target:
@@ -68,6 +82,11 @@ linux:
       arch:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  extraResources:
+    - from: resources/node/linux-x64
+      to: node
+      filter:
+        - "**/*"
 
 nsis:
   oneClick: false
