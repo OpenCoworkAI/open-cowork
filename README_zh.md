@@ -152,7 +152,7 @@ brew install lima
 sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
 ```
 2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
-3. **Notion连接器使用**: 除了设置Notion token之外, 连接. 更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
+3. **Notion连接器使用**: 除了设置Notion token之外，还需要在根页面添加连接。更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
 
 <a id="技能库"></a>
 ## 🧰 技能库
