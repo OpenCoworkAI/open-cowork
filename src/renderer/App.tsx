@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from './store';
 import { useIPC } from './hooks/useIPC';
+import { log } from './utils/logger';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { WelcomeView } from './components/WelcomeView';
@@ -56,7 +57,7 @@ function App() {
   // Handle config save
   const handleConfigSave = useCallback(async (newConfig: Partial<AppConfig>) => {
     if (!isElectronEnv) {
-      console.log('[App] Browser mode - config save simulated');
+      log('[App] Browser mode - config save simulated');
       return;
     }
     

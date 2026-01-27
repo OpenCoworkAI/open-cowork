@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { logError } from '../utils/logger';
 import { useTranslation } from 'react-i18next';
 import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield } from 'lucide-react';
 import type { ProviderPresets, Skill, ApiTestResult } from '../types';
@@ -262,7 +263,7 @@ function APISettingsTab() {
         }
       }
     } catch (err) {
-      console.error('Failed to load config:', err);
+      logError('Failed to load config:', err);
     } finally {
       isLoadingConfigRef.current = false;
       setIsLoadingConfig(false);
@@ -676,7 +677,7 @@ function SandboxTab() {
         setError('');
       } catch (err) {
         if (cancelled) return;
-        console.error('Failed to initialize sandbox tab:', err);
+        logError('Failed to initialize sandbox tab:', err);
         setError(t('sandbox.failedToLoad'));
       } finally {
         if (!cancelled) {
@@ -699,7 +700,7 @@ function SandboxTab() {
       setStatus(s);
       setError('');
     } catch (err) {
-      console.error('Failed to load sandbox status:', err);
+      logError('Failed to load sandbox status:', err);
       setError(t('sandbox.failedToLoad'));
     }
   }
@@ -1231,7 +1232,7 @@ function CredentialsTab() {
       setCredentials(loaded || []);
       setError('');
     } catch (err) {
-      console.error('Failed to load credentials:', err);
+      logError('Failed to load credentials:', err);
       setError(t('credentials.failedToLoad'));
     }
   }
@@ -1580,7 +1581,7 @@ function ConnectorsTab() {
       const loaded = await window.electronAPI.mcp.getPresets();
       setPresets(loaded || {});
     } catch (err) {
-      console.error('Failed to load presets:', err);
+      logError('Failed to load presets:', err);
     }
   }
 
@@ -1590,7 +1591,7 @@ function ConnectorsTab() {
       setServers(loaded || []);
       setError('');
     } catch (err) {
-      console.error('Failed to load servers:', err);
+      logError('Failed to load servers:', err);
       setError('Failed to load servers');
     }
   }
@@ -1600,7 +1601,7 @@ function ConnectorsTab() {
       const loaded = await window.electronAPI.mcp.getServerStatus();
       setStatuses(loaded || []);
     } catch (err) {
-      console.error('Failed to load statuses:', err);
+      logError('Failed to load statuses:', err);
     }
   }
 
@@ -1609,7 +1610,7 @@ function ConnectorsTab() {
       const loaded = await window.electronAPI.mcp.getTools();
       setTools(loaded || []);
     } catch (err) {
-      console.error('Failed to load tools:', err);
+      logError('Failed to load tools:', err);
     }
   }
 
@@ -2371,7 +2372,7 @@ function SkillsTab() {
       setSkills(loaded || []);
       setError('');
     } catch (err) {
-      console.error('Failed to load skills:', err);
+      logError('Failed to load skills:', err);
       setError('Failed to load skills');
     }
   }
@@ -2639,7 +2640,7 @@ function LogsTab() {
       setLogsDirectory(dir || '');
       setError('');
     } catch (err) {
-      console.error('Failed to load logs:', err);
+      logError('Failed to load logs:', err);
       setError(t('logs.exportFailed'));
     }
   }
@@ -2651,7 +2652,7 @@ function LogsTab() {
         setDevLogsEnabled(result.enabled);
       }
     } catch (err) {
-      console.error('Failed to load dev logs status:', err);
+      logError('Failed to load dev logs status:', err);
     }
   }
 

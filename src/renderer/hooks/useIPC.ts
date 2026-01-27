@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
 import type { ClientEvent, ServerEvent, PermissionResult, Session, Message, TraceStep, ContentBlock } from '../types';
+import { log, logWarn, logError } from '../utils/logger';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -18,15 +19,15 @@ export function useIPC() {
   // Handle incoming server events - only setup once
   useEffect(() => {
     if (!isElectron) {
-      console.log('[useIPC] Not in Electron, skipping IPC setup');
+      log('[useIPC] Not in Electron, skipping IPC setup');
       return;
     }
     
-    console.log('[useIPC] Setting up IPC listener (once)');
+    log('[useIPC] Setting up IPC listener (once)');
     
     const cleanup = window.electronAPI.on((event: ServerEvent) => {
       const store = storeRef.current;
-      console.log('[useIPC] Received event:', event.type);
+      log('[useIPC] Received event:', event.type);
       
       switch (event.type) {
         case 'session.list':
@@ -46,7 +47,7 @@ export function useIPC() {
           break;
 
         case 'stream.message':
-          console.log('[useIPC] stream.message received:', event.payload.message.role, 'content:', JSON.stringify(event.payload.message.content));
+          log('[useIPC] stream.message received:', event.payload.message.role, 'content:', JSON.stringify(event.payload.message.content));
           store.addMessage(event.payload.sessionId, event.payload.message);
           break;
 
@@ -97,12 +98,12 @@ export function useIPC() {
           break;
 
         case 'question.request':
-          console.log('[useIPC] question.request received:', event.payload);
+          log('[useIPC] question.request received:', event.payload);
           store.setPendingQuestion(event.payload);
           break;
 
         case 'config.status':
-          console.log('[useIPC] config.status received:', event.payload.isConfigured);
+          log('[useIPC] config.status received:', event.payload.isConfigured);
           store.setIsConfigured(event.payload.isConfigured);
           store.setAppConfig(event.payload.config);
           if (!event.payload.isConfigured) {
@@ -111,33 +112,33 @@ export function useIPC() {
           break;
 
         case 'sandbox.progress':
-          console.log('[useIPC] sandbox.progress received:', event.payload.phase, event.payload.message);
+          log('[useIPC] sandbox.progress received:', event.payload.phase, event.payload.message);
           store.setSandboxSetupProgress(event.payload);
           break;
 
         case 'sandbox.sync':
-          console.log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
+          log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
           store.setSandboxSyncStatus(event.payload);
           break;
 
         case 'workdir.changed':
-          console.log('[useIPC] workdir.changed received:', event.payload.path);
+          log('[useIPC] workdir.changed received:', event.payload.path);
           store.setWorkingDir(event.payload.path || null);
           break;
 
         case 'error':
-          console.error('[useIPC] Server error:', event.payload.message);
+          logError('[useIPC] Server error:', event.payload.message);
           store.setLoading(false);
           break;
 
         default:
-          console.log('[useIPC] Unknown server event:', event);
+          log('[useIPC] Unknown server event:', event);
       }
     });
 
     // Cleanup on unmount only
     return () => {
-      console.log('[useIPC] Cleaning up IPC listener');
+      log('[useIPC] Cleaning up IPC listener');
       cleanup?.();
     };
   }, []); // Empty deps - setup listener only once!
@@ -159,20 +160,20 @@ export function useIPC() {
   // Send event to main process
   const send = useCallback((event: ClientEvent) => {
     if (!isElectron) {
-      console.log('[useIPC] Browser mode - would send:', event.type);
+      log('[useIPC] Browser mode - would send:', event.type);
       return;
     }
-    console.log('[useIPC] Sending:', event.type);
+    log('[useIPC] Sending:', event.type);
     window.electronAPI.send(event);
   }, []);
 
   // Invoke and wait for response
   const invoke = useCallback(async <T>(event: ClientEvent): Promise<T> => {
     if (!isElectron) {
-      console.log('[useIPC] Browser mode - would invoke:', event.type);
+      log('[useIPC] Browser mode - would invoke:', event.type);
       return null as T;
     }
-    console.log('[useIPC] Invoking:', event.type);
+    log('[useIPC] Invoking:', event.type);
     return window.electronAPI.invoke<T>(event);
   }, []);
 
@@ -180,7 +181,7 @@ export function useIPC() {
   const startSession = useCallback(
     async (title: string, promptOrContent: string | ContentBlock[], cwd?: string) => {
       setLoading(true);
-      console.log('[useIPC] Starting session:', title);
+      log('[useIPC] Starting session:', title);
 
       // Normalize input to ContentBlock array
       const content: ContentBlock[] = typeof promptOrContent === 'string'
@@ -297,7 +298,7 @@ export function useIPC() {
   const continueSession = useCallback(
     async (sessionId: string, promptOrContent: string | ContentBlock[]) => {
       setLoading(true);
-      console.log('[useIPC] Continuing session:', sessionId);
+      log('[useIPC] Continuing session:', sessionId);
 
       // Normalize input to ContentBlock array
       const content: ContentBlock[] = typeof promptOrContent === 'string'
@@ -407,10 +408,10 @@ export function useIPC() {
   const getSessionMessages = useCallback(
     async (sessionId: string): Promise<Message[]> => {
       if (!isElectron) {
-        console.log('[useIPC] Browser mode - no persistent messages');
+        log('[useIPC] Browser mode - no persistent messages');
         return [];
       }
-      console.log('[useIPC] Getting messages for session:', sessionId);
+      log('[useIPC] Getting messages for session:', sessionId);
       const messages = await invoke<Message[]>({
         type: 'session.getMessages',
         payload: { sessionId },
@@ -423,7 +424,7 @@ export function useIPC() {
   const getSessionTraceSteps = useCallback(
     async (sessionId: string): Promise<TraceStep[]> => {
       if (!isElectron) {
-        console.log('[useIPC] Browser mode - no persistent trace steps');
+        log('[useIPC] Browser mode - no persistent trace steps');
         return [];
       }
       return invoke<TraceStep[]>({ type: 'session.getTraceSteps', payload: { sessionId } });
@@ -444,7 +445,7 @@ export function useIPC() {
 
   const respondToQuestion = useCallback(
     (questionId: string, answer: string) => {
-      console.log('[useIPC] Responding to question:', questionId, 'with:', answer);
+      log('[useIPC] Responding to question:', questionId, 'with:', answer);
       send({
         type: 'question.response',
         payload: { questionId, answer },

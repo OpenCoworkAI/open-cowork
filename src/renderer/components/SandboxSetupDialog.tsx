@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import type { SandboxSetupProgress, SandboxSetupPhase } from '../types';
+import { logError } from '../utils/logger';
 
 interface Props {
   progress: SandboxSetupProgress | null;
@@ -49,7 +50,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
         setIsRetrying(false);
       }
     } catch (error) {
-      console.error('[SandboxSetupDialog] Retry Lima failed:', error);
+      logError('[SandboxSetupDialog] Retry Lima failed:', error);
       setIsRetrying(false);
     }
   };

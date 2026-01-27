@@ -4,6 +4,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
+import { log, logError } from '../utils/logger';
 import {
   Send,
   Square,
@@ -143,7 +144,7 @@ export function ChatView() {
           mediaType: resizedBlob.type as any,
         });
       } catch (err) {
-        console.error('Failed to process pasted image:', err);
+        logError('Failed to process pasted image:', err);
       }
     }
 
@@ -255,7 +256,7 @@ export function ChatView() {
 
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
-      console.log('[ChatView] Not in Electron, file selection not available');
+      log('[ChatView] Not in Electron, file selection not available');
       return;
     }
 
@@ -276,7 +277,7 @@ export function ChatView() {
 
       setAttachedFiles(prev => [...prev, ...newFiles]);
     } catch (error) {
-      console.error('[ChatView] Error selecting files:', error);
+      logError('[ChatView] Error selecting files:', error);
     }
   };
 
@@ -318,7 +319,7 @@ export function ChatView() {
             mediaType: resizedBlob.type,
           });
         } catch (err) {
-          console.error('Failed to process dropped image:', err);
+          logError('Failed to process dropped image:', err);
         }
       }
 
@@ -347,7 +348,7 @@ export function ChatView() {
           const active = statuses?.filter((s: any) => s.connected && s.toolCount > 0) || [];
           setActiveConnectors(active);
         } catch (err) {
-          console.error('Failed to load MCP connectors:', err);
+          logError('Failed to load MCP connectors:', err);
         }
       };
       loadConnectors();

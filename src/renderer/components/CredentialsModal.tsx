@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Edit3, Key, Mail, Globe, Lock, Eye, EyeOff, Save, AlertCircle } from 'lucide-react';
+import { logError } from '../utils/logger';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -54,7 +55,7 @@ export function CredentialsModal({ isOpen, onClose }: CredentialsModalProps) {
       setCredentials(loaded || []);
       setError('');
     } catch (err) {
-      console.error('Failed to load credentials:', err);
+      logError('Failed to load credentials:', err);
       setError('Failed to load credentials');
     }
   }

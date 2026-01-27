@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { logError } from '../utils/logger';
 import {
   ChevronDown,
   ChevronUp,
@@ -51,7 +52,7 @@ export function ContextPanel() {
       setCopiedPath(true);
       setTimeout(() => setCopiedPath(false), 2000);
     } catch (err) {
-      console.error('Failed to copy path:', err);
+      logError('Failed to copy path:', err);
     }
   };
 
@@ -69,7 +70,7 @@ export function ContextPanel() {
         const servers = await getMCPServers();
         setMcpServers(servers || []);
       } catch (error) {
-        console.error('Failed to load MCP servers:', error);
+        logError('Failed to load MCP servers:', error);
       }
     };
     loadMCPServers();
