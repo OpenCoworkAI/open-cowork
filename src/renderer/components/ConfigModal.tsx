@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3, Plug } from 'lucide-react';
 import type { AppConfig, ProviderPresets, ApiTestResult } from '../types';
+import { logError } from '../utils/logger';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -179,7 +180,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
       const loadedPresets = await window.electronAPI.config.getPresets();
       setPresets(loadedPresets);
     } catch (err) {
-      console.error('Failed to load presets:', err);
+      logError('Failed to load presets:', err);
       setPresets(FALLBACK_PRESETS);
     }
   }

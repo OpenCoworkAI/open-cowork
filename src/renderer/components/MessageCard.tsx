@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
+import { log } from '../utils/logger';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
@@ -555,7 +556,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
     if (!pendingQuestion || submitted) return;
     
     const answersJson = JSON.stringify(selections);
-    console.log('[AskUserQuestionBlock] Submitting answer:', answersJson);
+    log('[AskUserQuestionBlock] Submitting answer:', answersJson);
     respondToQuestion(pendingQuestion.questionId, answersJson);
     setSubmitted(true);
   };
@@ -706,7 +707,7 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
   // MCP tools start with mcp__ (double underscore)
   const isMCPTool = toolName?.startsWith('mcp__') || false;
 
-  console.log('[ToolResultBlock] toolUseId:', block.toolUseId, 'toolName:', toolName, 'isMCPTool:', isMCPTool, 'expanded:', expanded);
+  log('[ToolResultBlock] toolUseId:', block.toolUseId, 'toolName:', toolName, 'isMCPTool:', isMCPTool, 'expanded:', expanded);
 
   // Generate summary for tool results
   const generateSummary = (content: string, isError: boolean): string => {

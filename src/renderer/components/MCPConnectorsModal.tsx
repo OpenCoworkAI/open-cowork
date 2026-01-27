@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Power, PowerOff, Plug, CheckCircle, AlertCircle, Loader2, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
+import { logError } from '../utils/logger';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -71,7 +72,7 @@ export function MCPConnectorsModal({ isOpen, onClose }: MCPConnectorsModalProps)
       const loaded = await window.electronAPI.mcp.getPresets();
       setPresets(loaded || {});
     } catch (err) {
-      console.error('Failed to load presets:', err);
+      logError('Failed to load presets:', err);
     }
   }
 
@@ -135,7 +136,7 @@ export function MCPConnectorsModal({ isOpen, onClose }: MCPConnectorsModalProps)
       setServers(loaded || []);
       setError(''); // Clear any previous errors
     } catch (err) {
-      console.error('Failed to load MCP servers:', err);
+      logError('Failed to load MCP servers:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load servers';
       setError(`Failed to load servers: ${errorMessage}`);
     }
@@ -147,7 +148,7 @@ export function MCPConnectorsModal({ isOpen, onClose }: MCPConnectorsModalProps)
       const statuses = await window.electronAPI.mcp.getServerStatus();
       setStatuses(statuses || []);
     } catch (err) {
-      console.error('Failed to load server statuses:', err);
+      logError('Failed to load server statuses:', err);
     }
   }
 
@@ -157,7 +158,7 @@ export function MCPConnectorsModal({ isOpen, onClose }: MCPConnectorsModalProps)
       const tools = await window.electronAPI.mcp.getTools();
       setTools(tools || []);
     } catch (err) {
-      console.error('Failed to load tools:', err);
+      logError('Failed to load tools:', err);
     }
   }
 

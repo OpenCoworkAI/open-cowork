@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { SettingsPanel } from './SettingsPanel';
+import { log, logError } from '../utils/logger';
 import {
   ChevronLeft,
   ChevronRight,
@@ -53,10 +54,10 @@ export function Sidebar() {
           const messages = await getSessionMessages(sessionId);
           if (messages && messages.length > 0) {
             setMessages(sessionId, messages);
-            console.log('[Sidebar] Loaded', messages.length, 'messages for session:', sessionId);
+            log('[Sidebar] Loaded', messages.length, 'messages for session:', sessionId);
           }
         } catch (error) {
-          console.error('[Sidebar] Failed to load messages:', error);
+          logError('[Sidebar] Failed to load messages:', error);
         } finally {
           setLoadingSession(null);
         }
@@ -69,7 +70,7 @@ export function Sidebar() {
         const steps = await getSessionTraceSteps(sessionId);
         setTraceSteps(sessionId, steps || []);
       } catch (error) {
-        console.error('[Sidebar] Failed to load trace steps:', error);
+        logError('[Sidebar] Failed to load trace steps:', error);
       }
     }
   }, [

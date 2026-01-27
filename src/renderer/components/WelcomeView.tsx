@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
+import { log, logError } from '../utils/logger';
 import {
   FileText,
   BarChart3,
@@ -60,7 +61,7 @@ export function WelcomeView() {
           mediaType: resizedBlob.type as any,
         });
       } catch (err) {
-        console.error('Failed to process pasted image:', err);
+        logError('Failed to process pasted image:', err);
       }
     }
 
@@ -172,7 +173,7 @@ export function WelcomeView() {
 
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
-      console.log('[WelcomeView] Not in Electron, file selection not available');
+      log('[WelcomeView] Not in Electron, file selection not available');
       return;
     }
 
@@ -192,7 +193,7 @@ export function WelcomeView() {
 
       setAttachedFiles(prev => [...prev, ...newFiles]);
     } catch (error) {
-      console.error('[WelcomeView] Error selecting files:', error);
+      logError('[WelcomeView] Error selecting files:', error);
     }
   };
 
@@ -233,7 +234,7 @@ export function WelcomeView() {
           mediaType: resizedBlob.type,
         });
       } catch (err) {
-        console.error('Failed to process dropped image:', err);
+        logError('Failed to process dropped image:', err);
       }
     }
 
