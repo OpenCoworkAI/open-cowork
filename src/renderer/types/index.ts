@@ -283,6 +283,7 @@ export interface AppConfig {
   claudeCodePath?: string;
   defaultWorkdir?: string;
   sandboxEnabled?: boolean;
+  enableThinking?: boolean;
   isConfigured: boolean;
 }
 

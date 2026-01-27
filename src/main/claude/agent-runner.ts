@@ -1300,6 +1300,18 @@ Then follow the workflow described in that file.
       }
       logTiming('after building MCP servers config');
       
+      // Get enableThinking from config
+      const { configStore } = await import('../config/config-store');
+      const enableThinking = configStore.get('enableThinking') ?? false;
+      log('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
+      
+      // if (enableThinking) {
+      //   envWithSkills.MAX_THINKING_TOKENS = '10000';
+      // } else {
+      //   envWithSkills.MAX_THINKING_TOKENS = '0';
+      // }
+
+
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
         cwd: workingDir,  // Windows path for claude-code process
@@ -1307,6 +1319,11 @@ Then follow the workflow described in that file.
         maxTurns: 50,
         abortController: controller,
         env: envWithSkills,
+        // Thinking mode configuration based on settings
+        // For Claude API: use 'thinking' parameter with type 'enabled'/'disabled'
+        // thinking: enableThinking 
+        //   ? { type: 'enabled', budget_tokens: 10000 }  // Enable with reasonable budget
+        //   : { type: 'disabled' },                       // Disable thinking
         
         // Pass MCP servers to SDK
         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
@@ -1853,7 +1870,8 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
             } else if (['Bash', 'Glob', 'Grep', 'LS'].includes(lastExecutedToolName)) {
               // These tools show their output directly, no need for extra message
             } else {
-              completionText = `✓ Task completed.`;
+              // completionText = `✓ Task completed.`;
+              completionText = `Tool executed.`;
             }
             
             if (completionText) {

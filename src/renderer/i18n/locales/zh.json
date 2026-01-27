@@ -73,6 +73,8 @@
     "testingConnection": "测试中...",
     "liveTest": "真实请求验证",
     "liveTestHint": "会发送一次最小请求，可能消耗少量额度",
+    "enableThinking": "启用思考模式",
+    "enableThinkingHint": "显示 Claude 的思考过程。这提供更多透明度，但可能增加 token 消耗。",
     "testSuccess": "连接成功（{{ms}}ms）",
     "testError": {
       "missing_key": "请填写 API Key",

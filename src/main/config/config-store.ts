@@ -31,6 +31,9 @@ export interface AppConfig {
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
   
+  // Enable thinking mode (show thinking steps)
+  enableThinking: boolean;
+  
   // First run flag
   isConfigured: boolean;
 }
@@ -46,6 +49,7 @@ const defaultConfig: AppConfig = {
   defaultWorkdir: '',
   enableDevLogs: true,
   sandboxEnabled: false,
+  enableThinking: false,
   isConfigured: false,
 };
 
@@ -102,12 +106,20 @@ class ConfigStore {
   private store: Store<AppConfig>;
 
   constructor() {
-    this.store = new Store<AppConfig>({
+    const storeOptions: any = {
       name: 'config',
       defaults: defaultConfig,
       // Encrypt the API key for basic security
       encryptionKey: 'open-cowork-config-v1',
-    });
+    };
+    
+    // Add projectName for non-Electron environments (e.g., MCP servers)
+    // This is required by the underlying 'conf' package
+    if (typeof process !== 'undefined' && !process.versions.electron) {
+      storeOptions.projectName = 'open-cowork';
+    }
+    
+    this.store = new Store<AppConfig>(storeOptions);
   }
 
   /**
@@ -125,6 +137,7 @@ class ConfigStore {
       defaultWorkdir: this.store.get('defaultWorkdir'),
       enableDevLogs: this.store.get('enableDevLogs'),
       sandboxEnabled: this.store.get('sandboxEnabled'),
+      enableThinking: this.store.get('enableThinking'),
       isConfigured: this.store.get('isConfigured'),
     };
   }

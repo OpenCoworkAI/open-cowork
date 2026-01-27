@@ -53,7 +53,7 @@
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "electron": "^40.0.0",
+    "electron": "^31.7.7",
     "electron-builder": "^26.4.0",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
@@ -63,7 +63,6 @@
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^4.0.17"
   },
   "overrides": {

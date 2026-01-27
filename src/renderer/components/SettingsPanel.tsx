@@ -196,6 +196,7 @@ function APISettingsTab() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
   const [useLiveTest, setUseLiveTest] = useState(false);
+  const [enableThinking, setEnableThinking] = useState(false);
   const previousProviderRef = useRef(provider);
   const isLoadingConfigRef = useRef(false);
 
@@ -260,6 +261,7 @@ function APISettingsTab() {
           setUseCustomModel(true);
           setCustomModel(cfg.model);
         }
+        setEnableThinking(cfg.enableThinking || false);
       }
     } catch (err) {
       console.error('Failed to load config:', err);
@@ -343,6 +345,7 @@ function APISettingsTab() {
         customProtocol,
         model: finalModel,
         openaiMode: resolvedOpenaiMode,
+        enableThinking,
       });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 2000);
@@ -515,6 +518,23 @@ function APISettingsTab() {
             {t('api.enterModelId')}
           </p>
         )}
+      </div>
+
+      {/* Enable Thinking Mode */}
+      <div className="space-y-2">
+        <div className="flex items-start gap-2 text-xs text-text-muted">
+          <input
+            type="checkbox"
+            id="enable-thinking"
+            checked={enableThinking}
+            onChange={(e) => setEnableThinking(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
+          />
+          <label htmlFor="enable-thinking" className="space-y-0.5 flex-1">
+            <div className="text-text-primary font-medium">{t('api.enableThinking')}</div>
+            <div>{t('api.enableThinkingHint')}</div>
+          </label>
+        </div>
       </div>
 
       {/* Error/Success Messages */}
@@ -1983,19 +2003,24 @@ function ServerCard({
               {showTools && tools.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-surface-muted border border-border">
                   <div className="text-xs font-medium text-text-primary mb-2">{t('mcp.toolsAvailable', { count: tools.length }).split(' ').slice(1).join(' ')}:</div>
-                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    {tools.map((tool, idx) => (
-                      <div
-                        key={idx}
-                        className="px-2 py-1 rounded bg-background border border-border text-xs text-text-secondary"
-                        title={tool.description || tool.name}
-                      >
-                        <div className="font-mono text-accent">{tool.name.replace(/^mcp_[^_]+_/, '')}</div>
-                        {tool.description && (
-                          <div className="text-text-muted mt-0.5 truncate">{tool.description}</div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                    {tools.map((tool, idx) => {
+                      // Extract only the part after the last double underscore
+                      const parts = tool.name.split('__');
+                      const displayName = parts.length > 1 ? parts[parts.length - 1] : tool.name;
+                      return (
+                        <div
+                          key={idx}
+                          className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary"
+                          title={tool.description || tool.name}
+                        >
+                          <div className="font-mono text-accent break-words whitespace-normal">{displayName}</div>
+                          {tool.description && (
+                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">{tool.description}</div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

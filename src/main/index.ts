@@ -77,7 +77,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // Temporarily disabled to test if it resolves the console error
     },
   };
 

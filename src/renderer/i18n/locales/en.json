@@ -73,6 +73,8 @@
     "testingConnection": "Testing...",
     "liveTest": "Live request verification",
     "liveTestHint": "Sends a minimal request and may consume a small quota",
+    "enableThinking": "Enable Thinking Mode",
+    "enableThinkingHint": "Show Claude's thinking process step by step. This provides more transparency but may increase token usage.",
     "testSuccess": "Connection successful ({{ms}}ms)",
     "testError": {
       "missing_key": "API Key is required",

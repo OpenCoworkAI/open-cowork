@@ -28,6 +28,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { start } from 'repl';
 import { log, logError, logWarn } from '../utils/logger';
+import { configStore } from '../config/config-store';
 
 
 const execAsync = promisify(exec);
@@ -772,12 +773,16 @@ async function callVisionAPI(
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
   const baseUrl = process.env.ANTHROPIC_BASE_URL;
   const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-3-5-sonnet-20241022';
+  // Get enableThinking from configStore
+  // const enableThinking = configStore.get('enableThinking') ?? false;
+  // writeVisionLog(`[Vision] configStore: ${JSON.stringify(configStore.getAll())}`);
+  // writeVisionLog(`[Vision] enableThinking: ${enableThinking}`);
   
   if (!apiKey) {
     throw new Error('API key not configured. Please configure it in Settings.');
   }
   
-  console.error(`[Vision] Using model: ${model} (baseURL: ${baseUrl || 'default'})`);
+  // console.error(`[Vision] Using model: ${model} (baseURL: ${baseUrl || 'default'}), enableThinking: ${enableThinking}`);
   
   // Log the prompt
   writeVisionLog(prompt, 'PROMPT');
@@ -809,7 +814,8 @@ async function callVisionAPI(
     const isHttps = urlObj.protocol === 'https:';
     const httpModule = isHttps ? https : http;
     
-    const requestBody = JSON.stringify({
+    // Build request body with optional reasoning parameter for OpenRouter
+    const requestBodyObj: any = {
       model: model,
       messages: [
         {
@@ -829,7 +835,15 @@ async function callVisionAPI(
         },
       ],
       max_tokens: maxTokens,
-    });
+    };
+    
+    // For OpenRouter: control reasoning/thinking based on settings
+    // When enableThinking is false, set effort to 'none' to disable extended thinking
+    // if (isOpenRouter && !enableThinking) {
+    //   requestBodyObj.reasoning = { effort: 'none' };
+    // }
+    
+    const requestBody = JSON.stringify(requestBodyObj);
     
     const headers: any = {
       'Content-Type': 'application/json',
@@ -865,7 +879,7 @@ async function callVisionAPI(
               const responseContent = jsonData.choices[0]?.message?.content || '';
               
               // Log the response
-              writeVisionLog(responseContent, 'RESPONSE');
+              writeVisionLog(JSON.stringify(jsonData), 'RESPONSE');
               
               resolve(responseContent);
             } catch (e: any) {
