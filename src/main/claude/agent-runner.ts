@@ -1268,7 +1268,7 @@ Then follow the workflow described in that file.
             
             // Resolve path placeholders for presets
             let resolvedArgs = config.args || [];
-            const { mcpConfigStore } = await import('../mcp/mcp-config-store');
+              const { mcpConfigStore } = await import('../mcp/mcp-config-store');
             
             // Check if any args contain placeholders that need resolving
             const hasPlaceholders = resolvedArgs.some(arg => 
@@ -1287,8 +1287,8 @@ Then follow the workflow described in that file.
               
               if (presetKey) {
                 const preset = mcpConfigStore.createFromPreset(presetKey, true);
-                if (preset && preset.args) {
-                  resolvedArgs = preset.args;
+              if (preset && preset.args) {
+                resolvedArgs = preset.args;
                 }
               }
             }
@@ -1743,16 +1743,16 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
       
       while (shouldContinue && retryCount <= MAX_RETRIES) {
         try {
-          for await (const message of query(queryInput)) {
-            if (!firstMessageReceived) {
-              logTiming('FIRST MESSAGE RECEIVED from SDK');
-              firstMessageReceived = true;
-            }
-            
-            if (controller.signal.aborted) break;
+      for await (const message of query(queryInput)) {
+        if (!firstMessageReceived) {
+          logTiming('FIRST MESSAGE RECEIVED from SDK');
+          firstMessageReceived = true;
+        }
+        
+        if (controller.signal.aborted) break;
 
-            log('[ClaudeAgentRunner] Message type:', message.type);
-            log('[ClaudeAgentRunner] Full message:', JSON.stringify(message, null, 2));
+        log('[ClaudeAgentRunner] Message type:', message.type);
+        log('[ClaudeAgentRunner] Full message:', JSON.stringify(message, null, 2));
 
         if (message.type === 'system' && (message as any).subtype === 'init') {
           const sdkSessionId = (message as any).session_id;
@@ -1825,7 +1825,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
                 throw new Error(`API Error detected: ${textContent}`);
               }
             }
-            
+
             // Stream text to UI
             if (textContent) {
               const chunks = textContent.match(/.{1,30}/g) || [textContent];
@@ -2029,7 +2029,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
   // If we exit the retry loop, check if there was an error
   if (shouldContinue) {
     throw new Error('Retry loop exited unexpectedly');
-  }
+      }
 
       // Complete - update the initial thinking step
       this.sendTraceUpdate(session.id, thinkingStepId, {

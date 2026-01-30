@@ -35,67 +35,52 @@ const execAsync = promisify(exec);
 const WORKSPACE_DIR = process.env.WORKSPACE_DIR || process.cwd();
 
 // ============================================================================
-// Operation Experience Tracking
+// Click History Tracking for GUI Locate
 // ============================================================================
 
-interface OperationExperience {
-  id: string;
-  timestamp: string;
-  operation: string;
-  parameters: Record<string, any>;
-  screenshotPath: string;
-  success: boolean;
-  error?: string;
+interface ClickHistoryEntry {
+  index: number;
+  x: number;
+  y: number;
+  displayIndex: number;
+  timestamp: number;
+  operation: string; // 'click', 'double_click', 'right_click', etc.
 }
 
-// Store operation experiences in memory
-const operationExperiences: OperationExperience[] = [];
+// Store click history for current session
+const clickHistory: ClickHistoryEntry[] = [];
+let clickHistoryCounter = 0;
 
 /**
- * Save operation experience with screenshot
+ * Add a click to history
  */
-async function saveOperationExperience(
-  operation: string,
-  parameters: Record<string, any>,
-  success: boolean,
-  error?: string
-): Promise<string> {
-  const timestamp = Date.now();
-  const screenshotPath = path.join(WORKSPACE_DIR, `experience_${operation}_${timestamp}.png`);
-  
-  // Take screenshot after operation
-  await new Promise(resolve => setTimeout(resolve, 300)); // Wait for UI to update
-  await takeScreenshot(screenshotPath, parameters.display_index);
-  
-  const experience: OperationExperience = {
-    id: `exp_${timestamp}`,
-    timestamp: new Date().toISOString(),
+function addClickToHistory(x: number, y: number, displayIndex: number, operation: string): void {
+  clickHistoryCounter++;
+  clickHistory.push({
+    index: clickHistoryCounter,
+    x,
+    y,
+    displayIndex,
+    timestamp: Date.now(),
     operation,
-    parameters,
-    screenshotPath,
-    success,
-    error,
-  };
-  
-  operationExperiences.push(experience);
-  writeMCPLog(`[Experience] Saved: ${operation} at ${screenshotPath}`, 'Experience Tracking');
-  
-  return screenshotPath;
+  });
+  writeMCPLog(`[ClickHistory] Added click #${clickHistoryCounter} at (${x}, ${y}) on display ${displayIndex}`, 'Click History');
 }
 
 /**
- * Get all operation experiences
+ * Get click history for a specific display
  */
-function getOperationExperiences(): OperationExperience[] {
-  return operationExperiences;
+function getClickHistoryForDisplay(displayIndex: number): ClickHistoryEntry[] {
+  return clickHistory.filter(entry => entry.displayIndex === displayIndex);
 }
 
 /**
- * Clear operation experiences
+ * Clear click history
  */
-function clearOperationExperiences(): void {
-  operationExperiences.length = 0;
-  writeMCPLog('[Experience] Cleared all operation experiences', 'Experience Tracking');
+function clearClickHistory(): void {
+  clickHistory.length = 0;
+  clickHistoryCounter = 0;
+  writeMCPLog('[ClickHistory] Cleared all click history', 'Click History');
 }
 
 // ============================================================================
@@ -479,8 +464,7 @@ async function performClick(
   y: number,
   displayIndex: number = 0,
   clickType: 'single' | 'double' | 'right' | 'triple' = 'single',
-  modifiers: string[] = [],
-  saveExperience: boolean = true
+  modifiers: string[] = []
 ): Promise<string> {
   const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
   
@@ -526,21 +510,10 @@ async function performClick(
     command = `kd:${cliclickModifiers} ${command} ku:${cliclickModifiers}`;
   }
   
-  let success = true;
-  let error: string | undefined;
+  await executeCliclick(command);
   
-  try {
-    await executeCliclick(command);
-  } catch (e: any) {
-    success = false;
-    error = e.message;
-    throw e;
-  } finally {
-    // Save experience
-    if (saveExperience) {
-      await saveOperationExperience('click', { x, y, display_index: displayIndex, click_type: clickType, modifiers }, success, error);
-    }
-  }
+  // Add to click history after successful click
+  addClickToHistory(x, y, displayIndex, clickType);
   
   return `Performed ${clickType} click at (${x}, ${y}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
 }
@@ -550,35 +523,18 @@ async function performClick(
  */
 async function performType(
   text: string,
-  pressEnter: boolean = false,
-  saveExperience: boolean = true,
-  displayIndex?: number
+  pressEnter: boolean = false
 ): Promise<string> {
-  let success = true;
-  let error: string | undefined;
+  // For complex text with special characters, use AppleScript which is more reliable
+  // Escape single quotes for AppleScript
+  const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const appleScript = `tell application "System Events" to keystroke "${escapedText}"`;
   
-  try {
-    // For complex text with special characters, use AppleScript which is more reliable
-    // Escape single quotes for AppleScript
-    const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const appleScript = `tell application "System Events" to keystroke "${escapedText}"`;
-    
-    writeMCPLog(`[performType] Typing text length: ${text.length}, using AppleScript`, 'Type Operation');
-    await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
-    
-    if (pressEnter) {
-      await executeCommand(`osascript -e 'tell application "System Events" to key code 36'`);
-    }
-  } catch (e: any) {
-    success = false;
-    error = e.message;
-    writeMCPLog(`[performType] Error: ${error}`, 'Type Operation Error');
-    throw e;
-  } finally {
-    // Save experience
-    if (saveExperience) {
-      await saveOperationExperience('type_text', { text, press_enter: pressEnter, display_index: displayIndex }, success, error);
-    }
+  writeMCPLog(`[performType] Typing text length: ${text.length}, using AppleScript`, 'Type Operation');
+  await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+  
+  if (pressEnter) {
+    await executeCommand(`osascript -e 'tell application "System Events" to key code 36'`);
   }
   
   return `Typed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"${pressEnter ? ' and pressed Enter' : ''}`;
@@ -589,9 +545,7 @@ async function performType(
  */
 async function performKeyPress(
   key: string,
-  modifiers: string[] = [],
-  saveExperience: boolean = true,
-  displayIndex?: number
+  modifiers: string[] = []
 ): Promise<string> {
   // Map common key names to cliclick key codes
   const keyMap: Record<string, string> = {
@@ -644,60 +598,47 @@ async function performKeyPress(
     .filter(m => m);
   
   let command = '';
-  let success = true;
-  let error: string | undefined;
   let resultMessage = '';
   
-  try {
-    // If key is in keyMap, use kp: command for special keys
-    if (cliclickKey) {
-      if (cliclickModifiers.length > 0) {
-        command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
-      } else {
-        command = `kp:${cliclickKey}`;
-      }
-      await executeCliclick(command);
+  // If key is in keyMap, use kp: command for special keys
+  if (cliclickKey) {
+    if (cliclickModifiers.length > 0) {
+      command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
     } else {
-      // For single characters, cliclick's kp: doesn't work, use t: command instead
-      if (key.length === 1) {
-        const escapedKey = key.replace(/"/g, '\\"');
-        
-        if (cliclickModifiers.length > 0) {
-          // For modifier+char combinations, use AppleScript (more reliable)
-          const modifierFlags: string[] = [];
-          if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
-          if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
-          if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
-          if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
-          
-          const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
-          const appleScript = `tell application "System Events" to keystroke "${escapedKey}"${usingClause}`;
-          
-          await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
-          const modifierStr = modifiers.join('+');
-          resultMessage = `Pressed: ${modifierStr}+${key} (using AppleScript)`;
-        } else {
-          // No modifiers, just type the character using cliclick
-          command = `t:"${escapedKey}"`;
-          await executeCliclick(command);
-        }
-      } else {
-        // Multi-character key name not in keyMap - this is an error
-        throw new Error(
-          `Unknown key: "${key}". ` +
-          `Supported special keys: ${Object.keys(keyMap).join(', ')}, ` +
-          `or single characters (a-z, 0-9, etc.) for typing text.`
-        );
-      }
+      command = `kp:${cliclickKey}`;
     }
-  } catch (e: any) {
-    success = false;
-    error = e.message;
-    throw e;
-  } finally {
-    // Save experience
-    if (saveExperience) {
-      await saveOperationExperience('key_press', { key, modifiers, display_index: displayIndex }, success, error);
+    await executeCliclick(command);
+  } else {
+    // For single characters, cliclick's kp: doesn't work, use t: command instead
+    if (key.length === 1) {
+      const escapedKey = key.replace(/"/g, '\\"');
+      
+      if (cliclickModifiers.length > 0) {
+        // For modifier+char combinations, use AppleScript (more reliable)
+        const modifierFlags: string[] = [];
+        if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
+        if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
+        if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
+        if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
+        
+        const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
+        const appleScript = `tell application "System Events" to keystroke "${escapedKey}"${usingClause}`;
+        
+        await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+        const modifierStr = modifiers.join('+');
+        resultMessage = `Pressed: ${modifierStr}+${key} (using AppleScript)`;
+      } else {
+        // No modifiers, just type the character using cliclick
+        command = `t:"${escapedKey}"`;
+        await executeCliclick(command);
+      }
+    } else {
+      // Multi-character key name not in keyMap - this is an error
+      throw new Error(
+        `Unknown key: "${key}". ` +
+        `Supported special keys: ${Object.keys(keyMap).join(', ')}, ` +
+        `or single characters (a-z, 0-9, etc.) for typing text.`
+      );
     }
   }
   
@@ -1192,6 +1133,196 @@ async function callVisionAPIWithTimeout(
 }
 
 /**
+ * Annotate screenshot with click history markers
+ * Returns path to annotated image and click history info
+ */
+async function annotateScreenshotWithClickHistory(
+  screenshotPath: string,
+  displayIndex: number
+): Promise<{ annotatedPath: string; clickHistoryInfo: string }> {
+  const clickHistoryForDisplay = getClickHistoryForDisplay(displayIndex);
+  
+  if (clickHistoryForDisplay.length === 0) {
+    // No click history, return original path
+    return {
+      annotatedPath: screenshotPath,
+      clickHistoryInfo: 'No previous clicks recorded.',
+    };
+  }
+  
+  // Create annotated image path
+  const timestamp = Date.now();
+  const basename = path.basename(screenshotPath, '.png');
+  const annotatedPath = path.join(
+    path.dirname(screenshotPath),
+    `${basename}_annotated_${timestamp}.png`
+  );
+  
+  // Deduplicate clicks by coordinates - keep only the first click at each position
+  const uniqueClicks: ClickHistoryEntry[] = [];
+  const seenCoords = new Set<string>();
+  
+  for (const entry of clickHistoryForDisplay) {
+    const coordKey = `${entry.x},${entry.y}`;
+    if (!seenCoords.has(coordKey)) {
+      seenCoords.add(coordKey);
+      uniqueClicks.push(entry);
+    }
+  }
+  
+  writeMCPLog(`[annotateScreenshot] Deduplicated clicks: ${clickHistoryForDisplay.length} -> ${uniqueClicks.length}`, 'Click Deduplication');
+  
+  // Build click history info text
+  const historyLines = uniqueClicks.map(entry => 
+    `  #${entry.index}: (${entry.x}, ${entry.y}) - ${entry.operation}`
+  );
+  const clickHistoryInfo = `Previous clicks on this display:\n${historyLines.join('\n')}`;
+  
+  // Create Python script to annotate image
+  const pythonScript = `
+import sys
+from PIL import Image, ImageDraw, ImageFont
+
+try:
+    # Load image
+    img = Image.open('${screenshotPath.replace(/'/g, "\\'")}')
+    # Create a semi-transparent overlay for drawing
+    overlay = Image.new('RGBA', img.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    # Try to use a nice font, fallback to default
+    try:
+        font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', 32)
+        small_font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', 20)
+    except:
+        try:
+            font = ImageFont.truetype('/System/Library/Fonts/SFNSDisplay.ttf', 32)
+            small_font = ImageFont.truetype('/System/Library/Fonts/SFNSDisplay.ttf', 20)
+        except:
+            font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
+    
+    # Draw markers for each click
+    clicks = ${JSON.stringify(uniqueClicks)}
+    
+    for click in clicks:
+        x, y = click['x'], click['y']
+        index = click['index']
+        
+        # Draw circle with semi-transparent fill and bright outline
+        radius = 20
+        # Semi-transparent yellow fill
+        draw.ellipse(
+            [(x - radius, y - radius), (x + radius, y + radius)],
+            fill=(255, 255, 0, 60),  # Yellow with 60/255 opacity
+            outline=(255, 200, 0, 255),  # Bright orange outline, fully opaque
+            width=3
+        )
+        
+        # Draw crosshair (the exact click position) - bright and visible
+        cross_size = 12
+        draw.line(
+            [(x - cross_size, y), (x + cross_size, y)], 
+            fill=(255, 0, 0, 255),  # Bright red, fully opaque
+            width=2
+        )
+        draw.line(
+            [(x, y - cross_size), (x, y + cross_size)], 
+            fill=(255, 0, 0, 255),  # Bright red, fully opaque
+            width=2
+        )
+        
+        # Draw center dot for extra visibility
+        dot_radius = 3
+        draw.ellipse(
+            [(x - dot_radius, y - dot_radius), (x + dot_radius, y + dot_radius)],
+            fill=(255, 0, 0, 255)  # Bright red dot
+        )
+        
+        # Draw number label with coordinates
+        label = f"#{index}"
+        coord_label = f"({x},{y})"
+        
+        # Get text bounding boxes
+        bbox_num = draw.textbbox((0, 0), label, font=font)
+        bbox_coord = draw.textbbox((0, 0), coord_label, font=small_font)
+        
+        num_width = bbox_num[2] - bbox_num[0]
+        num_height = bbox_num[3] - bbox_num[1]
+        coord_width = bbox_coord[2] - bbox_coord[0]
+        coord_height = bbox_coord[3] - bbox_coord[1]
+        
+        # Use the wider of the two labels for background width
+        max_width = max(num_width, coord_width)
+        total_height = num_height + coord_height + 4  # 4px spacing between lines
+        
+        # Position label above and to the right of the marker
+        label_x = x + radius + 8
+        label_y = y - radius - total_height - 8
+        
+        # Ensure label stays within image bounds
+        if label_x + max_width + 10 > img.width:
+            label_x = x - radius - max_width - 18
+        if label_y < 0:
+            label_y = y + radius + 8
+        
+        # Draw semi-transparent background rectangle with border
+        padding = 4
+        # Background with transparency
+        draw.rectangle(
+            [
+                (label_x - padding, label_y - padding),
+                (label_x + max_width + padding, label_y + total_height + padding)
+            ],
+            fill=(0, 0, 0, 180),  # Black with 180/255 opacity
+            outline=(255, 200, 0, 255),  # Orange border
+            width=2
+        )
+        
+        # Draw number text in bright yellow
+        draw.text((label_x, label_y), label, fill=(255, 255, 0, 255), font=font)
+        
+        # Draw coordinate text below the number in white
+        coord_y = label_y + num_height + 2
+        draw.text((label_x, coord_y), coord_label, fill=(255, 255, 255, 255), font=small_font)
+    
+    # Convert back to RGB and composite with original image
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+    img = Image.alpha_composite(img, overlay)
+    img = img.convert('RGB')
+    
+    # Save annotated image
+    img.save('${annotatedPath.replace(/'/g, "\\'")}')
+    print('SUCCESS')
+    
+except Exception as e:
+    print(f'ERROR: {str(e)}', file=sys.stderr)
+    sys.exit(1)
+`.trim();
+  
+  try {
+    const result = await executeCommand(`python -c "${pythonScript.replace(/"/g, '\\"')}"`);
+    
+    if (result.stdout.includes('SUCCESS')) {
+      writeMCPLog(`[annotateScreenshot] Successfully annotated screenshot with ${clickHistoryForDisplay.length} click markers`, 'Screenshot Annotation');
+      writeMCPLog(`[annotateScreenshot] Annotated image saved to: ${annotatedPath}`, 'Screenshot Annotation');
+      return { annotatedPath, clickHistoryInfo };
+    } else {
+      writeMCPLog(`[annotateScreenshot] Python script did not return SUCCESS: ${result.stdout}`, 'Screenshot Annotation Error');
+      throw new Error('Failed to annotate screenshot');
+    }
+  } catch (error: any) {
+    writeMCPLog(`[annotateScreenshot] Error annotating screenshot: ${error.message}`, 'Screenshot Annotation Error');
+    // Fallback: return original path if annotation fails
+    return {
+      annotatedPath: screenshotPath,
+      clickHistoryInfo,
+    };
+  }
+}
+
+/**
  * Analyze screenshot with vision model to locate element
  */
 async function analyzeScreenshotWithVision(
@@ -1210,12 +1341,21 @@ async function analyzeScreenshotWithVision(
       throw new Error(`Display index ${displayIndex} not found`);
     }
     
-    // Read screenshot as base64
-    const imageBuffer = await fs.readFile(screenshotPath);
+    // Annotate screenshot with click history
+    const { annotatedPath, clickHistoryInfo } = await annotateScreenshotWithClickHistory(
+      screenshotPath,
+      targetDisplay.index
+    );
+    
+    writeMCPLog(`[analyzeScreenshotWithVision] Using screenshot: ${annotatedPath}`, 'Screenshot Selection');
+    writeMCPLog(`[analyzeScreenshotWithVision] Click history: ${clickHistoryInfo}`, 'Click History');
+    
+    // Read annotated screenshot as base64
+    const imageBuffer = await fs.readFile(annotatedPath);
     const base64Image = imageBuffer.toString('base64');
     
     // Get image dimensions
-    const imageDims = await getImageDimensions(screenshotPath);
+    const imageDims = await getImageDimensions(annotatedPath);
     
     const prompt = `Analyze this GUI screenshot and locate the following element: "${elementDescription}"
 
@@ -1225,6 +1365,11 @@ async function analyzeScreenshotWithVision(
 - X increases from left to right (0 to ${imageDims.width})
 - Y increases from top to bottom (0 to ${imageDims.height})
 
+**CLICK HISTORY:**
+${clickHistoryInfo}
+
+Note: The screenshot shows red numbered markers indicating previous click locations. These markers are for reference only - they show where clicks have already been performed. The numbers correspond to the click sequence.
+
 **TASK:**
 Find the element "${elementDescription}" and provide its EXACT CENTER coordinates.
 
@@ -1232,6 +1377,7 @@ Find the element "${elementDescription}" and provide its EXACT CENTER coordinate
 1. Measure coordinates precisely from the top-left corner
 2. Provide the CENTER POINT of the element
 3. Estimate confidence based on visual clarity and match quality
+4. Use the click history markers as reference points to help locate the element
 
 **RESPONSE FORMAT (JSON only, no markdown):**
 {
@@ -1541,7 +1687,7 @@ async function executeActionStep(
         writeMCPLog(`[executeActionStep] Step ${step.step}: Clicking to focus, then typing "${step.value}"`, 'Step Execution');
         await performClick(coords.x, coords.y, coords.displayIndex, 'single');
         await new Promise(resolve => setTimeout(resolve, 200));
-        await performType(step.value, false, true, displayIndex);
+        await performType(step.value, false);
         writeMCPLog(`[executeActionStep] Step ${step.step}: Type completed successfully`, 'Step Execution');
         return {
           success: true,
@@ -1571,7 +1717,7 @@ async function executeActionStep(
           };
         }
         writeMCPLog(`[executeActionStep] Step ${step.step}: Pressing key "${step.value}"`, 'Step Execution');
-        await performKeyPress(step.value, [], true, displayIndex);
+        await performKeyPress(step.value, []);
         writeMCPLog(`[executeActionStep] Step ${step.step}: Key press completed successfully`, 'Step Execution');
         return {
           success: true,
@@ -1790,12 +1936,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'boolean',
               description: 'Whether to press Enter after typing. Default: false',
             },
-            display_index: {
-              type: 'number',
-              description: 'Display index for screenshot capture in operation experience. Default: 0',
-            },
           },
-          required: ['text', 'display_index'],
+          required: ['text'],
         },
       },
       {
@@ -1813,12 +1955,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               items: { type: 'string' },
               description: 'Modifier keys: command/cmd, shift, option/alt, control/ctrl',
             },
-            display_index: {
-              type: 'number',
-              description: 'Display index for screenshot capture in operation experience. Default: 0',
-            },
           },
-          required: ['key', 'display_index'],
+          required: ['key'],
         },
       },
       {
@@ -2033,17 +2171,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: 'get_operation_experiences',
-        description: 'Get all saved operation experiences. Returns a list of operations with their parameters, screenshots, and success status. Use this to review what operations were performed and their results, which helps you adjust future operations based on visual feedback. When you find your operations failed, you can use this tool to get the experiences and adjust your future operations. Note that after getting these experiences, you should read the saved screenshots and understand the operations and their results.',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          required: [],
-        },
-      },
-      {
-        name: 'clear_operation_experiences',
-        description: 'Clear all saved operation experiences. Use this to reset the experience history when starting a new task or to free up memory.',
+        name: 'clear_click_history',
+        description: 'Clear the click history used for annotating screenshots in gui_locate_element. Use this when starting a new task or when you want to reset the visual markers on screenshots.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -2081,22 +2210,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'type_text': {
-        const { text, press_enter = false, display_index } = args as {
+        const { text, press_enter = false } = args as {
           text: string;
           press_enter?: boolean;
-          display_index?: number;
         };
-        result = await performType(text, press_enter, true, display_index);
+        result = await performType(text, press_enter);
         break;
       }
       
       case 'key_press': {
-        const { key, modifiers = [], display_index } = args as {
+        const { key, modifiers = [] } = args as {
           key: string;
           modifiers?: string[];
-          display_index?: number;
         };
-        result = await performKeyPress(key, modifiers, true, display_index);
+        result = await performKeyPress(key, modifiers);
         break;
       }
       
@@ -2197,21 +2324,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       }
       
-      case 'get_operation_experiences': {
-        const experiences = getOperationExperiences();
+      case 'clear_click_history': {
+        clearClickHistory();
         result = JSON.stringify({
           success: true,
-          count: experiences.length,
-          experiences: experiences,
-        }, null, 2);
-        break;
-      }
-      
-      case 'clear_operation_experiences': {
-        clearOperationExperiences();
-        result = JSON.stringify({
-          success: true,
-          message: 'All operation experiences cleared',
+          message: 'Click history cleared',
         });
         break;
       }
