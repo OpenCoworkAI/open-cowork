@@ -1860,23 +1860,56 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
         } else if (message.type === 'user') {
           // Tool results from SDK
           const content = (message as any).message?.content;
-          
+
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'tool_result') {
                 const isError = block.is_error === true;
 
+                // Debug: Log the raw block structure
+                log(`[ClaudeAgentRunner] Raw tool_result block:`, JSON.stringify(block, null, 2).substring(0, 500));
+                log(`[ClaudeAgentRunner] block.content type: ${Array.isArray(block.content) ? 'array' : typeof block.content}`);
+
+                // Handle MCP tool results with content arrays (e.g., text + image)
+                let textContent = '';
+                const images: Array<{ data: string; mimeType: string }> = [];
+
+                if (Array.isArray(block.content)) {
+                  // MCP tool returned content array (e.g., screenshot_for_display)
+                  log(`[ClaudeAgentRunner] Tool result content is array, length: ${block.content.length}`);
+                  for (const contentItem of block.content) {
+                    log(`[ClaudeAgentRunner] Content item type: ${contentItem.type}`);
+                    if (contentItem.type === 'text') {
+                      textContent += (contentItem.text || '');
+                    } else if (contentItem.type === 'image') {
+                      // Extract image data from MCP SDK format
+                      // MCP SDK returns: { type: 'image', source: { data: '...', media_type: '...', type: 'base64' } }
+                      const imageData = contentItem.source?.data || contentItem.data || '';
+                      const mimeType = contentItem.source?.media_type || contentItem.mimeType || 'image/png';
+                      const imageDataLength = imageData.length;
+                      log(`[ClaudeAgentRunner] Extracting image data, length: ${imageDataLength}, mimeType: ${mimeType}`);
+                      images.push({
+                        data: imageData,
+                        mimeType: mimeType
+                      });
+                    }
+                  }
+                  log(`[ClaudeAgentRunner] Extracted ${images.length} images`);
+                } else {
+                  // Standard string content
+                  textContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+                }
+
                 // Sanitize output to replace real sandbox paths with virtual workspace paths
-                const rawContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
-                const sanitizedContent = sanitizeOutputPaths(rawContent);
-                
+                const sanitizedContent = sanitizeOutputPaths(textContent);
+
                 // Update the existing tool_call trace step instead of creating a new one
                 this.sendTraceUpdate(session.id, block.tool_use_id, {
                   status: isError ? 'error' : 'completed',
                   toolOutput: sanitizedContent.slice(0, 800),
                 });
 
-                // Send tool result message
+                // Send tool result message with optional images
                 const toolResultMsg: Message = {
                   id: uuidv4(),
                   sessionId: session.id,
@@ -1885,7 +1918,8 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
                     type: 'tool_result',
                     toolUseId: block.tool_use_id,
                     content: sanitizedContent,
-                    isError
+                    isError,
+                    ...(images.length > 0 && { images })
                   }],
                   timestamp: Date.now(),
                 };

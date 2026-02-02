@@ -1258,50 +1258,50 @@ async function takeScreenshot(
   const timestamp = Date.now();
   const defaultPath = path.join(WORKSPACE_DIR, `screenshot_${timestamp}.png`);
   const finalPath = outputPath || defaultPath;
-  
+
   // Ensure the directory exists
   const dir = path.dirname(finalPath);
   await fs.mkdir(dir, { recursive: true });
-  
+
   let command = 'screencapture -C';
-  
+
   // -x: no sound
   command += ' -x';
-  
+
   // If specific display requested
   if (displayIndex !== undefined) {
     const config = await getDisplayConfiguration();
     const display = config.displays.find(d => d.index === displayIndex);
-    
+
     if (!display) {
       throw new Error(`Display index ${displayIndex} not found.`);
     }
-    
+
     // -D: capture specific display (1-indexed for screencapture)
     command += ` -D ${displayIndex + 1}`;
   }
-  
+
   // If region specified
   if (region) {
     const { globalX, globalY } = displayIndex !== undefined
       ? await convertToGlobalCoordinates(region.x, region.y, displayIndex)
       : { globalX: region.x, globalY: region.y };
-    
+
     // -R: capture specific region (x,y,width,height)
     command += ` -R ${globalX},${globalY},${region.width},${region.height}`;
   }
-  
+
   command += ` "${finalPath}"`;
-  
+
   await executeCommand(command);
-  
+
   // Verify the file was created
   try {
     await fs.access(finalPath);
-    
+
     // Get file info
     const stats = await fs.stat(finalPath);
-    
+
     return JSON.stringify({
       success: true,
       path: finalPath,
@@ -1312,6 +1312,89 @@ async function takeScreenshot(
   } catch {
     throw new Error(`Screenshot file was not created at ${finalPath}`);
   }
+}
+
+/**
+ * Take a screenshot and return it with base64 image data for display in the response
+ */
+async function takeScreenshotForDisplay(
+  displayIndex?: number,
+  region?: { x: number; y: number; width: number; height: number },
+  reason?: string,
+  annotateClicks?: boolean
+): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+  const timestamp = Date.now();
+  const tempPath = path.join(WORKSPACE_DIR, `screenshot_display_${timestamp}.png`);
+
+  // Take the screenshot first
+  await takeScreenshot(tempPath, displayIndex, region);
+
+  let finalPath = tempPath;
+  let clickHistoryInfo: string | undefined;
+
+  // Annotate with click history if requested
+  if (annotateClicks && currentAppName) {
+    try {
+      const annotateResult = await annotateScreenshotWithClickHistory(
+        tempPath,
+        displayIndex ?? 0
+      );
+      finalPath = annotateResult.annotatedPath;
+      clickHistoryInfo = annotateResult.clickHistoryInfo;
+    } catch (error) {
+      writeMCPLog(`[takeScreenshotForDisplay] Failed to annotate screenshot: ${error}`, 'Screenshot');
+      // Continue with un-annotated screenshot
+    }
+  }
+
+  // Read the screenshot file and convert to base64
+  const imageBuffer = await fs.readFile(finalPath);
+  const base64Image = imageBuffer.toString('base64');
+
+  // Get display information
+  const config = await getDisplayConfiguration();
+  const display = config.displays.find(d => d.index === (displayIndex ?? 0)) || config.displays[0];
+
+  // Build response metadata
+  const metadata: Record<string, any> = {
+    success: true,
+    path: finalPath,
+    displayIndex: displayIndex ?? 0,
+    displayInfo: {
+      width: display.width,
+      height: display.height,
+      scaleFactor: display.scaleFactor,
+    },
+    timestamp: new Date().toISOString(),
+    annotated: annotateClicks && currentAppName ? true : false,
+  };
+
+  if (reason) {
+    metadata.reason = reason;
+  }
+
+  if (region) {
+    metadata.region = region;
+  }
+
+  if (clickHistoryInfo) {
+    metadata.clickHistoryInfo = clickHistoryInfo;
+  }
+
+  // Return MCP response with both text and image content
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(metadata, null, 2),
+      },
+      {
+        type: 'image',
+        data: base64Image,
+        mimeType: 'image/png',
+      },
+    ],
+  };
 }
 
 /**
@@ -2852,6 +2935,39 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'screenshot_for_display',
+        description: 'Take a screenshot and return it as base64 image data for display in the response. Use this when you want to show key screenshots to the user in your reply. The screenshot will be embedded directly in the conversation.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            display_index: {
+              type: 'number',
+              description: 'Display index to capture. If not provided, captures main display (0).',
+            },
+            region: {
+              type: 'object',
+              description: 'Capture a specific region',
+              properties: {
+                x: { type: 'number', description: 'X coordinate of region' },
+                y: { type: 'number', description: 'Y coordinate of region' },
+                width: { type: 'number', description: 'Width of region' },
+                height: { type: 'number', description: 'Height of region' },
+              },
+              required: ['x', 'y', 'width', 'height'],
+            },
+            reason: {
+              type: 'string',
+              description: 'Optional description of why taking this screenshot (e.g., "showing current dialog state", "capturing error message"). This helps document the purpose of the screenshot.',
+            },
+            annotate_clicks: {
+              type: 'boolean',
+              description: 'If true, annotate the screenshot with click history markers. Default: false',
+            },
+          },
+          required: [],
+        },
+      },
+      {
         name: 'get_mouse_position',
         description: 'Get the current mouse cursor position, including which display it is on.',
         inputSchema: {
@@ -3103,7 +3219,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await takeScreenshot(output_path, display_index, region);
         break;
       }
-      
+
+      case 'screenshot_for_display': {
+        const { display_index, region, reason, annotate_clicks } = args as {
+          display_index?: number;
+          region?: { x: number; y: number; width: number; height: number };
+          reason?: string;
+          annotate_clicks?: boolean;
+        };
+        // This tool returns a special format with image data, so return directly
+        return await takeScreenshotForDisplay(display_index, region, reason, annotate_clicks);
+      }
+
       case 'get_mouse_position': {
         const position = await getMousePosition();
         result = JSON.stringify(position, null, 2);
