@@ -12,6 +12,15 @@ describe('splitTextByFileMentions', () => {
     ]);
   });
 
+  it('detects Chinese filenames at the start of a line', () => {
+    const input = '简单销售报告.xlsx - 生成的Excel文件';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([
+      { type: 'file', value: '简单销售报告.xlsx' },
+      { type: 'text', value: ' - 生成的Excel文件' },
+    ]);
+  });
+
   it('detects absolute paths', () => {
     const input = '路径 /Users/haoqing/test/报告.docx 已生成';
     const parts = splitTextByFileMentions(input);
@@ -33,6 +42,18 @@ describe('splitTextByFileMentions', () => {
 
   it('ignores urls', () => {
     const input = '查看 https://example.com/demo.txt';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([{ type: 'text', value: input }]);
+  });
+
+  it('does not treat numeric dimensions as filenames', () => {
+    const input = 'HTML尺寸应该是10.0" × 5.6" (16:9比例)。';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([{ type: 'text', value: input }]);
+  });
+
+  it('ignores filenames embedded in Chinese sentences without boundaries', () => {
+    const input = '我看到已经有一个slide1.html文件了。让我创建其他幻灯片文件。先创建slide2.html:';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([{ type: 'text', value: input }]);
   });
