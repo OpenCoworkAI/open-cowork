@@ -549,6 +549,14 @@ ipcMain.handle('shell.openExternal', async (_event, url: string) => {
   return shell.openExternal(url);
 });
 
+ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string) => {
+  if (!filePath) {
+    return false;
+  }
+
+  return shell.showItemInFolder(filePath);
+});
+
 ipcMain.handle('dialog.selectFiles', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile', 'multiSelections'],

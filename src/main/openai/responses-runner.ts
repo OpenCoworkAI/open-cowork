@@ -6,6 +6,7 @@ import type { Message, PermissionResult, ServerEvent, Session, TraceStep } from 
 import { PathResolver } from '../sandbox/path-resolver';
 import { ToolExecutor } from '../tools/tool-executor';
 import { log, logError, logWarn } from '../utils/logger';
+import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 
 type ToolSpec = {
   name: string;
@@ -61,6 +62,12 @@ type TodoItem = {
   id?: string;
   activeForm?: string;
 };
+
+const ARTIFACT_INSTRUCTION =
+  '\n\nIf you produce a final deliverable file, declare it once using this exact block so the app can show it as the final artifact:\n\n' +
+  '```artifact\n' +
+  '{"path":"/workspace/path/to/file.ext","name":"optional display name","type":"optional type"}\n' +
+  '```\n';
 
 const TOOL_SPECS: Record<string, ToolSpec> = {
   AskUserQuestion: {
@@ -386,11 +393,12 @@ export class OpenAIResponsesRunner {
         const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
         if (text) {
           await this.streamText(session.id, text, controller.signal);
+          const { cleanText } = extractArtifactsFromText(text);
           this.sendMessage(session.id, {
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text }],
+            content: [{ type: 'text', text: cleanText }],
             timestamp: Date.now(),
           });
         }
@@ -411,11 +419,12 @@ export class OpenAIResponsesRunner {
             const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
             if (text) {
               await this.streamText(session.id, text, controller.signal);
+              const { cleanText } = extractArtifactsFromText(text);
               this.sendMessage(session.id, {
                 id: uuidv4(),
                 sessionId: session.id,
                 role: 'assistant',
-                content: [{ type: 'text', text }],
+                content: [{ type: 'text', text: cleanText }],
                 timestamp: Date.now(),
               });
             }
@@ -660,14 +669,19 @@ export class OpenAIResponsesRunner {
     while (true) {
       const outputText = this.extractOutputText(response);
       if (outputText) {
-        if (!streamed) {
+        const { cleanText, artifacts } = extractArtifactsFromText(outputText);
+        if (streamed) {
+          for (const step of buildArtifactTraceSteps(artifacts)) {
+            this.sendTraceStep(session.id, step);
+          }
+        } else {
           await this.streamText(session.id, outputText, signal);
         }
         this.sendMessage(session.id, {
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: outputText }],
+          content: [{ type: 'text', text: cleanText }],
           timestamp: Date.now(),
         });
       }
@@ -1313,6 +1327,24 @@ export class OpenAIResponsesRunner {
     }
   }
 
+  private appendArtifactInstruction<T extends { role: string; content: any }>(items: T[]): void {
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      if (items[i].role !== 'user') {
+        continue;
+      }
+      const content = items[i].content;
+      if (Array.isArray(content)) {
+        const textItem = content.find((entry) => entry.type === 'input_text' || entry.type === 'output_text');
+        if (textItem && typeof textItem.text === 'string' && !textItem.text.includes('```artifact')) {
+          textItem.text = `${textItem.text}${ARTIFACT_INSTRUCTION}`;
+        }
+      } else if (typeof content === 'string' && !content.includes('```artifact')) {
+        items[i].content = `${content}${ARTIFACT_INSTRUCTION}`;
+      }
+      break;
+    }
+  }
+
   private buildInput(existingMessages: Message[], prompt: string): unknown[] {
     const items: Array<{ role: string; content: Array<{ type: 'input_text' | 'output_text'; text: string }> }> = [];
 
@@ -1333,6 +1365,10 @@ export class OpenAIResponsesRunner {
         role: 'user',
         content: [{ type: 'input_text', text: prompt.trim() }],
       });
+    }
+
+    if (items.length > 0) {
+      this.appendArtifactInstruction(items);
     }
 
     return items;
@@ -1361,6 +1397,10 @@ export class OpenAIResponsesRunner {
 
     if (!items.length && trimmedPrompt) {
       items.push({ role: 'user', content: trimmedPrompt });
+    }
+
+    if (items.length > 0) {
+      this.appendArtifactInstruction(items);
     }
 
     return items;
@@ -1447,7 +1487,12 @@ export class OpenAIResponsesRunner {
   }
 
   private async streamText(sessionId: string, text: string, signal: AbortSignal): Promise<void> {
-    const chunks = text.match(/.{1,30}/g) || [text];
+    const { cleanText, artifacts } = extractArtifactsFromText(text);
+    for (const step of buildArtifactTraceSteps(artifacts)) {
+      this.sendTraceStep(sessionId, step);
+    }
+
+    const chunks = cleanText.match(/.{1,30}/g) || [cleanText];
     for (const chunk of chunks) {
       if (signal.aborted) break;
       this.sendPartial(sessionId, chunk);

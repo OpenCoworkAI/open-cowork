@@ -54,3 +54,6 @@ CLAUDE.md
 
 # codex
 .codex/*
+
+# Worktrees
+.worktrees/
