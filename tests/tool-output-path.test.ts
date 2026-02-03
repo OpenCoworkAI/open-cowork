@@ -12,6 +12,11 @@ describe('extractFilePathFromToolOutput', () => {
     expect(extractFilePathFromToolOutput(output)).toBe('/Users/haoqing/Desktop/report.docx');
   });
 
+  it('extracts path from File created successfully output', () => {
+    const output = 'File created successfully at: /Users/haoqing/Desktop/report.docx';
+    expect(extractFilePathFromToolOutput(output)).toBe('/Users/haoqing/Desktop/report.docx');
+  });
+
   it('extracts path from JSON output', () => {
     const output = JSON.stringify({ filePath: '/tmp/demo.txt' });
     expect(extractFilePathFromToolOutput(output)).toBe('/tmp/demo.txt');

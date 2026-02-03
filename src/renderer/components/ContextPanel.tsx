@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
+import { getArtifactLabel, getArtifactIconComponent, getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -10,6 +11,14 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileSpreadsheet,
+  FilePieChart,
+  FileSliders,
+  FileCode2,
+  FileArchive,
+  FileAudio2,
+  FileVideo,
+  Image as ImageIcon,
   FolderOpen,
   FolderSync,
   Globe,
@@ -63,9 +72,7 @@ export function ContextPanel() {
   const isRunning = Boolean(activeTurn || pendingCount > 0);
   const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
-  const artifactSteps = steps.filter(s => s.type === 'tool_result' && s.toolName === 'artifact');
-  const fileSteps = steps.filter(s => s.type === 'tool_result' && s.toolName === 'write_file');
-  const displayArtifactSteps = artifactSteps.length > 0 ? artifactSteps : fileSteps;
+  const { artifactSteps, displayArtifactSteps } = getArtifactSteps(steps);
   const canShowItemInFolder = typeof window !== 'undefined' && !!window.electronAPI?.showItemInFolder;
 
   // Load MCP servers on mount
@@ -175,12 +182,25 @@ export function ContextPanel() {
                   ? resolveArtifactPath(fallbackPath, currentWorkingDir)
                   : '';
                 const label = artifactSteps.length > 0
-                  ? artifactInfo?.name || artifactInfo?.path || t('context.fileCreated')
-                  : fallbackPath || t('context.fileCreated');
+                  ? getArtifactLabel(artifactInfo?.path || '', artifactInfo?.name)
+                  : (fallbackPath ? getArtifactLabel(fallbackPath) : t('context.fileCreated'));
                 const artifactPath = artifactSteps.length > 0
                   ? resolveArtifactPath(artifactInfo?.path || '', currentWorkingDir)
                   : resolvedFallbackPath;
                 const canClick = Boolean(artifactPath && canShowItemInFolder);
+                const iconComponent = getArtifactIconComponent(label);
+                const IconComponent =
+                  iconComponent === 'presentation' ? FilePieChart
+                  : iconComponent === 'table' ? FileSpreadsheet
+                  : iconComponent === 'document' ? FileText
+                  : iconComponent === 'code' ? FileCode2
+                  : iconComponent === 'image' ? ImageIcon
+                  : iconComponent === 'audio' ? FileAudio2
+                  : iconComponent === 'video' ? FileVideo
+                  : iconComponent === 'archive' ? FileArchive
+                  : iconComponent === 'text' ? File
+                  : File;
+
                 return (
                   <div
                     key={index}
@@ -191,7 +211,7 @@ export function ContextPanel() {
                     }}
                     title={canClick ? artifactPath : undefined}
                   >
-                    <FileText className="w-4 h-4 text-text-muted" />
+                    <IconComponent className="w-4 h-4 text-text-muted" />
                     <span className="text-sm text-text-primary truncate">
                       {label}
                     </span>

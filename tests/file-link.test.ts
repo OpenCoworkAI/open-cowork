@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitTextByFileMentions, getFileLinkButtonClassName } from '../src/renderer/utils/file-link';
+import { splitTextByFileMentions, getFileLinkButtonClassName, splitChildrenByFileMentions } from '../src/renderer/utils/file-link';
 
 describe('splitTextByFileMentions', () => {
   it('detects bare filenames with extension', () => {
@@ -62,5 +62,13 @@ describe('splitTextByFileMentions', () => {
     const className = getFileLinkButtonClassName();
     expect(className).toContain('text-left');
     expect(className).toContain('break-all');
+  });
+
+  it('splits string children into file and text parts', () => {
+    const parts = splitChildrenByFileMentions(['simple.md - 描述']);
+    expect(parts).toEqual([
+      { type: 'file', value: 'simple.md' },
+      { type: 'text', value: ' - 描述' },
+    ]);
   });
 });
