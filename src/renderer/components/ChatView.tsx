@@ -42,6 +42,9 @@ export function ChatView() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevMessageCountRef = useRef(0);
   const prevPartialLengthRef = useRef(0);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRequestRef = useRef<number | null>(null);
+  const isScrollingRef = useRef(false);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
@@ -79,6 +82,42 @@ export function ChatView() {
     ];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
 
+  // Debounced scroll function to prevent scroll conflicts
+  const scrollToBottom = useRef((behavior: ScrollBehavior = 'auto', immediate: boolean = false) => {
+    // Cancel any pending scroll requests
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+    if (scrollRequestRef.current) {
+      cancelAnimationFrame(scrollRequestRef.current);
+      scrollRequestRef.current = null;
+    }
+
+    const performScroll = () => {
+      if (!isUserAtBottomRef.current) return;
+      
+      // Mark as scrolling to prevent concurrent scrolls
+      isScrollingRef.current = true;
+      
+      messagesEndRef.current?.scrollIntoView({ behavior });
+      
+      // Reset scrolling flag after a short delay
+      setTimeout(() => {
+        isScrollingRef.current = false;
+      }, behavior === 'smooth' ? 300 : 50);
+    };
+
+    if (immediate) {
+      performScroll();
+    } else {
+      // Use RAF + timeout for debouncing
+      scrollRequestRef.current = requestAnimationFrame(() => {
+        scrollTimeoutRef.current = setTimeout(performScroll, 16); // ~1 frame delay
+      });
+    }
+  }).current;
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -98,13 +137,22 @@ export function ChatView() {
     const partialLength = partialMessage.length;
     const hasNewMessage = messageCount !== prevMessageCountRef.current;
     const isStreamingTick = partialLength !== prevPartialLengthRef.current && !hasNewMessage;
-    const behavior: ScrollBehavior = hasNewMessage ? 'smooth' : 'auto';
+
+    // Skip scroll if already scrolling (prevent conflicts)
+    if (isScrollingRef.current) {
+      prevMessageCountRef.current = messageCount;
+      prevPartialLengthRef.current = partialLength;
+      return;
+    }
 
     if (isUserAtBottomRef.current) {
       if (!isStreamingTick) {
-        messagesEndRef.current?.scrollIntoView({ behavior });
+        // New message - use smooth scroll but with debounce
+        const behavior: ScrollBehavior = hasNewMessage ? 'smooth' : 'auto';
+        scrollToBottom(behavior, false);
       } else {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        // Streaming tick - use instant scroll with debounce
+        scrollToBottom('auto', false);
       }
     }
 
@@ -123,9 +171,10 @@ export function ChatView() {
     if (!messagesContainer) return;
 
     const resizeObserver = new ResizeObserver(() => {
-      if (isUserAtBottomRef.current) {
+      // Don't interfere with ongoing scrolls
+      if (!isScrollingRef.current && isUserAtBottomRef.current) {
         // Scroll to bottom when content height changes
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        scrollToBottom('auto', false);
       }
     });
 
@@ -135,6 +184,18 @@ export function ChatView() {
       resizeObserver.disconnect();
     };
   }, [displayedMessages]); // Re-create observer when messages change to ensure we're observing the right element
+
+  // Cleanup scroll timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      if (scrollRequestRef.current) {
+        cancelAnimationFrame(scrollRequestRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     textareaRef.current?.focus();

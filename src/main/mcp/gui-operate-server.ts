@@ -90,6 +90,103 @@ let lastClickEntry: ClickHistoryEntry | null = null; // Track the most recent cl
 
 // Base directory for storing app-level data
 const GUI_APPS_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_apps');
+const GUI_LAST_APP_FILE = path.join(GUI_APPS_DIR, '_last_app.json');
+
+interface LastAppContext {
+  appName: string;
+  savedAt: number;
+}
+
+let restoreAppContextPromise: Promise<boolean> | null = null;
+
+async function saveLastAppContext(appName: string): Promise<void> {
+  try {
+    await fs.mkdir(GUI_APPS_DIR, { recursive: true });
+    const payload: LastAppContext = { appName, savedAt: Date.now() };
+    await fs.writeFile(GUI_LAST_APP_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (error: any) {
+    writeMCPLog(`[App Context] Failed to save last app context: ${error.message}`, 'App Init Warning');
+  }
+}
+
+async function inferMostRecentAppNameFromDisk(): Promise<string | null> {
+  try {
+    await fs.mkdir(GUI_APPS_DIR, { recursive: true });
+    const entries = await fs.readdir(GUI_APPS_DIR, { withFileTypes: true });
+
+    let best: { appDirName: string; lastUpdated: number } | null = null;
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const clickHistoryPath = path.join(GUI_APPS_DIR, entry.name, 'click_history.json');
+
+      try {
+        const raw = await fs.readFile(clickHistoryPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Partial<AppClickHistory> | null;
+        const lastUpdated = typeof parsed?.lastUpdated === 'number' ? parsed.lastUpdated : 0;
+
+        if (!best || lastUpdated > best.lastUpdated) {
+          best = { appDirName: entry.name, lastUpdated };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return best?.appDirName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function restoreLastAppContext(): Promise<boolean> {
+  if (currentAppName) return true;
+  if (os.platform() !== 'darwin') return false;
+
+  try {
+    const data = await fs.readFile(GUI_LAST_APP_FILE, 'utf-8');
+    const parsed = JSON.parse(data) as Partial<LastAppContext> | null;
+    const appName = typeof parsed?.appName === 'string' ? parsed.appName : '';
+
+    if (!appName) {
+      const inferred = await inferMostRecentAppNameFromDisk();
+      if (!inferred) return false;
+      writeMCPLog(`[App Context] No appName in last-app file. Inferred most recent app: "${inferred}"`, 'App Init Warning');
+      await loadClickHistoryForApp(inferred);
+      await saveLastAppContext(inferred);
+      return true;
+    }
+
+    writeMCPLog(`[App Context] Restoring last app context: "${appName}"`, 'App Init');
+    await loadClickHistoryForApp(appName);
+    return true;
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      // Backward compatibility: if we don't have last-app metadata yet, infer from disk.
+      const inferred = await inferMostRecentAppNameFromDisk();
+      if (!inferred) return false;
+      writeMCPLog(`[App Context] No last-app file found. Inferred most recent app: "${inferred}"`, 'App Init');
+      await loadClickHistoryForApp(inferred);
+      await saveLastAppContext(inferred);
+      return true;
+    }
+    writeMCPLog(`[App Context] Failed to restore last app context: ${error.message}`, 'App Init Warning');
+    return false;
+  }
+}
+
+async function ensureAppContextRestored(): Promise<boolean> {
+  if (currentAppName) return true;
+  if (!restoreAppContextPromise) {
+    restoreAppContextPromise = restoreLastAppContext();
+  }
+  const restored = await restoreAppContextPromise;
+  // If restore failed and app is still not initialized, allow future retries (e.g. after init_app creates metadata).
+  if (!restored && !currentAppName) {
+    restoreAppContextPromise = null;
+  }
+  return restored;
+}
 
 /**
  * Get the directory path for a specific app
@@ -358,6 +455,7 @@ async function initApp(appName: string): Promise<{
   
   // Load history for the target app
   await loadClickHistoryForApp(appName);
+  await saveLastAppContext(appName);
 
   // Load optional per-app guide
   const guidePath = path.join(appDir, 'guide.md');
@@ -1610,6 +1708,12 @@ async function performClick(
 ): Promise<string> {
   writeMCPLog(`[performClick] Input coordinates: x=${x}, y=${y}, displayIndex=${displayIndex}, clickType=${clickType}`, 'Click Operation');
 
+  // If server restarted, in-memory click history/app context is empty. Try to restore last app context
+  // so click history persistence + screenshot annotation remain stable without requiring an explicit init_app retry.
+  if (!currentAppName && clickHistory.length === 0) {
+    await ensureAppContextRestored();
+  }
+
   const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
 
   writeMCPLog(`[performClick] Global coordinates: globalX=${globalX}, globalY=${globalY}`, 'Click Operation');
@@ -2555,6 +2659,11 @@ async function annotateScreenshotWithClickHistory(
   screenshotPath: string,
   displayIndex: number
 ): Promise<{ annotatedPath: string; clickHistoryInfo: string }> {
+  // If server restarted, restore last app context so click history markers are available.
+  if (!currentAppName && clickHistory.length === 0) {
+    await ensureAppContextRestored();
+  }
+
   // Debug: Log the full click history array
   writeMCPLog(`[annotateScreenshot] Total clicks in history: ${clickHistory.length}`, 'Click History Debug');
   writeMCPLog(`[annotateScreenshot] Full click history: ${JSON.stringify(clickHistory)}`, 'Click History Debug');
@@ -2614,8 +2723,9 @@ async function annotateScreenshotWithClickHistory(
   
   // Filter out overlapping clicks - keep only clicks that are far enough apart
   // Maximum 9 markers to avoid cluttering the screenshot (including the #0 marker)
-  const MIN_DISTANCE_PIXELS = 50; // Minimum distance between annotations (in pixels)
-  const MAX_MARKERS = 10; // Maximum number of markers to display (including #0)
+  const MIN_DISTANCE_PIXELS = 200; // Minimum distance between annotations (in pixels)
+  // const MAX_MARKERS = 10; // Maximum number of markers to display (including #0)
+  const MAX_MARKERS = 5;
   const filteredClicks: ClickHistoryEntry[] = [];
   
   // Always add the most recent click as #0
@@ -2890,6 +3000,8 @@ async function analyzeScreenshotWithVision(
       screenshotPath,
       targetDisplay.index
     );
+
+    // const annotatedPath = screenshotPath;
 
     writeMCPLog(`[analyzeScreenshotWithVision] Using screenshot: ${annotatedPath}`, 'Screenshot Selection');
     writeMCPLog(`[analyzeScreenshotWithVision] Click history: ${clickHistoryInfo}`, 'Click History');
