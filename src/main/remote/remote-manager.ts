@@ -965,6 +965,12 @@ export class RemoteManager extends EventEmitter {
       
       log('[RemoteManager] Created new session:', newSession.id, 'for remote:', sessionId, 'cwd:', workingDirectory);
       log('[RemoteManager] Session mapping stored:', newSession.id, '<->', sessionId);
+      log('[RemoteManager] Emitting session update to renderer for:', newSession.id);
+
+      this.emitToRenderer({
+        type: 'session.update',
+        payload: { sessionId: newSession.id, updates: newSession },
+      });
     } else {
       // Continue existing session - use actual session ID
       const actualSessionId = this.reverseSessionIdMapping.get(sessionId);
