@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
-import { getArtifactLabel, getArtifactSteps } from '../utils/artifact-steps';
+import { getArtifactLabel, getArtifactIconKey, getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -11,6 +11,14 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileSpreadsheet,
+  FilePieChart,
+  FileSliders,
+  FileCode2,
+  FileArchive,
+  FileAudio2,
+  FileVideo,
+  Image as ImageIcon,
   FolderOpen,
   FolderSync,
   Globe,
@@ -180,6 +188,19 @@ export function ContextPanel() {
                   ? resolveArtifactPath(artifactInfo?.path || '', currentWorkingDir)
                   : resolvedFallbackPath;
                 const canClick = Boolean(artifactPath && canShowItemInFolder);
+                const iconKey = getArtifactIconKey(label);
+                const IconComponent =
+                  iconKey === 'slides' ? FileSliders
+                  : iconKey === 'table' ? FileSpreadsheet
+                  : iconKey === 'doc' ? FilePieChart
+                  : iconKey === 'code' ? FileCode2
+                  : iconKey === 'image' ? ImageIcon
+                  : iconKey === 'audio' ? FileAudio2
+                  : iconKey === 'video' ? FileVideo
+                  : iconKey === 'archive' ? FileArchive
+                  : iconKey === 'text' ? FileText
+                  : File;
+
                 return (
                   <div
                     key={index}
@@ -190,7 +211,7 @@ export function ContextPanel() {
                     }}
                     title={canClick ? artifactPath : undefined}
                   >
-                    <FileText className="w-4 h-4 text-text-muted" />
+                    <IconComponent className="w-4 h-4 text-text-muted" />
                     <span className="text-sm text-text-primary truncate">
                       {label}
                     </span>
