@@ -47,3 +47,6 @@ coverage/
 
 # codex
 .codex/*
+
+dist*
+resources/node
