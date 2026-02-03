@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
+import OpenAI from 'openai';
+import { Anthropic } from '@anthropic-ai/sdk';
 import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -12,6 +14,7 @@ import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { log, logError } from '../utils/logger';
+import { maybeGenerateSessionTitle } from './session-title-flow';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -31,6 +34,7 @@ export class SessionManager {
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
   private sandboxInitPromises: Map<string, Promise<void>> = new Map();
+  private sessionTitleAttempts: Set<string> = new Set();
 
   constructor(db: DatabaseInstance, sendToRenderer: (event: ServerEvent) => void) {
     this.db = db;
@@ -438,6 +442,8 @@ export class SessionManager {
       // Get existing messages for context (including the one we just saved)
       const existingMessages = this.getMessages(session.id);
 
+      void this.runSessionTitleGeneration(session, prompt, existingMessages);
+
       // Run the agent - this handles everything including sending messages
       // Use enhanced prompt that includes file information
       await this.agentRunner.run(session, enhancedPrompt, existingMessages);
@@ -448,6 +454,71 @@ export class SessionManager {
         payload: { message: error instanceof Error ? error.message : 'Unknown error' },
       });
     }
+  }
+
+  private async runSessionTitleGeneration(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+    const userMessageCount = existingMessages.filter((message) => message.role === 'user').length;
+    try {
+      await maybeGenerateSessionTitle({
+        sessionId: session.id,
+        prompt,
+        userMessageCount,
+        currentTitle: session.title,
+        hasAttempted: this.sessionTitleAttempts.has(session.id),
+        generateTitle: (titlePrompt) => this.generateTitleWithConfig(titlePrompt),
+        getLatestTitle: () => this.db.sessions.get(session.id)?.title ?? null,
+        markAttempt: () => {
+          this.sessionTitleAttempts.add(session.id);
+        },
+        updateTitle: async (title) => {
+          session.title = title;
+          this.updateSessionTitle(session.id, title);
+        },
+        log,
+      });
+    } catch (error) {
+      logError('[SessionTitle] Unexpected error', session.id, error);
+    }
+  }
+
+  private async generateTitleWithConfig(titlePrompt: string): Promise<string | null> {
+    const provider = configStore.get('provider');
+    const customProtocol = configStore.get('customProtocol');
+    const apiKey = configStore.get('apiKey');
+    const baseUrl = configStore.get('baseUrl');
+    const model = configStore.get('model');
+    const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+
+    if (!apiKey || !model) {
+      log('[SessionTitle] Missing apiKey/model, skip generation');
+      return null;
+    }
+
+    if (useOpenAI) {
+      const client = new OpenAI({
+        apiKey,
+        baseURL: baseUrl || undefined,
+      });
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: titlePrompt }],
+        temperature: 0.2,
+        max_tokens: 64,
+      });
+      return response.choices[0]?.message?.content?.trim() || null;
+    }
+
+    const useAuthTokenHeader = provider === 'openrouter';
+    const client = useAuthTokenHeader
+      ? new Anthropic({ authToken: apiKey, baseURL: baseUrl || undefined })
+      : new Anthropic({ apiKey, baseURL: baseUrl || undefined });
+    const response = await client.messages.create({
+      model,
+      max_tokens: 64,
+      messages: [{ role: 'user', content: titlePrompt }],
+    });
+    const text = response.content.find((item) => item.type === 'text')?.text;
+    return text?.trim() || null;
   }
 
   private enqueuePrompt(session: Session, prompt: string, content?: ContentBlock[]): void {
@@ -524,6 +595,7 @@ export class SessionManager {
 
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
+    this.sessionTitleAttempts.delete(sessionId);
     
     log('[SessionManager] Session deleted:', sessionId);
   }
@@ -535,6 +607,14 @@ export class SessionManager {
     this.sendToRenderer({
       type: 'session.status',
       payload: { sessionId, status },
+    });
+  }
+
+  private updateSessionTitle(sessionId: string, title: string): void {
+    this.db.sessions.update(sessionId, { title });
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: { sessionId, updates: { title } },
     });
   }
 

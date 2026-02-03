@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
+import { splitTextByFileMentions, getFileLinkButtonClassName } from '../utils/file-link';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
@@ -134,6 +135,36 @@ interface ContentBlockViewProps {
 }
 
 function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: ContentBlockViewProps) {
+  const { activeSessionId, sessions, workingDir } = useAppStore();
+  const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
+  const currentWorkingDir = activeSession?.cwd || workingDir;
+
+  const resolveFilePath = (value: string) => {
+    if (/^(?:[A-Za-z]:\\|\\\\|\/)/.test(value)) {
+      return value;
+    }
+    if (!currentWorkingDir) {
+      return value;
+    }
+    return `${currentWorkingDir.replace(/[\\/]+$/, '')}/${value}`;
+  };
+
+  const renderFileButton = (value: string, key?: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => {
+        if (typeof window !== 'undefined' && window.electronAPI?.showItemInFolder) {
+          void window.electronAPI.showItemInFolder(resolveFilePath(value));
+        }
+      }}
+      className={getFileLinkButtonClassName()}
+      title="在文件夹中定位"
+    >
+      {value}
+    </button>
+  );
+
   switch (block.type) {
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
@@ -192,6 +223,11 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 const isInline = !match;
 
                 if (isInline) {
+                  const raw = String(children);
+                  const parts = splitTextByFileMentions(raw);
+                  if (parts.length === 1 && parts[0].type === 'file') {
+                    return renderFileButton(parts[0].value);
+                  }
                   return (
                     <code className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm" {...props}>
                       {children}
@@ -206,7 +242,19 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 );
               },
               p({ children }) {
-                return <p>{children}</p>;
+                const mapped = (Array.isArray(children) ? children : [children]).flatMap((child, index) => {
+                  if (typeof child === 'string') {
+                    const parts = splitTextByFileMentions(child);
+                    return parts.map((part, partIndex) => {
+                      if (part.type === 'file') {
+                        return renderFileButton(part.value, `${index}-${partIndex}`);
+                      }
+                      return <span key={`${index}-${partIndex}`}>{part.value}</span>;
+                    });
+                  }
+                  return child;
+                });
+                return <p className="text-left">{mapped}</p>;
               },
               table({ children }) {
                 return (

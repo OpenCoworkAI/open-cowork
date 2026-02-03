@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield } from 'lucide-react';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield, Wifi } from 'lucide-react';
 import type { ProviderPresets, Skill, ApiTestResult } from '../types';
+import { RemoteControlPanel } from './RemoteControlPanel';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -42,10 +43,10 @@ interface MCPServerStatus {
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
+  initialTab?: 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'remote' | 'logs' | 'language';
 }
 
-type TabId = 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'logs' | 'language';
+type TabId = 'api' | 'sandbox' | 'credentials' | 'connectors' | 'skills' | 'remote' | 'logs' | 'language';
 
 const SERVICE_OPTIONS = [
   { value: 'gmail', label: 'Gmail' },
@@ -92,6 +93,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
     { id: 'credentials' as TabId, label: t('settings.credentials'), icon: Key, description: t('settings.credentialsDesc') },
     { id: 'connectors' as TabId, label: t('settings.connectors'), icon: Plug, description: t('settings.connectorsDesc') },
     { id: 'skills' as TabId, label: t('settings.skills'), icon: Package, description: t('settings.skillsDesc') },
+    { id: 'remote' as TabId, label: t('settings.remote', '远程控制'), icon: Wifi, description: t('settings.remoteDesc', '通过飞书等平台远程使用') },
     { id: 'logs' as TabId, label: t('settings.logs'), icon: AlertCircle, description: t('settings.logsDesc') },
     { id: 'language' as TabId, label: t('settings.language'), icon: Languages, description: t('settings.languageDesc') },
   ];
@@ -163,6 +165,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
             </div>
             <div className={activeTab === 'skills' ? '' : 'hidden'}>
               {viewedTabs.has('skills') && <SkillsTab />}
+            </div>
+            <div className={activeTab === 'remote' ? '' : 'hidden'}>
+              {viewedTabs.has('remote') && <RemoteControlPanel />}
             </div>
             <div className={activeTab === 'logs' ? '' : 'hidden'}>
               {viewedTabs.has('logs') && <LogsTab />}

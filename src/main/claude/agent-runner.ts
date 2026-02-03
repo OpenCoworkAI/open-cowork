@@ -12,6 +12,8 @@ import { spawn, execSync, type ChildProcess } from 'child_process';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
+import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
 import { buildThinkingOptions } from './thinking-options';
 // import { PathGuard } from '../sandbox/path-guard';
 
@@ -1216,11 +1218,11 @@ Then follow the workflow described in that file.
       const shellEnv = getShellEnvironment();
       logTiming('after getShellEnvironment');
 
-      // Build environment with:
-      // 1. Shell environment (includes proper PATH with node/npm)
-      // 2. CLAUDE_CONFIG_DIR pointing to app-specific config directory for skills
+      const { configStore } = await import('../config/config-store');
+      const envOverrides = getClaudeEnvOverrides(configStore.getAll());
+      // 构建运行环境：shell 环境 + 配置覆盖 + CLAUDE_CONFIG_DIR
       const envWithSkills: NodeJS.ProcessEnv = {
-        ...shellEnv,
+        ...buildClaudeEnv(shellEnv, envOverrides),
         CLAUDE_CONFIG_DIR: userClaudeDir,
       };
 
@@ -1337,7 +1339,6 @@ Then follow the workflow described in that file.
       logTiming('after building MCP servers config');
       
       // Get enableThinking from config
-      const { configStore } = await import('../config/config-store');
       const enableThinking = configStore.get('enableThinking') ?? false;
       log('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
       
@@ -1450,6 +1451,12 @@ ${availableSkillsPrompt}
 ${this.getMCPToolsPrompt()}
 
 ${this.getCredentialsPrompt()}
+<artifact_instructions>
+When you produce a final deliverable file, declare it once using this exact block so the app can show it as the final artifact:
+```artifact
+{"path":"/workspace/path/to/file.ext","name":"optional display name","type":"optional type"}
+```
+</artifact_instructions>
 <application_details> Claude is powering **Cowork mode**, a feature of the Claude desktop app. Cowork mode is currently a **research preview**. Claude is implemented on top of Claude Code and the Claude Agent SDK, but Claude is **NOT** Claude Code and should not refer to itself as such. Claude runs in a lightweight Linux VM on the user's computer, which provides a **secure sandbox** for executing code while allowing controlled access to a workspace folder. Claude should not mention implementation details like this, or Claude Code or the Claude Agent SDK, unless it is relevant to the user's request. </application_details>
 <behavior_instructions>
 ==
@@ -1818,6 +1825,34 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
                     timestamp: Date.now(),
                   });
                 }
+              }
+            }
+
+            const { cleanText, artifacts } = extractArtifactsFromText(textContent);
+            if (artifacts.length > 0) {
+              textContent = cleanText;
+              let replacedText = false;
+              const cleanedBlocks: ContentBlock[] = [];
+              for (const block of contentBlocks) {
+                if (block.type === 'text') {
+                  if (!replacedText) {
+                    if (cleanText) {
+                      cleanedBlocks.push({ type: 'text', text: cleanText });
+                    }
+                    replacedText = true;
+                  }
+                  continue;
+                }
+                cleanedBlocks.push(block);
+              }
+              if (!replacedText && cleanText) {
+                cleanedBlocks.unshift({ type: 'text', text: cleanText });
+              }
+              contentBlocks.length = 0;
+              contentBlocks.push(...cleanedBlocks);
+
+              for (const step of buildArtifactTraceSteps(artifacts)) {
+                this.sendTraceStep(session.id, step);
               }
             }
 
