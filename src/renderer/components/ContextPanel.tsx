@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
-import { getArtifactLabel, getArtifactIconKey, getArtifactSteps } from '../utils/artifact-steps';
+import { getArtifactLabel, getArtifactIconComponent, getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -188,17 +188,17 @@ export function ContextPanel() {
                   ? resolveArtifactPath(artifactInfo?.path || '', currentWorkingDir)
                   : resolvedFallbackPath;
                 const canClick = Boolean(artifactPath && canShowItemInFolder);
-                const iconKey = getArtifactIconKey(label);
+                const iconComponent = getArtifactIconComponent(label);
                 const IconComponent =
-                  iconKey === 'slides' ? FileSliders
-                  : iconKey === 'table' ? FileSpreadsheet
-                  : iconKey === 'doc' ? FilePieChart
-                  : iconKey === 'code' ? FileCode2
-                  : iconKey === 'image' ? ImageIcon
-                  : iconKey === 'audio' ? FileAudio2
-                  : iconKey === 'video' ? FileVideo
-                  : iconKey === 'archive' ? FileArchive
-                  : iconKey === 'text' ? FileText
+                  iconComponent === 'presentation' ? FilePieChart
+                  : iconComponent === 'table' ? FileSpreadsheet
+                  : iconComponent === 'document' ? FileText
+                  : iconComponent === 'code' ? FileCode2
+                  : iconComponent === 'image' ? ImageIcon
+                  : iconComponent === 'audio' ? FileAudio2
+                  : iconComponent === 'video' ? FileVideo
+                  : iconComponent === 'archive' ? FileArchive
+                  : iconComponent === 'text' ? File
                   : File;
 
                 return (

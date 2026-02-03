@@ -67,6 +67,10 @@ describe('getArtifactSteps', () => {
   });
 
   it('formats label from name when provided', () => {
-    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md', '自定义名称')).toBe('自定义名称');
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md', '自定义名称')).toBe('自定义名称.md');
+  });
+
+  it('appends extension when name is missing it', () => {
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.pptx', '简单PPT演示文稿')).toBe('简单PPT演示文稿.pptx');
   });
 });

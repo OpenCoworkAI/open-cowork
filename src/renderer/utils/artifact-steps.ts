@@ -17,11 +17,21 @@ type ArtifactStepResult = {
 
 export function getArtifactLabel(pathValue: string, name?: string): string {
   const trimmedName = name?.trim();
+  const trimmedPath = pathValue.trim();
   if (trimmedName) {
+    if (!trimmedPath) {
+      return trimmedName;
+    }
+    const normalized = trimmedPath.replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    const basename = parts[parts.length - 1] || trimmedPath;
+    const lastDot = basename.lastIndexOf('.');
+    if (lastDot > 0 && !trimmedName.includes('.')) {
+      return `${trimmedName}${basename.slice(lastDot)}`;
+    }
     return trimmedName;
   }
 
-  const trimmedPath = pathValue.trim();
   if (!trimmedPath) {
     return '';
   }
@@ -38,6 +48,18 @@ export type ArtifactIconKey =
   | 'code'
   | 'text'
   | 'image'
+  | 'audio'
+  | 'video'
+  | 'archive'
+  | 'file';
+
+export type ArtifactIconComponent =
+  | 'presentation'
+  | 'table'
+  | 'document'
+  | 'code'
+  | 'image'
+  | 'text'
   | 'audio'
   | 'video'
   | 'archive'
@@ -108,6 +130,32 @@ export function getArtifactIconKey(filename: string): ArtifactIconKey {
 
   const ext = normalized.slice(lastDot + 1);
   return extensionIconMap[ext] ?? 'file';
+}
+
+export function getArtifactIconComponent(filename: string): ArtifactIconComponent {
+  const key = getArtifactIconKey(filename);
+  switch (key) {
+    case 'slides':
+      return 'presentation';
+    case 'table':
+      return 'table';
+    case 'doc':
+      return 'document';
+    case 'code':
+      return 'code';
+    case 'image':
+      return 'image';
+    case 'audio':
+      return 'audio';
+    case 'video':
+      return 'video';
+    case 'archive':
+      return 'archive';
+    case 'text':
+      return 'text';
+    default:
+      return 'file';
+  }
 }
 
 export function getArtifactSteps(steps: TraceStep[]): ArtifactStepResult {

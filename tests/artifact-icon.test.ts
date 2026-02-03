@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getArtifactIconKey } from '../src/renderer/utils/artifact-steps';
+import { getArtifactIconKey, getArtifactIconComponent } from '../src/renderer/utils/artifact-steps';
 
 describe('getArtifactIconKey', () => {
   it('returns type icon key for known extensions', () => {
@@ -19,5 +19,12 @@ describe('getArtifactIconKey', () => {
 
   it('returns file icon key for unknown extensions', () => {
     expect(getArtifactIconKey('archive.bin')).toBe('file');
+  });
+});
+
+describe('getArtifactIconComponent', () => {
+  it('maps presentations and documents to visual components', () => {
+    expect(getArtifactIconComponent('deck.pptx')).toBe('presentation');
+    expect(getArtifactIconComponent('doc.docx')).toBe('document');
   });
 });
