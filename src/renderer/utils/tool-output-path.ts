@@ -27,7 +27,8 @@ export function extractFilePathFromToolOutput(toolOutput?: string): string | nul
     // ignore JSON parse failures
   }
 
-  const match = trimmed.match(/File (?:written|edited):\s*(.+)$/i);
+  const match = trimmed.match(/File (?:written|edited):\s*(.+)$/i)
+    || trimmed.match(/File created successfully at:?\s*(.+)$/i);
   if (match && match[1]) {
     return match[1].trim();
   }

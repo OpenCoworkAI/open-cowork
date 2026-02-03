@@ -1,6 +1,9 @@
 export type FileTextPart =
   | { type: 'text'; value: string }
   | { type: 'file'; value: string };
+export type FileChildPart =
+  | FileTextPart
+  | { type: 'node'; value: unknown };
 
 const fileLinkButtonClassName =
   'text-accent hover:text-accent-hover underline underline-offset-2 text-left break-all inline-block';
@@ -102,6 +105,30 @@ export function splitTextByFileMentions(text: string): FileTextPart[] {
 
   if (parts.length === 0) {
     parts.push({ type: 'text', value: text });
+  }
+
+  return parts;
+}
+
+export function splitChildrenByFileMentions(children: Array<unknown>): FileChildPart[] {
+  const parts: FileChildPart[] = [];
+
+  for (const child of children) {
+    if (typeof child === 'string') {
+      const childParts = splitTextByFileMentions(child);
+      parts.push(...childParts);
+      continue;
+    }
+
+    if (child === null || child === undefined || child === false) {
+      continue;
+    }
+
+    parts.push({ type: 'node', value: child });
+  }
+
+  if (parts.length === 0) {
+    parts.push({ type: 'text', value: '' });
   }
 
   return parts;

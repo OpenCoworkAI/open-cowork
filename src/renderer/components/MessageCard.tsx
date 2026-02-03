@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, isValidElement, cloneElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -6,7 +6,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
-import { splitTextByFileMentions, getFileLinkButtonClassName } from '../utils/file-link';
+import {
+  splitTextByFileMentions,
+  splitChildrenByFileMentions,
+  getFileLinkButtonClassName
+} from '../utils/file-link';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
@@ -165,6 +169,27 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
     </button>
   );
 
+  const renderFileMentionParts = (parts: ReturnType<typeof splitChildrenByFileMentions>, keyPrefix: string) =>
+    parts.map((part, partIndex) => {
+      const key = `${keyPrefix}-${partIndex}`;
+      if (part.type === 'file') {
+        return renderFileButton(part.value, key);
+      }
+      if (part.type === 'text') {
+        return <span key={key}>{part.value}</span>;
+      }
+      if (isValidElement(part.value)) {
+        return part.value.key ? part.value : cloneElement(part.value, { key });
+      }
+      return <span key={key}>{String(part.value)}</span>;
+    });
+
+  const renderChildrenWithFileLinks = (children: unknown, keyPrefix: string) => {
+    const normalized = Array.isArray(children) ? children : [children];
+    const parts = splitChildrenByFileMentions(normalized);
+    return renderFileMentionParts(parts, keyPrefix);
+  };
+
   switch (block.type) {
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
@@ -242,19 +267,18 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 );
               },
               p({ children }) {
-                const mapped = (Array.isArray(children) ? children : [children]).flatMap((child, index) => {
-                  if (typeof child === 'string') {
-                    const parts = splitTextByFileMentions(child);
-                    return parts.map((part, partIndex) => {
-                      if (part.type === 'file') {
-                        return renderFileButton(part.value, `${index}-${partIndex}`);
-                      }
-                      return <span key={`${index}-${partIndex}`}>{part.value}</span>;
-                    });
-                  }
-                  return child;
-                });
-                return <p className="text-left">{mapped}</p>;
+                return (
+                  <p className="text-left">
+                    {renderChildrenWithFileLinks(children, 'p')}
+                  </p>
+                );
+              },
+              li({ children }) {
+                return (
+                  <li className="text-left">
+                    {renderChildrenWithFileLinks(children, 'li')}
+                  </li>
+                );
               },
               table({ children }) {
                 return (
@@ -291,10 +315,18 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 );
               },
               strong({ children }) {
-                return <strong>{children}</strong>;
+                return (
+                  <strong>
+                    {renderChildrenWithFileLinks(children, 'strong')}
+                  </strong>
+                );
               },
               em({ children }) {
-                return <em>{children}</em>;
+                return (
+                  <em>
+                    {renderChildrenWithFileLinks(children, 'em')}
+                  </em>
+                );
               },
             }}
           >

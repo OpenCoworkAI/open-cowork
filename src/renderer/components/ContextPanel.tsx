@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
+import { getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -63,9 +64,7 @@ export function ContextPanel() {
   const isRunning = Boolean(activeTurn || pendingCount > 0);
   const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
-  const artifactSteps = steps.filter(s => s.type === 'tool_result' && s.toolName === 'artifact');
-  const fileSteps = steps.filter(s => s.type === 'tool_result' && s.toolName === 'write_file');
-  const displayArtifactSteps = artifactSteps.length > 0 ? artifactSteps : fileSteps;
+  const { artifactSteps, displayArtifactSteps } = getArtifactSteps(steps);
   const canShowItemInFolder = typeof window !== 'undefined' && !!window.electronAPI?.showItemInFolder;
 
   // Load MCP servers on mount
