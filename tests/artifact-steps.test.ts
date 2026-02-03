@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { TraceStep } from '../src/renderer/types';
-import { getArtifactSteps } from '../src/renderer/utils/artifact-steps';
+import { getArtifactSteps, getArtifactLabel } from '../src/renderer/utils/artifact-steps';
 
 describe('getArtifactSteps', () => {
   it('includes completed Write tool calls as file steps when no artifacts exist', () => {
@@ -60,5 +60,13 @@ describe('getArtifactSteps', () => {
     expect(artifactSteps).toHaveLength(1);
     expect(fileSteps).toHaveLength(1);
     expect(displayArtifactSteps).toEqual(artifactSteps);
+  });
+
+  it('formats label from full path', () => {
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md')).toBe('simple.md');
+  });
+
+  it('formats label from name when provided', () => {
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md', '自定义名称')).toBe('自定义名称');
   });
 });

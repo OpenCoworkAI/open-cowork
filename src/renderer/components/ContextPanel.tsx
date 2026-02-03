@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
-import { getArtifactSteps } from '../utils/artifact-steps';
+import { getArtifactLabel, getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -174,8 +174,8 @@ export function ContextPanel() {
                   ? resolveArtifactPath(fallbackPath, currentWorkingDir)
                   : '';
                 const label = artifactSteps.length > 0
-                  ? artifactInfo?.name || artifactInfo?.path || t('context.fileCreated')
-                  : fallbackPath || t('context.fileCreated');
+                  ? getArtifactLabel(artifactInfo?.path || '', artifactInfo?.name)
+                  : (fallbackPath ? getArtifactLabel(fallbackPath) : t('context.fileCreated'));
                 const artifactPath = artifactSteps.length > 0
                   ? resolveArtifactPath(artifactInfo?.path || '', currentWorkingDir)
                   : resolvedFallbackPath;
