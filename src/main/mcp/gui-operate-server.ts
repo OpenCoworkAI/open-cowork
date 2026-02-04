@@ -1,7 +1,7 @@
 /**
  * GUI Operate MCP Server
  * 
- * This MCP server provides GUI automation capabilities for macOS:
+ * This MCP server provides GUI automation capabilities for macOS and Windows:
  * - Click (single click, double click, right click)
  * - Type text (keyboard input)
  * - Scroll (mouse wheel scroll)
@@ -13,7 +13,9 @@
  * - Coordinates are automatically adjusted based on display configuration
  * - Display index 0 is the main display, others are secondary displays
  * 
- * Uses cliclick for macOS (brew install cliclick)
+ * Platform-specific tools:
+ * - macOS: Uses cliclick (brew install cliclick) and AppleScript
+ * - Windows: Uses PowerShell with .NET System.Windows.Forms
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -31,9 +33,16 @@ import { writeMCPLog } from './mcp-logger';
 
 const execAsync = promisify(exec);
 
+// Detect platform
+const PLATFORM = os.platform(); // 'darwin' for macOS, 'win32' for Windows
+
 // Get Open Cowork data directory for persistent storage
-// Use ~/Library/Application Support/open-cowork on macOS
-const OPEN_COWORK_DATA_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'open-cowork');
+// Use platform-appropriate paths:
+// - macOS: ~/Library/Application Support/open-cowork
+// - Windows: %APPDATA%/open-cowork
+const OPEN_COWORK_DATA_DIR = PLATFORM === 'win32'
+  ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'open-cowork')
+  : path.join(os.homedir(), 'Library', 'Application Support', 'open-cowork');
 
 // Directory for storing GUI operate files (screenshots, etc.)
 const GUI_OPERATE_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_operate');
@@ -82,6 +91,103 @@ let lastClickEntry: ClickHistoryEntry | null = null; // Track the most recent cl
 
 // Base directory for storing app-level data
 const GUI_APPS_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_apps');
+const GUI_LAST_APP_FILE = path.join(GUI_APPS_DIR, '_last_app.json');
+
+interface LastAppContext {
+  appName: string;
+  savedAt: number;
+}
+
+let restoreAppContextPromise: Promise<boolean> | null = null;
+
+async function saveLastAppContext(appName: string): Promise<void> {
+  try {
+    await fs.mkdir(GUI_APPS_DIR, { recursive: true });
+    const payload: LastAppContext = { appName, savedAt: Date.now() };
+    await fs.writeFile(GUI_LAST_APP_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (error: any) {
+    writeMCPLog(`[App Context] Failed to save last app context: ${error.message}`, 'App Init Warning');
+  }
+}
+
+async function inferMostRecentAppNameFromDisk(): Promise<string | null> {
+  try {
+    await fs.mkdir(GUI_APPS_DIR, { recursive: true });
+    const entries = await fs.readdir(GUI_APPS_DIR, { withFileTypes: true });
+
+    let best: { appDirName: string; lastUpdated: number } | null = null;
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const clickHistoryPath = path.join(GUI_APPS_DIR, entry.name, 'click_history.json');
+
+      try {
+        const raw = await fs.readFile(clickHistoryPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Partial<AppClickHistory> | null;
+        const lastUpdated = typeof parsed?.lastUpdated === 'number' ? parsed.lastUpdated : 0;
+
+        if (!best || lastUpdated > best.lastUpdated) {
+          best = { appDirName: entry.name, lastUpdated };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return best?.appDirName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function restoreLastAppContext(): Promise<boolean> {
+  if (currentAppName) return true;
+  if (os.platform() !== 'darwin') return false;
+
+  try {
+    const data = await fs.readFile(GUI_LAST_APP_FILE, 'utf-8');
+    const parsed = JSON.parse(data) as Partial<LastAppContext> | null;
+    const appName = typeof parsed?.appName === 'string' ? parsed.appName : '';
+
+    if (!appName) {
+      const inferred = await inferMostRecentAppNameFromDisk();
+      if (!inferred) return false;
+      writeMCPLog(`[App Context] No appName in last-app file. Inferred most recent app: "${inferred}"`, 'App Init Warning');
+      await loadClickHistoryForApp(inferred);
+      await saveLastAppContext(inferred);
+      return true;
+    }
+
+    writeMCPLog(`[App Context] Restoring last app context: "${appName}"`, 'App Init');
+    await loadClickHistoryForApp(appName);
+    return true;
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      // Backward compatibility: if we don't have last-app metadata yet, infer from disk.
+      const inferred = await inferMostRecentAppNameFromDisk();
+      if (!inferred) return false;
+      writeMCPLog(`[App Context] No last-app file found. Inferred most recent app: "${inferred}"`, 'App Init');
+      await loadClickHistoryForApp(inferred);
+      await saveLastAppContext(inferred);
+      return true;
+    }
+    writeMCPLog(`[App Context] Failed to restore last app context: ${error.message}`, 'App Init Warning');
+    return false;
+  }
+}
+
+async function ensureAppContextRestored(): Promise<boolean> {
+  if (currentAppName) return true;
+  if (!restoreAppContextPromise) {
+    restoreAppContextPromise = restoreLastAppContext();
+  }
+  const restored = await restoreAppContextPromise;
+  // If restore failed and app is still not initialized, allow future retries (e.g. after init_app creates metadata).
+  if (!restored && !currentAppName) {
+    restoreAppContextPromise = null;
+  }
+  return restored;
+}
 
 /**
  * Get the directory path for a specific app
@@ -350,6 +456,7 @@ async function initApp(appName: string): Promise<{
   
   // Load history for the target app
   await loadClickHistoryForApp(appName);
+  await saveLastAppContext(appName);
 
   // Load optional per-app guide
   const guidePath = path.join(appDir, 'guide.md');
@@ -505,9 +612,10 @@ async function executeCommand(
 }
 
 /**
- * Check if cliclick is installed
+ * Check if cliclick is installed (macOS only)
  */
 async function checkCliclickInstalled(): Promise<boolean> {
+  if (PLATFORM !== 'darwin') return false;
   try {
     await executeCommand('which cliclick');
     return true;
@@ -517,13 +625,11 @@ async function checkCliclickInstalled(): Promise<boolean> {
 }
 
 /**
- * Execute cliclick command with error handling
+ * Execute cliclick command with error handling (macOS only)
  */
 async function executeCliclick(command: string): Promise<{ stdout: string; stderr: string }> {
-  const platform = os.platform();
-
-  if (platform !== 'darwin') {
-    throw new Error('This MCP server only supports macOS. cliclick is only available on macOS.');
+  if (PLATFORM !== 'darwin') {
+    throw new Error('cliclick is only available on macOS. Use Windows-specific functions instead.');
   }
 
   const isInstalled = await checkCliclickInstalled();
@@ -542,11 +648,714 @@ async function executeCliclick(command: string): Promise<{ stdout: string; stder
 }
 
 // ============================================================================
+// Windows-specific Helper Functions
+// ============================================================================
+
+/**
+ * Execute PowerShell command (Windows only)
+ * Uses -WindowStyle Hidden to prevent focus theft from target windows
+ */
+async function executePowerShell(script: string, timeout: number = 30000): Promise<{ stdout: string; stderr: string }> {
+  if (PLATFORM !== 'win32') {
+    throw new Error('PowerShell is only available on Windows.');
+  }
+  
+  // Escape the script for PowerShell command line
+  const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
+  // Use -WindowStyle Hidden to prevent PowerShell window from stealing focus
+  const command = `powershell -WindowStyle Hidden -NonInteractive -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}`;
+  
+  writeMCPLog(`[executePowerShell] Executing script (length: ${script.length})`, 'PowerShell Command');
+  
+  const result = await executeCommand(command, timeout);
+  
+  writeMCPLog(`[executePowerShell] Command completed. stdout length: ${result.stdout.length}`, 'PowerShell Result');
+  
+  return result;
+}
+
+/**
+ * Windows: Take screenshot using .NET with DPI awareness
+ */
+async function windowsTakeScreenshot(
+  outputPath: string,
+  displayIndex?: number,
+  region?: { x: number; y: number; width: number; height: number }
+): Promise<void> {
+  let script: string;
+  
+  // Common DPI-aware setup code
+  const dpiAwareSetup = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Enable DPI awareness to get actual physical screen dimensions
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DpiHelper {
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+    
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+    
+    [DllImport("gdi32.dll")]
+    public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hWnd);
+    
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+}
+"@
+
+# Make process DPI-aware
+[DpiHelper]::SetProcessDPIAware() | Out-Null
+
+# Get actual screen dimensions using GetSystemMetrics
+# SM_CXSCREEN = 0, SM_CYSCREEN = 1 (primary screen)
+# SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79 (virtual screen)
+`;
+  
+  if (region) {
+    // Capture specific region
+    script = `${dpiAwareSetup}
+
+$x = ${region.x}
+$y = ${region.y}
+$width = ${region.width}
+$height = ${region.height}
+
+$bitmap = New-Object System.Drawing.Bitmap($width, $height)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($x, $y, 0, 0, [System.Drawing.Size]::new($width, $height))
+$bitmap.Save("${outputPath.replace(/\\/g, '\\\\')}")
+$graphics.Dispose()
+$bitmap.Dispose()
+Write-Output "SUCCESS"
+`;
+  } else if (displayIndex !== undefined) {
+    // Capture specific display with DPI awareness
+    script = `${dpiAwareSetup}
+
+$targetIndex = ${displayIndex}
+
+# Get physical screen dimensions
+if ($targetIndex -eq 0) {
+    # Primary screen - use GetSystemMetrics for accurate physical dimensions
+    $physWidth = [DpiHelper]::GetSystemMetrics(0)   # SM_CXSCREEN
+    $physHeight = [DpiHelper]::GetSystemMetrics(1)  # SM_CYSCREEN
+    $physX = 0
+    $physY = 0
+} else {
+    # For non-primary displays, use virtual screen metrics
+    # This is a simplified approach - may need refinement for multi-monitor setups
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    if ($targetIndex -ge $screens.Length) {
+        Write-Error "Display index $targetIndex not found. Available: 0-$($screens.Length - 1)"
+        exit 1
+    }
+    $screen = $screens[$targetIndex]
+    
+    # Get DPI scaling factor
+    $hdc = [DpiHelper]::GetDC([IntPtr]::Zero)
+    $dpiX = [DpiHelper]::GetDeviceCaps($hdc, 88)  # LOGPIXELSX
+    [DpiHelper]::ReleaseDC([IntPtr]::Zero, $hdc) | Out-Null
+    $scaleFactor = $dpiX / 96.0
+    
+    # Scale the bounds to physical pixels
+    $physX = [int]($screen.Bounds.X * $scaleFactor)
+    $physY = [int]($screen.Bounds.Y * $scaleFactor)
+    $physWidth = [int]($screen.Bounds.Width * $scaleFactor)
+    $physHeight = [int]($screen.Bounds.Height * $scaleFactor)
+}
+
+$bitmap = New-Object System.Drawing.Bitmap($physWidth, $physHeight)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($physX, $physY, 0, 0, [System.Drawing.Size]::new($physWidth, $physHeight))
+$bitmap.Save("${outputPath.replace(/\\/g, '\\\\')}")
+$graphics.Dispose()
+$bitmap.Dispose()
+Write-Output "SUCCESS"
+`;
+  } else {
+    // Capture primary screen when no displayIndex specified (NOT virtual screen)
+    // This ensures coordinate system consistency
+    script = `${dpiAwareSetup}
+
+# Get primary screen dimensions using GetSystemMetrics
+$physWidth = [DpiHelper]::GetSystemMetrics(0)   # SM_CXSCREEN
+$physHeight = [DpiHelper]::GetSystemMetrics(1)  # SM_CYSCREEN
+$physX = 0
+$physY = 0
+
+$bitmap = New-Object System.Drawing.Bitmap($physWidth, $physHeight)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($physX, $physY, 0, 0, [System.Drawing.Size]::new($physWidth, $physHeight))
+$bitmap.Save("${outputPath.replace(/\\/g, '\\\\')}")
+$graphics.Dispose()
+$bitmap.Dispose()
+Write-Output "SUCCESS"
+`;
+  }
+  
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Screenshot failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Get display configuration with DPI awareness
+ */
+async function windowsGetDisplayConfiguration(): Promise<DisplayConfiguration> {
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+# Get DPI scaling factor
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DpiInfo {
+    [DllImport("gdi32.dll")]
+    public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hWnd);
+    
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+    
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+}
+"@
+
+# Make process DPI-aware
+[DpiInfo]::SetProcessDPIAware() | Out-Null
+
+# Get DPI scaling factor (default DPI is 96)
+$hdc = [DpiInfo]::GetDC([IntPtr]::Zero)
+$dpiX = [DpiInfo]::GetDeviceCaps($hdc, 88)  # LOGPIXELSX
+[DpiInfo]::ReleaseDC([IntPtr]::Zero, $hdc) | Out-Null
+$scaleFactor = $dpiX / 96.0
+
+$screens = [System.Windows.Forms.Screen]::AllScreens
+$result = @()
+$index = 0
+
+foreach ($screen in $screens) {
+    # For primary monitor, get physical dimensions
+    if ($screen.Primary) {
+        $physWidth = [DpiInfo]::GetSystemMetrics(0)   # SM_CXSCREEN
+        $physHeight = [DpiInfo]::GetSystemMetrics(1)  # SM_CYSCREEN
+    } else {
+        # Scale logical dimensions to physical for non-primary
+        $physWidth = [int]($screen.Bounds.Width * $scaleFactor)
+        $physHeight = [int]($screen.Bounds.Height * $scaleFactor)
+    }
+    
+    $info = @{
+        index = $index
+        name = $screen.DeviceName
+        isMain = $screen.Primary
+        width = $physWidth
+        height = $physHeight
+        originX = [int]($screen.Bounds.X * $scaleFactor)
+        originY = [int]($screen.Bounds.Y * $scaleFactor)
+        scaleFactor = $scaleFactor
+    }
+    $result += $info
+    $index++
+}
+
+# Force output as array even if single element (wrap in @())
+ConvertTo-Json -InputObject @($result) -Compress
+`;
+
+  const result = await executePowerShell(script);
+  let displays: DisplayInfo[] = JSON.parse(result.stdout.trim());
+  
+  // Ensure displays is an array (PowerShell may return single object instead of array)
+  if (!Array.isArray(displays)) {
+    displays = [displays];
+  }
+  
+  // Sort by index
+  displays.sort((a, b) => a.index - b.index);
+  
+  // Find main display
+  const mainDisplay = displays.find(d => d.isMain) || displays[0];
+  const mainDisplayIndex = mainDisplay?.index || 0;
+  
+  // Calculate total dimensions
+  let totalWidth = 0;
+  let totalHeight = 0;
+  
+  for (const display of displays) {
+    const right = display.originX + display.width;
+    const bottom = display.originY + display.height;
+    if (right > totalWidth) totalWidth = right;
+    if (bottom > totalHeight) totalHeight = bottom;
+  }
+  
+  return {
+    displays,
+    totalWidth,
+    totalHeight,
+    mainDisplayIndex,
+  };
+}
+
+/**
+ * Windows: Perform mouse click using SendInput API
+ */
+async function windowsPerformClick(
+  globalX: number,
+  globalY: number,
+  clickType: 'single' | 'double' | 'right' | 'triple' = 'single',
+  modifiers: string[] = []
+): Promise<void> {
+  // Build modifier key press/release scripts
+  let modifierDown = '';
+  let modifierUp = '';
+  
+  for (const mod of modifiers) {
+    const modLower = mod.toLowerCase();
+    // Virtual key codes: Ctrl=0x11, Shift=0x10, Alt=0x12
+    if (modLower === 'ctrl' || modLower === 'control') {
+      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 0, 0)\n';
+      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 2, 0)\n';
+    } else if (modLower === 'shift') {
+      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x10, 0, 0, 0)\n';
+      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x10, 0, 2, 0)\n';
+    } else if (modLower === 'alt' || modLower === 'option') {
+      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x12, 0, 0, 0)\n';
+      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x12, 0, 2, 0)\n';
+    } else if (modLower === 'cmd' || modLower === 'command') {
+      // Map Cmd to Ctrl on Windows
+      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 0, 0)\n';
+      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 2, 0)\n';
+    }
+  }
+  
+  let clickScript = '';
+  
+  switch (clickType) {
+    case 'double':
+      clickScript = `
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+Start-Sleep -Milliseconds 50
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+`;
+      break;
+    case 'right':
+      clickScript = `
+[Win32Functions.mouse_event]::mouse_event(0x0008, 0, 0, 0, 0)  # Right down
+[Win32Functions.mouse_event]::mouse_event(0x0010, 0, 0, 0, 0)  # Right up
+`;
+      break;
+    case 'triple':
+      clickScript = `
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+Start-Sleep -Milliseconds 50
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+Start-Sleep -Milliseconds 50
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+`;
+      break;
+    case 'single':
+    default:
+      clickScript = `
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
+`;
+      break;
+  }
+  
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+$signature = @"
+[DllImport("user32.dll")]
+public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")]
+public static extern bool SetCursorPos(int X, int Y);
+[DllImport("user32.dll")]
+public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+[DllImport("user32.dll")]
+public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+"@
+
+Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+
+# Set DPI awareness for accurate cursor positioning
+[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+
+# Set cursor position
+[Win32Functions.mouse_event]::SetCursorPos(${globalX}, ${globalY})
+Start-Sleep -Milliseconds 50
+
+# Press modifier keys
+${modifierDown}
+
+# Perform click
+${clickScript}
+
+# Release modifier keys
+${modifierUp}
+
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Click failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Perform keyboard input using clipboard paste
+ * Simplified version that just sends Ctrl+V to the currently focused control
+ * The click operation should have already focused the target control
+ */
+async function windowsPerformType(
+  text: string,
+  pressEnter: boolean = false
+): Promise<void> {
+  // Escape text for PowerShell
+  const escapedText = text.replace(/"/g, '`"').replace(/\$/g, '`$').replace(/`/g, '``');
+  
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+$signature = @"
+[DllImport("user32.dll")]
+public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+"@
+
+Add-Type -MemberDefinition $signature -Name Win32 -Namespace User32
+
+# Save original clipboard content
+$originalClip = $null
+try {
+    $originalClip = [System.Windows.Forms.Clipboard]::GetText()
+} catch {}
+
+# Set the text to clipboard
+[System.Windows.Forms.Clipboard]::SetText("${escapedText}")
+
+# Small delay to ensure clipboard is set
+Start-Sleep -Milliseconds 50
+
+# Send Ctrl+V to paste to whatever control is currently focused
+# VK_CONTROL = 0x11, VK_V = 0x56
+# KEYEVENTF_KEYDOWN = 0, KEYEVENTF_KEYUP = 2
+[User32.Win32]::keybd_event(0x11, 0, 0, 0)  # Ctrl down
+Start-Sleep -Milliseconds 30
+[User32.Win32]::keybd_event(0x56, 0, 0, 0)  # V down
+Start-Sleep -Milliseconds 30
+[User32.Win32]::keybd_event(0x56, 0, 2, 0)  # V up
+Start-Sleep -Milliseconds 30
+[User32.Win32]::keybd_event(0x11, 0, 2, 0)  # Ctrl up
+
+Start-Sleep -Milliseconds 50
+
+${pressEnter ? `
+# Send Enter key
+# VK_RETURN = 0x0D
+Start-Sleep -Milliseconds 50
+[User32.Win32]::keybd_event(0x0D, 0, 0, 0)  # Enter down
+Start-Sleep -Milliseconds 30
+[User32.Win32]::keybd_event(0x0D, 0, 2, 0)  # Enter up
+` : ''}
+
+# Restore original clipboard if possible
+if ($originalClip) {
+    Start-Sleep -Milliseconds 100
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($originalClip)
+    } catch {}
+}
+
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Type failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Press a key or key combination using keybd_event (more reliable)
+ */
+async function windowsPerformKeyPress(
+  key: string,
+  modifiers: string[] = []
+): Promise<void> {
+  // Map key names to virtual key codes
+  const vkMap: Record<string, number> = {
+    'enter': 0x0D, 'return': 0x0D,
+    'tab': 0x09,
+    'escape': 0x1B, 'esc': 0x1B,
+    'space': 0x20,
+    'delete': 0x2E, 'del': 0x2E,
+    'backspace': 0x08,
+    'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27,
+    'home': 0x24, 'end': 0x23,
+    'pageup': 0x21, 'pgup': 0x21,
+    'pagedown': 0x22, 'pgdn': 0x22,
+    'insert': 0x2D,
+    'f1': 0x70, 'f2': 0x71, 'f3': 0x72, 'f4': 0x73,
+    'f5': 0x74, 'f6': 0x75, 'f7': 0x76, 'f8': 0x77,
+    'f9': 0x78, 'f10': 0x79, 'f11': 0x7A, 'f12': 0x7B,
+    // Letters
+    'a': 0x41, 'b': 0x42, 'c': 0x43, 'd': 0x44, 'e': 0x45,
+    'f': 0x46, 'g': 0x47, 'h': 0x48, 'i': 0x49, 'j': 0x4A,
+    'k': 0x4B, 'l': 0x4C, 'm': 0x4D, 'n': 0x4E, 'o': 0x4F,
+    'p': 0x50, 'q': 0x51, 'r': 0x52, 's': 0x53, 't': 0x54,
+    'u': 0x55, 'v': 0x56, 'w': 0x57, 'x': 0x58, 'y': 0x59, 'z': 0x5A,
+    // Numbers
+    '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34,
+    '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39,
+  };
+  
+  const keyLower = key.toLowerCase();
+  const vkCode = vkMap[keyLower];
+  
+  if (vkCode === undefined) {
+    throw new Error(`Unknown key: ${key}`);
+  }
+  
+  // Map modifier names to virtual key codes
+  const modifierCodes: number[] = [];
+  for (const mod of modifiers) {
+    const modLower = mod.toLowerCase();
+    if (modLower === 'ctrl' || modLower === 'control') {
+      modifierCodes.push(0x11); // VK_CONTROL
+    } else if (modLower === 'shift') {
+      modifierCodes.push(0x10); // VK_SHIFT
+    } else if (modLower === 'alt' || modLower === 'option') {
+      modifierCodes.push(0x12); // VK_MENU (Alt)
+    } else if (modLower === 'cmd' || modLower === 'command') {
+      modifierCodes.push(0x11); // Map Cmd to Ctrl on Windows
+    }
+  }
+  
+  // Build PowerShell script
+  const modDownScript = modifierCodes.map(code => 
+    `[User32.Win32]::keybd_event(${code}, 0, 0, 0)`
+  ).join('\n');
+  
+  const modUpScript = modifierCodes.slice().reverse().map(code => 
+    `[User32.Win32]::keybd_event(${code}, 0, 2, 0)`
+  ).join('\n');
+  
+  const script = `
+$signature = @"
+[DllImport("user32.dll")]
+public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+"@
+
+Add-Type -MemberDefinition $signature -Name Win32 -Namespace User32
+
+# Press modifier keys
+${modDownScript}
+
+# Press and release the main key
+[User32.Win32]::keybd_event(${vkCode}, 0, 0, 0)
+Start-Sleep -Milliseconds 50
+[User32.Win32]::keybd_event(${vkCode}, 0, 2, 0)
+
+# Release modifier keys
+${modUpScript}
+
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Key press failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Perform scroll operation
+ */
+async function windowsPerformScroll(
+  globalX: number,
+  globalY: number,
+  direction: 'up' | 'down' | 'left' | 'right',
+  amount: number = 3
+): Promise<void> {
+  // WHEEL_DELTA is 120, amount is number of notches
+  const wheelDelta = direction === 'up' ? (120 * amount) : 
+                     direction === 'down' ? (-120 * amount) : 0;
+  const hWheelDelta = direction === 'left' ? (-120 * amount) :
+                      direction === 'right' ? (120 * amount) : 0;
+  
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+$signature = @"
+[DllImport("user32.dll")]
+public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")]
+public static extern bool SetCursorPos(int X, int Y);
+[DllImport("user32.dll")]
+public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+"@
+
+Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+
+# Set DPI awareness
+[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+
+# Set cursor position
+[Win32Functions.mouse_event]::SetCursorPos(${globalX}, ${globalY})
+Start-Sleep -Milliseconds 50
+
+# Perform scroll (0x0800 = MOUSEEVENTF_WHEEL, 0x01000 = MOUSEEVENTF_HWHEEL)
+${wheelDelta !== 0 ? `[Win32Functions.mouse_event]::mouse_event(0x0800, 0, 0, ${wheelDelta}, 0)` : ''}
+${hWheelDelta !== 0 ? `[Win32Functions.mouse_event]::mouse_event(0x01000, 0, 0, ${hWheelDelta}, 0)` : ''}
+
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Scroll failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Get mouse position
+ */
+async function windowsGetMousePosition(): Promise<{ globalX: number; globalY: number }> {
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+$pos = [System.Windows.Forms.Cursor]::Position
+Write-Output "$($pos.X),$($pos.Y)"
+`;
+
+  const result = await executePowerShell(script);
+  const match = result.stdout.trim().match(/(\d+),(\d+)/);
+  
+  if (!match) {
+    throw new Error(`Failed to parse mouse position: ${result.stdout}`);
+  }
+  
+  return {
+    globalX: parseInt(match[1]),
+    globalY: parseInt(match[2]),
+  };
+}
+
+/**
+ * Windows: Move mouse to position
+ */
+async function windowsMoveMouse(globalX: number, globalY: number): Promise<void> {
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+$signature = @"
+[DllImport("user32.dll")]
+public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")]
+public static extern bool SetCursorPos(int X, int Y);
+"@
+
+Add-Type -MemberDefinition $signature -Name SetCursorPos -Namespace Win32Functions
+
+# Set DPI awareness
+[Win32Functions.SetCursorPos]::SetProcessDPIAware() | Out-Null
+
+[Win32Functions.SetCursorPos]::SetCursorPos(${globalX}, ${globalY})
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Move mouse failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+/**
+ * Windows: Perform drag operation
+ */
+async function windowsPerformDrag(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number
+): Promise<void> {
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+
+$signature = @"
+[DllImport("user32.dll")]
+public static extern bool SetProcessDPIAware();
+[DllImport("user32.dll")]
+public static extern bool SetCursorPos(int X, int Y);
+[DllImport("user32.dll")]
+public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+"@
+
+Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+
+# Set DPI awareness
+[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+
+# Move to start position
+[Win32Functions.mouse_event]::SetCursorPos(${fromX}, ${fromY})
+Start-Sleep -Milliseconds 50
+
+# Press left button
+[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)
+Start-Sleep -Milliseconds 50
+
+# Move to end position
+[Win32Functions.mouse_event]::SetCursorPos(${toX}, ${toY})
+Start-Sleep -Milliseconds 50
+
+# Release left button
+[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)
+
+Write-Output "SUCCESS"
+`;
+
+  const result = await executePowerShell(script);
+  
+  if (!result.stdout.includes('SUCCESS')) {
+    throw new Error(`Drag failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+// ============================================================================
 // Display Information Functions
 // ============================================================================
 
 /**
- * Get display configuration using system_profiler and AppleScript
+ * Get display configuration using platform-specific methods
+ * - macOS: AppleScript/system_profiler
+ * - Windows: PowerShell with System.Windows.Forms
  * Returns information about all connected displays
  */
 async function getDisplayConfiguration(): Promise<DisplayConfiguration> {
@@ -556,10 +1365,21 @@ async function getDisplayConfiguration(): Promise<DisplayConfiguration> {
     return displayConfigCache;
   }
   
-  const platform = os.platform();
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    try {
+      const config = await windowsGetDisplayConfiguration();
+      displayConfigCache = config;
+      displayConfigCacheTime = now;
+      return config;
+    } catch (error: any) {
+      throw new Error(`Failed to get display information on Windows: ${error.message}`);
+    }
+  }
   
-  if (platform !== 'darwin') {
-    throw new Error('Display detection is only supported on macOS.');
+  // macOS implementation follows
+  if (PLATFORM !== 'darwin') {
+    throw new Error(`Display detection is not supported on platform: ${PLATFORM}`);
   }
   
   try {
@@ -889,10 +1709,24 @@ async function performClick(
 ): Promise<string> {
   writeMCPLog(`[performClick] Input coordinates: x=${x}, y=${y}, displayIndex=${displayIndex}, clickType=${clickType}`, 'Click Operation');
 
+  // If server restarted, in-memory click history/app context is empty. Try to restore last app context
+  // so click history persistence + screenshot annotation remain stable without requiring an explicit init_app retry.
+  if (!currentAppName && clickHistory.length === 0) {
+    await ensureAppContextRestored();
+  }
+
   const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
 
-  writeMCPLog(`[performClick] Global coordinates for cliclick: globalX=${globalX}, globalY=${globalY}`, 'Click Operation');
+  writeMCPLog(`[performClick] Global coordinates: globalX=${globalX}, globalY=${globalY}`, 'Click Operation');
 
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    await windowsPerformClick(globalX, globalY, clickType, modifiers);
+    await addClickToHistory(x, y, displayIndex, clickType);
+    return `Performed ${clickType} click at (${x}, ${y}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
+  }
+
+  // macOS implementation using cliclick
   // Build cliclick command
   let command = '';
   
@@ -952,6 +1786,17 @@ async function performType(
   inputMethod: 'auto' | 'keystroke' | 'paste' = 'auto',
   preserveClipboard: boolean = true
 ): Promise<string> {
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    writeMCPLog(
+      `[performType] Windows: Typing text. text length: ${text.length}`,
+      'Type Operation'
+    );
+    await windowsPerformType(text, pressEnter);
+    return `Typed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"${pressEnter ? ' and pressed Enter' : ''}`;
+  }
+
+  // macOS implementation
   const hasNonAscii = /[^\x00-\x7F]/.test(text);
   const usePaste = inputMethod === 'paste' || (inputMethod === 'auto' && hasNonAscii);
 
@@ -1034,6 +1879,14 @@ async function performKeyPress(
   // Log input parameters for debugging
   writeMCPLog(`[performKeyPress] Input: key="${key}", modifiers=${JSON.stringify(modifiers)}`, 'Key Press Debug');
   
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    await windowsPerformKeyPress(key, modifiers);
+    const modifierStr = modifiers.length > 0 ? `${modifiers.join('+')}+` : '';
+    return `Pressed: ${modifierStr}${key}`;
+  }
+
+  // macOS implementation
   // Map common key names to cliclick key codes
   const keyMap: Record<string, string> = {
     'enter': 'return',
@@ -1186,6 +2039,13 @@ async function performScroll(
 ): Promise<string> {
   const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
   
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    await windowsPerformScroll(globalX, globalY, direction, amount);
+    return `Scrolled ${direction} by ${amount} at (${x}, ${y}) on display ${displayIndex}`;
+  }
+
+  // macOS implementation
   // First move to the position
   const moveCommand = `m:${globalX},${globalY}`;
   
@@ -1240,6 +2100,13 @@ async function performDrag(
   const fromCoords = await convertToGlobalCoordinates(fromX, fromY, displayIndex);
   const toCoords = await convertToGlobalCoordinates(toX, toY, displayIndex);
   
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    await windowsPerformDrag(fromCoords.globalX, fromCoords.globalY, toCoords.globalX, toCoords.globalY);
+    return `Dragged from (${fromX}, ${fromY}) to (${toX}, ${toY}) on display ${displayIndex}`;
+  }
+
+  // macOS implementation
   // cliclick drag command: dd: (drag down/start) then du: (drag up/end)
   const command = `dd:${fromCoords.globalX},${fromCoords.globalY} du:${toCoords.globalX},${toCoords.globalY}`;
   
@@ -1264,6 +2131,34 @@ async function takeScreenshot(
   const dir = path.dirname(finalPath);
   await fs.mkdir(dir, { recursive: true });
 
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    // Convert region coordinates to global if needed
+    let globalRegion = region;
+    if (region && displayIndex !== undefined) {
+      const { globalX, globalY } = await convertToGlobalCoordinates(region.x, region.y, displayIndex);
+      globalRegion = { x: globalX, y: globalY, width: region.width, height: region.height };
+    }
+    
+    await windowsTakeScreenshot(finalPath, displayIndex, globalRegion);
+    
+    // Verify the file was created
+    try {
+      await fs.access(finalPath);
+      const stats = await fs.stat(finalPath);
+      return JSON.stringify({
+        success: true,
+        path: finalPath,
+        size: stats.size,
+        displayIndex: displayIndex ?? 'all',
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      throw new Error(`Screenshot file was not created at ${finalPath}`);
+    }
+  }
+
+  // macOS implementation
   let command = 'screencapture -C';
 
   // -x: no sound
@@ -1402,16 +2297,27 @@ async function takeScreenshotForDisplay(
  * Get current mouse position
  */
 async function getMousePosition(): Promise<{ x: number; y: number; displayIndex: number }> {
-  const result = await executeCliclick('p');
-  // Output format: "x,y" or similar
-  const match = result.stdout.trim().match(/(\d+),(\d+)/);
+  let globalX: number;
+  let globalY: number;
   
-  if (!match) {
-    throw new Error(`Failed to parse mouse position: ${result.stdout}`);
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    const pos = await windowsGetMousePosition();
+    globalX = pos.globalX;
+    globalY = pos.globalY;
+  } else {
+    // macOS implementation
+    const result = await executeCliclick('p');
+    // Output format: "x,y" or similar
+    const match = result.stdout.trim().match(/(\d+),(\d+)/);
+    
+    if (!match) {
+      throw new Error(`Failed to parse mouse position: ${result.stdout}`);
+    }
+    
+    globalX = parseInt(match[1]);
+    globalY = parseInt(match[2]);
   }
-  
-  const globalX = parseInt(match[1]);
-  const globalY = parseInt(match[2]);
   
   // Find which display this position is on
   const config = await getDisplayConfiguration();
@@ -1421,8 +2327,8 @@ async function getMousePosition(): Promise<{ x: number; y: number; displayIndex:
     if (
       globalX >= display.originX &&
       globalX < display.originX + display.width &&
-      globalY >= Math.min(display.originY, 0) &&
-      globalY < Math.abs(display.originY) + display.height
+      globalY >= display.originY &&
+      globalY < display.originY + display.height
     ) {
       foundDisplay = display;
       break;
@@ -1431,7 +2337,7 @@ async function getMousePosition(): Promise<{ x: number; y: number; displayIndex:
   
   // Convert to display-local coordinates
   const localX = globalX - foundDisplay.originX;
-  const localY = globalY + foundDisplay.originY;
+  const localY = globalY - foundDisplay.originY;
   
   return {
     x: localX,
@@ -1450,6 +2356,13 @@ async function moveMouse(
 ): Promise<string> {
   const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
   
+  // Windows implementation
+  if (PLATFORM === 'win32') {
+    await windowsMoveMouse(globalX, globalY);
+    return `Moved mouse to (${x}, ${y}) on display ${displayIndex}`;
+  }
+  
+  // macOS implementation
   await executeCliclick(`m:${globalX},${globalY}`);
   
   return `Moved mouse to (${x}, ${y}) on display ${displayIndex}`;
@@ -1747,6 +2660,11 @@ async function annotateScreenshotWithClickHistory(
   screenshotPath: string,
   displayIndex: number
 ): Promise<{ annotatedPath: string; clickHistoryInfo: string }> {
+  // If server restarted, restore last app context so click history markers are available.
+  if (!currentAppName && clickHistory.length === 0) {
+    await ensureAppContextRestored();
+  }
+
   // Debug: Log the full click history array
   writeMCPLog(`[annotateScreenshot] Total clicks in history: ${clickHistory.length}`, 'Click History Debug');
   writeMCPLog(`[annotateScreenshot] Full click history: ${JSON.stringify(clickHistory)}`, 'Click History Debug');
@@ -1806,8 +2724,9 @@ async function annotateScreenshotWithClickHistory(
   
   // Filter out overlapping clicks - keep only clicks that are far enough apart
   // Maximum 9 markers to avoid cluttering the screenshot (including the #0 marker)
-  const MIN_DISTANCE_PIXELS = 50; // Minimum distance between annotations (in pixels)
-  const MAX_MARKERS = 10; // Maximum number of markers to display (including #0)
+  const MIN_DISTANCE_PIXELS = 200; // Minimum distance between annotations (in pixels)
+  // const MAX_MARKERS = 10; // Maximum number of markers to display (including #0)
+  const MAX_MARKERS = 5;
   const filteredClicks: ClickHistoryEntry[] = [];
   
   // Always add the most recent click as #0
@@ -1891,16 +2810,37 @@ try:
     draw = ImageDraw.Draw(overlay)
     
     # Try to use a nice font, fallback to default
-    try:
-        font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', 32)
-        small_font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', 20)
-    except:
+    # Platform-specific font paths
+    import platform
+    font = None
+    small_font = None
+    
+    if platform.system() == 'Windows':
+        # Windows fonts
+        font_paths = [
+            'C:/Windows/Fonts/arial.ttf',
+            'C:/Windows/Fonts/segoeui.ttf',
+            'C:/Windows/Fonts/tahoma.ttf',
+        ]
+    else:
+        # macOS fonts
+        font_paths = [
+            '/System/Library/Fonts/Helvetica.ttc',
+            '/System/Library/Fonts/SFNSDisplay.ttf',
+            '/Library/Fonts/Arial.ttf',
+        ]
+    
+    for font_path in font_paths:
         try:
-            font = ImageFont.truetype('/System/Library/Fonts/SFNSDisplay.ttf', 32)
-            small_font = ImageFont.truetype('/System/Library/Fonts/SFNSDisplay.ttf', 20)
+            font = ImageFont.truetype(font_path, 32)
+            small_font = ImageFont.truetype(font_path, 20)
+            break
         except:
-            font = ImageFont.load_default()
-            small_font = ImageFont.load_default()
+            continue
+    
+    if font is None:
+        font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
     
     # Draw markers for each click
     clicks = ${JSON.stringify(uniqueClicks)}
@@ -2061,6 +3001,8 @@ async function analyzeScreenshotWithVision(
       screenshotPath,
       targetDisplay.index
     );
+
+    // const annotatedPath = screenshotPath;
 
     writeMCPLog(`[analyzeScreenshotWithVision] Using screenshot: ${annotatedPath}`, 'Screenshot Selection');
     writeMCPLog(`[analyzeScreenshotWithVision] Click history: ${clickHistoryInfo}`, 'Click History');
@@ -2296,10 +3238,9 @@ async function planGUIActions(
   taskDescription: string,
   displayIndex?: number
 ): Promise<{ steps: Array<{ step: number; action: string; element_description: string; value?: string; reasoning: string }>; summary?: string }> {
-  const platform = os.platform();
-  
-  if (platform !== 'darwin') {
-    throw new Error('GUI action planning is currently only supported on macOS');
+  // Supported on both macOS and Windows
+  if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
+    throw new Error(`GUI action planning is not supported on platform: ${PLATFORM}`);
   }
   
   // Take screenshot to understand current GUI state
@@ -2411,10 +3352,9 @@ async function locateGUIElement(
   reasoning?: string;
   boundingBox?: { left: number; top: number; right: number; bottom: number };
 }> {
-  const platform = os.platform();
-  
-  if (platform !== 'darwin') {
-    throw new Error('Element location is currently only supported on macOS');
+  // Supported on both macOS and Windows
+  if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
+    throw new Error(`Element location is not supported on platform: ${PLATFORM}`);
   }
   
   // Take screenshot
@@ -2589,10 +3529,9 @@ async function performVisionBasedInteraction(
   taskDescription: string,
   displayIndex?: number
 ): Promise<string> {
-  const platform = os.platform();
-  
-  if (platform !== 'darwin') {
-    throw new Error('Vision-based GUI interaction is currently only supported on macOS');
+  // Supported on both macOS and Windows
+  if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
+    throw new Error(`Vision-based GUI interaction is not supported on platform: ${PLATFORM}`);
   }
   
   writeMCPLog(`[performVisionBasedInteraction] Starting task: "${taskDescription}"`, 'Task Start');
@@ -2669,10 +3608,9 @@ async function verifyGUIState(
   question: string,
   displayIndex?: number
 ): Promise<string> {
-  const platform = os.platform();
-  
-  if (platform !== 'darwin') {
-    throw new Error('GUI verification is currently only supported on macOS');
+  // Supported on both macOS and Windows
+  if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
+    throw new Error(`GUI verification is not supported on platform: ${PLATFORM}`);
   }
   
   // Take screenshot

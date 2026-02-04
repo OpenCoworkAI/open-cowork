@@ -10,6 +10,7 @@ import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
+import { buildRemoteSessionTitle } from './remote-title';
 import type {
   GatewayStatus,
   GatewayConfig,
@@ -79,6 +80,9 @@ export class RemoteManager extends EventEmitter {
   
   // Debounce timers for sending buffered responses
   private sendTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  // 远程默认工作目录（用于未指定 cwd 的会话）
+  private defaultWorkingDirectory?: string;
   
   constructor() {
     super();
@@ -109,6 +113,15 @@ export class RemoteManager extends EventEmitter {
     
     log('[RemoteManager] Agent executor set');
   }
+
+  /**
+   * 设置远程会话的默认工作目录
+   */
+  setDefaultWorkingDirectory(dir?: string): void {
+    this.defaultWorkingDirectory = dir;
+    this.messageRouter.setDefaultWorkingDirectory(dir);
+    log('[RemoteManager] Default working directory set:', dir || '(none)');
+  }
   
   /**
    * Set renderer callback (for UI updates)
@@ -134,10 +147,10 @@ export class RemoteManager extends EventEmitter {
       // Create gateway
       this.gateway = new RemoteGateway(config.gateway, this.messageRouter);
       
-      // Set default working directory
-      if (config.gateway.defaultWorkingDirectory) {
-        this.messageRouter.setDefaultWorkingDirectory(config.gateway.defaultWorkingDirectory);
-        log('[RemoteManager] Default working directory:', config.gateway.defaultWorkingDirectory);
+      // 设置远程默认工作目录（优先使用配置，其次使用全局默认）
+      const configuredDefaultWorkingDir = config.gateway.defaultWorkingDirectory || this.defaultWorkingDirectory;
+      if (configuredDefaultWorkingDir) {
+        this.setDefaultWorkingDirectory(configuredDefaultWorkingDir);
       }
       
       // Set up gateway event handlers
@@ -948,7 +961,7 @@ export class RemoteManager extends EventEmitter {
     if (isNewSession) {
       // Create new session with working directory
       const newSession = await this.agentExecutor.startSession(
-        `Remote: ${sessionId}`,
+        buildRemoteSessionTitle(prompt),
         prompt,
         workingDirectory
       );
@@ -965,6 +978,12 @@ export class RemoteManager extends EventEmitter {
       
       log('[RemoteManager] Created new session:', newSession.id, 'for remote:', sessionId, 'cwd:', workingDirectory);
       log('[RemoteManager] Session mapping stored:', newSession.id, '<->', sessionId);
+      log('[RemoteManager] Emitting session update to renderer for:', newSession.id);
+
+      this.emitToRenderer({
+        type: 'session.update',
+        payload: { sessionId: newSession.id, updates: newSession },
+      });
     } else {
       // Continue existing session - use actual session ID
       const actualSessionId = this.reverseSessionIdMapping.get(sessionId);

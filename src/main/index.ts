@@ -408,6 +408,8 @@ app.whenReady().then(async () => {
   // Initialize default working directory
   initializeDefaultWorkingDir();
   log('Working directory:', currentWorkingDir);
+  // 远程会话默认使用全局工作目录
+  remoteManager.setDefaultWorkingDirectory(currentWorkingDir || undefined);
   
   // Initialize database
   const db = initDatabase();
