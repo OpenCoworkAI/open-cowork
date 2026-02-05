@@ -1247,8 +1247,8 @@ Then follow the workflow described in that file.
         const allConfigs = mcpConfigStore.getEnabledServers();
         log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map(c => c.name));
         
-        // Get bundled npx path for STDIO servers
-        const getBundledNpxPath = (): string | null => {
+        // 获取 STDIO 服务的内置 node/npx 路径
+        const getBundledNodePaths = (): { node: string; npx: string } | null => {
           const platform = process.platform;
           const arch = process.arch;
           
@@ -1261,29 +1261,34 @@ Then follow the workflow described in that file.
           }
           
           const binDir = platform === 'win32' ? resourcesPath : path.join(resourcesPath, 'bin');
+          const nodeExe = platform === 'win32' ? 'node.exe' : 'node';
           const npxExe = platform === 'win32' ? 'npx.cmd' : 'npx';
+          const nodePath = path.join(binDir, nodeExe);
           const npxPath = path.join(binDir, npxExe);
           
-          if (fs.existsSync(npxPath)) {
-            return npxPath;
+          if (fs.existsSync(nodePath) && fs.existsSync(npxPath)) {
+            return { node: nodePath, npx: npxPath };
           }
           return null;
         };
         
-        const bundledNpx = getBundledNpxPath();
+        const bundledNodePaths = getBundledNodePaths();
+        const bundledNpx = bundledNodePaths?.npx ?? null;
         
         for (const config of allConfigs) {
           // Use a simpler key without spaces to avoid issues
           const serverKey = config.name;
           
           if (config.type === 'stdio') {
-            // Use bundled npx if command is 'npx'
-            const command = config.command === 'npx' && bundledNpx ? bundledNpx : config.command;
+            // 当命令是 npx 或 node 时优先使用内置路径
+            const command = (config.command === 'npx' && bundledNpx)
+              ? bundledNpx
+              : (config.command === 'node' && bundledNodePaths ? bundledNodePaths.node : config.command);
             
-            // If using bundled npx, add bundled node bin to PATH
+            // 使用内置 npx/node 时，将内置 node bin 注入 PATH
             let serverEnv = { ...config.env };
-            if (bundledNpx && config.command === 'npx') {
-              const nodeBinDir = path.dirname(bundledNpx);
+            if (bundledNodePaths && (config.command === 'npx' || config.command === 'node')) {
+              const nodeBinDir = path.dirname(bundledNodePaths.node);
               const currentPath = process.env.PATH || '';
               // Prepend bundled node bin to PATH so npx can find node
               serverEnv.PATH = `${nodeBinDir}${path.delimiter}${currentPath}`;
