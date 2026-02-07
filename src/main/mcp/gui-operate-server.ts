@@ -90,11 +90,31 @@ interface AppClickHistory {
   counter: number;
 }
 
+interface DockItemInfo {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // Store click history for current session (in-memory cache)
 let clickHistory: ClickHistoryEntry[] = [];
 let clickHistoryCounter = 0;
 let currentAppName: string = '';
 let lastClickEntry: ClickHistoryEntry | null = null; // Track the most recent click for success verification
+
+const APP_NAME_ALIAS_GROUPS: string[][] = [
+  ['calendar', '日历'],
+  ['notes', '备忘录'],
+  ['music', '音乐'],
+  ['finder', '访达'],
+  ['system settings', 'settings', '系统设置'],
+  ['ticktick', '滴答清单'],
+  ['wechat', '微信'],
+  ['trash', '废纸篓'],
+  ['chrome', 'google chrome'],
+];
 
 // Base directory for storing app-level data
 const GUI_APPS_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_apps');
@@ -194,6 +214,107 @@ async function ensureAppContextRestored(): Promise<boolean> {
     restoreAppContextPromise = null;
   }
   return restored;
+}
+
+function normalizeText(text: string): string {
+  return text.toLowerCase().trim();
+}
+
+function compactText(text: string): string {
+  return normalizeText(text).replace(/[\s_-]+/g, '');
+}
+
+function inferExpectedAppAliasesFromText(text: string): string[] {
+  const normalized = normalizeText(text);
+  const compact = compactText(text);
+  const aliases = new Set<string>();
+
+  for (const group of APP_NAME_ALIAS_GROUPS) {
+    const normalizedGroup = group.map(token => normalizeText(token));
+    const compactGroup = group.map(token => compactText(token));
+    const matched = normalizedGroup.some(token => token && normalized.includes(token))
+      || compactGroup.some(token => token && compact.includes(token));
+
+    if (matched) {
+      for (const token of normalizedGroup) {
+        if (token) aliases.add(token);
+      }
+      for (const token of compactGroup) {
+        if (token) aliases.add(token);
+      }
+    }
+  }
+
+  return Array.from(aliases);
+}
+
+function getAliasTokensForAppName(appName: string): string[] {
+  const normalizedName = normalizeText(appName);
+  const compactName = compactText(appName);
+  const tokens = new Set<string>([normalizedName, compactName]);
+
+  for (const group of APP_NAME_ALIAS_GROUPS) {
+    const normalizedGroup = group.map(token => normalizeText(token));
+    const compactGroup = group.map(token => compactText(token));
+    const matched = normalizedGroup.includes(normalizedName) || compactGroup.includes(compactName);
+    if (!matched) continue;
+
+    for (const token of normalizedGroup) {
+      if (token) tokens.add(token);
+    }
+    for (const token of compactGroup) {
+      if (token) tokens.add(token);
+    }
+  }
+
+  return Array.from(tokens).filter(token => token && token !== 'null' && token !== 'missingvalue');
+}
+
+function scoreDockItemAgainstDescription(itemName: string, description: string): number {
+  const normalizedDescription = normalizeText(description);
+  const compactDescription = compactText(description);
+  const tokens = getAliasTokensForAppName(itemName);
+  let bestScore = 0;
+
+  for (const token of tokens) {
+    if (token.length < 2) continue;
+
+    if (normalizedDescription.includes(token)) {
+      bestScore = Math.max(bestScore, 120 + token.length);
+    }
+
+    const compactToken = compactText(token);
+    if (compactToken.length >= 2 && compactDescription.includes(compactToken)) {
+      bestScore = Math.max(bestScore, 110 + compactToken.length);
+    }
+  }
+
+  return bestScore;
+}
+
+function isDescriptionDockRelated(description: string): boolean {
+  const normalized = normalizeText(description);
+  return /dock|下边栏|程序坞|底栏/.test(normalized);
+}
+
+function isLikelyAppLaunchVerification(question: string): boolean {
+  const normalized = normalizeText(question);
+  const mentionsApp = /(app|application|应用|程序|软件)/i.test(normalized);
+  const mentionsMenuLike = /(menu|菜单|弹窗|popup|面板|widget|小组件|下拉)/i.test(normalized);
+  return mentionsApp && !mentionsMenuLike;
+}
+
+function appNameMatchesAliases(appName: string, aliases: string[]): boolean {
+  const normalizedName = normalizeText(appName);
+  const compactName = compactText(appName);
+
+  return aliases.some(alias => {
+    const normalizedAlias = normalizeText(alias);
+    const compactAlias = compactText(alias);
+
+    return (normalizedAlias && (normalizedName.includes(normalizedAlias) || normalizedAlias.includes(normalizedName)))
+      || (compactAlias && (compactName.includes(compactAlias) || compactAlias.includes(compactName)));
+  });
 }
 
 /**
@@ -1101,6 +1222,133 @@ async function executeCommand(
   }
 }
 
+async function getFrontmostMacApplicationName(): Promise<string | null> {
+  if (PLATFORM !== 'darwin') return null;
+
+  try {
+    const { stdout } = await executeCommand(
+      `/usr/bin/osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`,
+      5000
+    );
+    const name = stdout.trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getMacDockItemsViaAccessibility(): Promise<DockItemInfo[]> {
+  if (PLATFORM !== 'darwin') return [];
+
+  const jxaScript = [
+    'const se = Application("System Events");',
+    'const dock = se.processes.byName("Dock");',
+    'const items = dock.lists[0].uiElements();',
+    'const out = [];',
+    'for (let i = 0; i < items.length; i++) {',
+    '  try {',
+    '    const n = String(items[i].name());',
+    '    const p = items[i].position();',
+    '    const s = items[i].size();',
+    '    if (!n || n === "missing value" || n === "null") continue;',
+    '    out.push({name:n, x:Number(p[0]), y:Number(p[1]), width:Number(s[0]), height:Number(s[1])});',
+    '  } catch (e) {}',
+    '}',
+    'JSON.stringify(out);',
+  ].join(' ');
+
+  const command = `/usr/bin/osascript -l JavaScript -e '${jxaScript.replace(/'/g, "'\"'\"'")}'`;
+  const { stdout } = await executeCommand(command, 10000);
+
+  const parsed = JSON.parse(stdout.trim()) as DockItemInfo[];
+  return parsed.filter(item =>
+    item
+    && typeof item.name === 'string'
+    && typeof item.x === 'number'
+    && typeof item.y === 'number'
+    && typeof item.width === 'number'
+    && typeof item.height === 'number'
+    && item.width > 0
+    && item.height > 0
+  );
+}
+
+async function tryLocateElementInDockByAccessibility(
+  elementDescription: string,
+  displayIndex?: number
+): Promise<{
+  x: number;
+  y: number;
+  confidence: number;
+  displayIndex: number;
+  reasoning?: string;
+} | null> {
+  if (!isDescriptionDockRelated(elementDescription)) {
+    return null;
+  }
+
+  const dockItems = await getMacDockItemsViaAccessibility();
+  if (dockItems.length === 0) {
+    return null;
+  }
+
+  let bestItem: DockItemInfo | null = null;
+  let bestScore = 0;
+
+  for (const item of dockItems) {
+    const score = scoreDockItemAgainstDescription(item.name, elementDescription);
+    if (score > bestScore) {
+      bestScore = score;
+      bestItem = item;
+    }
+  }
+
+  if (!bestItem || bestScore < 120) {
+    writeMCPLog(
+      `[dock-accessibility] No reliable Dock match for "${elementDescription}". Best score: ${bestScore}`,
+      'Dock Locate'
+    );
+    return null;
+  }
+
+  const centerGlobalX = Math.round(bestItem.x + bestItem.width / 2);
+  const centerGlobalY = Math.round(bestItem.y + bestItem.height / 2);
+  const config = await getDisplayConfiguration();
+
+  let targetDisplay = config.displays.find(d =>
+    centerGlobalX >= d.originX
+    && centerGlobalX <= (d.originX + d.width)
+    && centerGlobalY >= d.originY
+    && centerGlobalY <= (d.originY + d.height)
+  );
+
+  if (!targetDisplay) {
+    targetDisplay = displayIndex !== undefined
+      ? config.displays.find(d => d.index === displayIndex)
+      : config.displays.find(d => d.isMain);
+  }
+
+  if (!targetDisplay) {
+    return null;
+  }
+
+  const localX = Math.round(centerGlobalX - targetDisplay.originX);
+  const localY = Math.round(centerGlobalY - targetDisplay.originY);
+
+  writeMCPLog(
+    `[dock-accessibility] Matched "${bestItem.name}" for "${elementDescription}" at global (${centerGlobalX}, ${centerGlobalY}), local (${localX}, ${localY}), display ${targetDisplay.index}, score=${bestScore}`,
+    'Dock Locate'
+  );
+
+  return {
+    x: localX,
+    y: localY,
+    confidence: Math.min(99, bestScore),
+    displayIndex: targetDisplay.index,
+    reasoning: `Matched Dock item "${bestItem.name}" via macOS Accessibility.`,
+  };
+}
+
 /**
  * Execute cliclick command with error handling (macOS only)
  */
@@ -1128,6 +1376,18 @@ async function executeCliclick(command: string): Promise<{ stdout: string; stder
   try {
   const result = await executeCommand(fullCommand);
   writeMCPLog(`[executeCliclick] Command completed. stdout: ${result.stdout}, stderr: ${result.stderr}`, 'Cliclick Result');
+
+  // cliclick may exit 0 while warning that Accessibility permission is missing.
+  // Treat this as a hard failure to avoid reporting false-positive click success.
+  if (/Accessibility privileges not enabled/i.test(result.stderr || '')) {
+    const hint =
+      '\n\nmacOS 权限提示 / Permissions:\n' +
+      '- System Settings → Privacy & Security → Accessibility：允许 Open Cowork\n' +
+      '- 如果是终端运行：允许 Terminal/iTerm\n' +
+      '- 授权后请重启 Open Cowork 再重试\n';
+    throw new Error(`cliclick cannot control UI because Accessibility permission is not enabled.${hint}`);
+  }
+
   return result;
   } catch (error: any) {
     const baseMessage = error?.message || String(error);
@@ -2185,6 +2445,65 @@ async function convertNormalizedToDisplayCoordinates(
   return { x, y };
 }
 
+/**
+ * Resolve click coordinates to display-local logical coordinates.
+ * - absolute: interpret x/y directly as display-local logical coordinates
+ * - normalized: interpret x/y as 0-1000 normalized coordinates
+ * - auto: absolute by default; if out-of-bounds and values look normalized, convert from normalized
+ */
+async function resolveClickCoordinates(
+  xInput: number,
+  yInput: number,
+  displayIndex: number = 0,
+  coordinateType: 'absolute' | 'normalized' | 'auto' = 'auto'
+): Promise<{ x: number; y: number }> {
+  const config = await getDisplayConfiguration();
+  const display = config.displays.find(d => d.index === displayIndex);
+
+  if (!display) {
+    throw new Error(`Display index ${displayIndex} not found. Available displays: 0-${config.displays.length - 1}`);
+  }
+
+  if (!Number.isFinite(xInput) || !Number.isFinite(yInput)) {
+    throw new Error(`Invalid click coordinates: x=${xInput}, y=${yInput}`);
+  }
+
+  if (coordinateType === 'normalized') {
+    return convertNormalizedToDisplayCoordinates(xInput, yInput, displayIndex);
+  }
+
+  let x = Math.round(xInput);
+  let y = Math.round(yInput);
+
+  if (coordinateType === 'auto') {
+    const isOutOfBounds = x < 0 || y < 0 || x >= display.width || y >= display.height;
+    const looksNormalized =
+      xInput >= 0 && xInput <= 1000 &&
+      yInput >= 0 && yInput <= 1000;
+
+    if (isOutOfBounds && looksNormalized) {
+      const converted = await convertNormalizedToDisplayCoordinates(xInput, yInput, displayIndex);
+      writeMCPLog(
+        `[resolveClickCoordinates] auto mode converted normalized (${xInput}, ${yInput}) -> logical (${converted.x}, ${converted.y}) on display ${displayIndex}`,
+        'Coordinate Conversion'
+      );
+      return converted;
+    }
+  }
+
+  const clampedX = display.width > 0 ? Math.max(0, Math.min(display.width - 1, x)) : x;
+  const clampedY = display.height > 0 ? Math.max(0, Math.min(display.height - 1, y)) : y;
+
+  if (clampedX !== x || clampedY !== y) {
+    writeMCPLog(
+      `[resolveClickCoordinates] Clamped absolute coordinates (${x}, ${y}) -> (${clampedX}, ${clampedY}) on display ${displayIndex}`,
+      'Coordinate Conversion'
+    );
+  }
+
+  return { x: clampedX, y: clampedY };
+}
+
 // ============================================================================
 // GUI Operation Functions
 // ============================================================================
@@ -2207,15 +2526,46 @@ async function performClick(
     await ensureAppContextRestored();
   }
 
-  const { globalX, globalY } = await convertToGlobalCoordinates(x, y, displayIndex);
+  let localX = x;
+  let localY = y;
+
+  // Dock auto-hide on macOS can swallow the first click near the bottom edge.
+  // Pre-hovering briefly improves click reliability for dock/app-switch actions.
+  if (PLATFORM === 'darwin') {
+    const config = await getDisplayConfiguration();
+    const targetDisplay = config.displays.find(d => d.index === displayIndex);
+    const dockZoneHeight = 140;
+    const nearBottomDockZone = Boolean(
+      targetDisplay && localY >= Math.max(0, targetDisplay.height - dockZoneHeight)
+    );
+
+    if (targetDisplay && localY >= targetDisplay.height - 2) {
+      localY = Math.max(0, targetDisplay.height - 24);
+      writeMCPLog(
+        `[performClick] Adjusted edge click Y from ${y} to ${localY} for dock reliability on display ${displayIndex}`,
+        'Click Operation'
+      );
+    }
+
+    if (nearBottomDockZone) {
+      await moveMouse(localX, localY, displayIndex);
+      await new Promise(resolve => setTimeout(resolve, 150));
+      writeMCPLog(
+        `[performClick] Pre-hovered in dock zone before click at (${localX}, ${localY})`,
+        'Click Operation'
+      );
+    }
+  }
+
+  const { globalX, globalY } = await convertToGlobalCoordinates(localX, localY, displayIndex);
 
   writeMCPLog(`[performClick] Global coordinates: globalX=${globalX}, globalY=${globalY}`, 'Click Operation');
 
   // Windows implementation
   if (PLATFORM === 'win32') {
     await windowsPerformClick(globalX, globalY, clickType, modifiers);
-    await addClickToHistory(x, y, displayIndex, clickType);
-    return `Performed ${clickType} click at (${x}, ${y}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
+    await addClickToHistory(localX, localY, displayIndex, clickType);
+    return `Performed ${clickType} click at (${localX}, ${localY}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
   }
 
   // macOS implementation using cliclick
@@ -2225,8 +2575,8 @@ async function performClick(
   if (!cliclickPath) {
     // 无 cliclick 时，使用 Quartz 事件作为降级方案
     await performMacClickViaQuartz(globalX, globalY, clickType, normalizedModifiers);
-    await addClickToHistory(x, y, displayIndex, clickType);
-    return `Performed ${clickType} click at (${x}, ${y}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
+    await addClickToHistory(localX, localY, displayIndex, clickType);
+    return `Performed ${clickType} click at (${localX}, ${localY}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
   }
 
   // Build cliclick command
@@ -2261,9 +2611,9 @@ async function performClick(
   await executeCliclick(command);
   
   // Add to click history after successful click (now async with persistence)
-  await addClickToHistory(x, y, displayIndex, clickType);
+  await addClickToHistory(localX, localY, displayIndex, clickType);
   
-  return `Performed ${clickType} click at (${x}, ${y}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
+  return `Performed ${clickType} click at (${localX}, ${localY}) on display ${displayIndex} (global: ${globalX}, ${globalY})`;
 }
 
 /**
@@ -3923,6 +4273,19 @@ async function locateGUIElement(
   if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
     throw new Error(`Element location is not supported on platform: ${PLATFORM}`);
   }
+
+  // On macOS, prefer deterministic Dock lookup for Dock-related requests.
+  // This avoids visual mis-grounding when multiple similar icons are present.
+  if (PLATFORM === 'darwin') {
+    try {
+      const dockCoords = await tryLocateElementInDockByAccessibility(elementDescription, displayIndex);
+      if (dockCoords) {
+        return dockCoords;
+      }
+    } catch (dockError: any) {
+      writeMCPLog(`[locateGUIElement] Dock accessibility lookup failed: ${dockError.message}`, 'Dock Locate Warning');
+    }
+  }
   
   // Take screenshot
   const screenshotPath = path.join(SCREENSHOTS_DIR, `gui_locate_${Date.now()}.png`);
@@ -4205,7 +4568,7 @@ Example:
 - Status: SUCCESS
 - Reason: The button was clicked correctly in the expected dialog window.`;
 
-  const answer = await callVisionAPI(base64Image, prompt, 20000, 'verifyGUIState');
+  let answer = await callVisionAPI(base64Image, prompt, 20000, 'verifyGUIState');
   writeMCPLog(`[verifyGUIState] Response Length: ${answer.length}`, 'Response');
   writeMCPLog(`[verifyGUIState] Response (first 500 chars): ${answer.substring(0, 500)}`, 'Response Preview');
   
@@ -4226,6 +4589,33 @@ Example:
     }
   } else {
     writeMCPLog(`[verifyGUIState] Could not parse operation success judgment from response`, 'Success Parsing Warning');
+  }
+
+  // Cross-check with macOS frontmost app for app-open verification style questions.
+  // This prevents false-positive "SUCCESS" when the wrong app is actually focused.
+  if (PLATFORM === 'darwin') {
+    const expectedAliases = inferExpectedAppAliasesFromText(question);
+    const requiresForegroundMatch = isLikelyAppLaunchVerification(question);
+
+    if (expectedAliases.length > 0 && requiresForegroundMatch) {
+      const frontmostApp = await getFrontmostMacApplicationName();
+      if (frontmostApp) {
+        const frontmostMatched = appNameMatchesAliases(frontmostApp, expectedAliases);
+        writeMCPLog(
+          `[verifyGUIState] Frontmost app cross-check. frontmost="${frontmostApp}", expectedAliases=${JSON.stringify(expectedAliases)}, matched=${frontmostMatched}`,
+          'Success Parsing'
+        );
+
+        if (operationSuccess && !frontmostMatched) {
+          operationSuccess = false;
+          answer += `\n\n[System Cross-check] Frontmost app is "${frontmostApp}", which does not match the expected target app from the question.`;
+          writeMCPLog(
+            `[verifyGUIState] Overrode operationSuccess to false due to frontmost app mismatch.`,
+            'Success Parsing Warning'
+          );
+        }
+      }
+    }
   }
   
   return JSON.stringify({
@@ -4269,17 +4659,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'click',
-        description: 'Perform a mouse click at specified coordinates. Supports single click, double click, right click, and triple click. Coordinates are relative to the specified display.',
+        description: 'Perform a mouse click at specified coordinates. Supports single click, double click, right click, and triple click. Coordinates are display-local logical coordinates by default. You can also pass normalized coordinates (0-1000) via coordinate_type.',
         inputSchema: {
           type: 'object',
           properties: {
+            coordinate_type: {
+              type: 'string',
+              enum: ['auto', 'absolute', 'normalized'],
+              description: 'Coordinate interpretation. "absolute" = display-local logical coordinates. "normalized" = 0-1000 relative coordinates. "auto" (default) uses absolute, but converts from normalized if values are out of bounds.',
+            },
             x: {
               type: 'number',
-              description: 'X coordinate relative to the display (0 = left edge)',
+              description: 'X coordinate (interpretation depends on coordinate_type)',
             },
             y: {
               type: 'number',
-              description: 'Y coordinate relative to the display (0 = top edge)',
+              description: 'Y coordinate (interpretation depends on coordinate_type)',
             },
             display_index: {
               type: 'number',
@@ -4635,6 +5030,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   
   try {
+    writeMCPLog(
+      `[CallTool] name=${name}, args=${JSON.stringify(args ?? {})}`,
+      'Tool Call'
+    );
+
     let result: string;
     
     switch (name) {
@@ -4645,14 +5045,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'click': {
-        const { x, y, display_index = 0, click_type = 'single', modifiers = [] } = args as {
+        const { x, y, display_index = 0, click_type = 'single', modifiers = [], coordinate_type = 'auto' } = args as {
           x: number;
           y: number;
           display_index?: number;
           click_type?: 'single' | 'double' | 'right' | 'triple';
           modifiers?: string[];
+          coordinate_type?: 'auto' | 'absolute' | 'normalized';
         };
-        result = await performClick(x, y, display_index, click_type, modifiers);
+        const resolved = await resolveClickCoordinates(x, y, display_index, coordinate_type);
+        result = await performClick(resolved.x, resolved.y, display_index, click_type, modifiers);
         break;
       }
       
