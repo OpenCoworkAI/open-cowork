@@ -5,6 +5,8 @@ import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
+import { PluginCatalogService } from './skills/plugin-catalog-service';
+import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
 import { testApiConnection } from './config/api-tester';
 import { mcpConfigStore } from './mcp/mcp-config-store';
@@ -56,6 +58,7 @@ app.disableHardwareAcceleration();
 let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
+let pluginRuntimeService: PluginRuntimeService | null = null;
 
 function createWindow() {
   // Theme colors (warm cream theme)
@@ -416,9 +419,10 @@ app.whenReady().then(async () => {
 
   // Initialize skills manager
   skillsManager = new SkillsManager(db);
+  pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
 
   // Initialize session manager
-  sessionManager = new SessionManager(db, sendToRenderer);
+  sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
 
   // 初始化远程管理器
   remoteManager.setRendererCallback(sendToRenderer);
@@ -845,6 +849,118 @@ ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
   } catch (error) {
     logError('[Skills] Error validating skill:', error);
     return { valid: false, errors: ['Validation failed'] };
+  }
+});
+
+ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.listCatalog(options);
+  } catch (error) {
+    logError('[Plugins] Error listing catalog:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.listInstalled', async () => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return pluginRuntimeService.listInstalled();
+  } catch (error) {
+    logError('[Plugins] Error listing installed plugins:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.install', async (_event, pluginName: string) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.install(pluginName);
+  } catch (error) {
+    logError('[Plugins] Error installing plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.setEnabled', async (_event, pluginId: string, enabled: boolean) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.setEnabled(pluginId, enabled);
+  } catch (error) {
+    logError('[Plugins] Error toggling plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle(
+  'plugins.setComponentEnabled',
+  async (_event, pluginId: string, component: 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp', enabled: boolean) => {
+    try {
+      if (!pluginRuntimeService) {
+        throw new Error('PluginRuntimeService not initialized');
+      }
+      return await pluginRuntimeService.setComponentEnabled(pluginId, component, enabled);
+    } catch (error) {
+      logError('[Plugins] Error toggling plugin component:', error);
+      throw error;
+    }
+  }
+);
+
+ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.uninstall(pluginId);
+  } catch (error) {
+    logError('[Plugins] Error uninstalling plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.listPlugins', async (_event, installableOnly?: boolean) => {
+  try {
+    logWarn('[Skills] skills.listPlugins is deprecated. Use plugins.listCatalog instead.');
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    const plugins = await pluginRuntimeService.listCatalog({ installableOnly: installableOnly === true });
+    return plugins.map((plugin) => ({
+      ...plugin,
+      skillCount: plugin.componentCounts.skills,
+      hasSkills: plugin.componentCounts.skills > 0,
+    }));
+  } catch (error) {
+    logError('[Skills] Error listing plugins:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.installPlugin', async (_event, pluginName: string) => {
+  try {
+    logWarn('[Skills] skills.installPlugin is deprecated. Use plugins.install instead.');
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    const result = await pluginRuntimeService.install(pluginName);
+    return {
+      pluginName: result.plugin.name,
+      installedSkills: result.installedSkills,
+      skippedSkills: [],
+      errors: result.warnings,
+    };
+  } catch (error) {
+    logError('[Skills] Error installing plugin:', error);
+    throw error;
   }
 });
 

@@ -16,6 +16,7 @@ import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/arti
 import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
 import { buildThinkingOptions } from './thinking-options';
 import { redactSensitiveText } from './redaction';
+import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 // import { PathGuard } from '../sandbox/path-guard';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -146,6 +147,7 @@ export class ClaudeAgentRunner {
   private saveMessage?: (message: Message) => void;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
+  private pluginRuntimeService?: PluginRuntimeService;
   private activeControllers: Map<string, AbortController> = new Map();
   private sdkSessions: Map<string, string> = new Map(); // sessionId -> sdk session_id
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
@@ -695,11 +697,17 @@ Then follow the workflow described in that file.
     return '';
   }
 
-  constructor(options: AgentRunnerOptions, pathResolver: PathResolver, mcpManager?: MCPManager) {
+  constructor(
+    options: AgentRunnerOptions,
+    pathResolver: PathResolver,
+    mcpManager?: MCPManager,
+    pluginRuntimeService?: PluginRuntimeService
+  ) {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.pathResolver = pathResolver;
     this.mcpManager = mcpManager;
+    this.pluginRuntimeService = pluginRuntimeService;
     
     log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
     log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
@@ -1403,7 +1411,22 @@ Then follow the workflow described in that file.
       // Get enableThinking from config
       const enableThinking = configStore.get('enableThinking') ?? false;
       log('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
-      const sdkPlugins: Array<{ type: 'local'; path: string }> = [];
+
+      const runtimePlugins = this.pluginRuntimeService
+        ? await this.pluginRuntimeService.getEnabledRuntimePlugins()
+        : [];
+      const sdkPlugins = runtimePlugins.map((plugin) => ({
+        type: 'local' as const,
+        path: plugin.runtimePath,
+      }));
+      if (sdkPlugins.length > 0) {
+        log('[ClaudeAgentRunner] Runtime plugins enabled:', runtimePlugins.map((plugin) => ({
+          pluginId: plugin.pluginId,
+          name: plugin.name,
+          runtimePath: plugin.runtimePath,
+          enabledComponents: plugin.componentsEnabled,
+        })));
+      }
       
       // if (enableThinking) {
       //   envWithSkills.MAX_THINKING_TOKENS = '10000';
@@ -1885,6 +1908,16 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
             log('[ClaudeAgentRunner] SDK session initialized:', sdkSessionId);
             log('[ClaudeAgentRunner] Waiting for API response...');
           }
+          const sdkPluginsInSession = ((message as any).plugins ?? []) as Array<{ name?: string; path?: string }>;
+          this.sendToRenderer({
+            type: 'plugins.runtimeApplied',
+            payload: {
+              sessionId: session.id,
+              plugins: sdkPluginsInSession
+                .filter((plugin) => typeof plugin.name === 'string' && typeof plugin.path === 'string')
+                .map((plugin) => ({ name: plugin.name as string, path: plugin.path as string })),
+            },
+          });
         } else if (message.type === 'assistant') {
           log('[ClaudeAgentRunner] First assistant response received (API processing complete)');
           logTiming('assistant response received');

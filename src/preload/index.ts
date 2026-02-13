@@ -1,5 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ClientEvent, ServerEvent, AppConfig, ProviderPresets, Skill, ApiTestInput, ApiTestResult } from '../renderer/types';
+import type {
+  ClientEvent,
+  ServerEvent,
+  AppConfig,
+  ProviderPresets,
+  Skill,
+  ApiTestInput,
+  ApiTestResult,
+  PluginCatalogItem,
+  PluginCatalogItemV2,
+  InstalledPlugin,
+  PluginInstallResult,
+  PluginInstallResultV2,
+  PluginToggleResult,
+  PluginComponentKind,
+} from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -116,6 +131,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('skills.setEnabled', skillId, enabled),
     validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('skills.validate', skillPath),
+    listPlugins: (installableOnly = false): Promise<PluginCatalogItem[]> =>
+      ipcRenderer.invoke('skills.listPlugins', installableOnly),
+    installPlugin: (pluginName: string): Promise<PluginInstallResult> =>
+      ipcRenderer.invoke('skills.installPlugin', pluginName),
+  },
+
+  plugins: {
+    listCatalog: (options?: { installableOnly?: boolean }): Promise<PluginCatalogItemV2[]> =>
+      ipcRenderer.invoke('plugins.listCatalog', options),
+    listInstalled: (): Promise<InstalledPlugin[]> =>
+      ipcRenderer.invoke('plugins.listInstalled'),
+    install: (pluginName: string): Promise<PluginInstallResultV2> =>
+      ipcRenderer.invoke('plugins.install', pluginName),
+    setEnabled: (pluginId: string, enabled: boolean): Promise<PluginToggleResult> =>
+      ipcRenderer.invoke('plugins.setEnabled', pluginId, enabled),
+    setComponentEnabled: (
+      pluginId: string,
+      component: PluginComponentKind,
+      enabled: boolean
+    ): Promise<PluginToggleResult> => ipcRenderer.invoke('plugins.setComponentEnabled', pluginId, component, enabled),
+    uninstall: (pluginId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('plugins.uninstall', pluginId),
   },
 
   // Sandbox methods
@@ -298,6 +335,20 @@ declare global {
         delete: (skillId: string) => Promise<{ success: boolean }>;
         setEnabled: (skillId: string, enabled: boolean) => Promise<{ success: boolean }>;
         validate: (skillPath: string) => Promise<{ valid: boolean; errors: string[] }>;
+        listPlugins: (installableOnly?: boolean) => Promise<PluginCatalogItem[]>;
+        installPlugin: (pluginName: string) => Promise<PluginInstallResult>;
+      };
+      plugins: {
+        listCatalog: (options?: { installableOnly?: boolean }) => Promise<PluginCatalogItemV2[]>;
+        listInstalled: () => Promise<InstalledPlugin[]>;
+        install: (pluginName: string) => Promise<PluginInstallResultV2>;
+        setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginToggleResult>;
+        setComponentEnabled: (
+          pluginId: string,
+          component: PluginComponentKind,
+          enabled: boolean
+        ) => Promise<PluginToggleResult>;
+        uninstall: (pluginId: string) => Promise<{ success: boolean }>;
       };
       sandbox: {
         getStatus: () => Promise<{
