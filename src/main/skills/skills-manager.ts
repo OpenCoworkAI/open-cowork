@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import type { Skill } from '../../renderer/types';
+import type { Skill, PluginInstallResult } from '../../renderer/types';
 import type { DatabaseInstance } from '../db/database';
 import { log, logError } from '../utils/logger';
 
@@ -17,6 +17,12 @@ interface SkillConfig {
   type: 'mcp' | 'custom';
   mcp?: McpServerConfig;
   enabled?: boolean;
+}
+
+interface PluginManifest {
+  name?: string;
+  description?: string;
+  version?: string;
 }
 
 /**
@@ -353,7 +359,7 @@ export class SkillsManager {
    * Get all loaded skills
    */
   getAllSkills(): Skill[] {
-    return Array.from(this.loadedSkills.values());
+    return this.deduplicateSkills(Array.from(this.loadedSkills.values()));
   }
 
   /**
@@ -400,7 +406,7 @@ export class SkillsManager {
     // Load global skills first to ensure they're in loadedSkills
     await this.loadGlobalSkills();
 
-    let skills = Array.from(this.loadedSkills.values());
+    let skills = this.deduplicateSkills(Array.from(this.loadedSkills.values()));
 
     if (filter) {
       if (filter.type !== undefined) {
@@ -553,15 +559,15 @@ export class SkillsManager {
     const globalSkillsPath = this.getGlobalSkillsPath();
     const targetPath = path.join(globalSkillsPath, metadata.name);
 
-    if (fs.existsSync(targetPath)) {
-      // Find and remove existing skill from loadedSkills
-      const existingSkill = Array.from(this.loadedSkills.values()).find(
-        s => s.name.toLowerCase() === metadata.name.toLowerCase()
-      );
-      if (existingSkill) {
-        this.loadedSkills.delete(existingSkill.id);
-        log(`Removing existing skill: ${existingSkill.name} (${existingSkill.id})`);
+    const normalizedSkillName = metadata.name.toLowerCase();
+    for (const [skillId, skill] of this.loadedSkills.entries()) {
+      if (skill.name.toLowerCase() === normalizedSkillName) {
+        this.loadedSkills.delete(skillId);
+        log(`Removing existing skill: ${skill.name} (${skillId})`);
       }
+    }
+
+    if (fs.existsSync(targetPath)) {
 
       // Delete existing directory
       fs.rmSync(targetPath, { recursive: true, force: true });
@@ -571,24 +577,137 @@ export class SkillsManager {
     // Copy skill to global directory
     await this.copySkillToGlobal(skillPath, metadata.name);
 
-    // Create skill object
-    const skill: Skill = {
-      id: `custom-${Date.now()}`,
-      name: metadata.name,
-      description: metadata.description,
-      type: 'custom',
-      enabled: true,
-      createdAt: Date.now(),
+    // Reload from global directory and return canonical global skill entry.
+    const globalSkills = await this.loadGlobalSkills();
+    const installedSkill = globalSkills.find(
+      (skill) => skill.name.toLowerCase() === normalizedSkillName
+    );
+
+    if (!installedSkill) {
+      throw new Error(`Installed skill not found after reload: ${metadata.name}`);
+    }
+
+    // Save canonical skill entry (stable id: global-<folderName>)
+    this.saveSkill(installedSkill);
+
+    log(`Installed skill: ${installedSkill.name} (${installedSkill.id})`);
+    return installedSkill;
+  }
+
+  private deduplicateSkills(skills: Skill[]): Skill[] {
+    const byName = new Map<string, Skill>();
+
+    for (const skill of skills) {
+      const key = skill.name.toLowerCase();
+      const existing = byName.get(key);
+
+      if (!existing) {
+        byName.set(key, skill);
+        continue;
+      }
+
+      // Prefer canonical global/custom entries over transient custom entries.
+      if (existing.id.startsWith('custom-') && !skill.id.startsWith('custom-')) {
+        byName.set(key, skill);
+      }
+    }
+
+    return Array.from(byName.values());
+  }
+
+  async validatePluginFolder(pluginRootPath: string): Promise<{ valid: boolean; errors: string[] }> {
+    const errors: string[] = [];
+
+    if (!fs.existsSync(pluginRootPath)) {
+      return { valid: false, errors: ['Path does not exist'] };
+    }
+
+    const stat = fs.statSync(pluginRootPath);
+    if (!stat.isDirectory()) {
+      return { valid: false, errors: ['Path is not a directory'] };
+    }
+
+    const skillsRootPath = path.join(pluginRootPath, 'skills');
+    if (!fs.existsSync(skillsRootPath) || !fs.statSync(skillsRootPath).isDirectory()) {
+      errors.push('Plugin has no installable skills');
+      return { valid: false, errors };
+    }
+
+    const entries = fs.readdirSync(skillsRootPath, { withFileTypes: true });
+    const hasInstallableSkill = entries.some((entry) => {
+      if (!entry.isDirectory()) return false;
+      const skillMdPath = path.join(skillsRootPath, entry.name, 'SKILL.md');
+      return fs.existsSync(skillMdPath);
+    });
+
+    if (!hasInstallableSkill) {
+      errors.push('Plugin has no installable skills');
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  async installPluginFromDirectory(pluginRootPath: string): Promise<PluginInstallResult> {
+    const validation = await this.validatePluginFolder(pluginRootPath);
+    if (!validation.valid) {
+      throw new Error(`Invalid plugin folder: ${validation.errors.join(', ')}`);
+    }
+
+    const pluginJsonPath = path.join(pluginRootPath, '.claude-plugin', 'plugin.json');
+    let pluginName = path.basename(pluginRootPath);
+    try {
+      const manifest = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8')) as PluginManifest;
+      pluginName = manifest.name?.trim() || pluginName;
+    } catch {
+      // ignore, fallback to directory name
+    }
+
+    const skillsRootPath = path.join(pluginRootPath, 'skills');
+    if (!fs.existsSync(skillsRootPath) || !fs.statSync(skillsRootPath).isDirectory()) {
+      throw new Error('Plugin has no installable skills');
+    }
+
+    const entries = fs.readdirSync(skillsRootPath, { withFileTypes: true });
+    const skillDirs = entries.filter((entry) => entry.isDirectory());
+    if (skillDirs.length === 0) {
+      throw new Error('Plugin has no installable skills');
+    }
+
+    const result: PluginInstallResult = {
+      pluginName,
+      installedSkills: [],
+      skippedSkills: [],
+      errors: [],
     };
 
-    // Add to loaded skills
-    this.loadedSkills.set(skill.id, skill);
+    for (const skillDir of skillDirs) {
+      const skillFolderPath = path.join(skillsRootPath, skillDir.name);
+      const skillMdPath = path.join(skillFolderPath, 'SKILL.md');
 
-    // Save to database
-    this.saveSkill(skill);
+      if (!fs.existsSync(skillMdPath)) {
+        result.skippedSkills.push(skillDir.name);
+        continue;
+      }
 
-    log(`Installed skill: ${skill.name} (${skill.id})`);
-    return skill;
+      try {
+        const installedSkill = await this.installSkill(skillFolderPath);
+        result.installedSkills.push(installedSkill.name);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`${skillDir.name}: ${message}`);
+      }
+    }
+
+    if (result.installedSkills.length === 0 && result.errors.length > 0) {
+      throw new Error(`Failed to install plugin skills: ${result.errors.join('; ')}`);
+    }
+
+    if (result.installedSkills.length === 0) {
+      throw new Error('Plugin has no installable skills');
+    }
+
+    log(`Installed plugin skills: ${pluginName} (${result.installedSkills.length} skills)`);
+    return result;
   }
 
   /**

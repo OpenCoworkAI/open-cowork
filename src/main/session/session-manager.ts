@@ -13,6 +13,7 @@ import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
+import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { log, logError } from '../utils/logger';
 import { maybeGenerateSessionTitle } from './session-title-flow';
 
@@ -30,13 +31,18 @@ export class SessionManager {
   private sandboxAdapter: SandboxAdapter;
   private agentRunner!: AgentRunner;
   private mcpManager: MCPManager;
+  private pluginRuntimeService?: PluginRuntimeService;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
   private sandboxInitPromises: Map<string, Promise<void>> = new Map();
   private sessionTitleAttempts: Set<string> = new Set();
 
-  constructor(db: DatabaseInstance, sendToRenderer: (event: ServerEvent) => void) {
+  constructor(
+    db: DatabaseInstance,
+    sendToRenderer: (event: ServerEvent) => void,
+    pluginRuntimeService?: PluginRuntimeService
+  ) {
     this.db = db;
     this.sendToRenderer = (event) => {
       if (event.type === 'trace.step') {
@@ -49,6 +55,7 @@ export class SessionManager {
     };
     this.pathResolver = new PathResolver();
     this.sandboxAdapter = getSandboxAdapter();
+    this.pluginRuntimeService = pluginRuntimeService;
 
     // Initialize MCP Manager
     this.mcpManager = new MCPManager();
@@ -85,7 +92,8 @@ export class SessionManager {
           saveMessage: (message: Message) => this.saveMessage(message),
         },
         this.pathResolver,
-        this.mcpManager
+        this.mcpManager,
+        this.pluginRuntimeService
       );
       log('[SessionManager] Using Claude Agent runner');
     }
