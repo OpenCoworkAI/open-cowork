@@ -1,6 +1,6 @@
 {
   "name": "open-cowork",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Desktop Agent application with sandboxed environment for AI Agent interaction",
   "main": "dist-electron/main/index.js",
   "scripts": {
