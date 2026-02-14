@@ -19,6 +19,39 @@ import { buildThinkingOptions } from './thinking-options';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
+const MAX_CLAUDE_STDERR_LINES = 120;
+const STDERR_TAIL_LINES_FOR_ERROR = 20;
+
+function redactSensitiveText(text: string): string {
+  return text
+    // Common API key formats (sk-*, sk-ant-*, sk-or-v1-*)
+    .replace(/\bsk-[a-z0-9_-]{16,}\b/gi, '[REDACTED_KEY]')
+    // Generic token-like patterns in env-style output
+    .replace(/(ANTHROPIC_AUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY)\s*[:=]\s*[^\s"']+/gi, '$1=[REDACTED_KEY]');
+}
+
+function summarizeEnvForLog(env: NodeJS.ProcessEnv): Record<string, string> {
+  const pick = (key: string): string => {
+    const value = env[key];
+    if (!value) return '(empty/unset)';
+    if (key === 'PATH') return `${value.substring(0, 120)}...`;
+    if (key.includes('KEY') || key.includes('TOKEN')) return '✓ Set';
+    return value;
+  };
+
+  return {
+    ANTHROPIC_API_KEY: pick('ANTHROPIC_API_KEY'),
+    ANTHROPIC_AUTH_TOKEN: pick('ANTHROPIC_AUTH_TOKEN'),
+    ANTHROPIC_BASE_URL: pick('ANTHROPIC_BASE_URL'),
+    CLAUDE_MODEL: pick('CLAUDE_MODEL'),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: pick('ANTHROPIC_DEFAULT_SONNET_MODEL'),
+    OPENAI_API_KEY: pick('OPENAI_API_KEY'),
+    OPENAI_BASE_URL: pick('OPENAI_BASE_URL'),
+    OPENAI_MODEL: pick('OPENAI_MODEL'),
+    CLAUDE_CONFIG_DIR: pick('CLAUDE_CONFIG_DIR'),
+    PATH: pick('PATH'),
+  };
+}
 
 // Cache for shell environment (loaded once at startup)
 let cachedShellEnv: NodeJS.ProcessEnv | null = null;
@@ -1384,6 +1417,24 @@ Then follow the workflow described in that file.
       //   envWithSkills.MAX_THINKING_TOKENS = '0';
       // }
 
+      // Capture Claude Code stderr so "exit code 1" includes root-cause context.
+      const claudeStderrLines: string[] = [];
+      const onClaudeStderr = (data: string): void => {
+        if (!data) return;
+        const lines = data.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        for (const line of lines) {
+          const redactedLine = redactSensitiveText(line);
+          claudeStderrLines.push(redactedLine);
+          if (claudeStderrLines.length > MAX_CLAUDE_STDERR_LINES) {
+            claudeStderrLines.shift();
+          }
+          logError(`[ClaudeAgentRunner][stderr] ${redactedLine}`);
+        }
+      };
+      const getClaudeStderrTail = (): string => (
+        claudeStderrLines.slice(-STDERR_TAIL_LINES_FOR_ERROR).join('\n')
+      );
+
 
       const queryOptions: any = {
         pathToClaudeCodeExecutable: claudeCodePath,
@@ -1393,6 +1444,8 @@ Then follow the workflow described in that file.
         abortController: controller,
         env: envWithSkills,
         thinking: buildThinkingOptions(enableThinking),
+        plugins: sdkPlugins.length > 0 ? sdkPlugins : undefined,
+        stderr: onClaudeStderr,
         
         // Pass MCP servers to SDK
         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
@@ -1792,8 +1845,25 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
             prompt: contextualPrompt,
             options: queryOptions,
           };
-      
-      log('[ClaudeAgentRunner] Query input:', JSON.stringify(queryInput, null, 2));
+
+      log('[ClaudeAgentRunner] Query input summary:', JSON.stringify({
+        promptType: hasImages ? 'async-with-images' : 'text',
+        promptLength: hasImages ? '(async iterable)' : contextualPrompt.length,
+        historyMessageCount: historyItems.length,
+        options: {
+          cwd: queryOptions.cwd,
+          model: queryOptions.model,
+          maxTurns: queryOptions.maxTurns,
+          resume: queryOptions.resume || '(none)',
+          mcpServerCount: queryOptions.mcpServers ? Object.keys(queryOptions.mcpServers).length : 0,
+          pluginCount: sdkPlugins.length,
+          thinking: queryOptions.thinking?.type || '(unknown)',
+          systemPromptType: queryOptions.systemPrompt?.type || '(none)',
+          systemPromptPreset: queryOptions.systemPrompt?.preset || '(none)',
+          systemPromptAppendLength: queryOptions.systemPrompt?.append?.length || 0,
+          env: summarizeEnvForLog(envWithSkills),
+        },
+      }, null, 2));
       
       // Retry configuration
       const MAX_RETRIES = 10;
@@ -1802,7 +1872,8 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
       
       while (shouldContinue && retryCount <= MAX_RETRIES) {
         try {
-      for await (const message of query(queryInput)) {
+          claudeStderrLines.length = 0;
+          for await (const message of query(queryInput)) {
         if (!firstMessageReceived) {
           logTiming('FIRST MESSAGE RECEIVED from SDK');
           firstMessageReceived = true;
@@ -2077,7 +2148,12 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
       // Check if this is a retryable error
       const errorMessage = err.message || String(error);
       const errorString = String(error);
-      const fullErrorText = `${errorMessage} ${errorString}`.toLowerCase();
+      const stderrTail = getClaudeStderrTail();
+      if (stderrTail) {
+        logError(`[ClaudeAgentRunner] Claude Code stderr tail:\n${stderrTail}`);
+      }
+
+      const fullErrorText = `${errorMessage} ${errorString} ${stderrTail}`.toLowerCase();
       
       const isRetryable = fullErrorText.includes('provider returned error') ||
                           fullErrorText.includes('unable to submit request') ||
@@ -2141,6 +2217,13 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
           logError(`[ClaudeAgentRunner] Max retries (${MAX_RETRIES}) exceeded`);
         } else {
           logError(`[ClaudeAgentRunner] Non-retryable error: ${errorMessage}`);
+        }
+        if (stderrTail) {
+          const enhancedMessage = `${errorMessage}\n\nClaude Code stderr (tail):\n${stderrTail}`;
+          const enhancedError = new Error(enhancedMessage);
+          enhancedError.name = err.name || 'Error';
+          enhancedError.stack = err.stack;
+          throw enhancedError;
         }
         throw err;
       }
