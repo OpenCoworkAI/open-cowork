@@ -1,9 +1,11 @@
 import { Minus, Square, X, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const isMac = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
 
 export function Titlebar() {
+  const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
 
   const handleMinimize = () => {
@@ -33,14 +35,14 @@ export function Titlebar() {
           <button
             onClick={handleMinimize}
             className="w-12 h-full flex items-center justify-center hover:bg-surface transition-colors"
-            title="最小化"
+            title={t('window.minimize')}
           >
             <Minus className="w-4 h-4 text-text-secondary" />
           </button>
           <button
             onClick={handleMaximize}
             className="w-12 h-full flex items-center justify-center hover:bg-surface transition-colors"
-            title={isMaximized ? '还原' : '最大化'}
+            title={isMaximized ? t('window.restore') : t('window.maximize')}
           >
             {isMaximized ? (
               <Copy className="w-3.5 h-3.5 text-text-secondary" />
@@ -51,7 +53,7 @@ export function Titlebar() {
           <button
             onClick={handleClose}
             className="w-12 h-full flex items-center justify-center hover:bg-red-500 transition-colors group"
-            title="关闭"
+            title={t('window.close')}
           >
             <X className="w-4 h-4 text-text-secondary group-hover:text-white" />
           </button>

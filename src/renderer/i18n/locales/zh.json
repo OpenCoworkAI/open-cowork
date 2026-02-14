@@ -58,12 +58,21 @@
   "api": {
     "provider": "API 提供商",
     "apiKey": "API 密钥",
+    "enterApiKey": "输入你的 API Key",
     "protocol": "协议",
     "baseUrl": "基础 URL",
     "model": "模型",
     "usePreset": "使用预设",
     "custom": "自定义",
     "moreModels": "更多模型",
+    "firstRunTitle": "欢迎使用 Open Cowork",
+    "firstRunSubtitle": "首次使用需要配置 API",
+    "settingsTitle": "API 配置",
+    "settingsSubtitle": "修改你的 API 设置",
+    "selectModelRequired": "请选择或输入模型名称",
+    "saveFailed": "保存失败",
+    "noModelsAvailable": "暂无可用模型",
+    "getStarted": "开始使用",
     "selectProtocol": "选择服务的兼容协议",
     "enterOpenAIUrl": "输入 OpenAI 兼容的服务 URL",
     "enterAnthropicUrl": "输入 Anthropic 兼容的服务 URL",
@@ -86,6 +95,12 @@
       "network_error": "网络连接失败，请检查网络或地址",
       "unknown": "连接失败"
     }
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
   },
   "sandbox": {
     "title": "沙盒环境",

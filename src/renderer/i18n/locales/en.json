@@ -58,12 +58,21 @@
   "api": {
     "provider": "API Provider",
     "apiKey": "API Key",
+    "enterApiKey": "Enter your API Key",
     "protocol": "Protocol",
     "baseUrl": "Base URL",
     "model": "Model",
     "usePreset": "Use Preset",
     "custom": "Custom",
     "moreModels": "More Models",
+    "firstRunTitle": "Welcome to Open Cowork",
+    "firstRunSubtitle": "Configure your API to get started",
+    "settingsTitle": "API Settings",
+    "settingsSubtitle": "Update your API configuration",
+    "selectModelRequired": "Please select or enter a model",
+    "saveFailed": "Failed to save",
+    "noModelsAvailable": "No models available",
+    "getStarted": "Get Started",
     "selectProtocol": "Select the compatible protocol for the service",
     "enterOpenAIUrl": "Enter OpenAI-compatible service URL",
     "enterAnthropicUrl": "Enter Anthropic-compatible service URL",
@@ -86,6 +95,12 @@
       "network_error": "Network error. Check your connection",
       "unknown": "Connection failed"
     }
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
   },
   "sandbox": {
     "title": "Sandbox Environment",
