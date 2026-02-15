@@ -47,6 +47,7 @@ asarUnpack:
   - .claude/skills/**/*
 
 win:
+  icon: resources/icon.ico
   target:
     - target: nsis
       arch:
@@ -64,6 +65,7 @@ win:
         - "**/*"
 
 mac:
+  icon: resources/icon.icns
   target:
     - target: dmg
       arch:
@@ -92,6 +94,7 @@ mac:
         - "**/*"
 
 linux:
+  icon: resources/icon.png
   target:
     - target: AppImage
       arch:
