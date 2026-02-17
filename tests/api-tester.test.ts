@@ -197,12 +197,7 @@ describe('testApiConnection', () => {
       },
       finalResponse,
     });
-    mocks.importLocalAuthToken.mockReturnValue({
-      provider: 'codex',
-      token: 'oauth-local-token',
-      path: '/tmp/auth.json',
-      account: 'acct_from_local',
-    });
+    mocks.importLocalAuthToken.mockReturnValue(null);
 
     const result = await testApiConnection({
       provider: 'openai',
@@ -216,12 +211,49 @@ describe('testApiConnection', () => {
       expect.objectContaining({
         apiKey: 'oauth-token-from-import',
         baseURL: 'https://chatgpt.com/backend-api/codex',
-        defaultHeaders: expect.objectContaining({
-          'ChatGPT-Account-Id': 'acct_from_local',
-        }),
       }),
     );
     expect(mocks.openaiResponsesStream).toHaveBeenCalled();
+    expect(finalResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to api key when local codex candidate fails', async () => {
+    const finalResponse = vi.fn().mockResolvedValue({});
+    mocks.importLocalAuthToken.mockReturnValue({
+      provider: 'codex',
+      token: 'oauth-local-token',
+      path: '/tmp/auth.json',
+      account: 'acct_local',
+    });
+    mocks.openaiResponsesStream
+      .mockImplementationOnce(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'response.created' };
+        },
+        finalResponse: vi.fn().mockRejectedValue(new Error('local auth failed')),
+      }))
+      .mockImplementationOnce(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'response.created' };
+        },
+        finalResponse,
+      }));
+
+    const result = await testApiConnection({
+      provider: 'openai',
+      apiKey: 'oauth-token-from-import',
+      model: 'gpt-5.3-codex',
+      useLiveRequest: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.openaiCtor).toHaveBeenCalledTimes(2);
+    expect(mocks.openaiCtor).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        apiKey: 'oauth-token-from-import',
+      }),
+    );
     expect(finalResponse).toHaveBeenCalledTimes(1);
   });
 });

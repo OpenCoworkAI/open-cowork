@@ -3,6 +3,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { app } from 'electron';
 import path from 'path';
+import { importLocalAuthToken } from '../auth/local-auth';
+import { OPENAI_CODEX_BACKEND_BASE_URL } from '../config/auth-utils';
 import { log, logError, logWarn } from '../utils/logger';
 
 /**
@@ -221,7 +223,26 @@ export class MCPManager {
     log(`[MCPManager] Final PATH: ${env.PATH?.substring(0, 150)}...`);
 
     // Merge with config env (config env takes precedence)
-    return { ...env, ...configEnv };
+    const merged = { ...env, ...configEnv };
+
+    // Fallback: if OpenAI key is still missing, hydrate from local Codex login.
+    // This keeps MCP vision tools usable when OpenAI provider relies on local `codex auth login`.
+    if (!merged.OPENAI_API_KEY) {
+      const localCodex = importLocalAuthToken('codex');
+      const localToken = localCodex?.token?.trim();
+      if (localToken) {
+        merged.OPENAI_API_KEY = localToken;
+        if (!merged.OPENAI_BASE_URL) {
+          merged.OPENAI_BASE_URL = OPENAI_CODEX_BACKEND_BASE_URL;
+        }
+        if (!merged.OPENAI_ACCOUNT_ID && localCodex?.account) {
+          merged.OPENAI_ACCOUNT_ID = localCodex.account;
+        }
+        log('[MCPManager] Hydrated OPENAI_API_KEY from local Codex auth for MCP subprocess');
+      }
+    }
+
+    return merged;
   }
 
   /**
@@ -467,6 +488,15 @@ export class MCPManager {
       
       // Get environment variables
       const env = await this.getEnhancedEnv(config.env || {});
+      log('[MCPManager] Server auth env summary', {
+        server: config.name,
+        OPENAI_API_KEY: env.OPENAI_API_KEY?.trim() ? 'set' : 'unset',
+        OPENAI_BASE_URL: env.OPENAI_BASE_URL || '(unset)',
+        OPENAI_MODEL: env.OPENAI_MODEL || '(unset)',
+        OPENAI_ACCOUNT_ID: env.OPENAI_ACCOUNT_ID?.trim() ? 'set' : 'unset',
+        ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY?.trim() ? 'set' : 'unset',
+        ANTHROPIC_AUTH_TOKEN: env.ANTHROPIC_AUTH_TOKEN?.trim() ? 'set' : 'unset',
+      });
       
       // In production, set NODE_PATH to include unpacked node_modules
       if (app.isPackaged && isBuiltinServer) {
@@ -1010,11 +1040,6 @@ export class MCPManager {
       throw new Error(`MCP tool not found: ${toolName}`);
     }
 
-    const client = this.clients.get(tool.serverId);
-    if (!client) {
-      throw new Error(`MCP server not connected: ${tool.serverId}`);
-    }
-
     // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
     let actualToolName = toolName;
     if (toolName.startsWith('mcp__')) {
@@ -1029,9 +1054,15 @@ export class MCPManager {
 
     const maxRetries = 2;
     let lastError: any;
+    let compatHotReloadTried = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        const client = this.clients.get(tool.serverId);
+        if (!client) {
+          throw new Error(`MCP server not connected: ${tool.serverId}`);
+        }
+
         // Add timeout for tool call
         const timeoutMs = 30000; // 30 second timeout
         const callPromise = client.callTool({
@@ -1043,26 +1074,84 @@ export class MCPManager {
         });
 
         const result = await Promise.race([callPromise, timeoutPromise]);
+
+        const toolErrorMessage = extractStructuredToolErrorMessage(result);
+        if (shouldReconnectOnStructuredToolError(toolErrorMessage)) {
+          // 某些 MCP 服务会把连接错误包在结构化结果里而非直接抛异常，这里转为异常以复用统一重连逻辑。
+          throw new Error(toolErrorMessage);
+        }
+        if (
+          !compatHotReloadTried &&
+          shouldHotReloadGuiVisionServer(tool.serverName, actualToolName, toolErrorMessage)
+        ) {
+          compatHotReloadTried = true;
+          logWarn(
+            `[MCPManager] Detected GUI vision compatibility error (${toolErrorMessage}). Reconnecting server ${tool.serverName} and retrying once.`
+          );
+          const reconnected = await this.reconnectServer(tool.serverId);
+          if (reconnected) {
+            continue;
+          }
+        }
+
         return result;
       } catch (error: any) {
         lastError = error;
         const errorMsg = error.message || String(error);
         logError(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
-        
-        // If connection closed, try to reconnect
-        if (errorMsg.includes('Connection closed') || errorMsg.includes('timeout')) {
-          if (attempt < maxRetries) {
-            log(`[MCPManager] Connection issue detected, waiting before retry...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        } else {
-          // For other errors, don't retry
+
+        if (attempt >= maxRetries) {
           break;
         }
+
+        const lowerErrorMsg = errorMsg.toLowerCase();
+        const shouldReconnect =
+          lowerErrorMsg.includes('mcp server not connected') ||
+          lowerErrorMsg.includes('not connected') ||
+          lowerErrorMsg.includes('connection closed');
+
+        if (shouldReconnect) {
+          log(`[MCPManager] Reconnectable MCP error detected for ${tool.serverName}; attempting reconnect...`);
+          const reconnected = await this.reconnectServer(tool.serverId);
+          if (reconnected) {
+            continue;
+          }
+          logWarn(`[MCPManager] Reconnect attempt failed for ${tool.serverName}, will retry after backoff`);
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          continue;
+        }
+
+        if (errorMsg.includes('timeout')) {
+          log(`[MCPManager] Tool call timeout detected, retrying after backoff...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+
+        // For non-retryable errors, exit retry loop immediately
+        break;
       }
     }
 
     throw lastError;
+  }
+
+  private async reconnectServer(serverId: string): Promise<boolean> {
+    const config = this.serverConfigs.get(serverId);
+    if (!config || !config.enabled) {
+      logWarn(`[MCPManager] Cannot reconnect server ${serverId}: config missing or disabled`);
+      return false;
+    }
+
+    try {
+      await this.disconnectServer(serverId);
+      await this.connectServer(config);
+      await this.refreshTools();
+      log(`[MCPManager] Reconnected server ${config.name} (${serverId})`);
+      return true;
+    } catch (error) {
+      logError(`[MCPManager] Failed to reconnect server ${serverId}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -1094,4 +1183,67 @@ export class MCPManager {
   async shutdown(): Promise<void> {
     await this.disconnectAll();
   }
+}
+
+function extractStructuredToolErrorMessage(result: any): string {
+  if (!result || typeof result !== 'object') {
+    return '';
+  }
+
+  const content = Array.isArray(result.content) ? result.content : [];
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue;
+    if ((item as { type?: string }).type !== 'text') continue;
+    const text = (item as { text?: unknown }).text;
+    if (typeof text !== 'string') continue;
+
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed) as { error?: unknown; message?: unknown };
+        if (parsed.error === true && typeof parsed.message === 'string') {
+          return parsed.message;
+        }
+      } catch {
+        // Ignore malformed JSON payloads
+      }
+    }
+
+    return trimmed;
+  }
+
+  return '';
+}
+
+function shouldReconnectOnStructuredToolError(errorMessage: string): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized === 'not connected' ||
+    normalized.includes('mcp server not connected') ||
+    normalized.includes('connection closed')
+  );
+}
+
+function shouldHotReloadGuiVisionServer(serverName: string, actualToolName: string, errorMessage: string): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+  if (actualToolName !== 'gui_verify_vision') {
+    return false;
+  }
+  if (!serverName.toLowerCase().includes('gui')) {
+    return false;
+  }
+
+  return (
+    errorMessage.includes('Unsupported parameter: max_output_tokens') ||
+    errorMessage.includes('Instructions are required') ||
+    errorMessage.includes('Stream must be set to true')
+  );
 }

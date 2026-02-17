@@ -417,7 +417,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             )}
             {isOpenAIMode && (
               <p className="text-xs text-text-muted">
-                API Key 可留空，保存后会自动尝试使用本地 Codex 登录
+                OpenAI 默认走 Codex CLI（自动执行、无审批弹窗）；优先使用本地 Codex 登录，无本地登录时自动回退到 API Key 链路。
               </p>
             )}
             {resolveLocalAuthProvider() && (

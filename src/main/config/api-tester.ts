@@ -3,9 +3,11 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { PROVIDER_PRESETS } from './config-store';
 import {
   buildOpenAICodexHeaders,
+  OPENAI_CODEX_BACKEND_BASE_URL,
   resolveOpenAICredentials,
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
+import { importLocalAuthToken } from '../auth/local-auth';
 import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
 import { log, logWarn } from '../utils/logger';
 
@@ -114,11 +116,65 @@ async function testCodexLiveRequest(client: OpenAI, model: string): Promise<void
   await stream.finalResponse();
 }
 
+interface OpenAITestCredentials {
+  apiKey: string;
+  baseUrl?: string;
+  accountId?: string;
+  useCodexOAuth: boolean;
+  source: 'localCodex' | 'apiKey';
+}
+
+async function testOpenAICredentials(
+  credentials: OpenAITestCredentials,
+  modelInput: string | undefined,
+  useLiveRequest: boolean
+): Promise<void> {
+  const client = new OpenAI({
+    apiKey: credentials.apiKey,
+    baseURL: credentials.baseUrl,
+    ...(credentials.useCodexOAuth ? { defaultHeaders: buildOpenAICodexHeaders(credentials.accountId) } : {}),
+    timeout: REQUEST_TIMEOUT_MS,
+  });
+
+  if (credentials.useCodexOAuth && !useLiveRequest) {
+    await testCodexUsageEndpoint(credentials.apiKey, credentials.accountId);
+    return;
+  }
+
+  if (useLiveRequest) {
+    const model = modelInput || (credentials.useCodexOAuth ? 'gpt-5.3-codex' : 'gpt-4o-mini');
+    if (credentials.useCodexOAuth) {
+      await testCodexLiveRequest(client, model);
+      return;
+    }
+
+    try {
+      await client.responses.create({
+        model,
+        input: 'ping',
+        max_output_tokens: 1,
+      });
+    } catch {
+      await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+      });
+    }
+    return;
+  }
+
+  await client.models.list();
+}
+
 export async function testApiConnection(input: ApiTestInput): Promise<ApiTestResult> {
   const apiKey = input.apiKey?.trim() || '';
   const resolvedBaseUrl = resolveBaseUrl(input);
   const customUsesOpenAI = input.provider === 'custom' && input.customProtocol === 'openai';
   const useOpenAI = input.provider === 'openai' || customUsesOpenAI;
+  const localCodex = useOpenAI ? importLocalAuthToken('codex') : null;
+  const localCodexToken = localCodex?.token?.trim() || '';
+  const hasLocalCodex = useOpenAI && Boolean(localCodexToken);
   const resolvedOpenAI = useOpenAI
     ? resolveOpenAICredentials({
         provider: input.provider,
@@ -127,35 +183,39 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
         baseUrl: resolvedBaseUrl,
       })
     : null;
-  const effectiveApiKey = useOpenAI ? resolvedOpenAI?.apiKey ?? '' : apiKey;
+  const effectiveApiKey = apiKey;
   const useAuthTokenHeader = shouldUseAnthropicAuthToken({
     provider: input.provider,
     customProtocol: input.customProtocol,
     apiKey: effectiveApiKey,
   });
   const useLiveRequest = Boolean(input.useLiveRequest);
-  const useCodexOAuth = Boolean(resolvedOpenAI?.useCodexOAuth);
+  const useCodexOAuth = hasLocalCodex || Boolean(resolvedOpenAI?.useCodexOAuth);
   log('[Config][ApiTest] Start', {
     provider: input.provider,
     customProtocol: input.customProtocol || undefined,
     useOpenAI,
     useCodexOAuth,
-    source: resolvedOpenAI?.source || undefined,
-    hasApiKey: Boolean(effectiveApiKey),
-    baseUrl: useOpenAI ? (resolvedOpenAI?.baseUrl || resolvedBaseUrl || '(default)') : (resolvedBaseUrl || '(default)'),
+    source: hasLocalCodex ? 'localCodex-first' : (resolvedOpenAI?.source || undefined),
+    hasApiKey: Boolean(apiKey),
+    hasLocalCodex,
+    baseUrl: useOpenAI ? (resolvedOpenAI?.baseUrl || OPENAI_CODEX_BACKEND_BASE_URL || '(default)') : (resolvedBaseUrl || '(default)'),
     model: input.model || undefined,
     live: useLiveRequest,
   });
 
-  if (!effectiveApiKey) {
+  if (useOpenAI && !hasLocalCodex && !apiKey) {
     logWarn('[Config][ApiTest] Missing credentials for test');
-    return useOpenAI
-      ? {
-          ok: false,
-          errorType: 'missing_key',
-          details: 'No API key or local Codex login found. Please run: codex auth login',
-        }
-      : { ok: false, errorType: 'missing_key' };
+    return {
+      ok: false,
+      errorType: 'missing_key',
+      details: 'No API key or local Codex login found. Please run: codex auth login',
+    };
+  }
+
+  if (!useOpenAI && !effectiveApiKey) {
+    logWarn('[Config][ApiTest] Missing credentials for test');
+    return { ok: false, errorType: 'missing_key' };
   }
 
   if (input.provider === 'custom' && !resolvedBaseUrl) {
@@ -170,36 +230,44 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
 
   try {
     if (useOpenAI) {
-      const client = new OpenAI({
-        apiKey: effectiveApiKey,
-        baseURL: resolvedOpenAI?.baseUrl || resolvedBaseUrl,
-        ...(useCodexOAuth ? { defaultHeaders: buildOpenAICodexHeaders(resolvedOpenAI?.accountId) } : {}),
-        timeout: REQUEST_TIMEOUT_MS,
-      });
+      const candidates: OpenAITestCredentials[] = [];
+      if (hasLocalCodex) {
+        candidates.push({
+          apiKey: localCodexToken,
+          baseUrl: OPENAI_CODEX_BACKEND_BASE_URL,
+          accountId: localCodex?.account,
+          useCodexOAuth: true,
+          source: 'localCodex',
+        });
+      }
+      if (apiKey) {
+        candidates.push({
+          apiKey,
+          baseUrl: resolvedOpenAI?.baseUrl || resolvedBaseUrl,
+          accountId: resolvedOpenAI?.accountId,
+          useCodexOAuth: Boolean(resolvedOpenAI?.useCodexOAuth),
+          source: 'apiKey',
+        });
+      }
 
-      if (useCodexOAuth && !useLiveRequest) {
-        await testCodexUsageEndpoint(effectiveApiKey, resolvedOpenAI?.accountId);
-      } else if (useLiveRequest) {
-        const model = input.model || (useCodexOAuth ? 'gpt-5.3-codex' : 'gpt-4o-mini');
-        if (useCodexOAuth) {
-          await testCodexLiveRequest(client, model);
-        } else {
-          try {
-            await client.responses.create({
-              model,
-              input: 'ping',
-              max_output_tokens: 1,
-            });
-          } catch (error) {
-            await client.chat.completions.create({
-              model,
-              messages: [{ role: 'user', content: 'ping' }],
-              max_tokens: 1,
-            });
-          }
+      let lastError: unknown = null;
+      for (const candidate of candidates) {
+        try {
+          await testOpenAICredentials(candidate, input.model, useLiveRequest);
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          logWarn('[Config][ApiTest] OpenAI candidate failed', {
+            source: candidate.source,
+            useCodexOAuth: candidate.useCodexOAuth,
+            details: error instanceof Error ? error.message : String(error),
+          });
         }
-      } else {
-        await client.models.list();
+      }
+
+      if (lastError) {
+        throw lastError;
       }
     } else {
       // Save and clear environment variables to prevent SDK from reading them

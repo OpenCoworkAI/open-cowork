@@ -13,6 +13,7 @@ import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { buildMcpToolsPrompt } from '../utils/cowork-instructions';
 import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
 import { buildThinkingOptions } from './thinking-options';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
@@ -141,50 +142,7 @@ export class ClaudeAgentRunner {
    * Get MCP tools prompt for system instructions
    */
   private getMCPToolsPrompt(): string {
-    if (!this.mcpManager) {
-      return '';
-    }
-
-    const mcpTools = this.mcpManager.getTools();
-    if (mcpTools.length === 0) {
-      return '';
-    }
-
-    // Group tools by server
-    const toolsByServer = new Map<string, typeof mcpTools>();
-    for (const tool of mcpTools) {
-      const existing = toolsByServer.get(tool.serverName) || [];
-      existing.push(tool);
-      toolsByServer.set(tool.serverName, existing);
-    }
-
-    // Format tools list
-    const serverSections = Array.from(toolsByServer.entries()).map(([serverName, tools]) => {
-      const toolsList = tools.map(tool => 
-        `  - **${tool.name}**: ${tool.description}`
-      ).join('\n');
-      return `**${serverName}** (${tools.length} tools):\n${toolsList}`;
-    }).join('\n\n');
-
-    return `
-<mcp_tools>
-You have access to ${mcpTools.length} MCP (Model Context Protocol) tools from ${toolsByServer.size} connected server(s):
-
-${serverSections}
-
-**How to use MCP tools:**
-- MCP tools use the format: \`mcp__<ServerName>__<toolName>\`
-- ServerName is case-sensitive and must match exactly (e.g., "Chrome" not "chrome")
-- Common Chrome tools: \`mcp__Chrome__navigate\`, \`mcp__Chrome__click\`, \`mcp__Chrome__type\`, \`mcp__Chrome__screenshot\`
-- If a tool call fails with "No such tool available", the MCP server may not be connected yet
-
-**Example - Navigate to a URL:**
-Use tool \`mcp__Chrome__navigate\` with arguments: { "url": "https://www.google.com" }
-
-**Example - Click an element:**
-Use tool \`mcp__Chrome__click\` with arguments: { "selector": "button.submit" }
-</mcp_tools>
-`;
+    return buildMcpToolsPrompt(this.mcpManager);
   }
 
   /**

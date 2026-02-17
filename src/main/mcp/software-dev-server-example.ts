@@ -740,10 +740,17 @@ async function callVisionAPI(
   prompt: string,
   maxTokens: number = 2048
 ): Promise<string> {
-  // Get API configuration from environment
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
-  const baseUrl = process.env.ANTHROPIC_BASE_URL;
-  const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-3-5-sonnet-20241022';
+  // Get API configuration from environment (supports Anthropic/OpenRouter/OpenAI-compatible)
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  const apiKey = anthropicApiKey || openAIApiKey;
+  const hasOpenAIConfig = Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL || process.env.OPENAI_MODEL);
+  let baseUrl = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
+  const model =
+    process.env.CLAUDE_MODEL ||
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ||
+    process.env.OPENAI_MODEL ||
+    'claude-3-5-sonnet-20241022';
   // Get enableThinking from configStore
   // const enableThinking = configStore.get('enableThinking') ?? false;
   // writeMCPLog(`[Vision] configStore: ${JSON.stringify(configStore.getAll())}`);
@@ -752,22 +759,28 @@ async function callVisionAPI(
   if (!apiKey) {
     throw new Error('API key not configured. Please configure it in Settings.');
   }
+
+  // Codex backend URL is not a standard chat-completions endpoint; switch to platform endpoint for vision.
+  if (baseUrl && baseUrl.includes('chatgpt.com/backend-api/codex')) {
+    baseUrl = 'https://api.openai.com/v1';
+  }
   
   // console.error(`[Vision] Using model: ${model} (baseURL: ${baseUrl || 'default'}), enableThinking: ${enableThinking}`);
   
   // Log the prompt
   writeMCPLog(prompt, 'PROMPT');
   
-  // Check if using OpenRouter (has AUTH_TOKEN and baseUrl is openrouter.ai)
-  const isOpenRouter = !!process.env.ANTHROPIC_AUTH_TOKEN && 
-                       baseUrl && 
-                       (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
+  // Check if using OpenRouter
+  const isOpenRouter = !!baseUrl && (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
   
-  // Check if model is OpenAI-compatible (Gemini, etc.)
-  const isOpenAICompatible = model.includes('gemini') || 
-                              model.includes('gpt-') || 
-                              model.includes('openai/') ||
-                              isOpenRouter;
+  // Check if model/config is OpenAI-compatible (Gemini, GPT, etc.)
+  const isOpenAICompatible =
+    hasOpenAIConfig ||
+    model.includes('gemini') ||
+    model.includes('gpt-') ||
+    model.includes('openai/') ||
+    isOpenRouter ||
+    (baseUrl ? baseUrl.includes('api.openai.com') : false);
   
   if (isOpenAICompatible) {
     // Use OpenAI-compatible API format (for Gemini, GPT, etc. via OpenRouter)

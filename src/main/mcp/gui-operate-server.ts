@@ -54,6 +54,19 @@ const OPEN_COWORK_DATA_DIR = PLATFORM === 'win32'
 // Directory for storing GUI operate files (screenshots, etc.)
 const GUI_OPERATE_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_operate');
 const SCREENSHOTS_DIR = path.join(GUI_OPERATE_DIR, 'screenshots');
+const SCREENSHOT_REUSE_WINDOW_MS = 5 * 60_000;
+
+type ScreenshotCacheEntry = {
+  displayIndex: number;
+  regionKey: string;
+  path: string;
+  base64Image: string;
+  capturedAt: number;
+  displayInfo: { width: number; height: number; scaleFactor: number };
+};
+
+let lastScreenshotCache: ScreenshotCacheEntry | null = null;
+const screenshotRequestCounts = new Map<string, number>();
 
 // ============================================================================
 // Click History Tracking for GUI Locate (App-level Persistent Storage)
@@ -3114,8 +3127,55 @@ async function takeScreenshotForDisplay(
   displayIndex?: number,
   region?: { x: number; y: number; width: number; height: number },
   reason?: string,
+  forceRefresh?: boolean,
   // annotateClicks?: boolean
 ): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+  const normalizedDisplayIndex = displayIndex ?? 0;
+  const regionKey = toRegionKey(region);
+  const requestKey = `${normalizedDisplayIndex}:${regionKey}`;
+  const requestCount = (screenshotRequestCounts.get(requestKey) || 0) + 1;
+  screenshotRequestCounts.set(requestKey, requestCount);
+  const reusable = forceRefresh ? null : getReusableScreenshot(normalizedDisplayIndex, regionKey);
+  if (reusable) {
+    const reusedMetadata: Record<string, any> = {
+      success: true,
+      path: reusable.path,
+      displayIndex: reusable.displayIndex,
+      displayInfo: reusable.displayInfo,
+      timestamp: new Date(reusable.capturedAt).toISOString(),
+      reused: true,
+      duplicateCallCount: requestCount,
+    };
+    if (requestCount > 1) {
+      reusedMetadata.nextStepHint =
+        'Screenshot already captured recently. Please use this screenshot to interpret/verify, and avoid repeated screenshot_for_display calls unless user explicitly asks to refresh.';
+    }
+    if (reason) {
+      reusedMetadata.reason = reason;
+    }
+    if (region) {
+      reusedMetadata.region = region;
+    }
+    writeMCPLog(
+      `[takeScreenshotForDisplay] Reusing screenshot captured ${Date.now() - reusable.capturedAt}ms ago: ${reusable.path} (duplicateCallCount=${requestCount})`,
+      'Screenshot Reuse'
+    );
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(reusedMetadata, null, 2),
+        },
+        {
+          type: 'image',
+          data: reusable.base64Image,
+          mimeType: 'image/png',
+        },
+      ],
+    };
+  }
+
   const timestamp = Date.now();
   const tempPath = path.join(SCREENSHOTS_DIR, `screenshot_display_${timestamp}.png`);
 
@@ -3146,13 +3206,13 @@ async function takeScreenshotForDisplay(
 
   // Get display information
   const config = await getDisplayConfiguration();
-  const display = config.displays.find(d => d.index === (displayIndex ?? 0)) || config.displays[0];
+  const display = config.displays.find(d => d.index === normalizedDisplayIndex) || config.displays[0];
 
   // Build response metadata
   const metadata: Record<string, any> = {
     success: true,
     path: finalPath,
-    displayIndex: displayIndex ?? 0,
+    displayIndex: normalizedDisplayIndex,
     displayInfo: {
       width: display.width,
       height: display.height,
@@ -3164,6 +3224,10 @@ async function takeScreenshotForDisplay(
 
   if (reason) {
     metadata.reason = reason;
+  }
+
+  if (forceRefresh) {
+    metadata.forceRefresh = true;
   }
 
   if (region) {
@@ -3187,6 +3251,19 @@ async function takeScreenshotForDisplay(
   // if (clickHistoryInfo) {
   //   metadata.clickHistoryInfo = clickHistoryInfo;
   // }
+
+  updateScreenshotCache({
+    displayIndex: normalizedDisplayIndex,
+    regionKey,
+    path: finalPath,
+    base64Image,
+    capturedAt: Date.now(),
+    displayInfo: {
+      width: display.width,
+      height: display.height,
+      scaleFactor: display.scaleFactor,
+    },
+  });
 
   // Return MCP response with both text and image content
   return {
@@ -3331,16 +3408,27 @@ async function callVisionAPI(
       return result;
     } catch (error: any) {
       const isLastAttempt = attempt === MAX_RETRIES;
+      const errorMessage = String(error?.message || error || '');
+
+      // Deterministic request-shape errors should fail fast instead of wasting retries.
+      if (
+        errorMessage.includes('Unsupported parameter') ||
+        errorMessage.includes('Instructions are required') ||
+        errorMessage.includes('Stream must be set to true')
+      ) {
+        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Deterministic error, stop retry: ${errorMessage}`, 'API Request Error');
+        throw new Error(errorMessage);
+      }
       
-      if (error.message.includes('timeout')) {
+      if (errorMessage.includes('timeout')) {
         writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Timeout after ${TIMEOUT_MS}ms`, 'API Request Error');
       } else {
-        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Error: ${error.message}`, 'API Request Error');
+        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Error: ${errorMessage}`, 'API Request Error');
       }
       
       if (isLastAttempt) {
         writeMCPLog(`${logPrefix} All ${MAX_RETRIES} attempts failed`, 'API Request Failed');
-        throw new Error(`Vision API failed after ${MAX_RETRIES} attempts: ${error.message}`);
+        throw new Error(`Vision API failed after ${MAX_RETRIES} attempts: ${errorMessage}`);
       }
       
       // Wait before retry (exponential backoff: 1s, 2s, 4s)
@@ -3353,6 +3441,38 @@ async function callVisionAPI(
   throw new Error('Vision API failed: Maximum retries exceeded');
 }
 
+function getBaseUrlHost(baseUrl: string | undefined): string {
+  if (!baseUrl) {
+    return '(unset)';
+  }
+  try {
+    return new URL(baseUrl).host || '(unknown)';
+  } catch {
+    return '(invalid-url)';
+  }
+}
+
+function buildVisionRuntimeSummary(
+  functionName: string | undefined,
+  anthropicApiKey: string | undefined,
+  openAIApiKey: string | undefined,
+  baseUrl: string | undefined,
+  model: string,
+  isOpenAICompatible: boolean,
+  isCodexBackend: boolean
+): Record<string, unknown> {
+  return {
+    functionName: functionName || '(unknown)',
+    hasAnthropicApiKey: Boolean(anthropicApiKey),
+    hasOpenAIApiKey: Boolean(openAIApiKey),
+    hasAnyApiKey: Boolean(anthropicApiKey || openAIApiKey),
+    baseUrlHost: getBaseUrlHost(baseUrl),
+    model,
+    isOpenAICompatible,
+    isCodexBackend,
+  };
+}
+
 /**
  * Call vision API with timeout
  */
@@ -3363,27 +3483,67 @@ async function callVisionAPIWithTimeout(
   functionName: string | undefined,
   timeoutMs: number
 ): Promise<string> {
-  // Get API configuration from environment
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
-  const baseUrl = process.env.ANTHROPIC_BASE_URL;
-  const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-3-5-sonnet-20241022';
+  // Get API configuration from environment (supports Anthropic/OpenRouter/OpenAI-compatible)
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  const apiKey = anthropicApiKey || openAIApiKey;
+  const hasOpenAIConfig = Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL || process.env.OPENAI_MODEL);
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
+  const model =
+    process.env.CLAUDE_MODEL ||
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ||
+    process.env.OPENAI_MODEL ||
+    'claude-3-5-sonnet-20241022';
+
+  // Check if using OpenRouter
+  const isOpenRouter = !!baseUrl && (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
   
+  // Check if model/config is OpenAI-compatible (Gemini, GPT, etc.)
+  const isOpenAICompatible =
+    hasOpenAIConfig ||
+    model.includes('gemini') ||
+    model.includes('gpt-') ||
+    model.includes('openai/') ||
+    isOpenRouter ||
+    (baseUrl ? baseUrl.includes('api.openai.com') : false);
+
+  const isCodexBackend = Boolean(baseUrl && baseUrl.includes('chatgpt.com/backend-api/codex'));
+  const runtimeSummary = buildVisionRuntimeSummary(
+    functionName,
+    anthropicApiKey,
+    openAIApiKey,
+    baseUrl,
+    model,
+    isOpenAICompatible,
+    isCodexBackend
+  );
+  writeMCPLog(JSON.stringify(runtimeSummary), 'Vision Runtime');
+
+  const selectedRoute = isOpenAICompatible
+    ? (isCodexBackend ? 'codex-responses' : 'openai-chat-completions')
+    : 'anthropic-messages';
+  writeMCPLog(
+    `[Vision Routing] function=${functionName || '(unknown)'} route=${selectedRoute} host=${getBaseUrlHost(baseUrl)} model=${model}`,
+    'Vision Routing'
+  );
+
   if (!apiKey) {
-    throw new Error('API key not configured. Please set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN environment variable.');
+    throw new Error('API key not configured. Please set ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / OPENAI_API_KEY.');
   }
   
-  // Check if using OpenRouter (has AUTH_TOKEN and baseUrl is openrouter.ai)
-  const isOpenRouter = !!process.env.ANTHROPIC_AUTH_TOKEN && 
-                       baseUrl && 
-                       (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
-  
-  // Check if model is OpenAI-compatible (Gemini, etc.)
-  const isOpenAICompatible = model.includes('gemini') || 
-                              model.includes('gpt-') || 
-                              model.includes('openai/') ||
-                              isOpenRouter;
-  
   if (isOpenAICompatible) {
+    if (isCodexBackend) {
+      return await callCodexVisionResponses(
+        base64Image,
+        prompt,
+        model,
+        baseUrl!,
+        apiKey,
+        process.env.OPENAI_ACCOUNT_ID,
+        timeoutMs
+      );
+    }
+
     // Use OpenAI-compatible API format (for Gemini, GPT, etc. via OpenRouter)
     const openAIBaseUrl = baseUrl || 'https://api.openai.com/v1';
     const openAIUrl = openAIBaseUrl.endsWith('/v1') 
@@ -3565,6 +3725,81 @@ async function callVisionAPIWithTimeout(
       }
       throw error;
     }
+  }
+}
+
+async function callCodexVisionResponses(
+  base64Image: string,
+  prompt: string,
+  model: string,
+  baseUrl: string,
+  apiKey: string,
+  accountId: string | undefined,
+  timeoutMs: number
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const endpoint = `${baseUrl.replace(/\/+$/, '')}/responses`;
+    const instructions =
+      'You are a GUI vision assistant. Analyze the provided screenshot and answer the user question accurately and concisely. Use Chinese unless the user explicitly requests another language.';
+    const question = (prompt || '').trim() || 'Please describe what is visible in the screenshot.';
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'User-Agent': 'CodexBar',
+        ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        store: false,
+        stream: true,
+        instructions,
+        input: [
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: question },
+              { type: 'input_image', image_url: `data:image/png;base64,${base64Image}` },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+
+    const bodyText = await response.text();
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${bodyText}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/event-stream') || bodyText.includes('event:') || bodyText.includes('data:')) {
+      const streamedText = extractTextFromResponsesSSE(bodyText);
+      if (streamedText.trim()) {
+        return streamedText;
+      }
+      throw new Error('Vision SSE response did not contain output text');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(bodyText);
+    } catch (error: any) {
+      throw new Error(`Failed to parse API response: ${error.message}`);
+    }
+
+    const directText = extractOutputTextFromResponsesPayload(parsed);
+    if (directText.trim()) {
+      return directText;
+    }
+
+    throw new Error('Vision response did not contain output text');
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -4543,13 +4778,41 @@ async function verifyGUIState(
     throw new Error(`GUI verification is not supported on platform: ${PLATFORM}`);
   }
   
-  // Take screenshot
-  const screenshotPath = path.join(SCREENSHOTS_DIR, `gui_verify_${Date.now()}.png`);
-  await takeScreenshot(screenshotPath, displayIndex);
-  
-  // Analyze with vision model
-  const imageBuffer = await fs.readFile(screenshotPath);
-  const base64Image = imageBuffer.toString('base64');
+  const normalizedDisplayIndex = displayIndex ?? 0;
+  const regionKey = toRegionKey(undefined);
+  const reusable = getReusableScreenshot(normalizedDisplayIndex, regionKey);
+
+  let screenshotPath: string;
+  let base64Image: string;
+
+  if (reusable) {
+    screenshotPath = reusable.path;
+    base64Image = reusable.base64Image;
+    writeMCPLog(
+      `[verifyGUIState] Reusing recent screenshot captured ${Date.now() - reusable.capturedAt}ms ago: ${reusable.path}`,
+      'Screenshot Reuse'
+    );
+  } else {
+    screenshotPath = path.join(SCREENSHOTS_DIR, `gui_verify_${Date.now()}.png`);
+    await takeScreenshot(screenshotPath, displayIndex);
+    const imageBuffer = await fs.readFile(screenshotPath);
+    base64Image = imageBuffer.toString('base64');
+
+    const config = await getDisplayConfiguration();
+    const display = config.displays.find(d => d.index === normalizedDisplayIndex) || config.displays[0];
+    updateScreenshotCache({
+      displayIndex: normalizedDisplayIndex,
+      regionKey,
+      path: screenshotPath,
+      base64Image,
+      capturedAt: Date.now(),
+      displayInfo: {
+        width: display.width,
+        height: display.height,
+        scaleFactor: display.scaleFactor,
+      },
+    });
+  }
   
   const prompt = `Analyze this GUI screenshot and answer the following question:
 
@@ -4624,8 +4887,277 @@ Example:
     answer,
     operationSuccess,
     screenshot_path: screenshotPath,
-    displayIndex: displayIndex ?? 'all',
+    displayIndex: normalizedDisplayIndex,
   });
+}
+
+function toRegionKey(region?: { x: number; y: number; width: number; height: number }): string {
+  if (!region) {
+    return 'full';
+  }
+  return `${region.x},${region.y},${region.width},${region.height}`;
+}
+
+function getReusableScreenshot(displayIndex: number, regionKey: string): ScreenshotCacheEntry | null {
+  if (!lastScreenshotCache) {
+    return null;
+  }
+  if (lastScreenshotCache.displayIndex !== displayIndex) {
+    return null;
+  }
+  if (lastScreenshotCache.regionKey !== regionKey) {
+    return null;
+  }
+  const age = Date.now() - lastScreenshotCache.capturedAt;
+  if (age > SCREENSHOT_REUSE_WINDOW_MS) {
+    return null;
+  }
+  return lastScreenshotCache;
+}
+
+function updateScreenshotCache(entry: ScreenshotCacheEntry): void {
+  lastScreenshotCache = entry;
+}
+
+function extractTextFromResponsesSSE(sseText: string): string {
+  const channelText = new Map<string, string>();
+  const channelOrder: string[] = [];
+  let completedSnapshot = '';
+  const blocks = sseText.split(/\r?\n\r?\n/);
+
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    const lines = block.split(/\r?\n/);
+    let eventType = '';
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+
+    if (dataLines.length === 0) {
+      continue;
+    }
+
+    const payload = dataLines.join('\n').trim();
+    if (!payload || payload === '[DONE]') {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(payload);
+      const parsedType = typeof parsed?.type === 'string' ? parsed.type : '';
+      const effectiveType = eventType || parsedType;
+
+      // Prefer true streaming deltas. Some backends send cumulative delta snapshots,
+      // so we merge per-channel instead of naive append.
+      const delta = extractResponsesDeltaText(parsed);
+      if (delta && (effectiveType.includes('output_text.delta') || effectiveType === '' || parsedType === 'response.output_text.delta')) {
+        const channel = deriveResponsesDeltaChannelKey(parsed);
+        if (!channelOrder.includes(channel)) {
+          channelOrder.push(channel);
+        }
+        const merged = mergeResponsesDelta(channelText.get(channel) || '', delta);
+        channelText.set(channel, merged);
+      }
+
+      if (
+        effectiveType.includes('response.completed') ||
+        parsedType === 'response.completed'
+      ) {
+        const snapshot = extractOutputTextFromResponsesPayload(parsed?.response || parsed);
+        if (snapshot) {
+          completedSnapshot = snapshot;
+        }
+      }
+    } catch {
+      // Ignore non-JSON SSE chunks
+    }
+  }
+
+  const streamed = chooseBestStreamedText(channelText, channelOrder);
+  if (streamed.trim()) {
+    return cleanupRepeatedVisionOutput(streamed);
+  }
+  if (completedSnapshot.trim()) {
+    return cleanupRepeatedVisionOutput(completedSnapshot);
+  }
+  return '';
+}
+
+function extractOutputTextFromResponsesPayload(payload: any): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+  if (typeof payload.output_text === 'string') {
+    return payload.output_text;
+  }
+  if (typeof payload.delta === 'string') {
+    return payload.delta;
+  }
+  if (typeof payload.text === 'string') {
+    return payload.text;
+  }
+  if (payload.response) {
+    const nested = extractOutputTextFromResponsesPayload(payload.response);
+    if (nested) {
+      return nested;
+    }
+  }
+  if (Array.isArray(payload.output)) {
+    const parts: string[] = [];
+    for (const item of payload.output) {
+      if (item?.type === 'message' && Array.isArray(item.content)) {
+        for (const block of item.content) {
+          if (block?.type === 'output_text' && typeof block.text === 'string') {
+            parts.push(block.text);
+          }
+        }
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join('\n');
+    }
+  }
+  return '';
+}
+
+function extractResponsesDeltaText(payload: any): string {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+  if (typeof payload.delta === 'string') {
+    return payload.delta;
+  }
+  if (payload.item && typeof payload.item === 'object' && typeof payload.item.delta === 'string') {
+    return payload.item.delta;
+  }
+  return '';
+}
+
+function deriveResponsesDeltaChannelKey(payload: any): string {
+  if (!payload || typeof payload !== 'object') {
+    return 'default';
+  }
+  const p = payload as Record<string, unknown>;
+  const outputIndex = typeof p.output_index === 'number' ? p.output_index : null;
+  const contentIndex = typeof p.content_index === 'number' ? p.content_index : null;
+  const itemId = typeof p.item_id === 'string' ? p.item_id : '';
+  if (itemId) {
+    return `item:${itemId}`;
+  }
+  if (outputIndex !== null || contentIndex !== null) {
+    return `idx:${outputIndex ?? -1}:${contentIndex ?? -1}`;
+  }
+  return 'default';
+}
+
+function mergeResponsesDelta(existing: string, delta: string): string {
+  if (!existing) {
+    return delta;
+  }
+
+  // Cumulative snapshot mode: new delta includes previous text.
+  if (delta.startsWith(existing)) {
+    return delta;
+  }
+
+  // Exact repeat or stale chunk.
+  if (existing.endsWith(delta) || existing === delta || existing.startsWith(delta)) {
+    return existing;
+  }
+
+  // Incremental mode with overlap.
+  const overlap = findSuffixPrefixOverlap(existing, delta);
+  if (overlap > 0) {
+    return existing + delta.slice(overlap);
+  }
+
+  return existing + delta;
+}
+
+function findSuffixPrefixOverlap(left: string, right: string): number {
+  const max = Math.min(left.length, right.length);
+  for (let size = max; size > 0; size--) {
+    if (left.slice(-size) === right.slice(0, size)) {
+      return size;
+    }
+  }
+  return 0;
+}
+
+function chooseBestStreamedText(channelText: Map<string, string>, order: string[]): string {
+  const collected = order
+    .map((key) => (channelText.get(key) || '').trim())
+    .filter((text) => text.length > 0);
+  if (collected.length === 0) {
+    return '';
+  }
+  if (collected.length === 1) {
+    return collected[0];
+  }
+
+  // Prefer the longest channel text; most duplicated channels are equivalent snapshots.
+  const sorted = [...new Set(collected)].sort((a, b) => b.length - a.length);
+  const longest = sorted[0];
+  const othersAllContained = sorted.slice(1).every((item) => longest.includes(item));
+  if (othersAllContained) {
+    return longest;
+  }
+
+  return sorted.join('\n');
+}
+
+function cleanupRepeatedVisionOutput(text: string): string {
+  const normalized = collapseLikelyEchoDoubles(text.replace(/\r\n/g, '\n').trim());
+  if (!normalized) {
+    return normalized;
+  }
+
+  const fullDup = findLongestConsecutiveDuplicateBlock(normalized, 200);
+  if (fullDup) {
+    return fullDup;
+  }
+
+  return normalized;
+}
+
+function collapseLikelyEchoDoubles(text: string): string {
+  if (!text) {
+    return text;
+  }
+  const cjkChars = text.match(/[\u4e00-\u9fff]/g) || [];
+  if (cjkChars.length < 60) {
+    return text;
+  }
+  const doubled = text.match(/([\u4e00-\u9fff])\1/g) || [];
+  const ratio = doubled.length / cjkChars.length;
+  // Only normalize when duplication is widespread (likely stream echo artifact).
+  if (ratio < 0.18) {
+    return text;
+  }
+  return text.replace(/([\u4e00-\u9fff])\1/g, '$1');
+}
+
+function findLongestConsecutiveDuplicateBlock(text: string, minLen: number): string {
+  // If output is "A + A + A", keep one clean copy.
+  for (let len = Math.floor(text.length / 2); len >= minLen; len--) {
+    const head = text.slice(0, len).trim();
+    if (!head) continue;
+    const repeatedTwice = `${head}${head}`;
+    if (text.replace(/\s+/g, '') === repeatedTwice.replace(/\s+/g, '')) {
+      return head;
+    }
+    const repeatedThrice = `${head}${head}${head}`;
+    if (text.replace(/\s+/g, '') === repeatedThrice.replace(/\s+/g, '')) {
+      return head;
+    }
+  }
+  return '';
 }
 
 // ============================================================================
@@ -4859,6 +5391,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             reason: {
               type: 'string',
               description: 'Optional description of why taking this screenshot (e.g., "showing current dialog state", "capturing error message"). This helps document the purpose of the screenshot.',
+            },
+            force_refresh: {
+              type: 'boolean',
+              description: 'If true, always capture a fresh screenshot and bypass short-term screenshot cache.',
             },
             annotate_clicks: {
               type: 'boolean',
@@ -5129,13 +5665,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'screenshot_for_display': {
-        const { display_index, region, reason} = args as {
+        const { display_index, region, reason, force_refresh } = args as {
           display_index?: number;
           region?: { x: number; y: number; width: number; height: number };
           reason?: string;
+          force_refresh?: boolean;
         };
         // This tool returns a special format with image data, so return directly
-        return await takeScreenshotForDisplay(display_index, region, reason);
+        return await takeScreenshotForDisplay(display_index, region, reason, force_refresh === true);
       }
 
       case 'get_mouse_position': {
@@ -5282,6 +5819,16 @@ async function main() {
     writeMCPLog(`Platform: ${process.platform}`, 'Initialization');
     writeMCPLog(`Working directory: ${process.cwd()}`, 'Initialization');
     writeMCPLog(`Script path: ${__filename}`, 'Initialization');
+    writeMCPLog(
+      JSON.stringify({
+        hasAnthropicApiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+        hasOpenAIApiKey: Boolean(process.env.OPENAI_API_KEY),
+        openAIBaseUrlHost: getBaseUrlHost(process.env.OPENAI_BASE_URL || process.env.ANTHROPIC_BASE_URL),
+        openAIModel: process.env.OPENAI_MODEL || '(unset)',
+        anthropicModel: process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(unset)',
+      }),
+      'Initialization'
+    );
     
     writeMCPLog('Creating StdioServerTransport...', 'Initialization');
     const transport = new StdioServerTransport();

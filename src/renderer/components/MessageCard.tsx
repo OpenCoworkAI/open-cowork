@@ -785,11 +785,44 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
 
   // MCP tools start with mcp__ (double underscore)
   const isMCPTool = toolName?.startsWith('mcp__') || false;
+  const toolNameLower = (toolName || '').toLowerCase();
 
   console.log('[ToolResultBlock] toolUseId:', block.toolUseId, 'toolName:', toolName, 'isMCPTool:', isMCPTool, 'expanded:', expanded);
 
+  const parseJsonPayload = (content: string): Record<string, unknown> | unknown[] | null => {
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return null;
+    }
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown> | unknown[];
+    } catch {
+      return null;
+    }
+  };
+
+  const formatDisplayContent = (content: string): string => {
+    if (!toolNameLower.endsWith('__gui_verify_vision')) {
+      return content;
+    }
+
+    const parsed = parseJsonPayload(content);
+    if (!parsed || Array.isArray(parsed)) {
+      return content;
+    }
+
+    const answer = typeof parsed.answer === 'string' ? parsed.answer.trim() : '';
+    if (answer) {
+      return answer;
+    }
+
+    return content;
+  };
+
   // Generate summary for tool results
   const generateSummary = (content: string, isError: boolean): string => {
+    const parsedPayload = parseJsonPayload(content);
+
     if (isError) {
       // Simplify error messages
       if (content.includes('Could not connect to Chrome')) {
@@ -804,6 +837,20 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
       // Generic error
       const firstLine = content.split('\n')[0];
       return `✗ ${firstLine.substring(0, 60)}${firstLine.length > 60 ? '...' : ''}`;
+    }
+
+    if (toolNameLower.endsWith('__gui_verify_vision')) {
+      if (parsedPayload && !Array.isArray(parsedPayload)) {
+        const hasAnswer = typeof parsedPayload.answer === 'string' && parsedPayload.answer.trim().length > 0;
+        if (hasAnswer) {
+          return '✓ Screen interpreted';
+        }
+      }
+      return '✓ Vision analysis completed';
+    }
+
+    if (toolNameLower.endsWith('__screenshot_for_display')) {
+      return '✓ Screenshot captured';
     }
 
     // Success cases - try to extract meaningful info
@@ -852,21 +899,16 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
     }
 
     // JSON response - try to summarize
-    if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
-      try {
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          return `✓ Returned ${parsed.length} item${parsed.length !== 1 ? 's' : ''}`;
+    if (parsedPayload) {
+      if (Array.isArray(parsedPayload)) {
+        return `✓ Returned ${parsedPayload.length} item${parsedPayload.length !== 1 ? 's' : ''}`;
+      }
+      if (typeof parsedPayload === 'object') {
+        const keys = Object.keys(parsedPayload);
+        if (keys.length <= 3) {
+          return `✓ Success (${keys.join(', ')})`;
         }
-        if (typeof parsed === 'object') {
-          const keys = Object.keys(parsed);
-          if (keys.length <= 3) {
-            return `✓ Success (${keys.join(', ')})`;
-          }
-          return `✓ Success (${keys.length} fields)`;
-        }
-      } catch (e) {
-        // Not valid JSON
+        return `✓ Success (${keys.length} fields)`;
       }
     }
 
@@ -891,6 +933,7 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
 
   const summary = generateSummary(block.content, block.isError || false);
   const hasImages = block.images && block.images.length > 0;
+  const displayContent = formatDisplayContent(block.content);
 
   // Debug: Log the entire block to see what we're receiving
   console.log('[ToolResultBlock] Full block:', {
@@ -933,7 +976,7 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
       {expanded && (
         <div className="p-4 bg-surface space-y-4">
           <pre className="code-block text-xs whitespace-pre-wrap font-mono">
-            {block.content}
+            {displayContent}
           </pre>
 
           {/* Render images if present */}

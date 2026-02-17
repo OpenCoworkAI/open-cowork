@@ -61,6 +61,29 @@ let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 
+async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { method: 'GET' });
+      if (response.ok) {
+        if (attempt > 1) {
+          log(`[App] Dev server ready after ${attempt} attempt(s): ${url}`);
+        }
+        return true;
+      }
+    } catch {
+      // Ignore and retry until timeout
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  logWarn(`[App] Dev server did not become ready within timeout: ${url}`);
+  return false;
+}
+
 // Ensure a single app instance in dev/prod to avoid duplicate windows on hot restart.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -162,7 +185,17 @@ function createWindow() {
 
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+    void (async () => {
+      await waitForDevServer(devServerUrl, 40, 500);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      try {
+        await mainWindow.loadURL(devServerUrl);
+      } catch (error) {
+        logError('[App] Failed to load dev server URL:', error);
+      }
+    })();
     // mainWindow.webContents.openDevTools(); // Commented out - open manually with Cmd+Option+I if needed
   } else {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));

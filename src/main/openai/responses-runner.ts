@@ -3,10 +3,12 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import type { Message, PermissionResult, ServerEvent, Session, TraceStep } from '../../renderer/types';
+import type { MCPManager, MCPTool } from '../mcp/mcp-manager';
 import { PathResolver } from '../sandbox/path-resolver';
 import { ToolExecutor } from '../tools/tool-executor';
 import { log, logError, logWarn } from '../utils/logger';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { buildOpenAICoworkInstructions } from '../utils/cowork-instructions';
 import { buildOpenAICodexHeaders, OPENAI_CODEX_BACKEND_BASE_URL } from '../config/auth-utils';
 
 type ToolSpec = {
@@ -19,6 +21,7 @@ type ToolConfig = {
   responseTools: Array<Record<string, unknown>>;
   chatTools: Array<Record<string, unknown>>;
   allowedToolNames: Set<string>;
+  toolNameMap: Map<string, string>;
 };
 
 type RawToolCall = {
@@ -326,6 +329,7 @@ interface OpenAIResponsesRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
   saveMessage?: (message: Message) => void;
   pathResolver?: PathResolver;
+  mcpManager?: MCPManager;
   requestPermission?: (
     sessionId: string,
     toolUseId: string,
@@ -339,6 +343,7 @@ export class OpenAIResponsesRunner {
   private saveMessage?: (message: Message) => void;
   private pathResolver?: PathResolver;
   private toolExecutor?: ToolExecutor;
+  private mcpManager?: MCPManager;
   private alwaysAllowTools: Set<string> = new Set();
   private todoBySession: Map<string, TodoItem[]> = new Map();
   private pendingQuestions: Map<string, (answer: string) => void> = new Map();
@@ -354,6 +359,7 @@ export class OpenAIResponsesRunner {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.pathResolver = options.pathResolver;
+    this.mcpManager = options.mcpManager;
     this.requestPermission = options.requestPermission;
     this.toolExecutor = options.pathResolver ? new ToolExecutor(options.pathResolver) : undefined;
   }
@@ -393,7 +399,8 @@ export class OpenAIResponsesRunner {
       useCodexOAuth,
       hasAccountId: Boolean(codexAccountId),
     });
-    const toolConfig = this.buildToolConfig(session.allowedTools);
+    const toolConfig = this.buildToolConfig(session.allowedTools, prompt);
+    const systemInstructions = buildOpenAICoworkInstructions(session, this.mcpManager);
     const thinkingStepId = uuidv4();
 
     this.sendTraceStep(session.id, {
@@ -406,7 +413,14 @@ export class OpenAIResponsesRunner {
 
     try {
       if (mode === 'chat') {
-        const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
+        const text = await this.requestChatText(
+          client,
+          model,
+          existingMessages,
+          prompt,
+          controller.signal,
+          systemInstructions
+        );
         if (text) {
           await this.streamText(session.id, text, controller.signal);
           const { cleanText } = extractArtifactsFromText(text);
@@ -428,12 +442,20 @@ export class OpenAIResponsesRunner {
             prompt,
             toolConfig,
             controller.signal,
-            useCodexOAuth
+            useCodexOAuth,
+            systemInstructions
           );
         } catch (error) {
           if (!useCodexOAuth && this.shouldFallbackToChat(error)) {
             logWarn('[OpenAIResponsesRunner] Responses unsupported by provider, falling back to Chat Completions');
-            const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
+            const text = await this.requestChatText(
+              client,
+              model,
+              existingMessages,
+              prompt,
+              controller.signal,
+              systemInstructions
+            );
             if (text) {
               await this.streamText(session.id, text, controller.signal);
               const { cleanText } = extractArtifactsFromText(text);
@@ -520,10 +542,12 @@ export class OpenAIResponsesRunner {
   private shouldFallbackWithoutPreviousResponseId(error: unknown): boolean {
     const message = error instanceof Error ? error.message : '';
     const apiMessage = (error as { error?: { message?: string } } | undefined)?.error?.message || '';
+    const status = (error as { status?: number } | undefined)?.status;
     const combined = `${message} ${apiMessage}`.toLowerCase();
 
     if (combined.includes('previous_response_id')) return true;
     if (combined.includes('unsupported parameter')) return true;
+    if (status === 400) return true;
 
     return false;
   }
@@ -565,30 +589,29 @@ export class OpenAIResponsesRunner {
     return false;
   }
 
-  private buildToolConfig(allowedTools?: string[]): ToolConfig {
+  private buildToolConfig(allowedTools?: string[], prompt?: string): ToolConfig {
     const allowedToolNames = new Set<string>();
+    const toolNameMap = new Map<string, string>();
     const source = allowedTools || [];
-
-    for (const tool of source) {
-      const normalized = tool.trim().toLowerCase();
-      if (!normalized) continue;
-      const mapped = TOOL_ALIASES[normalized] || normalized;
-      if (TOOL_SPECS[mapped]) {
-        allowedToolNames.add(mapped);
-      }
-    }
-
+    const preferChromeMcp = this.shouldPreferChromeMcp(prompt);
+    const mcpTools = this.mcpManager?.getTools() ?? [];
+    const hasChromeMcp = mcpTools.some((tool) =>
+      tool.name.startsWith('mcp__Chrome__') || tool.serverName.toLowerCase().includes('chrome')
+    );
+    const shouldDisableGenericWebTools = preferChromeMcp && hasChromeMcp;
     const responseTools: Array<Record<string, unknown>> = [];
     const chatTools: Array<Record<string, unknown>> = [];
 
-    for (const toolName of allowedToolNames) {
-      const spec = TOOL_SPECS[toolName];
+    const addTool = (displayName: string, spec: ToolSpec, internalName: string, strict: boolean): void => {
+      if (allowedToolNames.has(displayName)) return;
+      allowedToolNames.add(displayName);
+      toolNameMap.set(displayName, internalName);
       responseTools.push({
         type: 'function',
         name: spec.name,
         description: spec.description,
         parameters: spec.parameters,
-        strict: true,
+        strict,
       });
       chatTools.push({
         type: 'function',
@@ -598,9 +621,102 @@ export class OpenAIResponsesRunner {
           parameters: spec.parameters,
         },
       });
+    };
+
+    for (const tool of source) {
+      const normalized = tool.trim().toLowerCase();
+      if (!normalized) continue;
+      const mapped = TOOL_ALIASES[normalized] || normalized;
+      const spec = TOOL_SPECS[mapped];
+      if (spec) {
+        if (shouldDisableGenericWebTools && (spec.name === 'WebSearch' || spec.name === 'WebFetch')) {
+          continue;
+        }
+        addTool(spec.name, spec, spec.name, true);
+      }
     }
 
-    return { responseTools, chatTools, allowedToolNames };
+    for (const mcpTool of mcpTools) {
+      const displayName = this.createToolAliasName(mcpTool.name, allowedToolNames);
+      const spec = this.buildMcpToolSpec(mcpTool, displayName);
+      addTool(displayName, spec, mcpTool.name, false);
+    }
+
+    return { responseTools, chatTools, allowedToolNames, toolNameMap };
+  }
+
+  private buildMcpToolSpec(tool: MCPTool, displayName: string): ToolSpec {
+    return {
+      name: displayName,
+      description: tool.description || `MCP tool from ${tool.serverName}`,
+      parameters: this.normalizeToolParameters(tool.inputSchema),
+    };
+  }
+
+  private normalizeToolParameters(schema: unknown): Record<string, unknown> {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      return {
+        type: 'object',
+        properties: {},
+        additionalProperties: true,
+      };
+    }
+
+    const normalized = { ...(schema as Record<string, unknown>) };
+    if (normalized.type !== 'object') {
+      normalized.type = 'object';
+    }
+
+    const properties = normalized.properties;
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+      normalized.properties = {};
+    }
+
+    return normalized;
+  }
+
+  private createToolAliasName(toolName: string, existingNames: Set<string>): string {
+    if (/^[a-zA-Z0-9_-]{1,64}$/.test(toolName) && !existingNames.has(toolName)) {
+      return toolName;
+    }
+
+    const normalizedBase = toolName.replace(/[^a-zA-Z0-9_-]/g, '_') || `tool_${this.hashText(toolName)}`;
+    const maxLen = 64;
+    const hash = this.hashText(toolName);
+
+    const toBoundedName = (value: string): string => {
+      if (value.length <= maxLen) return value;
+      const suffix = `_${hash}`;
+      return `${value.slice(0, Math.max(1, maxLen - suffix.length))}${suffix}`;
+    };
+
+    let candidate = toBoundedName(normalizedBase);
+    let counter = 1;
+    while (existingNames.has(candidate)) {
+      candidate = toBoundedName(`${normalizedBase}_${counter}`);
+      counter += 1;
+    }
+    return candidate;
+  }
+
+  private hashText(value: string): string {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = ((hash << 5) - hash) + value.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  private shouldPreferChromeMcp(prompt?: string): boolean {
+    const text = (prompt || '').toLowerCase();
+    if (!text) return false;
+    if (text.includes('mcp')) return true;
+    if (text.includes('chrome')) return true;
+    if (text.includes('browser')) return true;
+    if (text.includes('浏览器')) return true;
+    if (text.includes('网页')) return true;
+    return false;
   }
 
   private async runResponsesLoop(
@@ -611,12 +727,15 @@ export class OpenAIResponsesRunner {
     prompt: string,
     toolConfig: ToolConfig,
     signal: AbortSignal,
-    useCodexOAuth: boolean
+    useCodexOAuth: boolean,
+    systemInstructions: string
   ): Promise<void> {
-    let input: unknown[] = this.buildInput(existingMessages, prompt);
+    const input: unknown[] = this.buildInput(existingMessages, prompt);
     let conversationItems: unknown[] = Array.isArray(input) ? [...input] : [];
     let previousResponseId: string | null = null;
-    let supportsPreviousResponseId = true;
+    // Codex OAuth backend often rejects continuation with previous_response_id.
+    // Use full input continuation mode by default for better compatibility.
+    let supportsPreviousResponseId = !useCodexOAuth;
     let attempts = 0;
     let initialResponse: any;
     let initialStreamed = false;
@@ -630,7 +749,8 @@ export class OpenAIResponsesRunner {
         toolConfig,
         signal,
         null,
-        useCodexOAuth
+        useCodexOAuth,
+        systemInstructions
       );
       initialResponse = initial.response;
       initialStreamed = initial.streamed;
@@ -639,7 +759,7 @@ export class OpenAIResponsesRunner {
         throw error;
       }
 
-      const plainMessages = this.buildChatMessages(existingMessages, prompt);
+      const plainMessages = this.buildChatMessages(existingMessages, prompt, systemInstructions);
       if (!plainMessages.length) {
         throw error;
       }
@@ -654,7 +774,8 @@ export class OpenAIResponsesRunner {
           toolConfig,
           signal,
           null,
-          useCodexOAuth
+          useCodexOAuth,
+          systemInstructions
         );
         initialResponse = initial.response;
         initialStreamed = initial.streamed;
@@ -664,7 +785,7 @@ export class OpenAIResponsesRunner {
         }
 
         logWarn('[OpenAIResponsesRunner] Responses plain list unsupported, retrying with output_text list');
-        const outputMessages = this.buildOutputMessages(existingMessages, prompt);
+        const outputMessages = this.buildOutputMessages(existingMessages, prompt, systemInstructions);
         if (!outputMessages.length) {
           throw plainError;
         }
@@ -677,7 +798,8 @@ export class OpenAIResponsesRunner {
           toolConfig,
           signal,
           null,
-          useCodexOAuth
+          useCodexOAuth,
+          systemInstructions
         );
         initialResponse = initial.response;
         initialStreamed = initial.streamed;
@@ -726,7 +848,7 @@ export class OpenAIResponsesRunner {
 
       conversationItems = conversationItems.concat(functionCallItems);
 
-      const toolOutputs = await this.executeToolCalls(session, toolCalls, toolConfig.allowedToolNames);
+      const toolOutputs = await this.executeToolCalls(session, toolCalls, toolConfig);
       const toolOutputItems = toolOutputs.map((item) => ({
         type: 'function_call_output',
         call_id: item.callId,
@@ -747,13 +869,17 @@ export class OpenAIResponsesRunner {
           toolConfig,
           signal,
           supportsPreviousResponseId ? previousResponseId : null,
-          useCodexOAuth
+          useCodexOAuth,
+          systemInstructions
         );
         response = next.response;
         streamed = next.streamed;
       } catch (error) {
         if (supportsPreviousResponseId && this.shouldFallbackWithoutPreviousResponseId(error)) {
-          logWarn('[OpenAIResponsesRunner] previous_response_id unsupported, retrying with full input list');
+          logWarn(
+            '[OpenAIResponsesRunner] previous_response_id unsupported, retrying with full input list',
+            this.extractErrorDetails(error)
+          );
           supportsPreviousResponseId = false;
           try {
             const next = await this.createResponsesWithStreamingFallback(
@@ -764,7 +890,8 @@ export class OpenAIResponsesRunner {
               toolConfig,
               signal,
               null,
-              useCodexOAuth
+              useCodexOAuth,
+              systemInstructions
             );
             response = next.response;
             streamed = next.streamed;
@@ -775,6 +902,7 @@ export class OpenAIResponsesRunner {
             throw fallbackError;
           }
         } else {
+          logWarn('[OpenAIResponsesRunner] Continuation failed after tool outputs:', this.extractErrorDetails(error));
           if (this.finishWithToolOutputs(session.id, toolOutputs, error)) {
             return;
           }
@@ -818,7 +946,8 @@ export class OpenAIResponsesRunner {
     toolConfig: ToolConfig,
     signal: AbortSignal,
     previousResponseId: string | null,
-    useCodexOAuth: boolean
+    useCodexOAuth: boolean,
+    systemInstructions: string
   ): Promise<{ response: any; streamed: boolean }> {
     const useStreaming = useCodexOAuth ? true : this.shouldUseResponsesStreaming();
     try {
@@ -831,7 +960,8 @@ export class OpenAIResponsesRunner {
         signal,
         previousResponseId,
         useStreaming,
-        useCodexOAuth
+        useCodexOAuth,
+        systemInstructions
       );
     } catch (error) {
       if (!useCodexOAuth && useStreaming && this.shouldFallbackFromStreaming(error)) {
@@ -845,7 +975,8 @@ export class OpenAIResponsesRunner {
           signal,
           previousResponseId,
           false,
-          useCodexOAuth
+          useCodexOAuth,
+          systemInstructions
         );
       }
       throw error;
@@ -861,12 +992,14 @@ export class OpenAIResponsesRunner {
     signal: AbortSignal,
     previousResponseId: string | null,
     useStreaming: boolean,
-    useCodexOAuth: boolean
+    useCodexOAuth: boolean,
+    systemInstructions: string
   ): Promise<{ response: any; streamed: boolean }> {
     const body: Record<string, unknown> = { model, input };
+    if (systemInstructions) {
+      body.instructions = systemInstructions;
+    }
     if (useCodexOAuth) {
-      body.instructions =
-        'You are Open Cowork, a coding agent. Think step-by-step, call tools when needed, and answer in user language.';
       body.store = false;
     }
     if (toolConfig.responseTools.length > 0) {
@@ -940,6 +1073,10 @@ export class OpenAIResponsesRunner {
   }
 
   private getPermissionToolName(toolName: string): string {
+    if (toolName.startsWith('mcp__')) {
+      return 'mcp';
+    }
+
     switch (toolName) {
       case 'write_file':
         return 'write';
@@ -966,6 +1103,12 @@ export class OpenAIResponsesRunner {
     toolName: string,
     input: Record<string, unknown>
   ): Promise<PermissionResult> {
+    // Align with Claude runner behavior: default allow all tool calls.
+    // Set OPENAI_AUTO_APPROVE_TOOLS=0 to re-enable permission prompts.
+    if (process.env.OPENAI_AUTO_APPROVE_TOOLS !== '0') {
+      return 'allow';
+    }
+
     if (toolName === 'AskUserQuestion' || toolName === 'TodoWrite' || toolName === 'TodoRead') {
       return 'allow';
     }
@@ -988,13 +1131,14 @@ export class OpenAIResponsesRunner {
   private async executeToolCalls(
     session: Session,
     toolCalls: ParsedToolCall[],
-    allowedToolNames: Set<string>
+    toolConfig: ToolConfig
   ): Promise<ToolOutput[]> {
     const outputs: ToolOutput[] = [];
 
     for (const call of toolCalls) {
       const toolUseId = call.toolUseId || uuidv4();
-      const toolName = call.name || 'unknown';
+      const requestedToolName = call.name || 'unknown';
+      const resolvedToolName = toolConfig.toolNameMap.get(requestedToolName) || requestedToolName;
       const toolInput = call.input ?? {};
       const uiInput = call.input ?? { raw: call.arguments, error: call.parseError || 'Invalid arguments' };
 
@@ -1005,7 +1149,7 @@ export class OpenAIResponsesRunner {
         content: [{
           type: 'tool_use',
           id: toolUseId,
-          name: toolName,
+          name: resolvedToolName,
           input: uiInput,
         }],
         timestamp: Date.now(),
@@ -1015,8 +1159,8 @@ export class OpenAIResponsesRunner {
         id: toolUseId,
         type: 'tool_call',
         status: 'running',
-        title: toolName,
-        toolName,
+        title: resolvedToolName,
+        toolName: resolvedToolName,
         toolInput: uiInput,
         timestamp: Date.now(),
       });
@@ -1024,23 +1168,20 @@ export class OpenAIResponsesRunner {
       let output = '';
       let isError = false;
 
-      if (!allowedToolNames.has(toolName)) {
-        output = `Tool not allowed: ${toolName}`;
-        isError = true;
-      } else if (!this.toolExecutor) {
-        output = 'Tool executor unavailable';
+      if (!toolConfig.allowedToolNames.has(requestedToolName)) {
+        output = `Tool not allowed: ${requestedToolName}`;
         isError = true;
       } else if (call.parseError) {
         output = `Invalid tool arguments: ${call.parseError}`;
         isError = true;
       } else {
-        const permission = await this.requestToolPermission(session.id, toolUseId, toolName, toolInput);
+        const permission = await this.requestToolPermission(session.id, toolUseId, resolvedToolName, toolInput);
         if (permission === 'deny') {
           output = 'Permission denied';
           isError = true;
         } else {
           try {
-            output = await this.executeToolCall(session, toolName, toolInput, toolUseId);
+            output = await this.executeToolCall(session, resolvedToolName, toolInput, toolUseId);
           } catch (error) {
             output = error instanceof Error ? error.message : String(error);
             isError = true;
@@ -1075,7 +1216,7 @@ export class OpenAIResponsesRunner {
       outputs.push({
         callId: call.callId,
         toolUseId,
-        toolName,
+        toolName: resolvedToolName,
         output: isError ? `Error: ${output}` : output,
         isError,
       });
@@ -1090,22 +1231,24 @@ export class OpenAIResponsesRunner {
     input: Record<string, unknown>,
     toolUseId: string
   ): Promise<string> {
-    if (!this.toolExecutor) {
-      throw new Error('Tool executor unavailable');
+    if (toolName.startsWith('mcp__')) {
+      return this.executeMcpToolCall(toolName, input);
     }
+
+    const executor = this.getToolExecutorOrThrow();
 
     switch (toolName) {
       case 'read_file': {
         const filePath = typeof input.path === 'string' ? input.path.trim() : '';
         if (!filePath) throw new Error('path is required');
-        return this.toolExecutor.readFile(session.id, filePath);
+        return executor.readFile(session.id, filePath);
       }
       case 'write_file': {
         const filePath = typeof input.path === 'string' ? input.path.trim() : '';
         const content = typeof input.content === 'string' ? input.content : '';
         if (!filePath) throw new Error('path is required');
         if (!content) throw new Error('content is required');
-        await this.toolExecutor.writeFile(session.id, filePath, content);
+        await executor.writeFile(session.id, filePath, content);
         return `File written: ${filePath}`;
       }
       case 'edit_file': {
@@ -1115,7 +1258,7 @@ export class OpenAIResponsesRunner {
         if (!filePath) throw new Error('path is required');
         if (!oldString) throw new Error('old_string is required');
         if (!newString) throw new Error('new_string is required');
-        await this.toolExecutor.editFile(session.id, filePath, oldString, newString);
+        await executor.editFile(session.id, filePath, oldString, newString);
         return `File edited: ${filePath}`;
       }
       case 'AskUserQuestion': {
@@ -1189,41 +1332,121 @@ export class OpenAIResponsesRunner {
       case 'list_directory': {
         const rawPath = typeof input.path === 'string' ? input.path.trim() : '';
         const dirPath = rawPath || '.';
-        return this.toolExecutor.listDirectory(session.id, dirPath);
+        return executor.listDirectory(session.id, dirPath);
       }
       case 'WebFetch': {
         const rawUrl = typeof input.url === 'string' ? input.url.trim() : '';
         if (!rawUrl) throw new Error('url is required');
-        return this.toolExecutor.webFetch(rawUrl);
+        return executor.webFetch(rawUrl);
       }
       case 'WebSearch': {
         const rawQuery = typeof input.query === 'string' ? input.query.trim() : '';
         if (!rawQuery) throw new Error('query is required');
-        return this.toolExecutor.webSearch(rawQuery);
+        return executor.webSearch(rawQuery);
       }
       case 'glob': {
         const pattern = typeof input.pattern === 'string' ? input.pattern : '';
         const rawPath = typeof input.path === 'string' ? input.path.trim() : '';
         const searchPath = rawPath || '.';
         if (!pattern) throw new Error('pattern is required');
-        return this.toolExecutor.glob(session.id, pattern, searchPath);
+        return executor.glob(session.id, pattern, searchPath);
       }
       case 'grep': {
         const pattern = typeof input.pattern === 'string' ? input.pattern : '';
         const rawPath = typeof input.path === 'string' ? input.path.trim() : '';
         const searchPath = rawPath || '.';
         if (!pattern) throw new Error('pattern is required');
-        return this.toolExecutor.grep(session.id, pattern, searchPath);
+        return executor.grep(session.id, pattern, searchPath);
       }
       case 'execute_command': {
         const command = typeof input.command === 'string' ? input.command : '';
         if (!command.trim()) throw new Error('command is required');
         const cwd = this.resolveCommandCwd(session, input.cwd);
-        return this.toolExecutor.executeCommand(session.id, command, cwd);
+        return executor.executeCommand(session.id, command, cwd);
       }
       default:
         throw new Error(`Unsupported tool: ${toolName}`);
     }
+  }
+
+  private getToolExecutorOrThrow(): ToolExecutor {
+    if (!this.toolExecutor) {
+      throw new Error('Tool executor unavailable');
+    }
+    return this.toolExecutor;
+  }
+
+  private async executeMcpToolCall(toolName: string, input: Record<string, unknown>): Promise<string> {
+    if (!this.mcpManager) {
+      throw new Error('MCP manager unavailable');
+    }
+
+    const result = await this.mcpManager.callTool(toolName, input);
+    return this.formatMcpToolResult(result);
+  }
+
+  private formatMcpToolResult(result: unknown): string {
+    if (typeof result === 'string') {
+      return result;
+    }
+
+    if (!result || typeof result !== 'object') {
+      return String(result ?? '');
+    }
+
+    const record = result as { content?: unknown; isError?: boolean };
+    if (Array.isArray(record.content)) {
+      const parts: string[] = [];
+      for (const item of record.content) {
+        if (!item || typeof item !== 'object') continue;
+        const block = item as Record<string, unknown>;
+        if (block.type === 'text' && typeof block.text === 'string') {
+          parts.push(block.text);
+          continue;
+        }
+        if (block.type === 'image') {
+          parts.push('[MCP image content omitted]');
+          continue;
+        }
+        try {
+          parts.push(JSON.stringify(block));
+        } catch {
+          parts.push(String(block));
+        }
+      }
+      if (parts.length > 0) {
+        return parts.join('\n').trim();
+      }
+    }
+
+    try {
+      return JSON.stringify(result, null, 2);
+    } catch {
+      return String(result);
+    }
+  }
+
+  private extractErrorDetails(error: unknown): Record<string, unknown> {
+    const record = error as {
+      name?: string;
+      message?: string;
+      status?: number;
+      requestID?: string | null;
+      headers?: unknown;
+      error?: unknown;
+      response?: { data?: unknown; status?: number };
+    } | undefined;
+
+    const details: Record<string, unknown> = {};
+    if (record?.name) details.name = record.name;
+    if (record?.message) details.message = record.message;
+    if (typeof record?.status === 'number') details.status = record.status;
+    if (record?.requestID !== undefined) details.requestID = record.requestID;
+    if (record?.headers !== undefined) details.headers = record.headers;
+    if (record?.error !== undefined) details.error = record.error;
+    if (record?.response?.data !== undefined) details.responseData = record.response.data;
+    if (typeof record?.response?.status === 'number') details.responseStatus = record.response.status;
+    return details;
   }
 
   private async requestUserQuestion(sessionId: string, toolUseId: string, questions: QuestionItem[]): Promise<string> {
@@ -1266,7 +1489,10 @@ export class OpenAIResponsesRunner {
       return false;
     }
 
-    logWarn('[OpenAIResponsesRunner] Responses continuation failed, returning tool results only:', error);
+    logWarn(
+      '[OpenAIResponsesRunner] Responses continuation failed, returning tool results only:',
+      this.extractErrorDetails(error)
+    );
     this.sendMessage(sessionId, {
       id: uuidv4(),
       sessionId,
@@ -1282,9 +1508,10 @@ export class OpenAIResponsesRunner {
     model: string,
     existingMessages: Message[],
     prompt: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    systemInstructions: string
   ): Promise<string> {
-    const messages = this.buildChatMessages(existingMessages, prompt) as ChatCompletionMessageParam[];
+    const messages = this.buildChatMessages(existingMessages, prompt, systemInstructions) as ChatCompletionMessageParam[];
     try {
       const completion = await client.chat.completions.create(
         {
@@ -1303,7 +1530,7 @@ export class OpenAIResponsesRunner {
           const completion = await client.chat.completions.create(
             {
               model,
-              messages: [{ role: 'user', content: trimmedPrompt }],
+              messages: this.buildChatMessages([], trimmedPrompt, systemInstructions) as ChatCompletionMessageParam[],
             },
             { signal }
           );
@@ -1313,7 +1540,7 @@ export class OpenAIResponsesRunner {
           logError('[OpenAIResponsesRunner] Retry with prompt-only also failed:', retryError);
           if (this.shouldRetryChatWithPrompt(retryError)) {
             logWarn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
-            return this.requestCompletionsText(client, model, existingMessages, prompt, signal);
+            return this.requestCompletionsText(client, model, existingMessages, prompt, signal, systemInstructions);
           }
           throw retryError;
         }
@@ -1321,7 +1548,7 @@ export class OpenAIResponsesRunner {
 
       if (this.shouldRetryChatWithPrompt(error)) {
         logWarn('[OpenAIResponsesRunner] Chat unsupported by provider, falling back to Completions');
-        return this.requestCompletionsText(client, model, existingMessages, prompt, signal);
+        return this.requestCompletionsText(client, model, existingMessages, prompt, signal, systemInstructions);
       }
 
       throw error;
@@ -1333,9 +1560,10 @@ export class OpenAIResponsesRunner {
     model: string,
     existingMessages: Message[],
     prompt: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    systemInstructions: string
   ): Promise<string> {
-    const promptText = this.buildPrompt(existingMessages, prompt);
+    const promptText = this.buildPrompt(existingMessages, prompt, systemInstructions);
     if (!promptText) {
       throw new Error('Prompt is empty');
     }
@@ -1406,9 +1634,18 @@ export class OpenAIResponsesRunner {
     return items;
   }
 
-  private buildChatMessages(existingMessages: Message[], prompt: string): Array<{ role: string; content: string }> {
+  private buildChatMessages(
+    existingMessages: Message[],
+    prompt: string,
+    systemInstructions?: string
+  ): Array<{ role: string; content: string }> {
     const items: Array<{ role: string; content: string }> = [];
     let lastUserText = '';
+
+    const trimmedSystem = (systemInstructions || '').trim();
+    if (trimmedSystem) {
+      items.push({ role: 'system', content: trimmedSystem });
+    }
 
     for (const message of existingMessages) {
       const text = this.flattenText(message);
@@ -1438,16 +1675,20 @@ export class OpenAIResponsesRunner {
     return items;
   }
 
-  private buildOutputMessages(existingMessages: Message[], prompt: string): Array<{ role: string; content: Array<{ type: 'output_text'; text: string }> }> {
-    const messages = this.buildChatMessages(existingMessages, prompt);
+  private buildOutputMessages(
+    existingMessages: Message[],
+    prompt: string,
+    systemInstructions?: string
+  ): Array<{ role: string; content: Array<{ type: 'output_text'; text: string }> }> {
+    const messages = this.buildChatMessages(existingMessages, prompt, systemInstructions);
     return messages.map((message) => ({
       role: message.role,
       content: [{ type: 'output_text', text: message.content }],
     }));
   }
 
-  private buildPrompt(existingMessages: Message[], prompt: string): string {
-    const messages = this.buildChatMessages(existingMessages, prompt);
+  private buildPrompt(existingMessages: Message[], prompt: string, systemInstructions?: string): string {
+    const messages = this.buildChatMessages(existingMessages, prompt, systemInstructions);
     const lines: string[] = [];
 
     for (const message of messages) {

@@ -9,6 +9,8 @@ import { PathResolver } from '../sandbox/path-resolver';
 import { SandboxAdapter, getSandboxAdapter, initializeSandbox, reinitializeSandbox } from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
+import { importLocalAuthToken } from '../auth/local-auth';
+import { CodexCliRunner } from '../openai/codex-cli-runner';
 import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
 import {
@@ -20,6 +22,7 @@ import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { log, logError } from '../utils/logger';
+import { selectOpenAIBackendRoute } from './openai-backend-routing';
 import { maybeGenerateSessionTitle } from './session-title-flow';
 
 interface AgentRunner {
@@ -81,14 +84,30 @@ export class SessionManager {
     const customProtocol = configStore.get('customProtocol');
     const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
     if (useOpenAI) {
-      this.agentRunner = new OpenAIResponsesRunner({
-        sendToRenderer: this.sendToRenderer,
-        saveMessage: (message: Message) => this.saveMessage(message),
-        pathResolver: this.pathResolver,
-        requestPermission: (sessionId, toolUseId, toolName, input) =>
-          this.requestPermission(sessionId, toolUseId, toolName, input),
+      const hasLocalCodexLogin = Boolean(importLocalAuthToken('codex')?.token?.trim());
+      const openaiBackend = selectOpenAIBackendRoute({
+        hasLocalCodexLogin,
+        apiKey: configStore.get('apiKey'),
       });
-      log('[SessionManager] Using OpenAI Responses runner');
+
+      if (openaiBackend === 'responses-fallback') {
+        this.agentRunner = new OpenAIResponsesRunner({
+          sendToRenderer: this.sendToRenderer,
+          saveMessage: (message: Message) => this.saveMessage(message),
+          pathResolver: this.pathResolver,
+          mcpManager: this.mcpManager,
+          requestPermission: (sessionId, toolUseId, toolName, input) =>
+            this.requestPermission(sessionId, toolUseId, toolName, input),
+        });
+      } else {
+        this.agentRunner = new CodexCliRunner({
+          sendToRenderer: this.sendToRenderer,
+          saveMessage: (message: Message) => this.saveMessage(message),
+          mcpManager: this.mcpManager,
+        });
+      }
+
+      log('[SessionManager] Using OpenAI runner', { openai_backend: openaiBackend });
     } else {
       // Initialize Claude Agent Runner with message save callback
       this.agentRunner = new ClaudeAgentRunner(
@@ -119,6 +138,9 @@ export class SessionManager {
 
     // Recreate agent runner with new config
     this.createAgentRunner();
+
+    // Reinitialize MCP servers so subprocess env picks up latest credentials/base URLs
+    void this.initializeMCP();
 
     // Reinitialize sandbox adapter to pick up sandboxEnabled changes
     this.reinitializeSandboxAsync();
