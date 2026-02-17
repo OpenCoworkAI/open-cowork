@@ -13,15 +13,20 @@ class PluginRegistryStore {
 
   constructor() {
     const storeCwd = this.resolveStoreCwd();
-    this.store = new Store<PluginRegistrySchema>({
+    const storeOptions: any = {
       name: 'plugin-registry',
       cwd: storeCwd,
-      // 在非 Electron 进程中提供兜底项目名，避免初始化失败。
-      projectName: 'open-cowork',
       defaults: {
         plugins: [],
       },
-    });
+    };
+
+    // 在非 Electron 进程中提供兜底项目名，避免底层 conf 初始化失败。
+    if (typeof process !== 'undefined' && !process.versions.electron) {
+      storeOptions.projectName = 'open-cowork';
+    }
+
+    this.store = new Store<PluginRegistrySchema>(storeOptions);
   }
 
   private resolveStoreCwd(): string {
