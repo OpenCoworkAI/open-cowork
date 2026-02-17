@@ -61,6 +61,23 @@ let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 
+// Ensure a single app instance in dev/prod to avoid duplicate windows on hot restart.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+      log('[App] Blocked second instance and focused existing window');
+    }
+  });
+}
+
 function createWindow() {
   // Theme colors (warm cream theme)
   const THEME = {
