@@ -37,7 +37,7 @@ describe('buildClaudeEnv', () => {
 describe('getClaudeEnvOverrides', () => {
   const baseConfig: AppConfig = {
     provider: 'anthropic',
-    apiKey: 'test-key',
+    apiKey: 'sk-ant-test-key',
     baseUrl: 'https://api.anthropic.com',
     customProtocol: 'anthropic',
     model: 'claude-sonnet-4-5',
@@ -51,7 +51,7 @@ describe('getClaudeEnvOverrides', () => {
 
   it('maps anthropic provider to ANTHROPIC_API_KEY', () => {
     const env = getClaudeEnvOverrides(baseConfig);
-    expect(env.ANTHROPIC_API_KEY).toBe('test-key');
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test-key');
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   });
 
@@ -61,7 +61,16 @@ describe('getClaudeEnvOverrides', () => {
       provider: 'openrouter',
       baseUrl: 'https://openrouter.ai/api',
     });
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('test-key');
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-test-key');
+  });
+
+  it('maps anthropic oauth token to ANTHROPIC_AUTH_TOKEN', () => {
+    const env = getClaudeEnvOverrides({
+      ...baseConfig,
+      apiKey: 'oauth-access-token',
+    });
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('oauth-access-token');
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   });
 
   it('maps custom openai protocol to OPENAI_API_KEY', () => {
@@ -71,6 +80,6 @@ describe('getClaudeEnvOverrides', () => {
       customProtocol: 'openai',
       baseUrl: 'https://example.com/openai',
     });
-    expect(env.OPENAI_API_KEY).toBe('test-key');
+    expect(env.OPENAI_API_KEY).toBe('sk-ant-test-key');
   });
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3, Plug } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AppConfig, ProviderPresets, ApiTestResult } from '../types';
 
 interface ConfigModalProps {
@@ -24,7 +25,7 @@ const FALLBACK_PRESETS: ProviderPresets = {
       { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
-    keyHint: '从 openrouter.ai/keys 获取',
+    keyHint: 'Get from openrouter.ai/keys',
   },
   anthropic: {
     name: 'Anthropic',
@@ -35,7 +36,7 @@ const FALLBACK_PRESETS: ProviderPresets = {
       { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' },
     ],
     keyPlaceholder: 'sk-ant-...',
-    keyHint: '从 console.anthropic.com 获取',
+    keyHint: 'Get from console.anthropic.com',
   },
   openai: {
     name: 'OpenAI',
@@ -46,10 +47,10 @@ const FALLBACK_PRESETS: ProviderPresets = {
       { id: 'gpt-5.2-mini', name: 'gpt-5.2-mini' },
     ],
     keyPlaceholder: 'sk-...',
-    keyHint: '从 platform.openai.com 获取',
+    keyHint: 'Get from platform.openai.com',
   },
   custom: {
-    name: '更多模型',
+    name: 'More Models',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     models: [
       { id: 'glm-4.7', name: 'GLM-4.7' },
@@ -57,7 +58,7 @@ const FALLBACK_PRESETS: ProviderPresets = {
       { id: 'glm-4-air', name: 'GLM-4-Air' },
     ],
     keyPlaceholder: 'sk-xxx',
-    keyHint: '输入你的 API Key',
+    keyHint: 'Enter your API Key',
   },
 };
 
@@ -69,6 +70,8 @@ const PROVIDER_LABELS: Record<'openrouter' | 'anthropic' | 'openai' | 'custom', 
 };
 
 export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun }: ConfigModalProps) {
+  const { t } = useTranslation();
+  type LocalAuthProvider = 'codex' | 'claude';
   const [provider, setProvider] = useState<'openrouter' | 'anthropic' | 'custom' | 'openai'>('openrouter');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -86,6 +89,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
   const [useLiveTest, setUseLiveTest] = useState(false);
+  const [isImportingAuth, setIsImportingAuth] = useState<LocalAuthProvider | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const skipPresetApplyRef = useRef(false);
   const previousProviderRef = useRef(provider);
@@ -185,14 +189,15 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   }
 
   async function handleTest() {
-    if (!apiKey.trim()) {
-      setError('请输入 API Key');
+    const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+    if (!isOpenAIMode && !apiKey.trim()) {
+      setError(t('api.testError.missing_key'));
       return;
     }
 
     const finalModel = useCustomModel ? customModel.trim() : model;
     if (!finalModel) {
-      setError('请选择或输入模型名称');
+      setError(t('api.selectModelRequired'));
       return;
     }
 
@@ -227,8 +232,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   }
 
   async function handleSave() {
-    if (!apiKey.trim()) {
-      setError('请输入 API Key');
+    const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+    if (!isOpenAIMode && !apiKey.trim()) {
+      setError(t('api.testError.missing_key'));
       return;
     }
 
@@ -236,7 +242,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     const finalModel = useCustomModel ? customModel.trim() : model;
     
     if (!finalModel) {
-      setError('请选择或输入模型名称');
+      setError(t('api.selectModelRequired'));
       return;
     }
 
@@ -268,33 +274,77 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
         onClose();
       }, 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      setError(err instanceof Error ? err.message : t('api.saveFailed'));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  function resolveLocalAuthProvider(): LocalAuthProvider | null {
+    if (provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')) {
+      return 'codex';
+    }
+    if (provider === 'anthropic') {
+      return 'claude';
+    }
+    return null;
+  }
+
+  async function handleImportLocalAuth() {
+    if (!window.electronAPI?.auth) {
+      setError('Current environment does not support local auth import');
+      return;
+    }
+    const authProvider = resolveLocalAuthProvider();
+    if (!authProvider) {
+      setError('Current provider does not support Codex/Claude local auth import');
+      return;
+    }
+
+    setIsImportingAuth(authProvider);
+    setError('');
+    try {
+      const imported = await window.electronAPI.auth.importToken(authProvider);
+      if (!imported?.token) {
+        setError(
+          authProvider === 'codex'
+            ? 'No local Codex login found. Please run: codex auth login'
+            : 'No local Claude Code login found. Please run: claude setup-token or claude auth login'
+        );
+        return;
+      }
+      setApiKey(imported.token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import local auth token');
+    } finally {
+      setIsImportingAuth(null);
     }
   }
 
   if (!isOpen) return null;
 
   const currentPreset = presets?.[provider];
+  const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+  const requiresApiKey = !isOpenAIMode;
+  const showsCompatibilityProbeHint = provider === 'openrouter' || (provider === 'custom' && customProtocol === 'anthropic');
   const testErrorMessage = (result: ApiTestResult) => {
     switch (result.errorType) {
       case 'missing_key':
-        return '请填写 API Key';
+        return t('api.testError.missing_key');
       case 'missing_base_url':
-        return '请填写 Base URL';
+        return t('api.testError.missing_base_url');
       case 'unauthorized':
-        return 'API Key 无效或无权限';
+        return t('api.testError.unauthorized');
       case 'not_found':
-        return '接口未找到，请检查 Base URL';
+        return t('api.testError.not_found');
       case 'rate_limited':
-        return '请求过于频繁或额度不足';
+        return t('api.testError.rate_limited');
       case 'server_error':
-        return '服务端错误，请稍后再试';
+        return t('api.testError.server_error');
       case 'network_error':
-        return '网络连接失败，请检查地址或网络';
+        return t('api.testError.network_error');
       default:
-        return '连接失败';
+        return t('api.testError.unknown');
     }
   };
 
@@ -309,10 +359,10 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             </div>
             <div>
               <h2 className="text-lg font-semibold text-text-primary">
-                {isFirstRun ? '欢迎使用 Open Cowork' : 'API 配置'}
+                {isFirstRun ? t('api.firstRunTitle') : t('api.settingsTitle')}
               </h2>
               <p className="text-sm text-text-secondary">
-                {isFirstRun ? '首次使用需要配置 API' : '修改你的 API 设置'}
+                {isFirstRun ? t('api.firstRunSubtitle') : t('api.settingsSubtitle')}
               </p>
             </div>
           </div>
@@ -330,7 +380,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
               <Server className="w-4 h-4" />
-              API 提供商
+              {t('api.provider')}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {(['openrouter', 'anthropic', 'openai', 'custom'] as const).map((p) => (
@@ -359,11 +409,31 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={currentPreset?.keyPlaceholder || '输入你的 API Key'}
+              placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
               className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
             />
             {currentPreset?.keyHint && (
               <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
+            )}
+            {isOpenAIMode && (
+              <p className="text-xs text-text-muted">
+                API Key 可留空，保存后会自动尝试使用本地 Codex 登录
+              </p>
+            )}
+            {resolveLocalAuthProvider() && (
+              <button
+                type="button"
+                onClick={handleImportLocalAuth}
+                disabled={isImportingAuth !== null}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-surface-hover text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {isImportingAuth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+                {isImportingAuth
+                  ? 'Importing local auth...'
+                  : resolveLocalAuthProvider() === 'codex'
+                    ? 'Import from local Codex login'
+                    : 'Import from local Claude Code login'}
+              </button>
             )}
           </div>
 
@@ -372,7 +442,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
                 <Server className="w-4 h-4" />
-                协议
+                {t('api.protocol')}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {([
@@ -392,7 +462,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-text-muted">根据协议选择对应的兼容服务</p>
+              <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
             </div>
           )}
 
@@ -416,8 +486,8 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               />
               <p className="text-xs text-text-muted">
                 {customProtocol === 'openai'
-                  ? '输入兼容 OpenAI API 的服务地址'
-                  : '输入兼容 Anthropic API 的服务地址'}
+                  ? t('api.enterOpenAIUrl')
+                  : t('api.enterAnthropicUrl')}
               </p>
             </div>
           )}
@@ -427,7 +497,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
                 <Cpu className="w-4 h-4" />
-                模型
+                {t('api.model')}
               </label>
               <button
                 type="button"
@@ -439,7 +509,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 }`}
               >
                 <Edit3 className="w-3 h-3" />
-                {useCustomModel ? '使用预设' : '自定义'}
+                {useCustomModel ? t('api.usePreset') : t('api.custom')}
               </button>
             </div>
             {useCustomModel ? (
@@ -449,7 +519,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder={
                   provider === 'openrouter'
-                    ? 'openai/gpt-4o 或其他模型ID'
+                    ? 'openai/gpt-4o or other model ID'
                     : provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')
                       ? 'gpt-4o'
                       : 'claude-sonnet-4'
@@ -470,14 +540,14 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                   ))
                 ) : (
                   <option value="" disabled>
-                    暂无可用模型
+                    {t('api.noModelsAvailable')}
                   </option>
                 )}
               </select>
             )}
             {useCustomModel && (
               <p className="text-xs text-text-muted">
-                输入模型 ID，如 moonshotai/kimi-k2-0905、openai/gpt-4o 等
+                {t('api.enterModelId')}
               </p>
             )}
           </div>
@@ -494,7 +564,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           {success && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              保存成功！
+              {t('common.saved')}
             </div>
           )}
           {testResult && (
@@ -507,7 +577,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <div className="flex-1">
                 <div>
                   {testResult.ok
-                    ? `连接成功（${typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--'}ms）`
+                    ? t('api.testSuccess', { ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--' })
                     : testErrorMessage(testResult)}
                 </div>
                 {!testResult.ok && testResult.details && (
@@ -529,42 +599,45 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
             />
             <label htmlFor="api-live-test-modal" className="space-y-0.5">
-              <div className="text-text-primary">真实请求验证</div>
-              <div>会发送一次最小请求，可能消耗少量额度</div>
+              <div className="text-text-primary">{t('api.liveTest')}</div>
+              <div>{t('api.liveTestHint')}</div>
+              {showsCompatibilityProbeHint && (
+                <div>{t('api.liveTestCompatibilityHint')}</div>
+              )}
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={handleTest}
-              disabled={isTesting || !apiKey.trim()}
+              disabled={isTesting || (requiresApiKey && !apiKey.trim())}
               className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isTesting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  测试中...
+                  {t('api.testingConnection')}
                 </>
               ) : (
                 <>
                   <Plug className="w-4 h-4" />
-                  测试连接
+                  {t('api.testConnection')}
                 </>
               )}
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving || !apiKey.trim()}
+              disabled={isSaving || (requiresApiKey && !apiKey.trim())}
               className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  保存中...
+                  {t('common.saving')}
                 </>
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  {isFirstRun ? '开始使用' : '保存配置'}
+                  {isFirstRun ? t('api.getStarted') : t('api.saveSettings')}
                 </>
               )}
             </button>

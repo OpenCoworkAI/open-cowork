@@ -89,6 +89,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.test', config),
   },
 
+  auth: {
+    getStatus: (): Promise<Array<{
+      provider: 'codex' | 'claude';
+      available: boolean;
+      path: string;
+      profile?: string;
+      account?: string;
+      expiresAt?: string;
+      updatedAt?: string;
+    }>> => ipcRenderer.invoke('auth.getStatus'),
+    importToken: (provider: 'codex' | 'claude'): Promise<{
+      provider: 'codex' | 'claude';
+      token: string;
+      path: string;
+      profile?: string;
+      account?: string;
+      expiresAt?: string;
+      updatedAt?: string;
+    } | null> => ipcRenderer.invoke('auth.importToken', provider),
+  },
+
   // Window control methods
   window: {
     minimize: () => ipcRenderer.send('window.minimize'),
@@ -305,6 +326,26 @@ declare global {
         save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
+      };
+      auth: {
+        getStatus: () => Promise<Array<{
+          provider: 'codex' | 'claude';
+          available: boolean;
+          path: string;
+          profile?: string;
+          account?: string;
+          expiresAt?: string;
+          updatedAt?: string;
+        }>>;
+        importToken: (provider: 'codex' | 'claude') => Promise<{
+          provider: 'codex' | 'claude';
+          token: string;
+          path: string;
+          profile?: string;
+          account?: string;
+          expiresAt?: string;
+          updatedAt?: string;
+        } | null>;
       };
       window: {
         minimize: () => void;

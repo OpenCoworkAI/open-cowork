@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import { log } from '../utils/logger';
+import { isOpenAIProvider, resolveOpenAICredentials, shouldUseAnthropicAuthToken } from './auth-utils';
 
 /**
  * Application configuration schema
@@ -171,7 +172,20 @@ class ConfigStore {
    * Check if the app is configured (has API key)
    */
   isConfigured(): boolean {
-    return this.store.get('isConfigured') && !!this.store.get('apiKey');
+    if (!this.store.get('isConfigured')) {
+      return false;
+    }
+    return this.hasUsableCredentials(this.getAll());
+  }
+
+  hasUsableCredentials(config: AppConfig = this.getAll()): boolean {
+    if (config.apiKey?.trim()) {
+      return true;
+    }
+    if (!isOpenAIProvider(config)) {
+      return false;
+    }
+    return resolveOpenAICredentials(config) !== null;
   }
 
   /**
@@ -197,32 +211,48 @@ class ConfigStore {
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_MODEL;
     delete process.env.OPENAI_API_MODE;
+    delete process.env.OPENAI_ACCOUNT_ID;
+    delete process.env.OPENAI_CODEX_OAUTH;
     
     const useOpenAI =
       config.provider === 'openai' ||
       (config.provider === 'custom' && config.customProtocol === 'openai');
 
     if (useOpenAI) {
-      if (config.apiKey) {
-        process.env.OPENAI_API_KEY = config.apiKey;
+      const resolvedOpenAI = resolveOpenAICredentials(config);
+      if (resolvedOpenAI?.apiKey) {
+        process.env.OPENAI_API_KEY = resolvedOpenAI.apiKey;
       }
-      if (config.baseUrl) {
-        process.env.OPENAI_BASE_URL = config.baseUrl;
+      const openAIBaseUrl = resolvedOpenAI?.baseUrl || config.baseUrl;
+      if (openAIBaseUrl) {
+        process.env.OPENAI_BASE_URL = openAIBaseUrl;
       }
+      if (resolvedOpenAI?.accountId) {
+        process.env.OPENAI_ACCOUNT_ID = resolvedOpenAI.accountId;
+      }
+      process.env.OPENAI_CODEX_OAUTH = resolvedOpenAI?.useCodexOAuth ? '1' : '0';
       if (config.model) {
         process.env.OPENAI_MODEL = config.model;
       }
       process.env.OPENAI_API_MODE = 'responses';
     } else {
       if (config.provider === 'anthropic' || (config.provider === 'custom' && config.customProtocol !== 'openai')) {
-        // Anthropic direct API or Anthropic-compatible custom: use ANTHROPIC_API_KEY
+        const useAuthToken = shouldUseAnthropicAuthToken(config);
         if (config.apiKey) {
-          process.env.ANTHROPIC_API_KEY = config.apiKey;
+          if (useAuthToken) {
+            process.env.ANTHROPIC_AUTH_TOKEN = config.apiKey;
+          } else {
+            process.env.ANTHROPIC_API_KEY = config.apiKey;
+          }
         }
         if (config.baseUrl) {
           process.env.ANTHROPIC_BASE_URL = config.baseUrl;
         }
-        delete process.env.ANTHROPIC_AUTH_TOKEN;
+        if (useAuthToken) {
+          delete process.env.ANTHROPIC_API_KEY;
+        } else {
+          delete process.env.ANTHROPIC_AUTH_TOKEN;
+        }
       } else {
         // OpenRouter: use ANTHROPIC_AUTH_TOKEN for proxy authentication
         if (config.apiKey) {
@@ -266,6 +296,8 @@ class ConfigStore {
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || '(default)',
       OPENAI_MODEL: process.env.OPENAI_MODEL || '(not set)',
       OPENAI_API_MODE: process.env.OPENAI_API_MODE || '(default)',
+      OPENAI_ACCOUNT_ID: process.env.OPENAI_ACCOUNT_ID || '(not set)',
+      OPENAI_CODEX_OAUTH: process.env.OPENAI_CODEX_OAUTH || '(not set)',
     });
   }
 

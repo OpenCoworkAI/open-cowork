@@ -11,6 +11,11 @@ import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
 import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
+import {
+  buildOpenAICodexHeaders,
+  resolveOpenAICredentials,
+  shouldUseAnthropicAuthToken,
+} from '../config/auth-utils';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
@@ -497,16 +502,56 @@ export class SessionManager {
     const model = configStore.get('model');
     const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
 
-    if (!apiKey || !model) {
-      log('[SessionTitle] Missing apiKey/model, skip generation');
+    if (!model) {
+      log('[SessionTitle] Missing model, skip generation');
       return null;
     }
 
     if (useOpenAI) {
+      const resolvedOpenAI = resolveOpenAICredentials({ provider, customProtocol, apiKey, baseUrl });
+      if (!resolvedOpenAI?.apiKey) {
+        log('[SessionTitle] Missing OpenAI credentials, skip generation');
+        return null;
+      }
+
       const client = new OpenAI({
-        apiKey,
-        baseURL: baseUrl || undefined,
+        apiKey: resolvedOpenAI.apiKey,
+        baseURL: resolvedOpenAI.baseUrl || baseUrl || undefined,
+        ...(resolvedOpenAI.useCodexOAuth
+          ? { defaultHeaders: buildOpenAICodexHeaders(resolvedOpenAI.accountId) }
+          : {}),
       });
+
+      if (resolvedOpenAI.useCodexOAuth) {
+        const stream = client.responses.stream({
+          model,
+          instructions: 'Return only a short concise session title.',
+          store: false,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: titlePrompt }] }],
+        });
+        for await (const _event of stream) {
+          // drain stream
+        }
+        const response = await stream.finalResponse();
+        const output = Array.isArray(response?.output) ? response.output : [];
+        for (const item of output) {
+          const content = Array.isArray((item as { content?: unknown[] }).content)
+            ? ((item as { content?: unknown[] }).content as unknown[])
+            : [];
+          for (const block of content) {
+            if (
+              block &&
+              typeof block === 'object' &&
+              (block as { type?: string }).type === 'output_text' &&
+              typeof (block as { text?: string }).text === 'string'
+            ) {
+              return (block as { text: string }).text.trim() || null;
+            }
+          }
+        }
+        return null;
+      }
+
       const response = await client.chat.completions.create({
         model,
         messages: [{ role: 'user', content: titlePrompt }],
@@ -516,10 +561,16 @@ export class SessionManager {
       return response.choices[0]?.message?.content?.trim() || null;
     }
 
-    const useAuthTokenHeader = provider === 'openrouter';
+    const trimmedApiKey = apiKey?.trim();
+    if (!trimmedApiKey) {
+      log('[SessionTitle] Missing API key, skip generation');
+      return null;
+    }
+
+    const useAuthTokenHeader = shouldUseAnthropicAuthToken({ provider, customProtocol, apiKey: trimmedApiKey });
     const client = useAuthTokenHeader
-      ? new Anthropic({ authToken: apiKey, baseURL: baseUrl || undefined })
-      : new Anthropic({ apiKey, baseURL: baseUrl || undefined });
+      ? new Anthropic({ authToken: trimmedApiKey, baseURL: baseUrl || undefined })
+      : new Anthropic({ apiKey: trimmedApiKey, baseURL: baseUrl || undefined });
     const response = await client.messages.create({
       model,
       max_tokens: 64,

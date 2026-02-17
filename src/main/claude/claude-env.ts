@@ -1,4 +1,5 @@
 import type { AppConfig } from '../config/config-store';
+import { shouldUseAnthropicAuthToken } from '../config/auth-utils';
 
 const CLAUDE_ENV_KEYS = [
   'ANTHROPIC_API_KEY',
@@ -32,7 +33,7 @@ export function getClaudeEnvOverrides(config: AppConfig): NodeJS.ProcessEnv {
   }
 
   if (config.apiKey) {
-    if (config.provider === 'openrouter') {
+    if (config.provider === 'openrouter' || shouldUseAnthropicAuthToken(config)) {
       overrides.ANTHROPIC_AUTH_TOKEN = config.apiKey;
     } else {
       overrides.ANTHROPIC_API_KEY = config.apiKey;

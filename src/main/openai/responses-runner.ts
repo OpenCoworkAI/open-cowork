@@ -7,6 +7,7 @@ import { PathResolver } from '../sandbox/path-resolver';
 import { ToolExecutor } from '../tools/tool-executor';
 import { log, logError, logWarn } from '../utils/logger';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { buildOpenAICodexHeaders, OPENAI_CODEX_BACKEND_BASE_URL } from '../config/auth-utils';
 
 type ToolSpec = {
   name: string;
@@ -370,13 +371,28 @@ export class OpenAIResponsesRunner {
       throw new Error('OPENAI_API_KEY is not set');
     }
 
+    const baseURL = process.env.OPENAI_BASE_URL;
+    const useCodexOAuth =
+      process.env.OPENAI_CODEX_OAUTH === '1' ||
+      (baseURL ? baseURL.replace(/\/+$/, '') === OPENAI_CODEX_BACKEND_BASE_URL : false);
+    const codexAccountId = process.env.OPENAI_ACCOUNT_ID;
+
     const client = new OpenAI({
       apiKey,
-      baseURL: process.env.OPENAI_BASE_URL,
+      baseURL,
+      ...(useCodexOAuth ? { defaultHeaders: buildOpenAICodexHeaders(codexAccountId) } : {}),
     });
 
     const model = process.env.OPENAI_MODEL || 'gpt-4o';
-    const mode = this.getApiMode();
+    const mode = useCodexOAuth ? 'responses' : this.getApiMode();
+    log('[OpenAIResponsesRunner] Starting run', {
+      sessionId: session.id,
+      model,
+      mode,
+      baseURL: baseURL || '(default)',
+      useCodexOAuth,
+      hasAccountId: Boolean(codexAccountId),
+    });
     const toolConfig = this.buildToolConfig(session.allowedTools);
     const thinkingStepId = uuidv4();
 
@@ -411,10 +427,11 @@ export class OpenAIResponsesRunner {
             existingMessages,
             prompt,
             toolConfig,
-            controller.signal
+            controller.signal,
+            useCodexOAuth
           );
         } catch (error) {
-          if (this.shouldFallbackToChat(error)) {
+          if (!useCodexOAuth && this.shouldFallbackToChat(error)) {
             logWarn('[OpenAIResponsesRunner] Responses unsupported by provider, falling back to Chat Completions');
             const text = await this.requestChatText(client, model, existingMessages, prompt, controller.signal);
             if (text) {
@@ -593,7 +610,8 @@ export class OpenAIResponsesRunner {
     existingMessages: Message[],
     prompt: string,
     toolConfig: ToolConfig,
-    signal: AbortSignal
+    signal: AbortSignal,
+    useCodexOAuth: boolean
   ): Promise<void> {
     let input: unknown[] = this.buildInput(existingMessages, prompt);
     let conversationItems: unknown[] = Array.isArray(input) ? [...input] : [];
@@ -611,7 +629,8 @@ export class OpenAIResponsesRunner {
         input,
         toolConfig,
         signal,
-        null
+        null,
+        useCodexOAuth
       );
       initialResponse = initial.response;
       initialStreamed = initial.streamed;
@@ -634,7 +653,8 @@ export class OpenAIResponsesRunner {
           plainMessages,
           toolConfig,
           signal,
-          null
+          null,
+          useCodexOAuth
         );
         initialResponse = initial.response;
         initialStreamed = initial.streamed;
@@ -656,7 +676,8 @@ export class OpenAIResponsesRunner {
           outputMessages,
           toolConfig,
           signal,
-          null
+          null,
+          useCodexOAuth
         );
         initialResponse = initial.response;
         initialStreamed = initial.streamed;
@@ -725,7 +746,8 @@ export class OpenAIResponsesRunner {
           nextInput,
           toolConfig,
           signal,
-          supportsPreviousResponseId ? previousResponseId : null
+          supportsPreviousResponseId ? previousResponseId : null,
+          useCodexOAuth
         );
         response = next.response;
         streamed = next.streamed;
@@ -741,7 +763,8 @@ export class OpenAIResponsesRunner {
               conversationItems,
               toolConfig,
               signal,
-              null
+              null,
+              useCodexOAuth
             );
             response = next.response;
             streamed = next.streamed;
@@ -794,9 +817,10 @@ export class OpenAIResponsesRunner {
     input: unknown,
     toolConfig: ToolConfig,
     signal: AbortSignal,
-    previousResponseId: string | null
+    previousResponseId: string | null,
+    useCodexOAuth: boolean
   ): Promise<{ response: any; streamed: boolean }> {
-    const useStreaming = this.shouldUseResponsesStreaming();
+    const useStreaming = useCodexOAuth ? true : this.shouldUseResponsesStreaming();
     try {
       return await this.createResponses(
         sessionId,
@@ -806,10 +830,11 @@ export class OpenAIResponsesRunner {
         toolConfig,
         signal,
         previousResponseId,
-        useStreaming
+        useStreaming,
+        useCodexOAuth
       );
     } catch (error) {
-      if (useStreaming && this.shouldFallbackFromStreaming(error)) {
+      if (!useCodexOAuth && useStreaming && this.shouldFallbackFromStreaming(error)) {
         logWarn('[OpenAIResponsesRunner] Responses stream unsupported, retrying without stream');
         return this.createResponses(
           sessionId,
@@ -819,7 +844,8 @@ export class OpenAIResponsesRunner {
           toolConfig,
           signal,
           previousResponseId,
-          false
+          false,
+          useCodexOAuth
         );
       }
       throw error;
@@ -834,9 +860,15 @@ export class OpenAIResponsesRunner {
     toolConfig: ToolConfig,
     signal: AbortSignal,
     previousResponseId: string | null,
-    useStreaming: boolean
+    useStreaming: boolean,
+    useCodexOAuth: boolean
   ): Promise<{ response: any; streamed: boolean }> {
     const body: Record<string, unknown> = { model, input };
+    if (useCodexOAuth) {
+      body.instructions =
+        'You are Open Cowork, a coding agent. Think step-by-step, call tools when needed, and answer in user language.';
+      body.store = false;
+    }
     if (toolConfig.responseTools.length > 0) {
       body.tools = toolConfig.responseTools;
     }

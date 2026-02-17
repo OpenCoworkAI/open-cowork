@@ -9,6 +9,7 @@ import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
 import { testApiConnection } from './config/api-tester';
+import { getLocalAuthStatuses, importLocalAuthToken, type LocalAuthProvider } from './auth/local-auth';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
@@ -590,10 +591,8 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
   // Update config
   configStore.update(newConfig);
 
-  // Mark as configured if we have an API key
-  if (newConfig.apiKey) {
-    configStore.set('isConfigured', true);
-  }
+  // Mark as configured if current provider has usable credentials
+  configStore.set('isConfigured', configStore.hasUsableCredentials());
 
   // Apply to environment
   configStore.applyToEnv();
@@ -634,6 +633,17 @@ ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<Api
       details: error instanceof Error ? error.message : String(error),
     };
   }
+});
+
+ipcMain.handle('auth.getStatus', () => {
+  return getLocalAuthStatuses();
+});
+
+ipcMain.handle('auth.importToken', (_event, provider: LocalAuthProvider) => {
+  if (provider !== 'codex' && provider !== 'claude') {
+    throw new Error(`Unsupported auth provider: ${provider}`);
+  }
+  return importLocalAuthToken(provider);
 });
 
 // MCP Server IPC handlers
@@ -1503,7 +1513,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   if (event.type === 'session.start' && !configStore.isConfigured()) {
     sendToRenderer({
       type: 'error',
-      payload: { message: '请先配置 API Key' },
+      payload: { message: '请先配置 API Key，或先完成本地 Codex 登录并导入' },
     });
     sendToRenderer({
       type: 'config.status',

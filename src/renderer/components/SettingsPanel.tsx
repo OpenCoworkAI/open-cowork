@@ -47,6 +47,8 @@ interface MCPServerStatus {
   toolCount: number;
 }
 
+type LocalAuthProvider = 'codex' | 'claude';
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -204,11 +206,12 @@ function APISettingsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
   const [useLiveTest, setUseLiveTest] = useState(false);
   const [enableThinking, setEnableThinking] = useState(false);
+  const [isImportingAuth, setIsImportingAuth] = useState<LocalAuthProvider | null>(null);
   const previousProviderRef = useRef(provider);
   const isLoadingConfigRef = useRef(false);
 
@@ -284,7 +287,8 @@ function APISettingsTab() {
   }
 
   async function handleTest() {
-    if (!apiKey.trim()) {
+    const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+    if (!isOpenAIMode && !apiKey.trim()) {
       setError(t('api.apiKey') + ' is required');
       return;
     }
@@ -326,7 +330,8 @@ function APISettingsTab() {
   }
 
   async function handleSave() {
-    if (!apiKey.trim()) {
+    const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+    if (!isOpenAIMode && !apiKey.trim()) {
       setError(t('api.apiKey') + ' is required');
       return;
     }
@@ -359,8 +364,8 @@ function APISettingsTab() {
         openaiMode: resolvedOpenaiMode,
         enableThinking,
       });
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2000);
+      setSuccessMessage(t('common.saved'));
+      setTimeout(() => setSuccessMessage(''), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -368,7 +373,58 @@ function APISettingsTab() {
     }
   }
 
+  function resolveLocalAuthProvider(): LocalAuthProvider | null {
+    if (provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')) {
+      return 'codex';
+    }
+    if (provider === 'anthropic') {
+      return 'claude';
+    }
+    return null;
+  }
+
+  async function handleImportLocalAuth() {
+    if (!window.electronAPI?.auth) {
+      setError('Current environment does not support local auth import');
+      return;
+    }
+
+    const authProvider = resolveLocalAuthProvider();
+    if (!authProvider) {
+      setError('Current provider does not support Codex/Claude local auth import');
+      return;
+    }
+
+    setIsImportingAuth(authProvider);
+    setError('');
+    try {
+      const imported = await window.electronAPI.auth.importToken(authProvider);
+      if (!imported?.token) {
+        setError(
+          authProvider === 'codex'
+            ? 'No local Codex login found. Please run: codex auth login'
+            : 'No local Claude Code login found. Please run: claude setup-token or claude auth login'
+        );
+        return;
+      }
+
+      setApiKey(imported.token);
+      setSuccessMessage(
+        authProvider === 'codex'
+          ? 'Imported token from local Codex login'
+          : 'Imported token from local Claude Code login'
+      );
+      setTimeout(() => setSuccessMessage(''), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import local auth token');
+    } finally {
+      setIsImportingAuth(null);
+    }
+  }
+
   const currentPreset = presets?.[provider];
+  const isOpenAIMode = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+  const requiresApiKey = !isOpenAIMode;
 
   if (isLoadingConfig) {
     return (
@@ -420,6 +476,24 @@ function APISettingsTab() {
         />
         {currentPreset?.keyHint && (
           <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
+        )}
+        {isOpenAIMode && (
+          <p className="text-xs text-text-muted">API Key 可留空，保存后会自动尝试使用本地 Codex 登录</p>
+        )}
+        {resolveLocalAuthProvider() && (
+          <button
+            type="button"
+            onClick={handleImportLocalAuth}
+            disabled={isImportingAuth !== null}
+            className="w-full mt-1 px-3 py-2 rounded-lg border border-border bg-surface-hover text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+          >
+            {isImportingAuth ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+            {isImportingAuth
+              ? 'Importing local auth...'
+              : resolveLocalAuthProvider() === 'codex'
+                ? 'Import from local Codex login'
+                : 'Import from local Claude Code login'}
+          </button>
         )}
       </div>
 
@@ -556,10 +630,10 @@ function APISettingsTab() {
           {error}
         </div>
       )}
-      {success && (
+      {successMessage && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          {t('common.saved')}
+          {successMessage}
         </div>
       )}
       {testResult && (
@@ -600,7 +674,7 @@ function APISettingsTab() {
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={handleTest}
-          disabled={isTesting || !apiKey.trim()}
+          disabled={isTesting || (requiresApiKey && !apiKey.trim())}
           className="w-full py-3 px-4 rounded-xl border border-border bg-surface-hover text-text-primary font-medium hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
         >
           {isTesting ? (
@@ -617,7 +691,7 @@ function APISettingsTab() {
         </button>
         <button
           onClick={handleSave}
-          disabled={isSaving || !apiKey.trim()}
+          disabled={isSaving || (requiresApiKey && !apiKey.trim())}
           className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
         >
           {isSaving ? (
