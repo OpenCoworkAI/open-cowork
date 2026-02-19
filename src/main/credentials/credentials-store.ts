@@ -36,7 +36,6 @@ class CredentialsStore {
   constructor() {
     this.store = new Store<{ credentials: StoredCredential[] }>({
       name: 'credentials',
-      projectName: 'open-cowork',
       defaults: {
         credentials: [],
       },
@@ -52,7 +51,7 @@ class CredentialsStore {
    * Stored separately from credentials for security
    */
   private getOrCreateEncryptionKey(): Buffer {
-    const keyStore = new Store<{ key: string }>({ name: 'credentials-key', projectName: 'open-cowork' });
+    const keyStore = new Store<{ key: string }>({ name: 'credentials-key' });
     let key = keyStore.get('key');
     
     if (!key) {

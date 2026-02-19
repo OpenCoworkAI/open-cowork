@@ -17,7 +17,6 @@ import {
   AlertCircle,
   Lightbulb,
   ArrowRight,
-  Calendar,
   Flame,
 } from 'lucide-react';
 import type {

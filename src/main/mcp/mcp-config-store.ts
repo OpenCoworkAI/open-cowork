@@ -79,7 +79,6 @@ class MCPConfigStore {
   constructor() {
     this.store = new Store<{ servers: MCPServerConfig[] }>({
       name: 'mcp-config',
-      projectName: 'open-cowork',
       defaults: {
         servers: [],
       },

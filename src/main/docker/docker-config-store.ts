@@ -12,7 +12,6 @@ const DEFAULT_CONFIG: CareerBoxConfig = {
 
 const store = new Store<{ careerbox: CareerBoxConfig }>({
   name: 'careerbox-config',
-  projectName: 'open-cowork',
   defaults: {
     careerbox: DEFAULT_CONFIG,
   },

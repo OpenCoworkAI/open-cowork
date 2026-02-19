@@ -837,9 +837,6 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
     toolName = toolUseBlock?.name;
   }
 
-  // MCP tools start with mcp__ (double underscore)
-  const isMCPTool = toolName?.startsWith('mcp__') || false;
-
   // Generate summary for tool results
   const generateSummary = (content: string, isError: boolean): string => {
     if (isError) {

@@ -15,7 +15,6 @@ class PluginRegistryStore {
     const storeCwd = this.resolveStoreCwd();
     this.store = new Store<PluginRegistrySchema>({
       name: 'plugin-registry',
-      projectName: 'open-cowork',
       cwd: storeCwd,
       defaults: {
         plugins: [],
