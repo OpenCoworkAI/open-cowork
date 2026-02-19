@@ -47,6 +47,42 @@ export class MCPManager {
   private npxPath: string | null = null; // Cached npx path
 
   /**
+   * Resolve a usable npx command path.
+   *
+   * Priority:
+   * 1. Bundled npx (preferred for packaged builds)
+   * 2. System npx from PATH (development fallback)
+   */
+  private async resolveNpxPath(): Promise<string> {
+    const bundledNode = this.getBundledNodePath();
+    if (bundledNode) {
+      log(`[MCPManager] Using bundled npx: ${bundledNode.npx}`);
+      return bundledNode.npx;
+    }
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    try {
+      const test = await execFileAsync('npx', ['--version'], {
+        timeout: 5000,
+        env: process.env as NodeJS.ProcessEnv,
+      });
+      const version = (test.stdout || '').trim();
+      log(`[MCPManager] Bundled npx unavailable, using system npx${version ? ` (${version})` : ''}`);
+      return 'npx';
+    } catch (error: any) {
+      logError(`[MCPManager] Unable to resolve npx from bundled binaries or PATH: ${error?.message || error}`);
+      throw new Error(
+        'No usable npx executable found.\n' +
+        '- In packaged builds, reinstall the app to restore bundled Node.js.\n' +
+        '- In development, install Node.js (with npx) and ensure it is in PATH.'
+      );
+    }
+  }
+
+  /**
    * Get bundled Node.js path
    * Returns the path to the bundled node/npx binaries
    */
@@ -104,20 +140,7 @@ export class MCPManager {
    * Throws an error if bundled Node.js is not found
    */
   private async checkNpxInPath(): Promise<void> {
-    const bundledNode = this.getBundledNodePath();
-    if (!bundledNode) {
-      const errorMessage = 
-        'Bundled Node.js not found. Please reinstall the application.\n' +
-        '未找到内置的 Node.js。请重新安装应用。\n\n' +
-        'The application requires bundled Node.js to run MCP servers.\n' +
-        '应用需要内置的 Node.js 来运行 MCP 服务器。';
-      
-      logError('[MCPManager] Bundled Node.js not found');
-      throw new Error(errorMessage);
-    }
-    
-    this.npxPath = bundledNode.npx;
-    log(`[MCPManager] Using bundled npx: ${this.npxPath}`);
+    this.npxPath = await this.resolveNpxPath();
   }
 
   /**

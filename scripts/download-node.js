@@ -51,7 +51,7 @@ async function downloadAndExtract(platform, arch) {
   const nodeName = PLATFORMS[platform]?.[arch];
   if (!nodeName) {
     console.log(`Skipping ${platform}-${arch} (not configured)`);
-    return;
+    return { platform, arch, status: 'skipped' };
   }
 
   const ext = platform === 'win32' ? 'zip' : 'tar.gz';
@@ -68,7 +68,7 @@ async function downloadAndExtract(platform, arch) {
   // Skip if already downloaded
   if (fs.existsSync(extractDir)) {
     console.log(`Already exists: ${extractDir}`);
-    return;
+    return { platform, arch, status: 'cached' };
   }
 
   try {
@@ -106,17 +106,19 @@ async function downloadAndExtract(platform, arch) {
     }
 
     // Clean up archive
-    fs.unlinkSync(archivePath);
+    fs.rmSync(archivePath, { force: true });
     console.log(`✓ Extracted: ${platform}-${arch}`);
+    return { platform, arch, status: 'downloaded' };
   } catch (error) {
     console.error(`✗ Failed to download ${platform}-${arch}:`, error.message);
     // Clean up on error
     if (fs.existsSync(archivePath)) {
-      fs.unlinkSync(archivePath);
+      fs.rmSync(archivePath, { force: true });
     }
     if (fs.existsSync(extractDir)) {
       fs.rmSync(extractDir, { recursive: true, force: true });
     }
+    return { platform, arch, status: 'failed', error: error.message || String(error) };
   }
 }
 
@@ -131,8 +133,29 @@ async function main() {
     }
   }
 
-  await Promise.all(downloads);
-  console.log('\n✓ All Node.js binaries downloaded!');
+  const results = await Promise.all(downloads);
+
+  const failed = results.filter((result) => result && result.status === 'failed');
+  const succeeded = results.filter((result) => result && result.status !== 'failed');
+
+  if (failed.length === 0) {
+    console.log(`\n✓ Node.js binaries ready (${succeeded.length}/${results.length})`);
+    return;
+  }
+
+  console.warn(`\n⚠ Node.js binary download completed with ${failed.length} failure(s):`);
+  failed.forEach((result) => {
+    console.warn(`  - ${result.platform}-${result.arch}: ${result.error}`);
+  });
+
+  // Don't fail local development when at least one usable binary is available.
+  // This is common in restricted network environments.
+  if (succeeded.length > 0) {
+    console.warn('⚠ Continuing because at least one platform binary is available.');
+    return;
+  }
+
+  console.warn('⚠ No platform binaries were downloaded. The app will fall back to system Node.js when possible.');
 }
 
 main().catch(console.error);
