@@ -8,7 +8,7 @@
   /* Define CSS variables for theming */
   :root {
     /* Dark theme (default) */
-    --color-background: #0f0f0f;
+    --color-background: #0a0a0a;
     --color-background-secondary: #1a1a1a;
     --color-surface: #1e1e1e;
     --color-surface-hover: #2a2a2a;
@@ -16,12 +16,15 @@
     --color-surface-muted: #171717;
     --color-border: #2a2a2a;
     --color-border-muted: #242424;
-    --color-accent: #f97316;
-    --color-accent-hover: #ea580c;
-    --color-accent-muted: rgba(249, 115, 22, 0.1);
+    --color-accent: #4f46e5;
+    --color-accent-hover: #4338ca;
+    --color-accent-muted: rgba(79, 70, 229, 0.1);
     --color-text-primary: #ececec;
     --color-text-secondary: #a0a0a0;
     --color-text-muted: #6b6b6b;
+    --color-card-border: rgba(255, 255, 255, 0.08);
+    --color-card-border-hover: rgba(255, 255, 255, 0.12);
+    --color-card-border-subtle: rgba(255, 255, 255, 0.05);
   }
 
   /* Light theme override */
@@ -34,12 +37,15 @@
     --color-surface-muted: #f7f6f3;
     --color-border: #e5e3de;
     --color-border-muted: #ebe9e4;
-    --color-accent: #f97316;
-    --color-accent-hover: #ea580c;
-    --color-accent-muted: #fff7ed;
+    --color-accent: #4f46e5;
+    --color-accent-hover: #4338ca;
+    --color-accent-muted: #eef2ff;
     --color-text-primary: #1a1a1a;
     --color-text-secondary: #5c5c5c;
     --color-text-muted: #8c8c8c;
+    --color-card-border: rgba(0, 0, 0, 0.06);
+    --color-card-border-hover: rgba(0, 0, 0, 0.1);
+    --color-card-border-subtle: rgba(0, 0, 0, 0.04);
   }
 
   * {
@@ -102,13 +108,13 @@
   /* Card styles */
   .card {
     @apply bg-surface rounded-3xl shadow-card;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--color-card-border);
   }
 
   .card-hover {
     @apply hover:shadow-elevated cursor-pointer transition-all duration-150;
     &:hover {
-      border-color: rgba(255, 255, 255, 0.12);
+      border-color: var(--color-card-border-hover);
     }
   }
 
@@ -121,7 +127,7 @@
 
   .tag-active {
     @apply bg-accent-muted text-accent;
-    border-color: rgba(249, 115, 22, 0.3);
+    border-color: rgba(79, 70, 229, 0.3);
   }
 
   /* Badge styles */
@@ -192,14 +198,14 @@
   /* Message bubbles */
   .message-user {
     @apply bg-surface rounded-2xl;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--color-card-border);
     width: fit-content;
     margin-left: auto;
   }
 
   .message-assistant {
     @apply bg-surface rounded-3xl;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--color-card-border-subtle);
   }
 
   /* Prose styling for assistant messages - elegant serif font */
@@ -304,7 +310,7 @@
   /* Code block */
   .code-block {
     @apply bg-surface-muted rounded-2xl p-4 font-mono text-sm overflow-x-auto;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--color-card-border-subtle);
   }
 
   /* Tool name wrapping - force break on any character */

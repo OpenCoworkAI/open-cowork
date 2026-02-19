@@ -1,3 +1,28 @@
+// CareerBox / Docker types
+export interface ContainerInfo {
+  name: string;
+  id: string;
+  status: 'not_found' | 'created' | 'running' | 'paused' | 'exited' | 'removing';
+  image: string;
+  startedAt?: string;
+  ports?: string;
+}
+
+export interface PullProgress {
+  status: string;
+  progress?: string;
+  percent: number; // -1 if unknown
+}
+
+export interface CareerBoxConfig {
+  containerName: string;
+  imageName: string;
+  volumeName: string;
+  port: number;
+  memoryMb: number;
+  password: string;
+}
+
 // Session types
 export interface Session {
   id: string;
@@ -315,6 +340,7 @@ export type ServerEvent =
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
   | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
+  | { type: 'careerbox.pullProgress'; payload: PullProgress }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types
@@ -358,6 +384,8 @@ export interface AppConfig {
   sandboxEnabled?: boolean;
   enableThinking?: boolean;
   isConfigured: boolean;
+  clerkPublishableKey?: string;
+  coeadaptApiUrl?: string;
 }
 
 export interface ProviderPreset {

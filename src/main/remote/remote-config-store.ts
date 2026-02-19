@@ -23,6 +23,7 @@ class RemoteConfigStore {
   constructor() {
     this.store = new Store<RemoteConfig & { pairedUsers: PairedUser[] }>({
       name: 'remote-config',
+      projectName: 'open-cowork',
       defaults: {
         ...DEFAULT_REMOTE_CONFIG,
         pairedUsers: [],

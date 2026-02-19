@@ -17,6 +17,7 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             rollupOptions: {
               external: [
+                'electron',
                 'better-sqlite3',
                 'ws',
                 'bufferutil',

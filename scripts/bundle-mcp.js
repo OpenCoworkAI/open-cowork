@@ -25,6 +25,11 @@ const servers = [
     entry: 'software-dev-server-example.ts',
     description: 'Software Development MCP Server',
   },
+  {
+    name: 'career-tools-server',
+    entry: 'career-tools-server.ts',
+    description: 'Career Tools MCP Server (Coeadapt)',
+  },
 ];
 
 async function bundleMCPServers() {

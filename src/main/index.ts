@@ -32,6 +32,10 @@ import {
   setDevLogsEnabled,
   isDevLogsEnabled,
 } from './utils/logger';
+import { dockerManager } from './docker/docker-manager';
+import { dockerConfigStore } from './docker/docker-config-store';
+import type { CareerBoxConfig } from './docker/types';
+import { deviceTokenStore } from './credentials/device-token-store';
 
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
@@ -393,7 +397,7 @@ app.whenReady().then(async () => {
   setDevLogsEnabled(enableDevLogs);
   
   // Log environment variables for debugging
-  log('=== Open Cowork Starting ===');
+  log('=== Coeadapt Starting ===');
   log('Config file:', configStore.getPath());
   log('Is configured:', configStore.isConfigured());
   log('Developer logs:', enableDevLogs ? 'Enabled' : 'Disabled');
@@ -1165,7 +1169,7 @@ ipcMain.handle('logs.export', async () => {
     // Show save dialog
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Export Logs',
-      defaultPath: `opencowork-logs-${new Date().toISOString().split('T')[0]}.zip`,
+      defaultPath: `coeadapt-logs-${new Date().toISOString().split('T')[0]}.zip`,
       filters: [
         { name: 'ZIP Archive', extensions: ['zip'] },
         { name: 'All Files', extensions: ['*'] }
@@ -1428,6 +1432,206 @@ ipcMain.handle('remote.restart', async () => {
     logError('[Remote] Error restarting:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
+});
+
+// ============================================================================
+// CareerBox (Docker) IPC handlers
+// ============================================================================
+
+ipcMain.handle('careerbox.checkDocker', async () => {
+  try {
+    return await dockerManager.checkDocker();
+  } catch (error) {
+    logError('[CareerBox] Error checking Docker:', error);
+    return { available: false };
+  }
+});
+
+ipcMain.handle('careerbox.getStatus', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    return await dockerManager.getContainerStatus(config.containerName);
+  } catch (error) {
+    logError('[CareerBox] Error getting status:', error);
+    return { name: '', id: '', status: 'not_found', image: '' };
+  }
+});
+
+ipcMain.handle('careerbox.pullImage', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+
+    // Check if image already exists
+    const exists = await dockerManager.imageExists(config.imageName);
+    if (exists) {
+      log('[CareerBox] Image already exists, re-pulling for updates...');
+    }
+
+    await dockerManager.pullImage(config.imageName, (progress) => {
+      sendToRenderer({
+        type: 'careerbox.pullProgress' as any,
+        payload: progress,
+      });
+    });
+
+    log('[CareerBox] Image pulled successfully:', config.imageName);
+  } catch (error) {
+    logError('[CareerBox] Error pulling image:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('careerbox.createContainer', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    log('[CareerBox] Creating container:', config.containerName);
+    return await dockerManager.createContainer(config);
+  } catch (error) {
+    logError('[CareerBox] Error creating container:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('careerbox.startContainer', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    log('[CareerBox] Starting container:', config.containerName);
+    return await dockerManager.startContainer(config.containerName);
+  } catch (error) {
+    logError('[CareerBox] Error starting container:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('careerbox.stopContainer', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    log('[CareerBox] Stopping container:', config.containerName);
+    return await dockerManager.stopContainer(config.containerName);
+  } catch (error) {
+    logError('[CareerBox] Error stopping container:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('careerbox.removeContainer', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    log('[CareerBox] Removing container:', config.containerName);
+    return await dockerManager.removeContainer(config.containerName);
+  } catch (error) {
+    logError('[CareerBox] Error removing container:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('careerbox.openWorkspace', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    await shell.openExternal(`https://localhost:${config.port}`);
+  } catch (error) {
+    logError('[CareerBox] Error opening workspace:', error);
+  }
+});
+
+ipcMain.handle('careerbox.checkHealth', async () => {
+  try {
+    const config = dockerConfigStore.getAll();
+    return await dockerManager.checkHealth(config.port);
+  } catch (error) {
+    logError('[CareerBox] Error checking health:', error);
+    return { healthy: false };
+  }
+});
+
+ipcMain.handle('careerbox.getConfig', () => {
+  try {
+    return dockerConfigStore.getAll();
+  } catch (error) {
+    logError('[CareerBox] Error getting config:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('careerbox.saveConfig', (_event, config: Partial<CareerBoxConfig>) => {
+  try {
+    dockerConfigStore.update(config);
+    log('[CareerBox] Config saved:', config);
+    return { success: true };
+  } catch (error) {
+    logError('[CareerBox] Error saving config:', error);
+    return { success: false };
+  }
+});
+
+// ============================================================================
+// Coeadapt API IPC handlers
+// ============================================================================
+
+ipcMain.handle('coeadapt.getConfig', () => {
+  return {
+    clerkPublishableKey: configStore.get('clerkPublishableKey'),
+    coeadaptApiUrl: configStore.get('coeadaptApiUrl'),
+    isConnected: !!configStore.get('clerkPublishableKey'),
+  };
+});
+
+ipcMain.handle('coeadapt.saveConfig', (_event, config: { clerkPublishableKey?: string; coeadaptApiUrl?: string }) => {
+  try {
+    if (config.clerkPublishableKey !== undefined) {
+      configStore.set('clerkPublishableKey', config.clerkPublishableKey);
+    }
+    if (config.coeadaptApiUrl !== undefined) {
+      configStore.set('coeadaptApiUrl', config.coeadaptApiUrl);
+    }
+    log('[Coeadapt] Config saved');
+    return { success: true };
+  } catch (error) {
+    logError('[Coeadapt] Error saving config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('coeadapt.deviceToken.get', () => {
+  try {
+    return {
+      hasToken: deviceTokenStore.hasValidToken(),
+      metadata: deviceTokenStore.getMetadata(),
+    };
+  } catch (error) {
+    logError('[Coeadapt] Error getting device token:', error);
+    return { hasToken: false, metadata: null };
+  }
+});
+
+ipcMain.handle('coeadapt.deviceToken.generate', async (_event, clerkJwt: string) => {
+  try {
+    const apiUrl = configStore.get('coeadaptApiUrl') || 'https://api.coeadapt.com';
+    return await deviceTokenStore.generateAndStore(clerkJwt, apiUrl);
+  } catch (error) {
+    logError('[Coeadapt] Error generating device token:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('coeadapt.deviceToken.verify', async () => {
+  try {
+    const apiUrl = configStore.get('coeadaptApiUrl') || 'https://api.coeadapt.com';
+    return await deviceTokenStore.verify(apiUrl);
+  } catch (error) {
+    logError('[Coeadapt] Error verifying device token:', error);
+    return { valid: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('coeadapt.deviceToken.clear', () => {
+  deviceTokenStore.clear();
+  return { success: true };
+});
+
+ipcMain.handle('coeadapt.deviceToken.getRaw', () => {
+  // Returns the raw device token for the renderer to use in API calls
+  return deviceTokenStore.getToken();
 });
 
 ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: any[]) => {

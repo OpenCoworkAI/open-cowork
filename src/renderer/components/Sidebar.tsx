@@ -12,6 +12,9 @@ import {
   Sun,
   Settings,
   Trash,
+  Monitor,
+  MessageSquare,
+  AlertTriangle,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -31,16 +34,22 @@ export function Sidebar() {
     isConfigured,
     sidebarCollapsed,
     toggleSidebar,
+    activeView,
+    setActiveView,
+    coraChatOpen,
+    setCoraChatOpen,
   } = useAppStore();
   const { deleteSession, getSessionMessages, getSessionTraceSteps, isElectron } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
 
   // Handle session click - load messages if needed
   const handleSessionClick = useCallback(async (sessionId: string) => {
-    if (activeSessionId === sessionId) return;
-    
+    if (activeSessionId === sessionId && activeView === 'chat') return;
+
+    setActiveView('chat');
     setActiveSession(sessionId);
     
     // Check if we already have messages loaded for this session
@@ -89,6 +98,7 @@ export function Sidebar() {
   };
 
   const handleNewSession = () => {
+    setActiveView('chat');
     setActiveSession(null);
   };
 
@@ -99,16 +109,15 @@ export function Sidebar() {
 
   const handleDeleteAllSessions = () => {
     if (sessions.length === 0) return;
-    
-    const confirmed = window.confirm(`确定要删除所有 ${sessions.length} 个对话吗？此操作无法撤销。`);
-    if (confirmed) {
-      // Delete all sessions
-      sessions.forEach(session => {
-        deleteSession(session.id);
-      });
-      // Clear active session
-      setActiveSession(null);
-    }
+    setShowDeleteAllConfirm(true);
+  };
+
+  const confirmDeleteAll = () => {
+    sessions.forEach(session => {
+      deleteSession(session.id);
+    });
+    setActiveSession(null);
+    setShowDeleteAllConfirm(false);
   };
 
   return (
@@ -152,7 +161,7 @@ export function Sidebar() {
               <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-accent" />
               </div>
-              <h1 className="text-lg font-semibold text-text-primary whitespace-nowrap">Open Cowork</h1>
+              <h1 className="text-lg font-semibold text-text-primary whitespace-nowrap">Coeadapt</h1>
             </div>
             <div className="flex items-center gap-2">
         <button
@@ -178,8 +187,50 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* New Task Button */}
-      <div className="p-3">
+      {/* CareerBox + New Task Buttons */}
+      <div className="p-3 space-y-1">
+        <button
+          onClick={() => setActiveView('careerbox')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+            sidebarCollapsed ? 'justify-center' : ''
+          } ${
+            activeView === 'careerbox'
+              ? 'bg-accent-muted text-accent'
+              : 'hover:bg-surface-hover text-text-secondary'
+          }`}
+          title="CareerBox"
+        >
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            activeView === 'careerbox' ? 'bg-accent/20' : 'bg-surface-hover'
+          }`}>
+            <Monitor className={`w-4 h-4 ${activeView === 'careerbox' ? 'text-accent' : 'text-text-secondary'}`} />
+          </div>
+          {!sidebarCollapsed && (
+            <span className={`font-medium ${activeView === 'careerbox' ? 'text-accent' : 'text-text-primary'}`}>CareerBox</span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setCoraChatOpen(!coraChatOpen)}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+            sidebarCollapsed ? 'justify-center' : ''
+          } ${
+            coraChatOpen
+              ? 'bg-accent-muted text-accent'
+              : 'hover:bg-surface-hover text-text-secondary'
+          }`}
+          title="Cora AI"
+        >
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            coraChatOpen ? 'bg-accent/20' : 'bg-surface-hover'
+          }`}>
+            <MessageSquare className={`w-4 h-4 ${coraChatOpen ? 'text-accent' : 'text-text-secondary'}`} />
+          </div>
+          {!sidebarCollapsed && (
+            <span className={`font-medium ${coraChatOpen ? 'text-accent' : 'text-text-primary'}`}>Cora</span>
+          )}
+        </button>
+
         <button
           onClick={handleNewSession}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors ${
@@ -313,6 +364,37 @@ export function Sidebar() {
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
         />
+      )}
+
+      {/* Delete All Confirmation Dialog */}
+      {showDeleteAllConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="card p-6 max-w-sm mx-4 space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-error" />
+              </div>
+              <h3 className="text-lg font-semibold text-text-primary">{t('sidebar.deleteAll')}</h3>
+            </div>
+            <p className="text-sm text-text-secondary">
+              {t('sidebar.deleteAllConfirm', { count: sessions.length })}
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteAllConfirm(false)}
+                className="btn btn-secondary px-4 py-2 text-sm"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={confirmDeleteAll}
+                className="btn bg-error text-white hover:bg-error/90 px-4 py-2 text-sm"
+              >
+                {t('common.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -823,8 +823,8 @@ async function callVisionAPI(
     };
     
     if (isOpenRouter) {
-      headers['HTTP-Referer'] = 'https://github.com/OpenCoworkAI/open-cowork';
-      headers['X-Title'] = 'Open Cowork';
+      headers['HTTP-Referer'] = 'https://github.com/coeadapt/coeadapt';
+      headers['X-Title'] = 'Coeadapt';
     }
     
     return new Promise<string>((resolve, reject) => {

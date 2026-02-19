@@ -37,7 +37,7 @@ const GITHUB_API_ROOT = 'https://api.github.com/repos/anthropics/claude-code/con
 const JSDELIVR_META_URL = 'https://data.jsdelivr.com/v1/package/gh/anthropics/claude-code@main';
 const JSDELIVR_CDN_ROOT = 'https://cdn.jsdelivr.net/gh/anthropics/claude-code@main';
 const CACHE_TTL_MS = 60_000;
-const DEFAULT_USER_AGENT = 'open-cowork-plugin-catalog/2.0';
+const DEFAULT_USER_AGENT = 'coeadapt-plugin-catalog/2.0';
 
 const EMPTY_COUNTS: PluginComponentCounts = {
   skills: 0,

@@ -1,7 +1,7 @@
 {
-  "name": "open-cowork",
+  "name": "coeadapt",
   "version": "3.1.0",
-  "description": "Desktop Agent application with sandboxed environment for AI Agent interaction",
+  "description": "Coeadapt CareerBox Edition - AI-powered desktop with career development workspace",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "npm run download:node && npm run prepare:python && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",
@@ -23,6 +23,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.77",
     "@anthropic-ai/claude-code": "^2.1.7",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@clerk/clerk-react": "^5.61.0",
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@types/ws": "^8.18.1",
@@ -77,7 +78,7 @@
   "overrides": {
     "tar": "6.2.1"
   },
-  "author": "Open Cowork Team",
+  "author": "Coeadapt",
   "license": "MIT",
   "optionalDependencies": {
     "bufferutil": "^4.1.0",

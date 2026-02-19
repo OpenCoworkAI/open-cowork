@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="resources/logo.png" alt="Open Cowork Logo" width="280" />
+  <img src="resources/Brand/brandmark-design (4)_1756956005044.png" alt="Coeadapt Logo" width="380" />
 </p>
 
-<h1 align="center">🚀 Open Cowork: 你的私人 AI 智能助手桌面应用</h1>
+<h1 align="center">Coeadapt: AI 智能协作桌面应用</h1>
 
 <p align="center">
-  • Claude Cowork 的开源实现 • 一键安装
+  • AI 驱动的桌面协作 • Adapting Together
 </p>
 
 <p align="center">
@@ -27,12 +27,12 @@
 
 ## 📖 简介
 
-**Open Cowork** 是 **Claude Cowork** 的开源实现，提供 **Windows** 和 **macOS** 一键安装包，无需任何编程知识。
+**Coeadapt** 是一款 AI 驱动的智能协作桌面应用，基于开源项目 [Open Cowork](https://github.com/OpenCoworkAI/open-cowork) 构建，提供 **Windows** 和 **macOS** 一键安装包，无需任何编程知识。
 
 它为 AI 提供了一个沙盒化的工作环境，可以管理文件、通过内置的 **Skills** 系统生成专业文件（PPTX、DOCX、XLSX等）和 **通过MCP链接桌面APP**（浏览器、Notion等）进行人机协作等等。
 
 > [!WARNING]
-> **免责声明**：Open Cowork 仅作为一个 AI 协作工具，请对它的操作保持谨慎。特别是在授权文件修改或删除等操作时，请务必自行审查风险，我们支持了基于VM的sandbox隔离，但是某些操作可能仍存风险。
+> **免责声明**：Coeadapt 仅作为一个 AI 协作工具，请对它的操作保持谨慎。特别是在授权文件修改或删除等操作时，请务必自行审查风险，我们支持了基于VM的sandbox隔离，但是某些操作可能仍存风险。
 
 ---
 
@@ -43,10 +43,10 @@
 | ------------- | ------------ | -------------- | ------------- |
 | Claude Cowork | ✓            | ✗              | ✗             |
 | OpenClaw      | ✓            | ✓              | ✗             |
-| OpenCowork    | ✓            | ✓              | ✓             |
+| Coeadapt      | ✓            | ✓              | ✓             |
 
 
-- **一键安装，开箱即用**：提供 Windows 和 macOS 预构建安装包，无需配置环境，下载即可开始使用。。
+- **一键安装，开箱即用**：提供 Windows 和 macOS 预构建安装包，无需配置环境，下载即可开始使用。
 - **灵活模型支持**：支持 **Claude**、**OpenAI 兼容接口**，以及国产大模型 **GLM**、**MiniMax**、**Kimi** 等。使用你的 OpenRouter、Anthropic等API Key，灵活配置。更多模型持续接入中！
 - **远程控制**：可以接入**飞书**等协作平台和远程服务，实现工作流自动化和跨平台操作。
 - **图形界面操作**：可以控制和操作电脑上的各种桌面 GUI 应用程序。**推荐使用 Gemini-3-Pro 模型**以获得最佳的 GUI 理解和控制效果。
@@ -62,7 +62,7 @@
 <a id="演示"></a>
 ## 🎬 演示
 
-观看 Open Cowork 实战演示 ：
+观看 Coeadapt 实战演示：
 
 ### 1. 文件夹收纳整理 📂
 https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7
@@ -80,7 +80,7 @@ https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 
 ### 方式一：下载安装包（推荐）
 
-请访问我们的 [Release 页面](https://github.com/OpenCoworkAI/open-cowork/releases) 下载最新版本。
+请访问我们的 [Release 页面](https://github.com/coeadapt/coeadapt/releases) 下载最新版本。
 
 | 平台 | 文件类型 |
 |------|----------|
@@ -92,8 +92,8 @@ https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 适合想要贡献代码或进行二次开发的开发者：
 
 ```bash
-git clone https://github.com/OpenCoworkAI/open-cowork.git
-cd open-cowork
+git clone https://github.com/coeadapt/coeadapt.git
+cd coeadapt
 npm install
 npm run rebuild
 npm run dev
@@ -103,7 +103,7 @@ npm run dev
 
 ### 安全配置：🔒 沙盒支持
 
-Open Cowork 提供**多级沙盒保护**，确保系统安全：
+Coeadapt 提供**多级沙盒保护**，确保系统安全：
 
 | 级别 | 平台 | 技术 | 说明 |
 |------|------|------|------|
@@ -123,7 +123,7 @@ Open Cowork 提供**多级沙盒保护**，确保系统安全：
 如已安装 lima，会自动检测。lima安装指令如下：
 ```bash
 brew install lima
-# Open Cowork 会自动创建和管理 'claude-sandbox' 虚拟机
+# Coeadapt 会自动创建和管理 'claude-sandbox' 虚拟机
 ```
 
 ---
@@ -149,92 +149,30 @@ brew install lima
 4. 输入想要使用的 **Model** 名称。
 
 ### 3. 开始协作
-1. **选择工作区**：选择一个文件夹，授权 Claude 在其中工作。
+1. **选择工作区**：选择一个文件夹，授权 AI Agent 在其中工作。
 2. **输入指令**：
    > "读取当前文件夹下的 financial_report.csv，并帮我生成一份包含 5 页幻灯片的 PPT 总结报告。"
 
 ### 📝 重要提示
 
-1.  **macOS 安装问题**：安装后若打不开，提示隐私安全问题，请前往 **系统设置 > 隐私与安全性** 进行授权（点击“仍要打开”）。若仍被拦截，可运行：
+1.  **macOS 安装问题**：安装后若打不开，提示隐私安全问题，请前往 **系统设置 > 隐私与安全性** 进行授权（点击"仍要打开"）。若仍被拦截，可运行：
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
+sudo xattr -rd com.apple.quarantine "/Applications/Coeadapt.app"
 ```
-2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
+2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的"虚拟网卡 (TUN模式)"功能才能正常访问。
 3. **Notion连接器使用**: 除了设置Notion token之外，还需要在根页面添加连接。更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
 
 <a id="技能库"></a>
 ## 🧰 技能库
 
-Open Cowork 内置技能位于 `.claude/skills/`，并支持用户自行添加/自定义技能，包含：
+Coeadapt 内置技能位于 `.claude/skills/`，并支持用户自行添加/自定义技能，包含：
 - `pptx`：PowerPoint 生成
 - `docx`：Word 文档处理
 - `pdf`：PDF 处理与表单
 - `xlsx`：Excel 电子表格支持
+- `career`：职业发展规划
 - `skill-creator`：技能开发工具包
-
----
-
-## 🏗️ 架构概览
-
-```
-open-cowork/
-├── src/
-│   ├── main/                    # Electron 主进程 (Node.js)
-│   │   ├── index.ts             # 主入口文件
-│   │   ├── claude/              # Agent SDK 与运行器
-│   │   │   └── agent-runner.ts  # AI 代理执行逻辑
-│   │   ├── config/              # 配置管理
-│   │   │   └── config-store.ts  # 持久化设置存储
-│   │   ├── db/                  # 数据库层
-│   │   │   └── database.ts      # SQLite/数据持久化
-│   │   ├── ipc/                 # IPC 处理器
-│   │   ├── memory/              # 内存管理
-│   │   │   └── memory-manager.ts
-│   │   ├── sandbox/             # 安全与路径解析
-│   │   │   └── path-resolver.ts # 沙盒化文件访问
-│   │   ├── session/             # 会话管理
-│   │   │   └── session-manager.ts
-│   │   ├── skills/              # 技能加载与管理
-│   │   │   └── skills-manager.ts
-│   │   └── tools/               # 工具执行
-│   │       └── tool-executor.ts # 工具调用处理
-│   ├── preload/                 # Electron 预加载脚本
-│   │   └── index.ts             # 上下文桥接设置
-│   └── renderer/                # 前端 UI (React + Tailwind)
-│       ├── App.tsx              # 根组件
-│       ├── main.tsx             # React 入口
-│       ├── components/          # UI 组件
-│       │   ├── ChatView.tsx     # 主聊天界面
-│       │   ├── ConfigModal.tsx  # 设置对话框
-│       │   ├── ContextPanel.tsx # 文件上下文显示
-│       │   ├── MessageCard.tsx  # 聊天消息组件
-│       │   ├── PermissionDialog.tsx
-│       │   ├── Sidebar.tsx      # 导航侧边栏
-│       │   ├── Titlebar.tsx     # 自定义窗口标题栏
-│       │   ├── TracePanel.tsx   # AI 推理追踪
-│       │   └── WelcomeView.tsx  # 引导页面
-│       ├── hooks/               # 自定义 React Hooks
-│       │   └── useIPC.ts        # IPC 通信 Hook
-│       ├── store/               # 状态管理
-│       │   └── index.ts
-│       ├── styles/              # CSS 样式
-│       │   └── globals.css
-│       ├── types/               # TypeScript 类型
-│       │   └── index.ts
-│       └── utils/               # 工具函数
-├── .claude/
-│   └── skills/                  # 默认技能定义
-│       ├── pptx/                # PowerPoint 生成
-│       ├── docx/                # Word 文档处理
-│       ├── pdf/                 # PDF 处理与表单
-│       ├── xlsx/                # Excel 电子表格支持
-│       └── skill-creator/       # 技能开发工具包
-├── resources/                   # 静态资源 (图标、图片)
-├── electron-builder.yml         # 构建配置
-├── vite.config.ts               # Vite 打包配置
-└── package.json                 # 依赖与脚本
-```
 
 ---
 
@@ -248,7 +186,11 @@ open-cowork/
 - [x] **丰富输入**：聊天框支持文件上传和图片输入
 - [x] **多模型**：OpenAI 兼容接口支持（持续迭代中）
 - [x] **界面优化**：UI 增强，支持中英文切换
-- [ ] **记忆优化**：改进长会话的上下文管理和跨会话记忆。
+- [x] **远程控制**：飞书机器人集成，ngrok 隧道支持
+- [x] **GUI 操作**：Windows 和 macOS 桌面 GUI 自动化
+- [x] **插件系统**：V2 插件运行时，目录管理与组件加载
+- [x] **职业发展**：集成职业规划、技能差距分析和求职辅助
+- [ ] **记忆优化**：改进长会话的上下文管理和跨会话记忆
 - [ ] **全新特征**：敬请期待！
 
 ---
@@ -275,10 +217,12 @@ open-cowork/
 
 ## 📄 许可证
 
-MIT © Open Cowork Team
+MIT © [Coeadapt](https://github.com/coeadapt/coeadapt)
+
+本项目基于 [Open Cowork](https://github.com/OpenCoworkAI/open-cowork) (OpenCoworkAI) 开源项目构建。
 
 ---
 
 <p align="center">
-  Made with ❤️ by the Open Cowork Team with the help of opus4.5
+  Adapting Together
 </p>

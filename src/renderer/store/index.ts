@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus } from '../types';
+import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, ContainerInfo, PullProgress } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
 interface AppState {
@@ -44,7 +44,18 @@ interface AppState {
   
   // Sandbox sync (per-session)
   sandboxSyncStatus: SandboxSyncStatus | null;
-  
+
+  // CareerBox state
+  activeView: 'chat' | 'careerbox';
+  careerboxStatus: ContainerInfo | null;
+  careerboxDockerAvailable: boolean;
+  careerboxPullProgress: PullProgress | null;
+  careerboxHealthy: boolean;
+
+  // Coeadapt / Cora state
+  coraChatOpen: boolean;
+  coeadaptConnected: boolean;
+
   // Actions
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
@@ -90,6 +101,17 @@ interface AppState {
   
   // Sandbox sync actions
   setSandboxSyncStatus: (status: SandboxSyncStatus | null) => void;
+
+  // CareerBox actions
+  setActiveView: (view: 'chat' | 'careerbox') => void;
+  setCareerboxStatus: (status: ContainerInfo | null) => void;
+  setCareerboxDockerAvailable: (available: boolean) => void;
+  setCareerboxPullProgress: (progress: PullProgress | null) => void;
+  setCareerboxHealthy: (healthy: boolean) => void;
+
+  // Coeadapt / Cora actions
+  setCoraChatOpen: (open: boolean) => void;
+  setCoeadaptConnected: (connected: boolean) => void;
 }
 
 const defaultSettings: Settings = {
@@ -142,7 +164,14 @@ export const useAppStore = create<AppState>((set) => ({
   sandboxSetupProgress: null,
   isSandboxSetupComplete: false,
   sandboxSyncStatus: null,
-  
+  activeView: 'chat',
+  careerboxStatus: null,
+  careerboxDockerAvailable: false,
+  careerboxPullProgress: null,
+  careerboxHealthy: false,
+  coraChatOpen: false,
+  coeadaptConnected: false,
+
   // Session actions
   setSessions: (sessions) => set({ sessions }),
   
@@ -423,4 +452,15 @@ export const useAppStore = create<AppState>((set) => ({
   
   // Sandbox sync actions
   setSandboxSyncStatus: (status) => set({ sandboxSyncStatus: status }),
+
+  // CareerBox actions
+  setActiveView: (view) => set({ activeView: view }),
+  setCareerboxStatus: (status) => set({ careerboxStatus: status }),
+  setCareerboxDockerAvailable: (available) => set({ careerboxDockerAvailable: available }),
+  setCareerboxPullProgress: (progress) => set({ careerboxPullProgress: progress }),
+  setCareerboxHealthy: (healthy) => set({ careerboxHealthy: healthy }),
+
+  // Coeadapt / Cora actions
+  setCoraChatOpen: (open) => set({ coraChatOpen: open }),
+  setCoeadaptConnected: (connected) => set({ coeadaptConnected: connected }),
 }));

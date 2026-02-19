@@ -124,6 +124,10 @@ export function useIPC() {
           store.setSandboxSyncStatus(event.payload);
           break;
 
+        case 'careerbox.pullProgress':
+          store.setCareerboxPullProgress(event.payload);
+          break;
+
         case 'workdir.changed':
           console.log('[useIPC] workdir.changed received:', event.payload.path);
           store.setWorkingDir(event.payload.path || null);

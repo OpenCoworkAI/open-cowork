@@ -11,6 +11,7 @@ import {
   splitChildrenByFileMentions,
   getFileLinkButtonClassName
 } from '../utils/file-link';
+import { CareerCardRenderer } from './CareerCards';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
@@ -38,6 +39,7 @@ interface MessageCardProps {
 }
 
 export function MessageCard({ message, isStreaming }: MessageCardProps) {
+  const { t } = useTranslation();
   const isUser = message.role === 'user';
   const isQueued = message.localStatus === 'queued';
   const isCancelled = message.localStatus === 'cancelled';
@@ -77,13 +79,13 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
           {isQueued && (
             <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
               <Clock className="w-3 h-3" />
-              <span>排队中</span>
+              <span>{t('messageCard.queued')}</span>
             </div>
           )}
           {isCancelled && (
             <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
               <XCircle className="w-3 h-3" />
-              <span>已取消</span>
+              <span>{t('messageCard.cancelled')}</span>
             </div>
           )}
           {contentBlocks.length === 0 ? (
@@ -102,7 +104,7 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
           <button
             onClick={handleCopy}
             className="mt-1 w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-            title="复制消息"
+            title={t('messageCard.copyMessage')}
           >
             {copied ? (
               <Check className="w-3 h-3 text-success" />
@@ -139,6 +141,7 @@ interface ContentBlockViewProps {
 }
 
 function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: ContentBlockViewProps) {
+  const { t } = useTranslation();
   const { activeSessionId, sessions, workingDir } = useAppStore();
   const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
@@ -163,7 +166,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
         }
       }}
       className={getFileLinkButtonClassName()}
-      title="在文件夹中定位"
+      title={t('messageCard.locateInFolder')}
     >
       {value}
     </button>
@@ -210,132 +213,138 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
       }
       
       return (
-        <div className="prose-chat max-w-none text-text-primary">
-          <ReactMarkdown
-            remarkPlugins={[remarkMath, remarkGfm]}
-            rehypePlugins={[rehypeKatex]}
-            components={{
-              a({ children, href }) {
-                return (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(event) => {
-                      if (!href) {
-                        return;
-                      }
-                      if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
-                        event.preventDefault();
-                        void window.electronAPI.openExternal(href);
-                      }
-                    }}
-                    className="text-accent hover:text-accent-hover"
-                  >
-                    {children}
-                  </a>
-                );
-              },
-              blockquote({ children }) {
-                return (
-                  <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
-                    {children}
-                  </blockquote>
-                );
-              },
-              code({ className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className || '');
-                const isInline = !match;
+        <CareerCardRenderer
+          text={text}
+          isStreaming={isStreaming}
+          renderMarkdown={(chunk, isLastChunk) => (
+            <div className="prose-chat max-w-none text-text-primary">
+              <ReactMarkdown
+                remarkPlugins={[remarkMath, remarkGfm]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  a({ children, href }) {
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => {
+                          if (!href) {
+                            return;
+                          }
+                          if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+                            event.preventDefault();
+                            void window.electronAPI.openExternal(href);
+                          }
+                        }}
+                        className="text-accent hover:text-accent-hover"
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                  blockquote({ children }) {
+                    return (
+                      <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
+                        {children}
+                      </blockquote>
+                    );
+                  },
+                  code({ className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const isInline = !match;
 
-                if (isInline) {
-                  const raw = String(children);
-                  const parts = splitTextByFileMentions(raw);
-                  if (parts.length === 1 && parts[0].type === 'file') {
-                    return renderFileButton(parts[0].value);
-                  }
-                  return (
-                    <code className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm" {...props}>
-                      {children}
-                    </code>
-                  );
-                }
+                    if (isInline) {
+                      const raw = String(children);
+                      const parts = splitTextByFileMentions(raw);
+                      if (parts.length === 1 && parts[0].type === 'file') {
+                        return renderFileButton(parts[0].value);
+                      }
+                      return (
+                        <code className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm" {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
 
-                return (
-                  <CodeBlock language={match[1]}>
-                    {String(children).replace(/\n$/, '')}
-                  </CodeBlock>
-                );
-              },
-              p({ children }) {
-                return (
-                  <p className="text-left">
-                    {renderChildrenWithFileLinks(children, 'p')}
-                  </p>
-                );
-              },
-              li({ children }) {
-                return (
-                  <li className="text-left">
-                    {renderChildrenWithFileLinks(children, 'li')}
-                  </li>
-                );
-              },
-              table({ children }) {
-                return (
-                  <div className="overflow-x-auto my-3">
-                    <table className="min-w-full border-collapse">
-                      {children}
-                    </table>
-                  </div>
-                );
-              },
-              th({ children }) {
-                return (
-                  <th className="border border-border px-3 py-2 text-left text-sm font-semibold text-text-primary bg-surface-muted">
-                    {children}
-                  </th>
-                );
-              },
-              td({ children }) {
-                return (
-                  <td className="border border-border px-3 py-2 text-sm text-text-primary">
-                    {children}
-                  </td>
-                );
-              },
-              input({ checked, ...props }) {
-                return (
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    readOnly
-                    className="mr-2 accent-accent"
-                    {...props}
-                  />
-                );
-              },
-              strong({ children }) {
-                return (
-                  <strong>
-                    {renderChildrenWithFileLinks(children, 'strong')}
-                  </strong>
-                );
-              },
-              em({ children }) {
-                return (
-                  <em>
-                    {renderChildrenWithFileLinks(children, 'em')}
-                  </em>
-                );
-              },
-            }}
-          >
-            {text}
-          </ReactMarkdown>
-          {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />
+                    return (
+                      <CodeBlock language={match[1]}>
+                        {String(children).replace(/\n$/, '')}
+                      </CodeBlock>
+                    );
+                  },
+                  p({ children }) {
+                    return (
+                      <p className="text-left">
+                        {renderChildrenWithFileLinks(children, 'p')}
+                      </p>
+                    );
+                  },
+                  li({ children }) {
+                    return (
+                      <li className="text-left">
+                        {renderChildrenWithFileLinks(children, 'li')}
+                      </li>
+                    );
+                  },
+                  table({ children }) {
+                    return (
+                      <div className="overflow-x-auto my-3">
+                        <table className="min-w-full border-collapse">
+                          {children}
+                        </table>
+                      </div>
+                    );
+                  },
+                  th({ children }) {
+                    return (
+                      <th className="border border-border px-3 py-2 text-left text-sm font-semibold text-text-primary bg-surface-muted">
+                        {children}
+                      </th>
+                    );
+                  },
+                  td({ children }) {
+                    return (
+                      <td className="border border-border px-3 py-2 text-sm text-text-primary">
+                        {children}
+                      </td>
+                    );
+                  },
+                  input({ checked, ...props }) {
+                    return (
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        readOnly
+                        className="mr-2 accent-accent"
+                        {...props}
+                      />
+                    );
+                  },
+                  strong({ children }) {
+                    return (
+                      <strong>
+                        {renderChildrenWithFileLinks(children, 'strong')}
+                      </strong>
+                    );
+                  },
+                  em({ children }) {
+                    return (
+                      <em>
+                        {renderChildrenWithFileLinks(children, 'em')}
+                      </em>
+                    );
+                  },
+                }}
+              >
+                {chunk}
+              </ReactMarkdown>
+              {isLastChunk && isStreaming && (
+                <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />
+              )}
+            </div>
           )}
-        </div>
+        />
       );
     }
 
@@ -501,6 +510,7 @@ interface TodoItem {
 
 // TodoWrite block - renders a beautiful todo list
 function TodoWriteBlock({ block }: { block: ToolUseContent }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const todos: TodoItem[] = (block.input as any)?.todos || [];
 
@@ -551,7 +561,7 @@ function TodoWriteBlock({ block }: { block: ToolUseContent }) {
           <ListTodo className="w-3.5 h-3.5 text-blue-500" />
         </div>
         <div className="flex-1 text-left">
-          <span className="font-medium text-sm text-text-primary">Task Progress</span>
+          <span className="font-medium text-sm text-text-primary">{t('messageCard.taskProgress')}</span>
           {inProgressItem && (
             <span className="text-xs text-text-muted ml-2">
               — {inProgressItem.activeForm || inProgressItem.content}
@@ -602,6 +612,7 @@ function TodoWriteBlock({ block }: { block: ToolUseContent }) {
 
 // Inline AskUserQuestion component - displayed in message flow
 function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
+  const { t } = useTranslation();
   const { respondToQuestion } = useIPC();
   const { pendingQuestion } = useAppStore();
   const [selections, setSelections] = useState<Record<number, string[]>>({});
@@ -652,7 +663,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
   if (questions.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-surface p-4">
-        <span className="text-text-muted">No questions</span>
+        <span className="text-text-muted">{t('messageCard.noQuestions')}</span>
       </div>
     );
   }
@@ -666,7 +677,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
         </div>
         <div>
           <span className="font-medium text-sm text-text-primary">
-            {isAnswered ? 'Questions answered' : 'Please answer to continue'}
+            {isAnswered ? t('messageCard.questionsAnswered') : t('messageCard.pleaseAnswer')}
           </span>
         </div>
         {isAnswered && (
@@ -751,7 +762,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
             }`}
           >
             <Send className="w-4 h-4" />
-            Submit Answers
+            {t('messageCard.submitAnswers')}
           </button>
         </div>
       )}

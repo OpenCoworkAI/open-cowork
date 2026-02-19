@@ -53,6 +53,21 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
       // No environment variables required
     },
   },
+  'career-tools': {
+    name: 'Career_Tools',
+    type: 'stdio',
+    command: 'node',
+    args: ['{CAREER_TOOLS_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      COEADAPT_API_URL: 'https://api.coeadapt.com',
+      COEADAPT_DEVICE_TOKEN: '', // Injected at runtime from DeviceTokenStore
+    },
+    requiresEnv: [],
+    envDescription: {
+      COEADAPT_API_URL: 'Coeadapt backend API URL',
+      COEADAPT_DEVICE_TOKEN: 'Device token for API authentication (auto-managed)',
+    },
+  },
 };
 
 /**
@@ -64,6 +79,7 @@ class MCPConfigStore {
   constructor() {
     this.store = new Store<{ servers: MCPServerConfig[] }>({
       name: 'mcp-config',
+      projectName: 'open-cowork',
       defaults: {
         servers: [],
       },
@@ -206,6 +222,13 @@ class MCPConfigStore {
   }
 
   /**
+   * Get the path to the Career Tools MCP server file
+   */
+  private getCareerToolsServerPath(): string {
+    return this.getMcpServerPath('career-tools-server.ts');
+  }
+
+  /**
    * Create a server config from a preset
    */
   createFromPreset(presetKey: string, enabled: boolean = false): MCPServerConfig | null {
@@ -228,6 +251,10 @@ class MCPConfigStore {
           // GUI Operate server path
           if (arg === '{GUI_OPERATE_SERVER_PATH}') {
             return this.getGuiOperateServerPath();
+          }
+          // Career Tools server path
+          if (arg === '{CAREER_TOOLS_SERVER_PATH}') {
+            return this.getCareerToolsServerPath();
           }
           return arg;
         }),

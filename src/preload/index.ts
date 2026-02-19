@@ -14,6 +14,8 @@ import type {
   PluginInstallResultV2,
   PluginToggleResult,
   PluginComponentKind,
+  ContainerInfo,
+  CareerBoxConfig,
 } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
@@ -249,6 +251,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('logs.write', level, args),
   },
 
+  // CareerBox (Docker) methods
+  careerbox: {
+    checkDocker: (): Promise<{ available: boolean; version?: string }> =>
+      ipcRenderer.invoke('careerbox.checkDocker'),
+    getStatus: (): Promise<ContainerInfo> =>
+      ipcRenderer.invoke('careerbox.getStatus'),
+    pullImage: (): Promise<void> =>
+      ipcRenderer.invoke('careerbox.pullImage'),
+    createContainer: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('careerbox.createContainer'),
+    startContainer: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('careerbox.startContainer'),
+    stopContainer: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('careerbox.stopContainer'),
+    removeContainer: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('careerbox.removeContainer'),
+    openWorkspace: (): Promise<void> =>
+      ipcRenderer.invoke('careerbox.openWorkspace'),
+    checkHealth: (): Promise<{ healthy: boolean }> =>
+      ipcRenderer.invoke('careerbox.checkHealth'),
+    getConfig: (): Promise<CareerBoxConfig> =>
+      ipcRenderer.invoke('careerbox.getConfig'),
+    saveConfig: (config: Partial<CareerBoxConfig>): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('careerbox.saveConfig', config),
+  },
+
+  // Coeadapt API methods
+  coeadapt: {
+    getConfig: (): Promise<{ clerkPublishableKey: string; coeadaptApiUrl: string; isConnected: boolean }> =>
+      ipcRenderer.invoke('coeadapt.getConfig'),
+    saveConfig: (config: { clerkPublishableKey?: string; coeadaptApiUrl?: string }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('coeadapt.saveConfig', config),
+    deviceToken: {
+      get: (): Promise<{ hasToken: boolean; metadata: { userId: string; expiresAt: string; createdAt: string } | null }> =>
+        ipcRenderer.invoke('coeadapt.deviceToken.get'),
+      generate: (clerkJwt: string): Promise<{ success: boolean; error?: string }> =>
+        ipcRenderer.invoke('coeadapt.deviceToken.generate', clerkJwt),
+      verify: (): Promise<{ valid: boolean; error?: string }> =>
+        ipcRenderer.invoke('coeadapt.deviceToken.verify'),
+      clear: (): Promise<{ success: boolean }> =>
+        ipcRenderer.invoke('coeadapt.deviceToken.clear'),
+      getRaw: (): Promise<string | null> =>
+        ipcRenderer.invoke('coeadapt.deviceToken.getRaw'),
+    },
+  },
+
   // Remote control methods
   remote: {
     getConfig: (): Promise<any> => ipcRenderer.invoke('remote.getConfig'),
@@ -422,6 +470,30 @@ declare global {
         setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
         isEnabled: () => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
         write: (level: 'info' | 'warn' | 'error', ...args: any[]) => Promise<{ success: boolean; error?: string }>;
+      };
+      careerbox: {
+        checkDocker: () => Promise<{ available: boolean; version?: string }>;
+        getStatus: () => Promise<ContainerInfo>;
+        pullImage: () => Promise<void>;
+        createContainer: () => Promise<{ success: boolean; error?: string }>;
+        startContainer: () => Promise<{ success: boolean; error?: string }>;
+        stopContainer: () => Promise<{ success: boolean; error?: string }>;
+        removeContainer: () => Promise<{ success: boolean; error?: string }>;
+        openWorkspace: () => Promise<void>;
+        checkHealth: () => Promise<{ healthy: boolean }>;
+        getConfig: () => Promise<CareerBoxConfig>;
+        saveConfig: (config: Partial<CareerBoxConfig>) => Promise<{ success: boolean }>;
+      };
+      coeadapt: {
+        getConfig: () => Promise<{ clerkPublishableKey: string; coeadaptApiUrl: string; isConnected: boolean }>;
+        saveConfig: (config: { clerkPublishableKey?: string; coeadaptApiUrl?: string }) => Promise<{ success: boolean; error?: string }>;
+        deviceToken: {
+          get: () => Promise<{ hasToken: boolean; metadata: { userId: string; expiresAt: string; createdAt: string } | null }>;
+          generate: (clerkJwt: string) => Promise<{ success: boolean; error?: string }>;
+          verify: () => Promise<{ valid: boolean; error?: string }>;
+          clear: () => Promise<{ success: boolean }>;
+          getRaw: () => Promise<string | null>;
+        };
       };
       remote: {
         getConfig: () => Promise<any>;

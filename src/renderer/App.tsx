@@ -4,20 +4,22 @@ import { useIPC } from './hooks/useIPC';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { WelcomeView } from './components/WelcomeView';
+import { CareerBoxView } from './components/CareerBoxView';
 import { PermissionDialog } from './components/PermissionDialog';
 import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
 import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
+import { CoraChat } from './components/CoraChat';
 import type { AppConfig } from './types';
 
 // Check if running in Electron
 const isElectronEnv = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 function App() {
-  const { 
-    activeSessionId, 
+  const {
+    activeSessionId,
     pendingPermission,
     settings,
     showConfigModal,
@@ -26,6 +28,9 @@ function App() {
     sandboxSetupProgress,
     isSandboxSetupComplete,
     sandboxSyncStatus,
+    activeView,
+    coraChatOpen,
+    setCoraChatOpen,
     setShowConfigModal,
     setIsConfigured,
     setAppConfig,
@@ -93,11 +98,20 @@ function App() {
         
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background">
-          {activeSessionId ? <ChatView /> : <WelcomeView />}
+          {activeView === 'careerbox' ? (
+            <CareerBoxView />
+          ) : activeSessionId ? (
+            <ChatView />
+          ) : (
+            <WelcomeView />
+          )}
         </main>
 
-        {/* Context Panel - only show when in session */}
-        {activeSessionId && <ContextPanel />}
+        {/* Context Panel - only show when in chat session */}
+        {activeView === 'chat' && activeSessionId && <ContextPanel />}
+
+        {/* Cora Chat Panel */}
+        <CoraChat isOpen={coraChatOpen} onClose={() => setCoraChatOpen(false)} />
       </div>
       
       {/* Permission Dialog */}

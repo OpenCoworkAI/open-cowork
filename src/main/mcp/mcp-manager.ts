@@ -383,6 +383,13 @@ export class MCPManager {
   }
 
   /**
+   * Get the path to the Career Tools MCP server file
+   */
+  private getCareerToolsServerPath(): string {
+    return this.getMcpServerPath('career-tools-server.ts');
+  }
+
+  /**
    * Connect to a single MCP server
    */
   private async connectServer(config: MCPServerConfig): Promise<void> {
@@ -428,7 +435,11 @@ export class MCPManager {
         // GUI Operate server path
         if (arg === '{GUI_OPERATE_SERVER_PATH}') {
           return this.getGuiOperateServerPath();
-      }
+        }
+        // Career Tools server path
+        if (arg === '{CAREER_TOOLS_SERVER_PATH}') {
+          return this.getCareerToolsServerPath();
+        }
         return arg;
       });
 
@@ -590,7 +601,7 @@ export class MCPManager {
     // Create MCP client
     const client = new Client(
       {
-        name: 'open-cowork',
+        name: 'coeadapt',
         version: '0.1.0',
       },
       {

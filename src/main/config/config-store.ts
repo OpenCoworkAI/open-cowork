@@ -36,6 +36,10 @@ export interface AppConfig {
   
   // First run flag
   isConfigured: boolean;
+
+  // Coeadapt connection
+  clerkPublishableKey: string;
+  coeadaptApiUrl: string;
 }
 
 const defaultConfig: AppConfig = {
@@ -51,6 +55,8 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
+  clerkPublishableKey: '',
+  coeadaptApiUrl: 'https://api.coeadapt.com',
 };
 
 // Provider presets
@@ -111,14 +117,11 @@ class ConfigStore {
       defaults: defaultConfig,
       // Encrypt the API key for basic security
       encryptionKey: 'open-cowork-config-v1',
+      // Always provide projectName - required by conf package and
+      // Electron detection can fail when bundled by Vite
+      projectName: 'open-cowork',
     };
-    
-    // Add projectName for non-Electron environments (e.g., MCP servers)
-    // This is required by the underlying 'conf' package
-    if (typeof process !== 'undefined' && !process.versions.electron) {
-      storeOptions.projectName = 'open-cowork';
-    }
-    
+
     this.store = new Store<AppConfig>(storeOptions);
   }
 
@@ -139,6 +142,8 @@ class ConfigStore {
       sandboxEnabled: this.store.get('sandboxEnabled'),
       enableThinking: this.store.get('enableThinking'),
       isConfigured: this.store.get('isConfigured'),
+      clerkPublishableKey: this.store.get('clerkPublishableKey'),
+      coeadaptApiUrl: this.store.get('coeadaptApiUrl'),
     };
   }
 

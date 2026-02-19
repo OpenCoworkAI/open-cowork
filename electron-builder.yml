@@ -1,6 +1,6 @@
-appId: com.opencowork.app
-productName: Open Cowork
-copyright: Copyright © 2026 Open Cowork Team
+appId: com.coeadapt.app
+productName: Coeadapt
+copyright: Copyright © 2026 Coeadapt (originally OpenCoworkAI)
 
 directories:
   output: release
@@ -127,4 +127,4 @@ extraMetadata:
 publish:
   provider: github
   owner: your-username
-  repo: open-cowork
+  repo: coeadapt

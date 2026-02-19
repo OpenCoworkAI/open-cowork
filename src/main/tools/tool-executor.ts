@@ -161,7 +161,7 @@ export class ToolExecutor {
     }
 
     const response = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
+      headers: { 'User-Agent': 'coeadapt' },
     });
 
     if (!response.ok) {
@@ -195,7 +195,7 @@ export class ToolExecutor {
     searchUrl.searchParams.set('skip_disambig', '1');
 
     const response = await fetch(searchUrl.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
+      headers: { 'User-Agent': 'coeadapt' },
     });
 
     if (!response.ok) {
