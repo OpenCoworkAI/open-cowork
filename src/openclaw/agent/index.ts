@@ -1,17 +1,17 @@
 /**
- * OpenClaw Agent — The user's career agent
+ * Navi Agent — The user's career navigation agent
  *
- * OpenClaw is the career-focused AI agent baked into the Coeadapt platform.
+ * Navi is the career-focused AI agent baked into the Coeadapt platform.
  * It can also run standalone, giving users a true co-working partner for
  * career development, job search, skill building, and professional growth.
  *
- * The name is a play on "career agent" — OpenClaw grabs opportunities
- * and never lets go.
+ * Navi's signature capability is Skillception — skills for building skills.
+ * It maintains a living skill tree where mastering one skill unlocks the next.
  */
 
 import type { OpenClawConfig, OpenClawSession, AgentCapability } from '../types';
 
-export class OpenClawAgent {
+export class NaviAgent {
   private config: OpenClawConfig;
   private session: OpenClawSession | null = null;
   private capabilities: AgentCapability[] = [];
@@ -24,7 +24,7 @@ export class OpenClawAgent {
    * Initialize the agent, load skills, and connect to the environment.
    */
   async initialize(): Promise<void> {
-    // Load registered skills
+    // Load registered skills (career-dev, platform-connect, skillception)
     await this.loadSkills();
 
     // Connect to career platform if credentials available
@@ -88,7 +88,10 @@ export class OpenClawAgent {
 
   private async loadSkills(): Promise<void> {
     // Skills are loaded from src/openclaw/skills/
-    // Each skill registers its capabilities with the agent
+    // Each skill registers its capabilities with the agent:
+    //   - career-dev: career planning, resume, interview, habits
+    //   - platform-connect: Coeadapt API bridge
+    //   - skillception: skill tree management, prerequisite graph, evidence
   }
 
   private async connectPlatform(): Promise<void> {
@@ -101,11 +104,12 @@ export class OpenClawAgent {
     // - Workspace for documents, resumes, portfolios
     // - Scratch space for drafts and iterations
     // - Artifact store for completed work
+    // - Skill tree data store
   }
 
   private async classifyIntent(message: string): Promise<string> {
     // Classify user intent to route to the right skill
-    // Categories: career-dev, platform, job-search, skill-build, reflect
+    // Categories: career-dev, platform, job-search, skill-build, skill-tree, reflect
     return 'general';
   }
 
@@ -118,4 +122,7 @@ export class OpenClawAgent {
   }
 }
 
-export default OpenClawAgent;
+/** @deprecated Use NaviAgent — kept for backward compatibility */
+export const OpenClawAgent = NaviAgent;
+
+export default NaviAgent;

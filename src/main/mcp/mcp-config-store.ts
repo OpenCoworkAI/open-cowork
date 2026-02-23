@@ -79,6 +79,7 @@ class MCPConfigStore {
   constructor() {
     this.store = new Store<{ servers: MCPServerConfig[] }>({
       name: 'mcp-config',
+      projectName: 'coeadapt',
       defaults: {
         servers: [],
       },

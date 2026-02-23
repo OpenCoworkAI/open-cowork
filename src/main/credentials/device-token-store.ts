@@ -29,13 +29,14 @@ class DeviceTokenStore {
   constructor() {
     this.store = new Store<DeviceTokenData>({
       name: 'coeadapt-device-token',
+      projectName: 'coeadapt',
       defaults: { credentials: null },
     });
     this.encryptionKey = this.getOrCreateKey();
   }
 
   private getOrCreateKey(): Buffer {
-    const keyStore = new Store<{ key: string }>({ name: 'coeadapt-token-key' });
+    const keyStore = new Store<{ key: string }>({ name: 'coeadapt-token-key', projectName: 'coeadapt' });
     let key = keyStore.get('key');
     if (!key) {
       key = crypto.randomBytes(32).toString('hex');

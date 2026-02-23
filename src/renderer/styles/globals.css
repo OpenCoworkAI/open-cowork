@@ -110,12 +110,12 @@
 
   /* Card styles */
   .card {
-    @apply bg-surface/70 backdrop-blur-md rounded-2xl shadow-card;
+    @apply bg-surface backdrop-blur-md rounded-2xl shadow-card;
     border: 1px solid var(--color-card-border);
   }
 
   .card-hover {
-    @apply hover:shadow-elevated hover:-translate-y-0.5 hover:bg-surface/90 cursor-pointer transition-all duration-300 ease-out;
+    @apply hover:shadow-elevated hover:-translate-y-0.5 hover:bg-surface-hover cursor-pointer transition-all duration-300 ease-out;
     &:hover {
       border-color: var(--color-card-border-hover);
     }
@@ -123,7 +123,7 @@
 
   /* Tag/Chip styles */
   .tag {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface/50 backdrop-blur-sm border border-border;
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-muted backdrop-blur-sm border border-border;
     @apply text-sm font-medium text-text-primary;
     @apply hover:bg-surface-hover hover:shadow-md hover:-translate-y-[1px] cursor-pointer transition-all duration-300 ease-out;
     @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-40;
@@ -148,11 +148,13 @@
   }
 
   .badge-completed {
-    @apply bg-success/10 text-success;
+    background-color: rgba(34, 197, 94, 0.1);
+    @apply text-success;
   }
 
   .badge-error {
-    @apply bg-error/10 text-error;
+    background-color: rgba(239, 68, 68, 0.1);
+    @apply text-error;
   }
 
   /* Section header */
@@ -174,7 +176,8 @@
   }
 
   .progress-circle-completed {
-    @apply border-success bg-success/10;
+    @apply border-success;
+    background-color: rgba(34, 197, 94, 0.1);
   }
 }
 
@@ -199,7 +202,7 @@
 
   /* Message bubbles */
   .message-user {
-    @apply bg-surface/80 backdrop-blur-sm rounded-2xl;
+    @apply bg-surface backdrop-blur-sm rounded-2xl;
     border: 1px solid var(--color-card-border);
     width: fit-content;
     margin-left: auto;

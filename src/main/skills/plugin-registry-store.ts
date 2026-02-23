@@ -15,6 +15,7 @@ class PluginRegistryStore {
     const storeCwd = this.resolveStoreCwd();
     this.store = new Store<PluginRegistrySchema>({
       name: 'plugin-registry',
+      projectName: 'coeadapt',
       cwd: storeCwd,
       defaults: {
         plugins: [],

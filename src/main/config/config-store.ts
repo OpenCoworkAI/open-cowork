@@ -119,7 +119,7 @@ class ConfigStore {
       encryptionKey: 'open-cowork-config-v1',
       // Always provide projectName - required by conf package and
       // Electron detection can fail when bundled by Vite
-      projectName: 'open-cowork',
+      projectName: 'coeadapt',
     };
 
     this.store = new Store<AppConfig>(storeOptions);

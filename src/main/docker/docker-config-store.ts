@@ -12,6 +12,7 @@ const DEFAULT_CONFIG: CareerBoxConfig = {
 
 const store = new Store<{ careerbox: CareerBoxConfig }>({
   name: 'careerbox-config',
+  projectName: 'coeadapt',
   defaults: {
     careerbox: DEFAULT_CONFIG,
   },

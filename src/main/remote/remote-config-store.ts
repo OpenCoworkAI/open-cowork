@@ -22,6 +22,7 @@ class RemoteConfigStore {
   constructor() {
     this.store = new Store<RemoteConfig & { pairedUsers: PairedUser[] }>({
       name: 'remote-config',
+      projectName: 'coeadapt',
       defaults: {
         ...DEFAULT_REMOTE_CONFIG,
         pairedUsers: [],

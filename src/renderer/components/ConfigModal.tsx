@@ -307,7 +307,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-hover flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#4433CC] to-[#3b82f6] flex items-center justify-center">
               <Key className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -340,9 +340,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 <button
                   key={p}
                   onClick={() => setProvider(p)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
                     provider === p
-                      ? 'bg-accent text-white'
+                      ? 'bg-accent text-white shadow-md'
                       : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                   }`}
                 >
@@ -385,9 +385,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                   <button
                     key={mode.id}
                     onClick={() => setCustomProtocol(mode.id)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    className={`px-3 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
                       customProtocol === mode.id
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-white shadow-md'
                         : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
                     }`}
                   >

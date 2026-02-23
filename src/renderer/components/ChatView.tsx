@@ -467,7 +467,7 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3 rounded-3xl bg-surface transition-colors border ${
+              className={`flex items-end gap-2 p-2 rounded-full bg-surface/70 backdrop-blur-md transition-all duration-300 border ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
               style={{ borderColor: 'var(--color-card-border)' }}
@@ -475,7 +475,7 @@ export function ChatView() {
               <button
                 type="button"
                 onClick={handleFileSelect}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
                 title={t('welcome.attachFiles')}
                 aria-label={t('welcome.attachFiles')}
               >
@@ -523,7 +523,7 @@ export function ChatView() {
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
+                    className="w-8 h-8 rounded-full flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
                     aria-label={t('chat.stop')}
                   >
                     <Square className="w-4 h-4" />
@@ -532,7 +532,7 @@ export function ChatView() {
                   <button
                     type="submit"
                   disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
+                    className="w-8 h-8 rounded-full flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30"
                     aria-label={t('chat.send')}
                   >
                     <Send className="w-4 h-4" />

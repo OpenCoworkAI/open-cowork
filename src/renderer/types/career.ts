@@ -70,6 +70,49 @@ export interface MarketInsightData {
   context?: string;
 }
 
+// ─── Skillception Card Types ─────────────────────────────────────────────────
+
+export interface SkillTreeData {
+  title: string;
+  nodes: Array<{
+    id: string;
+    name: string;
+    level: number; // 0–100
+    category: string;
+    status: 'locked' | 'aware' | 'beginner' | 'practitioner' | 'proficient' | 'advanced' | 'master';
+    prerequisites?: string[];
+    unlocks?: string[];
+    blockedBy?: string;
+  }>;
+  unlocksSoon?: string[];
+  suggestion?: string;
+}
+
+export interface SkillUnlockData {
+  skill: string;
+  unlockedBy: string;
+  nowAvailable?: string[];
+  suggestedFirstStep?: string;
+}
+
+export interface SkillProgressData {
+  skill: string;
+  level: number;
+  threshold?: number;
+  pointsToUnlock?: number;
+  evidence?: Array<{ title: string; type: string; points: number }>;
+  nextActivities?: Array<{ title: string; type: string; points: number; minutes: number }>;
+}
+
+export interface SkillReadinessData {
+  targetRole: string;
+  score: number; // 0–100
+  ready?: string[];
+  inProgress?: string[];
+  blocked?: Array<{ skill: string; blockedBy: string }>;
+  topPriority?: string;
+}
+
 export type CareerCardType =
   | 'goal-progress'
   | 'skill-gap'
@@ -78,4 +121,8 @@ export type CareerCardType =
   | 'weekly-reflection'
   | 'habit-tracker'
   | 'learning-resource'
-  | 'market-insight';
+  | 'market-insight'
+  | 'skill-tree'
+  | 'skill-unlock'
+  | 'skill-progress'
+  | 'skill-readiness';

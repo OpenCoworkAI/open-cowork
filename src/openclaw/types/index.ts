@@ -156,4 +156,107 @@ export type ArtifactType =
   | 'skill-assessment'
   | 'market-report'
   | 'reflection'
-  | 'notes';
+  | 'notes'
+  | 'skill-tree';
+
+// ─── Skillception Types ──────────────────────────────────────────────────────
+// "Skills for building skills" — a directed graph where skills unlock skills.
+
+/** A single node in the skill tree. */
+export interface SkillNode {
+  id: string;
+  name: string;
+  description: string;
+
+  /** Skill category for grouping in the UI */
+  category: SkillCategory;
+
+  /** Current proficiency: 0 = not started, 100 = mastered */
+  level: number;
+
+  /** IDs of skills that must reach their threshold before this one unlocks */
+  prerequisites: Prerequisite[];
+
+  /** Evidence of skill acquisition — completed tasks, projects, certs */
+  evidence: SkillEvidence[];
+
+  /** Whether this skill is verified (by platform, cert, or peer review) */
+  verified: boolean;
+
+  /** Skills this node unlocks once its own threshold is met */
+  unlocks: string[];
+
+  /** Minimum level required to count as "met" when this is a prerequisite */
+  threshold: number;
+
+  /** Suggested activities to build this skill */
+  activities: SkillActivity[];
+
+  /** Timestamps */
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Edge in the prerequisite graph */
+export interface Prerequisite {
+  skillId: string;
+  /** Minimum level the prerequisite must reach */
+  minLevel: number;
+}
+
+/** Proof of learning */
+export interface SkillEvidence {
+  id: string;
+  type: 'task-completion' | 'project' | 'certification' | 'peer-review' | 'self-assessment' | 'artifact';
+  title: string;
+  description?: string;
+  url?: string;
+  /** Points contributed toward skill level */
+  points: number;
+  verifiedBy?: string;
+  createdAt: number;
+}
+
+/** Concrete activity that builds a skill */
+export interface SkillActivity {
+  id: string;
+  title: string;
+  type: 'learn' | 'practice' | 'build' | 'teach' | 'assess';
+  /** Estimated time in minutes */
+  estimatedMinutes: number;
+  /** Points earned upon completion */
+  points: number;
+  /** External resource URL */
+  url?: string;
+  completed: boolean;
+  completedAt?: number;
+}
+
+export type SkillCategory =
+  | 'technical'
+  | 'communication'
+  | 'leadership'
+  | 'problem-solving'
+  | 'domain'
+  | 'meta'          // skills about learning/growing
+  | 'execution'     // getting things done
+  | 'collaboration';
+
+/** The full skill tree for a user — a graph of SkillNodes */
+export interface SkillTree {
+  userId: string;
+  nodes: SkillNode[];
+  /** Snapshot metadata */
+  lastSynced?: number;
+  version: number;
+}
+
+/** Computed view of a user's readiness for a target role */
+export interface SkillReadiness {
+  targetRole: string;
+  overallScore: number;
+  ready: SkillNode[];
+  inProgress: SkillNode[];
+  blocked: Array<SkillNode & { blockedBy: Prerequisite[] }>;
+  suggested: SkillActivity[];
+}

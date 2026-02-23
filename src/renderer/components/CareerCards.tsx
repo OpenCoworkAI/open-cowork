@@ -18,6 +18,11 @@ import {
   Lightbulb,
   ArrowRight,
   Flame,
+  Lock,
+  Unlock,
+  Zap,
+  GitBranch,
+  Gauge,
 } from 'lucide-react';
 import type {
   GoalProgressData,
@@ -28,6 +33,10 @@ import type {
   HabitTrackerData,
   LearningResourceData,
   MarketInsightData,
+  SkillTreeData,
+  SkillUnlockData,
+  SkillProgressData,
+  SkillReadinessData,
 } from '../types/career';
 
 // ─── Career Card Renderer ────────────────────────────────────────────
@@ -128,6 +137,15 @@ function CareerCard({ type, data }: { type: string; data: unknown }) {
       return <LearningResourceCard data={data as LearningResourceData} />;
     case 'market-insight':
       return <MarketInsightCard data={data as MarketInsightData} />;
+    // ─── Skillception Cards ──────────────────────────────────────────
+    case 'skill-tree':
+      return <SkillTreeCard data={data as SkillTreeData} />;
+    case 'skill-unlock':
+      return <SkillUnlockCard data={data as SkillUnlockData} />;
+    case 'skill-progress':
+      return <SkillProgressCard data={data as SkillProgressData} />;
+    case 'skill-readiness':
+      return <SkillReadinessCard data={data as SkillReadinessData} />;
     default:
       return (
         <div className="card p-3 text-xs text-text-muted">
@@ -614,6 +632,277 @@ function MarketInsightCard({ data }: { data: MarketInsightData }) {
 
       {data.context && (
         <p className="text-xs text-text-secondary leading-relaxed">{data.context}</p>
+      )}
+    </div>
+  );
+}
+
+// ─── 9. Skill Tree Card (Skillception) ──────────────────────────────
+
+const STATUS_COLORS: Record<string, { bg: string; text: string; icon: typeof CheckCircle2 }> = {
+  master:       { bg: 'bg-amber-500/10', text: 'text-amber-500', icon: Star },
+  advanced:     { bg: 'bg-purple-500/10', text: 'text-purple-500', icon: Zap },
+  proficient:   { bg: 'bg-success/10',    text: 'text-success',    icon: CheckCircle2 },
+  practitioner: { bg: 'bg-blue-500/10',   text: 'text-blue-500',   icon: Target },
+  beginner:     { bg: 'bg-cyan-500/10',   text: 'text-cyan-500',   icon: BookOpen },
+  aware:        { bg: 'bg-surface-muted',  text: 'text-text-muted', icon: Lightbulb },
+  locked:       { bg: 'bg-surface-muted',  text: 'text-text-muted', icon: Lock },
+};
+
+function SkillTreeCard({ data }: { data: SkillTreeData }) {
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
+          <GitBranch className="w-4 h-4 text-violet-500" />
+        </div>
+        <span className="text-sm font-semibold text-text-primary">{data.title}</span>
+      </div>
+
+      {/* Skill nodes */}
+      <div className="space-y-2">
+        {data.nodes.map((node) => {
+          const style = STATUS_COLORS[node.status] || STATUS_COLORS.locked;
+          const Icon = style.icon;
+          return (
+            <div key={node.id} className="flex items-center gap-3">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${style.bg}`}>
+                <Icon className={`w-3.5 h-3.5 ${style.text}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-medium ${node.status === 'locked' ? 'text-text-muted' : 'text-text-primary'}`}>
+                    {node.name}
+                  </span>
+                  <span className="text-[10px] text-text-muted">{node.level}/100</span>
+                </div>
+                {/* Level bar */}
+                <div className="h-1.5 bg-surface-muted rounded-full overflow-hidden mt-1">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${node.status === 'locked' ? 'bg-border' : 'bg-accent'}`}
+                    style={{ width: `${Math.min(node.level, 100)}%` }}
+                  />
+                </div>
+                {node.blockedBy && (
+                  <p className="text-[10px] text-text-muted mt-0.5 flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5" /> {node.blockedBy}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Unlock hints */}
+      {data.unlocksSoon && data.unlocksSoon.length > 0 && (
+        <div className="pt-2 border-t border-border">
+          <p className="text-[10px] text-text-muted mb-1">Almost unlocked:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.unlocksSoon.map((name, i) => (
+              <span key={i} className="tag text-[10px] py-0.5 px-2 rounded-lg">
+                <Unlock className="w-2.5 h-2.5 mr-1 inline" />{name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.suggestion && (
+        <div className="flex items-start gap-2 pt-2 border-t border-border">
+          <Lightbulb className="w-3.5 h-3.5 text-accent mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-text-secondary">{data.suggestion}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 10. Skill Unlock Card (Skillception) ───────────────────────────
+
+function SkillUnlockCard({ data }: { data: SkillUnlockData }) {
+  return (
+    <div className="card p-4 space-y-3 border-accent/30">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
+          <Unlock className="w-5 h-5 text-accent" />
+        </div>
+        <div>
+          <span className="text-sm font-bold text-accent">Skill Unlocked!</span>
+          <p className="text-xs text-text-primary font-semibold">{data.skill}</p>
+        </div>
+      </div>
+
+      <p className="text-xs text-text-secondary">
+        <CheckCircle2 className="w-3 h-3 text-success inline mr-1" />
+        {data.unlockedBy}
+      </p>
+
+      {data.nowAvailable && data.nowAvailable.length > 0 && (
+        <div>
+          <p className="text-[10px] text-text-muted mb-1">Now available to learn:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.nowAvailable.map((name, i) => (
+              <span key={i} className="tag text-[10px] py-0.5 px-2 rounded-lg">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.suggestedFirstStep && (
+        <div className="flex items-start gap-2 pt-2 border-t border-border">
+          <ArrowRight className="w-3.5 h-3.5 text-accent mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-text-secondary">{data.suggestedFirstStep}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 11. Skill Progress Card (Skillception) ─────────────────────────
+
+function SkillProgressCard({ data }: { data: SkillProgressData }) {
+  const progress = Math.min(Math.max(data.level || 0, 0), 100);
+  const threshold = data.threshold ?? 60;
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+            <Zap className="w-4 h-4 text-cyan-500" />
+          </div>
+          <span className="text-sm font-semibold text-text-primary">{data.skill}</span>
+        </div>
+        {data.pointsToUnlock != null && data.pointsToUnlock > 0 && (
+          <span className="badge badge-running">{data.pointsToUnlock} pts to unlock</span>
+        )}
+      </div>
+
+      {/* Progress bar with threshold marker */}
+      <div className="space-y-1">
+        <div className="relative h-2.5 bg-surface-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-cyan-500 rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+          {/* Threshold marker */}
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-text-muted"
+            style={{ left: `${threshold}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] text-text-muted">
+          <span>Level {progress}</span>
+          <span>Threshold: {threshold}</span>
+        </div>
+      </div>
+
+      {/* Evidence */}
+      {data.evidence && data.evidence.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Evidence</p>
+          {data.evidence.map((ev, i) => (
+            <div key={i} className="flex items-center justify-between text-xs">
+              <span className="text-text-secondary">{ev.title}</span>
+              <span className="text-accent font-medium">+{ev.points}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Next activities */}
+      {data.nextActivities && data.nextActivities.length > 0 && (
+        <div className="pt-2 border-t border-border space-y-1.5">
+          <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Next Steps</p>
+          {data.nextActivities.map((act, i) => (
+            <div key={i} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="badge badge-idle">{act.type}</span>
+                <span className="text-text-primary">{act.title}</span>
+              </div>
+              <div className="flex items-center gap-2 text-text-muted">
+                <span>{act.minutes}m</span>
+                <span className="text-accent font-medium">+{act.points}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 12. Skill Readiness Card (Skillception) ────────────────────────
+
+function SkillReadinessCard({ data }: { data: SkillReadinessData }) {
+  const score = Math.min(Math.max(data.score || 0, 0), 100);
+  const scoreColor = score >= 80 ? 'text-success' : score >= 50 ? 'text-warning' : 'text-error';
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <Gauge className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div>
+            <span className="text-sm font-semibold text-text-primary">Readiness</span>
+            <p className="text-xs text-text-muted">{data.targetRole}</p>
+          </div>
+        </div>
+        <span className={`text-2xl font-bold ${scoreColor}`}>{score}%</span>
+      </div>
+
+      {/* Ready skills */}
+      {data.ready && data.ready.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium text-success mb-1">Ready</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.ready.map((name, i) => (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success">
+                <CheckCircle2 className="w-2.5 h-2.5" />{name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* In progress */}
+      {data.inProgress && data.inProgress.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium text-accent mb-1">In Progress</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.inProgress.map((name, i) => (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent-muted text-accent">
+                <Target className="w-2.5 h-2.5" />{name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Blocked */}
+      {data.blocked && data.blocked.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium text-error mb-1">Blocked</p>
+          {data.blocked.map((item, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs text-text-secondary">
+              <Lock className="w-3 h-3 text-error flex-shrink-0" />
+              <span>{item.skill}</span>
+              <span className="text-[10px] text-text-muted">— {item.blockedBy}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.topPriority && (
+        <div className="flex items-start gap-2 pt-2 border-t border-border">
+          <Lightbulb className="w-3.5 h-3.5 text-accent mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-text-secondary">{data.topPriority}</p>
+        </div>
       )}
     </div>
   );

@@ -10,7 +10,12 @@ export default defineConfig({
       {
         entry: 'src/main/index.ts',
         onstart(args) {
-          args.startup();
+          // Remove ELECTRON_RUN_AS_NODE so Electron starts as a real
+          // Electron app instead of plain Node.js (the var may be
+          // inherited from VSCode / Claude Code shells).
+          const env = { ...process.env };
+          delete env.ELECTRON_RUN_AS_NODE;
+          args.startup(['.', '--no-sandbox'], { env });
         },
         vite: {
           build: {

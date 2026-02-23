@@ -203,22 +203,185 @@ export function WelcomeView() {
   ];
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8 bg-grid">
+    <div className="flex-1 flex items-center justify-center p-8">
       <div className="max-w-2xl w-full space-y-8 animate-fade-in relative z-10">
-        
-        {/* Brand Banner */}
-        <div className="flex flex-col items-center justify-center text-center space-y-4 mb-4">
-          <img 
-            src={CoeadaptLogo} 
-            alt="Coeadapt" 
-            className="h-14 w-auto object-contain drop-shadow-lg transition-transform hover:scale-105 duration-300 dark:brightness-0 dark:invert"
+
+        {/* Hero Heading */}
+        <div className="flex flex-col items-center justify-center text-center space-y-3">
+          <img
+            src={CoeadaptLogo}
+            alt="Coeadapt"
+            className="h-10 w-auto object-contain drop-shadow-sm transition-transform hover:scale-105 duration-300 dark:brightness-0 dark:invert"
           />
-          <p className="text-text-muted text-sm max-w-md">
-            {t('career.careerDev')}
-          </p>
+          <h1 className="text-3xl font-semibold text-text-primary tracking-tight">
+            {t('welcome.title')}
+          </h1>
         </div>
 
-        {/* Career Category Pills */}
+        {/* Main Input — Pill Shape */}
+        <form
+          onSubmit={handleSubmit}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`space-y-3 transition-all duration-300 ${
+            isDragging ? 'ring-2 ring-accent rounded-2xl' : ''
+          }`}
+        >
+          {/* Image previews */}
+          {pastedImages.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 px-4">
+              {pastedImages.map((img, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={img.url}
+                    alt={`Pasted ${index + 1}`}
+                    className="w-full aspect-square object-cover rounded-lg border border-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* File attachments */}
+          {attachedFiles.length > 0 && (
+            <div className="space-y-2 px-4">
+              {attachedFiles.map((file, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary truncate">{file.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    className="w-6 h-6 rounded-full bg-error/10 hover:bg-error/20 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pill Input Container */}
+          <div
+            className="flex items-end gap-2 p-2 rounded-full bg-surface/70 backdrop-blur-md border transition-all duration-300"
+            style={{ borderColor: 'var(--color-card-border)' }}
+          >
+            {/* Folder + Attach buttons */}
+            <button
+              type="button"
+              onClick={handleSelectFolder}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                workingDir
+                  ? 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                  : 'text-accent hover:bg-accent-muted'
+              }`}
+              title={workingDir || t('welcome.selectWorkingFolder')}
+            >
+              <FolderOpen className="w-4 h-4" />
+            </button>
+
+            {isElectron && (
+              <button
+                type="button"
+                onClick={handleFileSelect}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                title={t('welcome.attachFiles')}
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                adjustTextareaHeight();
+              }}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
+              onPaste={handlePaste}
+              placeholder={t('chat.typeMessage')}
+              rows={1}
+              style={{ minHeight: '40px', maxHeight: '200px' }}
+              className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-2 overflow-hidden"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
+                    return;
+                  }
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+            />
+
+            {/* Send button */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-all duration-300"
+            >
+              {isSubmitting ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          {/* Workspace indicator */}
+          {workingDir && (
+            <p className="text-xs text-text-muted text-center">
+              {workingDir.split(/[/\\]/).pop()}
+            </p>
+          )}
+        </form>
+
+        {/* Quick Action Tags — below input */}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {quickTags.map((tag) => (
+            <button
+              key={tag.id}
+              onClick={() => handleTagClick(tag.id, tag.prompt)}
+              className={`tag text-xs ${selectedTag === tag.id ? 'tag-active' : ''} ${
+                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
+              }`}
+            >
+              <tag.icon className={`w-3.5 h-3.5 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
+              <span>{tag.label}</span>
+              {'requiresChrome' in tag && tag.requiresChrome && (
+                <span className="flex items-center gap-1 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-accent/10 text-accent border border-accent/20">
+                  <Chrome className="w-3 h-3" />
+                </span>
+              )}
+              {'requiresNotion' in tag && tag.requiresNotion && (
+                <span className="flex items-center gap-1 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-surface-muted text-text-muted border border-border">
+                  <span className="text-xs">N</span>
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Career Category Pills — compact row below */}
         <div className="flex items-center justify-center gap-2">
           {careerCategories.map((cat) => (
             <button
@@ -252,160 +415,6 @@ export function WelcomeView() {
               ))}
           </div>
         )}
-
-        {/* Quick Action Tags */}
-        <div className="flex flex-wrap gap-2 justify-center">
-          {quickTags.map((tag) => (
-            <button
-              key={tag.id}
-              onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`tag ${selectedTag === tag.id ? 'tag-active' : ''} ${
-                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
-              }`}
-            >
-              <tag.icon className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
-              <span>{tag.label}</span>
-              {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                  <Chrome className="w-3 h-3" />
-                  <span>{t('welcome.chromeRequired')}</span>
-                </span>
-              )}
-              {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800/10 text-gray-700 border border-gray-800/20">
-                  <span className="text-sm">📝</span>
-                  <span>{t('welcome.notionRequired')}</span>
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Main Input Card - Right aligned */}
-        <form
-          onSubmit={handleSubmit}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={`card p-4 space-y-4 transition-colors ${
-            isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
-          }`}
-        >
-          {/* Image previews */}
-          {pastedImages.length > 0 && (
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pb-2 border-b border-border w-full">
-              {pastedImages.map((img, index) => (
-                <div key={index} className="relative group">
-                  <img
-                    src={img.url}
-                    alt={`Pasted ${index + 1}`}
-                    className="w-full aspect-square object-cover rounded-lg border border-border"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* File attachments */}
-          {attachedFiles.length > 0 && (
-            <div className="space-y-2 mb-3">
-              {attachedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary truncate">{file.name}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeFile(index)}
-                    className="w-6 h-6 rounded-full bg-error/10 hover:bg-error/20 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Text Input - Auto-resizing */}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              adjustTextareaHeight();
-            }}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-            }}
-            onPaste={handlePaste}
-            placeholder={t('welcome.title')}
-            rows={1}
-            style={{ minHeight: '72px', maxHeight: '200px' }}
-            className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
-            onKeyDown={(e) => {
-              // Enter to send, Shift+Enter for new line
-              if (e.key === 'Enter' && !e.shiftKey) {
-                if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
-                  return;
-                }
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-          />
-
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleSelectFolder}
-                className={`flex items-center gap-2 text-sm transition-colors ${
-                  workingDir
-                    ? 'text-text-secondary hover:text-text-primary'
-                    : 'text-accent hover:text-accent-hover'
-                }`}
-                title={workingDir || t('welcome.selectWorkingFolder')}
-              >
-                <FolderOpen className="w-4 h-4" />
-                <span>{workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}</span>
-              </button>
-
-              {isElectron && (
-                <button
-                  type="button"
-                  onClick={handleFileSelect}
-                  className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  <Paperclip className="w-4 h-4" />
-                  <span>{t('welcome.attachFiles')}</span>
-                </button>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn btn-primary px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
