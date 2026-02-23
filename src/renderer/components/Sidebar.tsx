@@ -228,8 +228,13 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* CareerBox + New Task Buttons */}
+      {/* Main Navigation */}
       <div className="p-3 space-y-1">
+        {!sidebarCollapsed && (
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            Navigation
+          </p>
+        )}
         <button
           onClick={() => setActiveView('careerbox')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
@@ -274,16 +279,20 @@ export function Sidebar() {
 
         <button
           onClick={handleNewSession}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors ${
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
             sidebarCollapsed ? 'justify-center' : ''
-          }`}
+          } ${activeView === 'chat' && !activeSessionId ? 'bg-accent-muted text-accent' : 'hover:bg-surface-hover'}`}
           title={t('sidebar.newTask')}
         >
-          <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            activeView === 'chat' && !activeSessionId ? 'bg-accent/20' : 'bg-accent-muted'
+          }`}>
             <Sparkles className="w-4 h-4 text-accent" />
           </div>
           {!sidebarCollapsed && (
-            <span className="font-medium text-text-primary">{t('sidebar.newTask')}</span>
+            <span className={`font-medium ${activeView === 'chat' && !activeSessionId ? 'text-accent' : 'text-text-primary'}`}>
+              {t('sidebar.newTask')}
+            </span>
           )}
         </button>
       </div>
