@@ -41,6 +41,7 @@ export function Sidebar() {
     setActiveView,
     coraChatOpen,
     setCoraChatOpen,
+    activeCoworkVM,
   } = useAppStore();
   const { deleteSession, getSessionMessages, getSessionTraceSteps, isElectron } = useIPC();
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -275,6 +276,32 @@ export function Sidebar() {
           </div>
           {!sidebarCollapsed && (
             <span className={`font-medium ${activeView === 'vm' ? 'text-accent' : 'text-text-primary'}`}>Virtual Machines</span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveView('cowork-desktop')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+            sidebarCollapsed ? 'justify-center' : ''
+          } ${
+            activeView === 'cowork-desktop'
+              ? 'bg-accent-muted text-accent'
+              : 'hover:bg-surface-hover text-text-secondary'
+          }`}
+          title="Cowork Desktop"
+        >
+          <div className="relative">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              activeView === 'cowork-desktop' ? 'bg-accent/20' : 'bg-surface-hover'
+            }`}>
+              <Monitor className={`w-4 h-4 ${activeView === 'cowork-desktop' ? 'text-accent' : 'text-text-secondary'}`} />
+            </div>
+            {activeCoworkVM && (
+              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-surface" />
+            )}
+          </div>
+          {!sidebarCollapsed && (
+            <span className={`font-medium ${activeView === 'cowork-desktop' ? 'text-accent' : 'text-text-primary'}`}>Cowork Desktop</span>
           )}
         </button>
 

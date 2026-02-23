@@ -37,7 +37,11 @@ import type {
   SkillUnlockData,
   SkillProgressData,
   SkillReadinessData,
+  VMStatusCardData,
+  VMProvisionCardData,
+  VMSuggestionCardData,
 } from '../types/career';
+import { VMStatusCard, VMProvisionCard, VMSuggestionCard } from './VMCards';
 
 // ─── Career Card Renderer ────────────────────────────────────────────
 // Splits assistant text on ```json:card-type blocks and renders rich cards
@@ -146,6 +150,13 @@ function CareerCard({ type, data }: { type: string; data: unknown }) {
       return <SkillProgressCard data={data as SkillProgressData} />;
     case 'skill-readiness':
       return <SkillReadinessCard data={data as SkillReadinessData} />;
+    // ─── VM Cowork Desktop Cards ───────────────────────────────────────
+    case 'vm-status':
+      return <VMStatusCard data={data as VMStatusCardData} />;
+    case 'vm-provision':
+      return <VMProvisionCard data={data as VMProvisionCardData} />;
+    case 'vm-suggestion':
+      return <VMSuggestionCard data={data as VMSuggestionCardData} />;
     default:
       return (
         <div className="card p-3 text-xs text-text-muted">

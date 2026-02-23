@@ -37,6 +37,8 @@ import { dockerConfigStore } from './docker/docker-config-store';
 import type { CareerBoxConfig } from './docker/types';
 import { deviceTokenStore } from './credentials/device-token-store';
 import { vmManager } from './vm/vm-manager';
+import { getVMBootstrap } from './vm/vm-bootstrap';
+import { getVMHealthMonitor } from './vm/vm-health-monitor';
 import type { VMResourceConfig } from './vm/types';
 
 // Current working directory (persisted between sessions)
@@ -180,6 +182,9 @@ function createWindow() {
 
     // Start sandbox bootstrap after window is loaded
     startSandboxBootstrap();
+
+    // Start VM bootstrap (first-run detection + auto-start)
+    startVMBootstrap();
   });
 }
 
@@ -285,7 +290,54 @@ async function startSandboxBootstrap(): Promise<void> {
   }
 }
 
-// 
+/**
+ * Start VM bootstrap in the background
+ * Detects VirtualBox, checks for existing VMs, and auto-opens the wizard on first run
+ */
+async function startVMBootstrap(): Promise<void> {
+  const bootstrap = getVMBootstrap();
+
+  if (bootstrap.isComplete()) {
+    log('[App] VM bootstrap already complete');
+    return;
+  }
+
+  bootstrap.setProgressCallback((progress) => {
+    sendToRenderer({
+      type: 'vm.bootstrapProgress' as any,
+      payload: progress,
+    });
+  });
+
+  log('[App] Starting VM bootstrap...');
+  try {
+    const result = await bootstrap.bootstrap();
+    log('[App] VM bootstrap complete, provisioned:', result.provisioned);
+
+    // Start health monitor if any VMs exist
+    if (result.provisioned || vmManager.getAllVMConfigs().length > 0) {
+      startVMHealthMonitor();
+    }
+  } catch (error) {
+    logError('[App] VM bootstrap error:', error);
+  }
+}
+
+/**
+ * Start VM health monitor in the background
+ */
+function startVMHealthMonitor(): void {
+  const monitor = getVMHealthMonitor();
+  monitor.start((event) => {
+    sendToRenderer({
+      type: 'vm.healthEvent' as any,
+      payload: event,
+    });
+  });
+  log('[App] VM health monitor started');
+}
+
+//
 function sendToRenderer(event: ServerEvent) {
   const payload = event.payload as { sessionId?: string; [key: string]: any };
   const sessionId = payload?.sessionId;
@@ -488,6 +540,15 @@ async function cleanupSandboxResources(): Promise<void> {
     log('[App] Remote control stopped');
   } catch (error) {
     logError('[App] Error stopping remote control:', error);
+  }
+
+  // Stop VM health monitor
+  try {
+    log('[App] Stopping VM health monitor...');
+    getVMHealthMonitor().stop();
+    log('[App] VM health monitor stopped');
+  } catch (error) {
+    logError('[App] Error stopping VM health monitor:', error);
   }
 
   // Shutdown VMs gracefully
@@ -1806,6 +1867,37 @@ ipcMain.handle('vm.executeComputerUse', async (_event, vmId: string, action: unk
   } catch (error) {
     logError('[VM] Error executing computer use:', error);
     return { type: 'error', error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// ── VM Health Monitor + Bootstrap IPC ────────────────────────────────────────
+
+ipcMain.handle('vm.getHealthSummary', () => {
+  try {
+    return getVMHealthMonitor().getHealthSummary();
+  } catch (error) {
+    logError('[VM] Error getting health summary:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('vm.setAutoRestart', (_event, vmId: string, enabled: boolean) => {
+  try {
+    getVMHealthMonitor().setAutoRestart(vmId, enabled);
+    return { success: true };
+  } catch (error) {
+    logError('[VM] Error setting auto-restart:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('vm.notifyBootstrapCreated', (_event, vmId: string) => {
+  try {
+    getVMBootstrap().notifyVMCreated(vmId);
+    return { success: true };
+  } catch (error) {
+    logError('[VM] Error notifying bootstrap:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
 

@@ -431,6 +431,18 @@ export class VMManager {
     return this.computerUseEnabledSet.has(vmId);
   }
 
+  /** Synchronously get VMs that have active VNC sessions (running in cowork mode) */
+  getActiveCoworkVMs(): Array<{ id: string; name: string; state: string }> {
+    const results: Array<{ id: string; name: string; state: string }> = [];
+    for (const [vmId, proxy] of this.vncProxies.entries()) {
+      if (!proxy.isRunning()) continue;
+      const config = vmConfigStore.getVM(vmId);
+      const state = this.lastKnownStates.get(vmId) || 'running';
+      results.push({ id: vmId, name: config?.name || vmId, state });
+    }
+    return results;
+  }
+
   getComputerUseAdapter(vmId: string): ComputerUseAdapter | null {
     if (!this.computerUseEnabledSet.has(vmId)) return null;
     return this.computerUseAdapters.get(vmId) ?? null;

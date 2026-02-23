@@ -132,6 +132,16 @@ export function useIPC() {
           store.setVmImageDownloadProgress(event.payload);
           break;
 
+        case 'vm.bootstrapProgress':
+          console.log('[useIPC] vm.bootstrapProgress:', event.payload.phase);
+          store.setVmBootstrapProgress(event.payload);
+          break;
+
+        case 'vm.healthEvent':
+          console.log('[useIPC] vm.healthEvent:', event.payload.type, event.payload.vmName);
+          store.handleVmHealthEvent(event.payload);
+          break;
+
         case 'workdir.changed':
           console.log('[useIPC] workdir.changed received:', event.payload.path);
           store.setWorkingDir(event.payload.path || null);

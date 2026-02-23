@@ -81,6 +81,21 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
       NAVI_SKILL_TREE_PATH: 'Path to the skill tree JSON file (auto-managed)',
     },
   },
+  'vm-management': {
+    name: 'VM_Management',
+    type: 'stdio',
+    command: 'node',
+    args: ['{VM_MANAGEMENT_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      VBOXMANAGE_PATH: '', // Injected at runtime from backend detection
+      VM_CONFIG_PATH: '',  // Injected at runtime (electron-store path)
+    },
+    requiresEnv: [],
+    envDescription: {
+      VBOXMANAGE_PATH: 'Path to VBoxManage CLI (auto-detected)',
+      VM_CONFIG_PATH: 'Path to VM configuration store (auto-managed)',
+    },
+  },
 };
 
 /**
@@ -249,6 +264,13 @@ class MCPConfigStore {
   }
 
   /**
+   * Get the path to the VM Management MCP server file
+   */
+  private getVMManagementServerPath(): string {
+    return this.getMcpServerPath('vm-management-server.ts');
+  }
+
+  /**
    * Create a server config from a preset
    */
   createFromPreset(presetKey: string, enabled: boolean = false): MCPServerConfig | null {
@@ -279,6 +301,10 @@ class MCPConfigStore {
           // Skillception server path
           if (arg === '{SKILLCEPTION_SERVER_PATH}') {
             return this.getSkillceptionServerPath();
+          }
+          // VM Management server path
+          if (arg === '{VM_MANAGEMENT_SERVER_PATH}') {
+            return this.getVMManagementServerPath();
           }
           return arg;
         }),

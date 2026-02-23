@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, ContainerInfo, PullProgress, VMStatus, ImageDownloadProgress, BackendStatus } from '../types';
+import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, ContainerInfo, PullProgress, VMStatus, ImageDownloadProgress, BackendStatus, VMBootstrapProgress, VMHealthEvent, VMHealthSummary } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
 interface AppState {
@@ -57,6 +57,9 @@ interface AppState {
   vmList: VMStatus[];
   vmImageDownloadProgress: ImageDownloadProgress | null;
   vmCreateWizardOpen: boolean;
+  vmBootstrapProgress: VMBootstrapProgress | null;
+  vmHealthEvents: VMHealthEvent[];
+  vmHealthSummaries: VMHealthSummary[];
 
   // Cowork Desktop state
   activeCoworkVM: { id: string; name: string; state: string } | null;
@@ -125,6 +128,9 @@ interface AppState {
   setVmList: (vms: VMStatus[]) => void;
   setVmImageDownloadProgress: (progress: ImageDownloadProgress | null) => void;
   setVmCreateWizardOpen: (open: boolean) => void;
+  setVmBootstrapProgress: (progress: VMBootstrapProgress | null) => void;
+  handleVmHealthEvent: (event: VMHealthEvent) => void;
+  setVmHealthSummaries: (summaries: VMHealthSummary[]) => void;
 
   // Cowork Desktop actions
   setActiveCoworkVM: (vm: { id: string; name: string; state: string } | null) => void;
@@ -195,6 +201,9 @@ export const useAppStore = create<AppState>((set) => ({
   vmList: [],
   vmImageDownloadProgress: null,
   vmCreateWizardOpen: false,
+  vmBootstrapProgress: null,
+  vmHealthEvents: [],
+  vmHealthSummaries: [],
   activeCoworkVM: null,
   coworkVNCUrl: null,
   coworkComputerUseEnabled: false,
@@ -494,6 +503,14 @@ export const useAppStore = create<AppState>((set) => ({
   setVmList: (vms) => set({ vmList: vms }),
   setVmImageDownloadProgress: (progress) => set({ vmImageDownloadProgress: progress }),
   setVmCreateWizardOpen: (open) => set({ vmCreateWizardOpen: open }),
+  setVmBootstrapProgress: (progress) => set({ vmBootstrapProgress: progress }),
+  handleVmHealthEvent: (event) => set((state) => ({
+    vmHealthEvents: [...state.vmHealthEvents.slice(-49), event],
+    vmList: state.vmList.map((vm) =>
+      vm.id === event.vmId ? { ...vm, state: event.currentState } : vm
+    ),
+  })),
+  setVmHealthSummaries: (summaries) => set({ vmHealthSummaries: summaries }),
 
   // Cowork Desktop actions
   setActiveCoworkVM: (vm) => set({ activeCoworkVM: vm }),

@@ -6,6 +6,7 @@ import { ChatView } from './components/ChatView';
 import { WelcomeView } from './components/WelcomeView';
 import { CareerBoxView } from './components/CareerBoxView';
 import { VMView } from './components/VMView';
+import { CoworkDesktopView } from './components/CoworkDesktopView';
 import { PermissionDialog } from './components/PermissionDialog';
 import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
@@ -101,6 +102,8 @@ function App() {
         <main className="flex-1 flex flex-col overflow-hidden bg-background">
           {activeView === 'vm' ? (
             <VMView />
+          ) : activeView === 'cowork-desktop' ? (
+            <CoworkDesktopView />
           ) : activeView === 'careerbox' ? (
             <CareerBoxView />
           ) : activeSessionId ? (

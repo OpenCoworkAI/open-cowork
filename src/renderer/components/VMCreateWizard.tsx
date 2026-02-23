@@ -31,13 +31,8 @@ interface VMCreateWizardProps {
 
 type Step = 'os' | 'resources' | 'review';
 
-const DISTRO_ICONS: Record<string, string> = {
-  ubuntu: '🟠',
-  debian: '🔴',
-  fedora: '🔵',
-  linuxmint: '🟢',
-  custom: '📀',
-};
+const DEFAULT_IMAGE_ID = 'ubuntu-24.04-desktop-x64';
+const ALT_IMAGE_ID = 'linuxmint-22-x64';
 
 export function VMCreateWizard({ onClose, onCreated }: VMCreateWizardProps) {
   const { vmImageDownloadProgress, setVmImageDownloadProgress } = useAppStore();
@@ -130,6 +125,10 @@ export function VMCreateWizard({ onClose, onCreated }: VMCreateWizardProps) {
         resources,
       });
       if (result.success) {
+        // Notify bootstrap service so it can auto-start the VM with GUI
+        if (result.vmId) {
+          window.electronAPI.vm.notifyBootstrapCreated(result.vmId).catch(() => {});
+        }
         onCreated();
       } else {
         setError(result.error || 'Failed to create VM');
@@ -172,84 +171,112 @@ export function VMCreateWizard({ onClose, onCreated }: VMCreateWizardProps) {
           )}
 
           {/* Step 1: Choose OS */}
-          {step === 'os' && (
-            <div className="space-y-3">
-              {availableImages.map((image) => {
-                const isDownloaded = downloadedIds.has(image.id);
-                const isSelected = selectedImage?.id === image.id;
-                const isDownloadingThis = downloading && vmImageDownloadProgress?.imageId === image.id;
+          {step === 'os' && (() => {
+            const defaultImg = availableImages.find(i => i.id === DEFAULT_IMAGE_ID);
+            const altImg = availableImages.find(i => i.id === ALT_IMAGE_ID);
 
-                return (
-                  <button
-                    key={image.id}
-                    onClick={() => {
-                      if (isDownloaded) {
-                        setSelectedImage(image);
-                      } else if (!downloading) {
-                        downloadImage(image);
-                      }
-                    }}
-                    disabled={downloading && !isDownloadingThis}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left ${
-                      isSelected
-                        ? 'border-accent bg-accent/5'
-                        : 'border-border hover:border-border-hover bg-surface-hover/30'
-                    } disabled:opacity-40`}
-                  >
-                    <span className="text-2xl">{DISTRO_ICONS[image.distro] || '🐧'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-text-primary">{image.name}</p>
-                      <p className="text-xs text-text-tertiary mt-0.5">
-                        {formatBytes(image.fileSize)} &middot; {image.arch}
-                        {image.minMemoryMb && ` &middot; ${image.minMemoryMb / 1024} GB RAM min`}
-                      </p>
-                      {isDownloadingThis && vmImageDownloadProgress && (
-                        <div className="mt-2">
-                          <div className="w-full bg-blue-500/20 rounded-full h-1.5">
-                            <div
-                              className="bg-blue-500 h-1.5 rounded-full transition-all"
-                              style={{ width: `${vmImageDownloadProgress.percent}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-blue-400 mt-1">
-                            {vmImageDownloadProgress.percent}% — {formatBytes(vmImageDownloadProgress.bytesDownloaded)}
-                          </p>
+            const renderImageCard = (image: OSImage, label: string, description: string, badge?: string) => {
+              const isDownloaded = downloadedIds.has(image.id);
+              const isSelected = selectedImage?.id === image.id;
+              const isDownloadingThis = downloading && vmImageDownloadProgress?.imageId === image.id;
+
+              return (
+                <button
+                  key={image.id}
+                  onClick={() => {
+                    if (isDownloaded) {
+                      setSelectedImage(image);
+                    } else if (!downloading) {
+                      downloadImage(image);
+                    }
+                  }}
+                  disabled={downloading && !isDownloadingThis}
+                  className={`w-full flex items-start gap-4 p-5 rounded-xl border transition-all text-left ${
+                    isSelected
+                      ? 'border-accent bg-accent/5 ring-1 ring-accent/30'
+                      : 'border-border hover:border-border-hover bg-surface-hover/30'
+                  } disabled:opacity-40`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-text-primary">{label}</p>
+                      {badge && (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-accent/15 text-accent">
+                          {badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-text-secondary mt-1">{description}</p>
+                    <p className="text-xs text-text-tertiary mt-2">
+                      {formatBytes(image.fileSize)} download
+                    </p>
+                    {isDownloadingThis && vmImageDownloadProgress && (
+                      <div className="mt-3">
+                        <div className="w-full bg-blue-500/20 rounded-full h-1.5">
+                          <div
+                            className="bg-blue-500 h-1.5 rounded-full transition-all"
+                            style={{ width: `${vmImageDownloadProgress.percent}%` }}
+                          />
                         </div>
-                      )}
-                    </div>
-                    <div className="shrink-0">
-                      {isDownloaded ? (
-                        <span className="flex items-center gap-1 text-xs text-green-400">
-                          <CheckCircle2 className="w-4 h-4" />
-                          {isSelected ? 'Selected' : 'Ready'}
-                        </span>
-                      ) : isDownloadingThis ? (
-                        <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs text-text-secondary">
-                          <Download className="w-4 h-4" />
-                          Download
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+                        <p className="text-xs text-blue-400 mt-1">
+                          {vmImageDownloadProgress.percent}% — {formatBytes(vmImageDownloadProgress.bytesDownloaded)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 mt-1">
+                    {isDownloaded ? (
+                      <span className="flex items-center gap-1 text-xs text-green-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        {isSelected ? 'Selected' : 'Ready'}
+                      </span>
+                    ) : isDownloadingThis ? (
+                      <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs text-text-secondary">
+                        <Download className="w-4 h-4" />
+                        Download
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            };
 
-              {/* Import ISO button */}
-              <button
-                onClick={importISO}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-dashed border-border hover:border-border-hover transition-all text-left"
-              >
-                <span className="text-2xl">📀</span>
-                <div className="flex-1">
-                  <p className="font-medium text-text-primary">Import Custom ISO</p>
-                  <p className="text-xs text-text-tertiary mt-0.5">Use your own ISO image file</p>
-                </div>
-                <Upload className="w-5 h-5 text-text-secondary" />
-              </button>
-            </div>
-          )}
+            return (
+              <div className="space-y-3">
+                {defaultImg && renderImageCard(
+                  defaultImg,
+                  defaultImg.name,
+                  'The most popular Linux desktop. Great documentation, huge community, works out of the box.',
+                  'Recommended',
+                )}
+                {altImg && renderImageCard(
+                  altImg,
+                  altImg.name,
+                  'A familiar Windows-like desktop. Lightweight, beginner-friendly, and polished.',
+                )}
+
+                {/* Import custom ISO */}
+                <button
+                  onClick={importISO}
+                  className={`w-full flex items-start gap-4 p-5 rounded-xl border border-dashed transition-all text-left ${
+                    selectedImage?.distro === 'custom'
+                      ? 'border-accent bg-accent/5 ring-1 ring-accent/30'
+                      : 'border-border hover:border-border-hover'
+                  }`}
+                >
+                  <div className="flex-1">
+                    <p className="font-semibold text-text-primary">Use Your Own</p>
+                    <p className="text-sm text-text-secondary mt-1">
+                      Upload any ISO image — bring your preferred OS or a custom build.
+                    </p>
+                  </div>
+                  <Upload className="w-5 h-5 text-text-secondary mt-1 shrink-0" />
+                </button>
+              </div>
+            );
+          })()}
 
           {/* Step 2: Configure Resources */}
           {step === 'resources' && (

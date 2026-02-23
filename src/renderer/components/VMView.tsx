@@ -13,8 +13,10 @@ import {
   Plus,
   HardDrive,
   MemoryStick,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
-import type { VMStatus, VMState } from '../types';
+import type { VMStatus, VMState, VMHealthSummary } from '../types';
 import { VMCreateWizard } from './VMCreateWizard';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -66,15 +68,35 @@ export function VMView() {
     vmList,
     vmImageDownloadProgress,
     vmCreateWizardOpen,
+    vmBootstrapProgress,
+    vmHealthSummaries,
+    vmHealthEvents,
     setVmBackendStatus,
     setVmList,
     setVmCreateWizardOpen,
+    setVmHealthSummaries,
   } = useAppStore();
 
   const [loading, setLoading] = useState(false);
   const [actionLabel, setActionLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Auto-open wizard when bootstrap triggers first-run setup
+  useEffect(() => {
+    if (vmBootstrapProgress?.phase === 'prompting_setup' && !vmCreateWizardOpen) {
+      setVmCreateWizardOpen(true);
+    }
+  }, [vmBootstrapProgress?.phase, vmCreateWizardOpen, setVmCreateWizardOpen]);
+
+  // Fetch health summaries alongside VM list
+  const fetchHealthSummaries = useCallback(async () => {
+    if (!isElectron) return;
+    try {
+      const summaries = await window.electronAPI.vm.getHealthSummary();
+      setVmHealthSummaries(summaries);
+    } catch { /* ignore */ }
+  }, [setVmHealthSummaries]);
 
   // ── Init: check backend and load VMs ──
   const refresh = useCallback(async () => {
@@ -86,11 +108,12 @@ export function VMView() {
       if (status.available) {
         const vms = await window.electronAPI.vm.listVMs();
         setVmList(vms);
+        fetchHealthSummaries();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check VM backend');
     }
-  }, [setVmBackendStatus, setVmList]);
+  }, [setVmBackendStatus, setVmList, fetchHealthSummaries]);
 
   useEffect(() => {
     refresh();
@@ -227,6 +250,41 @@ export function VMView() {
         </div>
       )}
 
+      {/* Bootstrap progress */}
+      {vmBootstrapProgress && vmBootstrapProgress.phase !== 'ready' && vmBootstrapProgress.phase !== 'skipped' && (
+        <div className="mx-6 mt-4 px-4 py-3 bg-accent/10 border border-accent/20 rounded-xl">
+          <div className="flex items-center gap-3 mb-2">
+            {vmBootstrapProgress.phase === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+            ) : (
+              <Loader2 className="w-5 h-5 text-accent animate-spin shrink-0" />
+            )}
+            <p className="text-sm text-text-primary">{vmBootstrapProgress.message}</p>
+          </div>
+          {vmBootstrapProgress.detail && (
+            <p className="text-xs text-text-secondary ml-8">{vmBootstrapProgress.detail}</p>
+          )}
+          {vmBootstrapProgress.progress != null && vmBootstrapProgress.phase !== 'error' && (
+            <div className="w-full bg-accent/20 rounded-full h-1.5 mt-2">
+              <div
+                className="bg-accent h-1.5 rounded-full transition-all"
+                style={{ width: `${vmBootstrapProgress.progress}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent crash alert */}
+      {vmHealthEvents.length > 0 && vmHealthEvents[vmHealthEvents.length - 1].type === 'crash_detected' && (
+        <div className="mx-6 mt-4 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
+          <ShieldAlert className="w-5 h-5 text-red-400 shrink-0" />
+          <p className="text-sm text-red-400 flex-1">
+            {vmHealthEvents[vmHealthEvents.length - 1].message}
+          </p>
+        </div>
+      )}
+
       {/* Download progress */}
       {vmImageDownloadProgress && vmImageDownloadProgress.status === 'downloading' && (
         <div className="mx-6 mt-4 px-4 py-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
@@ -271,20 +329,28 @@ export function VMView() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {vmList.map((vm) => (
-              <VMCard
-                key={vm.id}
-                vm={vm}
-                loading={loading}
-                onStart={() => startVM(vm.id)}
-                onStop={() => stopVM(vm.id)}
-                onForceStop={() => forceStopVM(vm.id)}
-                onPause={() => pauseVM(vm.id)}
-                onResume={() => resumeVM(vm.id)}
-                onOpenDisplay={() => openDisplay(vm.id)}
-                onDelete={() => deleteVM(vm.id, vm.name)}
-              />
-            ))}
+            {vmList.map((vm) => {
+              const health = vmHealthSummaries.find(h => h.vmId === vm.id);
+              return (
+                <VMCard
+                  key={vm.id}
+                  vm={vm}
+                  health={health}
+                  loading={loading}
+                  onStart={() => startVM(vm.id)}
+                  onStop={() => stopVM(vm.id)}
+                  onForceStop={() => forceStopVM(vm.id)}
+                  onPause={() => pauseVM(vm.id)}
+                  onResume={() => resumeVM(vm.id)}
+                  onOpenDisplay={() => openDisplay(vm.id)}
+                  onDelete={() => deleteVM(vm.id, vm.name)}
+                  onToggleAutoRestart={async (enabled) => {
+                    await window.electronAPI.vm.setAutoRestart(vm.id, enabled);
+                    fetchHealthSummaries();
+                  }}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -307,6 +373,7 @@ export function VMView() {
 
 interface VMCardProps {
   vm: VMStatus;
+  health?: VMHealthSummary;
   loading: boolean;
   onStart: () => void;
   onStop: () => void;
@@ -315,16 +382,26 @@ interface VMCardProps {
   onResume: () => void;
   onOpenDisplay: () => void;
   onDelete: () => void;
+  onToggleAutoRestart: (enabled: boolean) => void;
 }
 
-function VMCard({ vm, loading, onStart, onStop, onForceStop, onPause, onResume, onOpenDisplay, onDelete }: VMCardProps) {
+function VMCard({ vm, health, loading, onStart, onStop, onForceStop, onPause, onResume, onOpenDisplay, onDelete, onToggleAutoRestart }: VMCardProps) {
   return (
     <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-hover transition-colors">
       <div className="flex items-center justify-between">
         {/* Left: VM info */}
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center relative">
             <Monitor className="w-6 h-6 text-accent" />
+            {/* Health dot */}
+            {health && (
+              <span
+                className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-surface ${
+                  health.healthy ? 'bg-green-400' : 'bg-red-400'
+                }`}
+                title={health.healthy ? 'Healthy' : `Unhealthy — ${health.crashCount} crash(es)`}
+              />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -332,6 +409,11 @@ function VMCard({ vm, loading, onStart, onStop, onForceStop, onPause, onResume, 
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stateBadgeClass(vm.state)}`}>
                 {stateLabel(vm.state)}
               </span>
+              {health && health.crashCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-400" title="Crash count">
+                  {health.crashCount} crash{health.crashCount > 1 ? 'es' : ''}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-text-tertiary">
               {vm.guestOs && (
@@ -345,6 +427,24 @@ function VMCard({ vm, loading, onStart, onStop, onForceStop, onPause, onResume, 
                   <MemoryStick className="w-3 h-3" />
                   {vm.memoryUsedMb} MB
                 </span>
+              )}
+              {health && (
+                <button
+                  onClick={() => onToggleAutoRestart(!health.autoRestartEnabled)}
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                    health.autoRestartEnabled
+                      ? 'text-green-400 hover:bg-green-500/10'
+                      : 'text-text-tertiary hover:bg-surface-hover'
+                  }`}
+                  title={health.autoRestartEnabled ? 'Auto-restart enabled' : 'Auto-restart disabled'}
+                >
+                  {health.autoRestartEnabled ? (
+                    <ShieldCheck className="w-3 h-3" />
+                  ) : (
+                    <ShieldAlert className="w-3 h-3" />
+                  )}
+                  Auto-restart {health.autoRestartEnabled ? 'on' : 'off'}
+                </button>
               )}
             </div>
           </div>

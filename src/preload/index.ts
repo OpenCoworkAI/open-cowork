@@ -330,6 +330,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('vm.isComputerUseEnabled', vmId),
     executeComputerUse: (vmId: string, action: unknown): Promise<unknown> =>
       ipcRenderer.invoke('vm.executeComputerUse', vmId, action),
+    // Health monitor + Bootstrap
+    getHealthSummary: (): Promise<any[]> =>
+      ipcRenderer.invoke('vm.getHealthSummary'),
+    setAutoRestart: (vmId: string, enabled: boolean): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('vm.setAutoRestart', vmId, enabled),
+    notifyBootstrapCreated: (vmId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('vm.notifyBootstrapCreated', vmId),
   },
 
   // Coeadapt API methods
@@ -564,6 +571,10 @@ declare global {
         enableComputerUse: (vmId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
         isComputerUseEnabled: (vmId: string) => Promise<boolean>;
         executeComputerUse: (vmId: string, action: unknown) => Promise<unknown>;
+        // Health monitor + Bootstrap
+        getHealthSummary: () => Promise<any[]>;
+        setAutoRestart: (vmId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+        notifyBootstrapCreated: (vmId: string) => Promise<{ success: boolean; error?: string }>;
       };
       coeadapt: {
         getConfig: () => Promise<{ clerkPublishableKey: string; coeadaptApiUrl: string; isConnected: boolean }>;

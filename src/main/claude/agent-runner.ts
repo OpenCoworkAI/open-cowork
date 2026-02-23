@@ -17,6 +17,8 @@ import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
 import { buildThinkingOptions } from './thinking-options';
 import { redactSensitiveText } from './redaction';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
+import { vmManager } from '../vm/vm-manager';
+import { ComputerUseSession } from '../vm/computer-use-session';
 // import { PathGuard } from '../sandbox/path-guard';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -271,6 +273,60 @@ ${sections.join('\n\n')}
 `;
     } catch (error) {
       logError('[AgentRunner] Failed to get credentials prompt:', error);
+      return '';
+    }
+  }
+
+  /**
+   * Get VM cowork desktop context for the system prompt.
+   * Tells Navi about the active VM and computer-use capability.
+   */
+  private getVMCoworkPrompt(): string {
+    try {
+      const activeVMs = vmManager.getActiveCoworkVMs();
+      if (activeVMs.length === 0) {
+        return `
+<vm_cowork>
+No virtual desktop is currently running. If the user's task requires a GUI environment (browser, desktop app, design tool, visual testing), suggest launching a Cowork Desktop by emitting a \`\`\`json:vm-suggestion card.
+</vm_cowork>`;
+      }
+
+      const sections = activeVMs.map((vm: { id: string; name: string; state: string }) => {
+        const cuEnabled = vmManager.isComputerUseEnabled(vm.id);
+        const wsUrl = vmManager.getVNCWebSocketUrl(vm.id);
+        return `- **${vm.name}** (${vm.id}): state=${vm.state}, computerUse=${cuEnabled ? 'ENABLED' : 'disabled'}, vnc=${wsUrl ? 'connected' : 'no connection'}`;
+      });
+
+      const anyComputerUse = activeVMs.some((vm: { id: string }) => vmManager.isComputerUseEnabled(vm.id));
+
+      let prompt = `
+<vm_cowork>
+Active Cowork Desktop(s):
+${sections.join('\n')}
+`;
+
+      if (anyComputerUse) {
+        prompt += `
+Computer Use is ENABLED. You can see and interact with the VM desktop.
+When the user asks you to perform a GUI task, use the computer_use tool to:
+1. Take a screenshot to see the current state
+2. Click, type, scroll, and use keyboard shortcuts to interact
+3. Verify your actions by taking follow-up screenshots
+4. Describe what you see and what you're doing to the user
+
+Emit a \`\`\`json:vm-status card to show the VM state when relevant.
+`;
+      } else {
+        prompt += `
+Computer Use is currently disabled. The user can see the VM desktop but you cannot interact with it.
+If the task requires you to interact with the VM, suggest enabling Computer Use.
+`;
+      }
+
+      prompt += `</vm_cowork>`;
+      return prompt;
+    } catch (error) {
+      logError('[AgentRunner] Failed to get VM cowork prompt:', error);
       return '';
     }
   }
@@ -1675,6 +1731,8 @@ ${availableSkillsPrompt}
 ${this.getMCPToolsPrompt()}
 
 ${this.getCredentialsPrompt()}
+
+${this.getVMCoworkPrompt()}
 <artifact_instructions>
 When you produce a final deliverable file, declare it once using this exact block so the app can show it as the final artifact:
 \`\`\`artifact
@@ -1935,6 +1993,51 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
       }
       log('[ClaudeAgentRunner] Sandbox via canUseTool, workspace:', workingDir);
       logTiming('before query() call - SDK initialization starts');
+
+      // ── Computer Use delegation ──────────────────────────────────
+      // If a VM has Computer Use enabled, delegate to ComputerUseSession
+      // for this turn instead of the normal query() SDK path.
+      const activeCoworkVMs = vmManager.getActiveCoworkVMs();
+      const computerUseVM = activeCoworkVMs.find((vm: { id: string }) => vmManager.isComputerUseEnabled(vm.id));
+      if (computerUseVM) {
+        const adapter = vmManager.getComputerUseAdapter(computerUseVM.id);
+        if (adapter) {
+          log('[ClaudeAgentRunner] Delegating to ComputerUseSession for VM:', computerUseVM.id);
+          logTiming('ComputerUseSession delegation start');
+
+          const apiKey = process.env.ANTHROPIC_API_KEY || '';
+          const cuModel = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929';
+
+          const cuSession = new ComputerUseSession({
+            adapter,
+            apiKey,
+            model: cuModel,
+            sendToRenderer: this.sendToRenderer,
+            saveMessage: this.saveMessage,
+            sessionId: session.id,
+          });
+
+          // Register abort handler
+          controller.signal.addEventListener('abort', () => cuSession.abort());
+
+          const cuSystemPrompt = `You are Navi, the user's career navigation agent inside Coeadapt. You are currently co-working with the user inside a VirtualBox VM desktop (${computerUseVM.name}). Use the computer tool to interact with the desktop — take screenshots, click, type, scroll, and use keyboard shortcuts. Describe what you see and explain your actions as you work.`;
+
+          try {
+            await cuSession.run(contextualPrompt, cuSystemPrompt);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            logError('[ClaudeAgentRunner] ComputerUseSession error:', msg);
+            this.sendToRenderer({
+              type: 'session.status',
+              payload: { sessionId: session.id, status: 'error', error: msg },
+            });
+          }
+
+          logTiming('ComputerUseSession delegation complete');
+          this.activeControllers.delete(session.id);
+          return; // Skip the normal query() path
+        }
+      }
 
       let firstMessageReceived = false;
 
