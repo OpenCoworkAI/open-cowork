@@ -7,7 +7,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { VncScreen } from 'react-vnc';
-import { Monitor, Maximize2, Minimize2, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Monitor, Maximize2, Minimize2, Eye, RefreshCw } from 'lucide-react';
 
 interface VMDesktopViewerProps {
   wsUrl: string;
@@ -21,7 +21,7 @@ interface VMDesktopViewerProps {
 
 export function VMDesktopViewer({
   wsUrl,
-  vmId,
+  vmId: _vmId,
   vmName,
   viewOnly = false,
   onConnect,

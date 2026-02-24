@@ -12,12 +12,12 @@ const DEFAULT_RESOURCES: VMResourceConfig = {
 
 const store = new Store<VMStoreSchema>({
   name: 'vm-config',
-  projectName: 'coeadapt',
+  projectName: 'coeadapt' as any,
   defaults: {
     vms: [],
     defaultResources: DEFAULT_RESOURCES,
   },
-});
+} as any);
 
 export const vmConfigStore = {
   /** Get all VM configs */

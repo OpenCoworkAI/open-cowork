@@ -10,8 +10,6 @@ import type {
   AgentCapability,
   OpenClawSession,
   PlatformConnection,
-  PlatformCapability,
-  CareerProfile,
   CareerGoal,
 } from '../../types';
 
@@ -53,7 +51,7 @@ export class PlatformConnectSkill implements AgentCapability {
     return this.intents.includes(intent);
   }
 
-  async execute(message: string, session: OpenClawSession): Promise<string> {
+  async execute(_message: string, _session: OpenClawSession): Promise<string> {
     // Ensure connected before executing platform operations
     if (this.connection.status !== 'connected') {
       await this.connect();

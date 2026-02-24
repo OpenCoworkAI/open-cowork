@@ -16,7 +16,7 @@ const store = new Store<{ careerbox: CareerBoxConfig }>({
   defaults: {
     careerbox: DEFAULT_CONFIG,
   },
-});
+} as any);
 
 export const dockerConfigStore = {
   getAll(): CareerBoxConfig {

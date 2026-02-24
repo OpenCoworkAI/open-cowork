@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, ContainerInfo, PullProgress, VMStatus, ImageDownloadProgress, BackendStatus, VMBootstrapProgress, VMHealthEvent, VMHealthSummary } from '../types';
+import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, ContainerInfo, PullProgress, VMStatus, ImageDownloadProgress, BackendStatus, VMBootstrapProgress, VMHealthEvent, VMHealthSummary, GuestProvisionProgress } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
 interface AppState {
@@ -60,11 +60,16 @@ interface AppState {
   vmBootstrapProgress: VMBootstrapProgress | null;
   vmHealthEvents: VMHealthEvent[];
   vmHealthSummaries: VMHealthSummary[];
+  vmProvisionProgress: GuestProvisionProgress | null;
 
   // Cowork Desktop state
   activeCoworkVM: { id: string; name: string; state: string } | null;
   coworkVNCUrl: string | null;
   coworkComputerUseEnabled: boolean;
+
+  // Onboarding state
+  showOnboardingModal: boolean;
+  workEnvironment: 'real-machine' | 'vm' | null;
 
   // Coeadapt / Cora state
   coraChatOpen: boolean;
@@ -131,11 +136,16 @@ interface AppState {
   setVmBootstrapProgress: (progress: VMBootstrapProgress | null) => void;
   handleVmHealthEvent: (event: VMHealthEvent) => void;
   setVmHealthSummaries: (summaries: VMHealthSummary[]) => void;
+  setVmProvisionProgress: (progress: GuestProvisionProgress | null) => void;
 
   // Cowork Desktop actions
   setActiveCoworkVM: (vm: { id: string; name: string; state: string } | null) => void;
   setCoworkVNCUrl: (url: string | null) => void;
   setCoworkComputerUseEnabled: (enabled: boolean) => void;
+
+  // Onboarding actions
+  setShowOnboardingModal: (show: boolean) => void;
+  setWorkEnvironment: (env: 'real-machine' | 'vm' | null) => void;
 
   // Coeadapt / Cora actions
   setCoraChatOpen: (open: boolean) => void;
@@ -204,9 +214,12 @@ export const useAppStore = create<AppState>((set) => ({
   vmBootstrapProgress: null,
   vmHealthEvents: [],
   vmHealthSummaries: [],
+  vmProvisionProgress: null,
   activeCoworkVM: null,
   coworkVNCUrl: null,
   coworkComputerUseEnabled: false,
+  showOnboardingModal: false,
+  workEnvironment: null,
   coraChatOpen: false,
   coeadaptConnected: false,
 
@@ -511,11 +524,16 @@ export const useAppStore = create<AppState>((set) => ({
     ),
   })),
   setVmHealthSummaries: (summaries) => set({ vmHealthSummaries: summaries }),
+  setVmProvisionProgress: (progress: GuestProvisionProgress | null) => set({ vmProvisionProgress: progress }),
 
   // Cowork Desktop actions
   setActiveCoworkVM: (vm) => set({ activeCoworkVM: vm }),
   setCoworkVNCUrl: (url) => set({ coworkVNCUrl: url }),
   setCoworkComputerUseEnabled: (enabled) => set({ coworkComputerUseEnabled: enabled }),
+
+  // Onboarding actions
+  setShowOnboardingModal: (show) => set({ showOnboardingModal: show }),
+  setWorkEnvironment: (env) => set({ workEnvironment: env }),
 
   // Coeadapt / Cora actions
   setCoraChatOpen: (open) => set({ coraChatOpen: open }),

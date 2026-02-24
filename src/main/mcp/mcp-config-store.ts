@@ -111,7 +111,7 @@ class MCPConfigStore {
       defaults: {
         servers: [],
       },
-    });
+    } as any);
   }
 
   /**

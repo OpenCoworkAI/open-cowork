@@ -8,8 +8,8 @@
 
 import { Anthropic } from '@anthropic-ai/sdk';
 import { log, logError } from '../utils/logger';
-import type { ComputerUseAdapter, ComputerUseAction, ComputerUseResult } from './computer-use-adapter';
-import type { ServerEvent, Message, ContentBlock, TraceStep } from '../../renderer/types';
+import type { ComputerUseAdapter, ComputerUseAction } from './computer-use-adapter';
+import type { ServerEvent, Message } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const MAX_TOOL_LOOPS = 25; // Safety limit for tool execution loops
@@ -130,19 +130,17 @@ export class ComputerUseSession {
         // Process response blocks
         const assistantContent: any[] = [];
         const toolResults: any[] = [];
-        let hasText = false;
 
         for (const block of response.content) {
           assistantContent.push(block);
 
           if (block.type === 'text') {
-            hasText = true;
             // Stream text to renderer
             this.sendToRenderer({
-              type: 'stream.message',
+              type: 'stream.partial',
               payload: {
                 sessionId: this.sessionId,
-                text: block.text,
+                delta: block.text,
               },
             });
 
@@ -214,11 +212,12 @@ export class ComputerUseSession {
             this.sendToRenderer({
               type: 'trace.update',
               payload: {
+                sessionId: this.sessionId,
                 stepId: traceStepId,
                 updates: {
                   status: 'completed',
                   toolOutput: result.type === 'error' ? result.error : `${result.type} result`,
-                  duration: Date.now() - Date.now(), // Will be computed properly with startTime
+                  duration: 0,
                 },
               },
             });
@@ -264,10 +263,10 @@ export class ComputerUseSession {
     if (loopCount >= MAX_TOOL_LOOPS) {
       log('[ComputerUseSession] Reached max tool loops, stopping');
       this.sendToRenderer({
-        type: 'stream.message',
+        type: 'stream.partial',
         payload: {
           sessionId: this.sessionId,
-          text: '\n\n*Reached maximum number of computer use actions. Please provide further instructions.*',
+          delta: '\n\n*Reached maximum number of computer use actions. Please provide further instructions.*',
         },
       });
     }

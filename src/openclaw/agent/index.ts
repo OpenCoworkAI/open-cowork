@@ -107,7 +107,7 @@ export class NaviAgent {
     // - Skill tree data store
   }
 
-  private async classifyIntent(message: string): Promise<string> {
+  private async classifyIntent(_message: string): Promise<string> {
     // Classify user intent to route to the right skill
     // Categories: career-dev, platform, job-search, skill-build, skill-tree, reflect
     return 'general';

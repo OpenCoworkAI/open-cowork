@@ -40,6 +40,9 @@ export interface AppConfig {
   // Coeadapt connection
   clerkPublishableKey: string;
   coeadaptApiUrl: string;
+
+  // Work environment preference (null = not yet chosen, triggers onboarding)
+  workEnvironment: 'real-machine' | 'vm' | null;
 }
 
 const defaultConfig: AppConfig = {
@@ -57,6 +60,7 @@ const defaultConfig: AppConfig = {
   isConfigured: false,
   clerkPublishableKey: '',
   coeadaptApiUrl: 'https://api.coeadapt.com',
+  workEnvironment: null,
 };
 
 // Provider presets
@@ -144,6 +148,7 @@ class ConfigStore {
       isConfigured: this.store.get('isConfigured'),
       clerkPublishableKey: this.store.get('clerkPublishableKey'),
       coeadaptApiUrl: this.store.get('coeadaptApiUrl'),
+      workEnvironment: this.store.get('workEnvironment'),
     };
   }
 

@@ -24,8 +24,12 @@ import type {
   BackendStatus,
   ImageDownloadProgress,
   OSImage,
+  GuestProvisionStatus,
+  GuestProvisionProgress,
 } from './types';
 import type { ServerEvent } from '../../renderer/types';
+import { VMGuestProvisioner, getVMGuestProvisioner } from './vm-guest-provisioner';
+import { NaviGuestClient } from './navi-guest-client';
 
 const HEALTH_POLL_INTERVAL_MS = 5000;
 
@@ -44,6 +48,9 @@ export class VMManager {
   // Computer Use
   private computerUseAdapters: Map<string, ComputerUseAdapter> = new Map();
   private computerUseEnabledSet: Set<string> = new Set();
+
+  // Guest Navi agent connections
+  private naviClients: Map<string, NaviGuestClient> = new Map();
 
   // Event callback for pushing state changes to the renderer
   private eventCallback: ((event: ServerEvent) => void) | null = null;
@@ -380,7 +387,7 @@ export class VMManager {
     const progressCb = (p: ImageDownloadProgress) => {
       onProgress(p);
       this.emitEvent({
-        type: 'vm.imageDownloadProgress',
+        type: 'vm.downloadProgress',
         payload: { ...p },
       });
     };
@@ -507,6 +514,60 @@ export class VMManager {
     }
   }
 
+  // ── Guest Provisioning ─────────────────────────────────────────
+
+  /** Start guest provisioning for a VM */
+  async provisionGuest(vmId: string): Promise<GuestProvisionStatus> {
+    const provisioner = getVMGuestProvisioner();
+    if (this.vboxBackend) {
+      provisioner.setVBoxBackend(this.vboxBackend);
+    }
+    return provisioner.provisionVM(vmId);
+  }
+
+  /** Get provisioning status */
+  getProvisionStatus(vmId: string): GuestProvisionStatus | null {
+    return getVMGuestProvisioner().getStatus(vmId);
+  }
+
+  /** Check if VM is provisioned */
+  isVMProvisioned(vmId: string): boolean {
+    return getVMGuestProvisioner().isProvisioned(vmId);
+  }
+
+  /** Signal that user finished OS install */
+  notifyOSInstallComplete(vmId: string): void {
+    getVMGuestProvisioner().notifyOSInstallComplete(vmId);
+  }
+
+  /** Connect to guest Navi agent */
+  async connectGuestNavi(vmId: string): Promise<boolean> {
+    const config = vmConfigStore.getVM(vmId);
+    if (!config?.naviMcpPort) return false;
+
+    const client = new NaviGuestClient({
+      vmId,
+      vmName: config.name,
+      hostPort: config.naviMcpPort,
+    });
+
+    const connected = await client.connect();
+    if (connected) {
+      this.naviClients.set(vmId, client);
+    }
+    return connected;
+  }
+
+  /** Get the guest Navi client for a VM */
+  getGuestNaviClient(vmId: string): NaviGuestClient | null {
+    return this.naviClients.get(vmId) || null;
+  }
+
+  /** Get the VirtualBox backend (for provisioner) */
+  getVBoxBackend(): VirtualBoxBackend | null {
+    return this.vboxBackend;
+  }
+
   // ── Backend Info ────────────────────────────────────────────────
 
   getBackendStatus(): BackendStatus | null {
@@ -534,6 +595,19 @@ export class VMManager {
     this.portManager.releaseAll();
     this.computerUseAdapters.clear();
     this.computerUseEnabledSet.clear();
+
+    // Disconnect guest Navi clients
+    for (const [vmId, client] of this.naviClients) {
+      try {
+        await client.disconnect();
+      } catch (err) {
+        logError('[VMManager] Error disconnecting Navi client for VM:', vmId, err);
+      }
+    }
+    this.naviClients.clear();
+
+    // Cleanup guest provisioner
+    await getVMGuestProvisioner().cleanup();
 
     // Stop running VMs
     if (this.backend) {

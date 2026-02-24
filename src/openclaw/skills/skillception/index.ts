@@ -60,7 +60,7 @@ export class SkillceptionSkill implements AgentCapability {
     return this.intents.includes(intent);
   }
 
-  async execute(message: string, session: OpenClawSession): Promise<string> {
+  async execute(_message: string, session: OpenClawSession): Promise<string> {
     if (!this.tree) {
       this.tree = await this.loadTree(session.userId);
     }

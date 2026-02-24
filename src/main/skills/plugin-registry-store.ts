@@ -20,7 +20,7 @@ class PluginRegistryStore {
       defaults: {
         plugins: [],
       },
-    });
+    } as any);
   }
 
   private resolveStoreCwd(): string {

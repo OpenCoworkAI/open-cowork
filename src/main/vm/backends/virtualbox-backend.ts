@@ -403,6 +403,86 @@ export class VirtualBoxBackend implements VMBackend {
     }
   }
 
+  // ── Guest provisioning helpers ───────────────────────────────────
+
+  async addSharedFolder(
+    vmName: string,
+    folderName: string,
+    hostPath: string,
+    autoMount = true,
+  ): Promise<VMOperationResult> {
+    try {
+      const args = ['sharedfolder', 'add', vmName, '--name', folderName, '--hostpath', hostPath];
+      if (autoMount) args.push('--automount');
+      await this.vbox(...args);
+      log('[VBox] Added shared folder:', folderName, '->', hostPath);
+      return { success: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logError('[VBox] Failed to add shared folder:', msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  async addPortForwarding(
+    vmName: string,
+    ruleName: string,
+    protocol: 'tcp' | 'udp',
+    hostPort: number,
+    guestPort: number,
+  ): Promise<VMOperationResult> {
+    try {
+      await this.vbox(
+        'modifyvm', vmName,
+        '--natpf1', `${ruleName},${protocol},,${hostPort},,${guestPort}`,
+      );
+      log('[VBox] Added port forward:', ruleName, hostPort, '->', guestPort);
+      return { success: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logError('[VBox] Failed to add port forward:', msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  async removePortForwarding(vmName: string, ruleName: string): Promise<VMOperationResult> {
+    try {
+      await this.vbox('modifyvm', vmName, '--natpf1', `delete ${ruleName}`);
+      log('[VBox] Removed port forward:', ruleName);
+      return { success: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { success: false, error: msg };
+    }
+  }
+
+  async keyboardPutString(vmName: string, text: string): Promise<VMOperationResult> {
+    try {
+      await this.vbox('controlvm', vmName, 'keyboardputstring', text);
+      return { success: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logError('[VBox] keyboardputstring failed:', msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  async keyboardPutScancode(vmName: string, ...codes: string[]): Promise<VMOperationResult> {
+    try {
+      await this.vbox('controlvm', vmName, 'keyboardputscancode', ...codes);
+      return { success: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logError('[VBox] keyboardputscancode failed:', msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  /** Get the resolved VBoxManage path (used by provisioner) */
+  getVBoxManagePath(): string | null {
+    return this.vboxManagePath;
+  }
+
   async openDisplay(vmId: string): Promise<VMOperationResult> {
     try {
       // If VM is already running headless, open a separate GUI window

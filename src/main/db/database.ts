@@ -8,6 +8,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { log } from '../utils/logger';
+import { runMigrations } from './migrations';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)
@@ -100,110 +101,6 @@ function getDatabasePath(): string {
 }
 
 /**
- * Initialize the database schema
- */
-function initializeSchema(database: Database.Database): void {
-  // Enable WAL mode for better performance
-  database.pragma('journal_mode = WAL');
-  
-  // Create sessions table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      claude_session_id TEXT,
-      status TEXT NOT NULL DEFAULT 'idle',
-      cwd TEXT,
-      mounted_paths TEXT NOT NULL DEFAULT '[]',
-      allowed_tools TEXT NOT NULL DEFAULT '[]',
-      memory_enabled INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-  
-  // Create messages table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      token_usage TEXT,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Create trace steps table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS trace_steps (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      status TEXT NOT NULL,
-      title TEXT NOT NULL,
-      content TEXT,
-      tool_name TEXT,
-      tool_input TEXT,
-      tool_output TEXT,
-      is_error INTEGER,
-      timestamp INTEGER NOT NULL,
-      duration INTEGER,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `);
-  
-  // Create index for faster message queries
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_session_id 
-    ON messages(session_id)
-  `);
-  
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
-    ON messages(session_id, timestamp)
-  `);
-
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_trace_steps_session_id
-    ON trace_steps(session_id)
-  `);
-
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_trace_steps_timestamp
-    ON trace_steps(session_id, timestamp)
-  `);
-  
-  // Create memory_entries table (for future use)
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS memory_entries (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      metadata TEXT,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    )
-  `);
-  
-  // Create skills table (for future use)
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS skills (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      type TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      config TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `);
-  
-  log('[Database] Schema initialized');
-}
-
-/**
  * Initialize the database
  */
 export function initDatabase(): DatabaseInstance {
@@ -217,8 +114,8 @@ export function initDatabase(): DatabaseInstance {
   // Enable foreign keys
   rawDb.pragma('foreign_keys = ON');
   
-  // Initialize schema
-  initializeSchema(rawDb);
+  // Run migrations (replaces old initializeSchema)
+  runMigrations(rawDb);
   
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`

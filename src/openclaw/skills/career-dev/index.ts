@@ -34,10 +34,10 @@ export class CareerDevSkill implements AgentCapability {
     return this.intents.includes(intent);
   }
 
-  async execute(message: string, session: OpenClawSession): Promise<string> {
+  async execute(_message: string, _session: OpenClawSession): Promise<string> {
     // Load user profile if not cached
     if (!this.profile) {
-      this.profile = await this.loadProfile(session.userId);
+      this.profile = await this.loadProfile(_session.userId);
     }
 
     // Route to sub-handler based on detected intent
@@ -48,7 +48,7 @@ export class CareerDevSkill implements AgentCapability {
   // ─── Career Planning ──────────────────────────────────────────────────────
 
   async createCareerPlan(
-    session: OpenClawSession,
+    _session: OpenClawSession,
     targetRole: string,
     timeframe: '30d' | '60d' | '90d' | '6m' | '1y',
   ): Promise<CareerGoal> {
@@ -69,7 +69,7 @@ export class CareerDevSkill implements AgentCapability {
 
   async assessSkillGaps(
     currentSkills: Array<{ name: string; level: number }>,
-    targetRole: string,
+    _targetRole: string,
   ): Promise<Array<{ name: string; current: number; required: number; gap: number }>> {
     // Compare current skills against target role requirements
     // Returns prioritized list of gaps to close
@@ -83,16 +83,16 @@ export class CareerDevSkill implements AgentCapability {
 
   // ─── Document Generation ──────────────────────────────────────────────────
 
-  async generateResume(session: OpenClawSession, targetRole: string): Promise<string> {
+  async generateResume(_session: OpenClawSession, _targetRole: string): Promise<string> {
     // Generate a tailored resume as a workspace artifact
     // Leverages the user's profile, experience, and the target role requirements
     return '';
   }
 
   async generateCoverLetter(
-    session: OpenClawSession,
-    company: string,
-    role: string,
+    _session: OpenClawSession,
+    _company: string,
+    _role: string,
   ): Promise<string> {
     // Generate a cover letter with the user's voice
     return '';
@@ -101,9 +101,9 @@ export class CareerDevSkill implements AgentCapability {
   // ─── Interview Prep ───────────────────────────────────────────────────────
 
   async generateInterviewPrep(
-    role: string,
-    company: string,
-    interviewType: 'behavioral' | 'technical' | 'system-design' | 'culture',
+    _role: string,
+    _company: string,
+    _interviewType: 'behavioral' | 'technical' | 'system-design' | 'culture',
   ): Promise<{ questions: string[]; tips: string[] }> {
     return { questions: [], tips: [] };
   }

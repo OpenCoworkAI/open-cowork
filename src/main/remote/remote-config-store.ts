@@ -28,7 +28,7 @@ class RemoteConfigStore {
         pairedUsers: [],
       },
       encryptionKey: 'open-cowork-remote-v1',
-    });
+    } as any);
     
     // Migrate: change pairing mode to allowlist (allow everyone by default)
     this.migrateAuthMode();

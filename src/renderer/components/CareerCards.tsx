@@ -23,6 +23,8 @@ import {
   Zap,
   GitBranch,
   Gauge,
+  ListChecks,
+  Keyboard,
 } from 'lucide-react';
 import type {
   GoalProgressData,
@@ -37,6 +39,7 @@ import type {
   SkillUnlockData,
   SkillProgressData,
   SkillReadinessData,
+  ActionStepsCardData,
   VMStatusCardData,
   VMProvisionCardData,
   VMSuggestionCardData,
@@ -150,6 +153,9 @@ function CareerCard({ type, data }: { type: string; data: unknown }) {
       return <SkillProgressCard data={data as SkillProgressData} />;
     case 'skill-readiness':
       return <SkillReadinessCard data={data as SkillReadinessData} />;
+    // ─── Action Steps Card ────────────────────────────────────────────
+    case 'action-steps':
+      return <ActionStepsCard data={data as ActionStepsCardData} />;
     // ─── VM Cowork Desktop Cards ───────────────────────────────────────
     case 'vm-status':
       return <VMStatusCard data={data as VMStatusCardData} />;
@@ -913,6 +919,56 @@ function SkillReadinessCard({ data }: { data: SkillReadinessData }) {
         <div className="flex items-start gap-2 pt-2 border-t border-border">
           <Lightbulb className="w-3.5 h-3.5 text-accent mt-0.5 flex-shrink-0" />
           <p className="text-xs text-text-secondary">{data.topPriority}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 13. Action Steps Card ──────────────────────────────────────────
+
+function ActionStepsCard({ data }: { data: ActionStepsCardData }) {
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+          <ListChecks className="w-4 h-4 text-blue-500" />
+        </div>
+        <span className="text-sm font-semibold text-text-primary">{data.title}</span>
+        {data.environment && (
+          <span className="badge badge-idle text-[10px]">
+            {data.environment === 'vm' ? 'VM' : 'Local'}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {data.steps.map((step) => (
+          <div key={step.number} className="flex items-start gap-3">
+            <div className="w-5 h-5 rounded-full bg-accent-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-[10px] font-bold text-accent">{step.number}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-text-primary">{step.instruction}</p>
+              {step.details && (
+                <p className="text-[10px] text-text-muted mt-0.5 leading-relaxed">{step.details}</p>
+              )}
+              {step.keyboardShortcut && (
+                <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-text-secondary font-mono">
+                  <Keyboard className="w-2.5 h-2.5" />
+                  {step.keyboardShortcut}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {data.donePrompt && (
+        <div className="pt-2 border-t border-border">
+          <p className="text-[10px] text-text-muted">
+            When done, tell Navi: <span className="font-medium text-text-secondary">"{data.donePrompt}"</span>
+          </p>
         </div>
       )}
     </div>

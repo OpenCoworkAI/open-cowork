@@ -11,6 +11,7 @@ import {
   Upload,
   ChevronRight,
   ChevronLeft,
+  StopCircle,
 } from 'lucide-react';
 import type { OSImage, VMResourceConfig } from '../types';
 
@@ -99,6 +100,12 @@ export function VMCreateWizard({ onClose, onCreated }: VMCreateWizardProps) {
       setDownloading(false);
       setVmImageDownloadProgress(null);
     }
+  };
+
+  const cancelDownload = () => {
+    window.electronAPI.vm.cancelDownload();
+    setDownloading(false);
+    setVmImageDownloadProgress(null);
   };
 
   const importISO = async () => {
@@ -218,9 +225,18 @@ export function VMCreateWizard({ onClose, onCreated }: VMCreateWizardProps) {
                             style={{ width: `${vmImageDownloadProgress.percent}%` }}
                           />
                         </div>
-                        <p className="text-xs text-blue-400 mt-1">
-                          {vmImageDownloadProgress.percent}% — {formatBytes(vmImageDownloadProgress.bytesDownloaded)}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-blue-400">
+                            {vmImageDownloadProgress.percent}% — {formatBytes(vmImageDownloadProgress.bytesDownloaded)}
+                          </p>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); cancelDownload(); }}
+                            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            <StopCircle className="w-3.5 h-3.5" />
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

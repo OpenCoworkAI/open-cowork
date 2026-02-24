@@ -31,12 +31,12 @@ class DeviceTokenStore {
       name: 'coeadapt-device-token',
       projectName: 'coeadapt',
       defaults: { credentials: null },
-    });
+    } as any);
     this.encryptionKey = this.getOrCreateKey();
   }
 
   private getOrCreateKey(): Buffer {
-    const keyStore = new Store<{ key: string }>({ name: 'coeadapt-token-key', projectName: 'coeadapt' });
+    const keyStore = new Store<{ key: string }>({ name: 'coeadapt-token-key', projectName: 'coeadapt' } as any);
     let key = keyStore.get('key');
     if (!key) {
       key = crypto.randomBytes(32).toString('hex');

@@ -139,6 +139,32 @@ export interface VMHealthSummary {
   autoRestartEnabled: boolean;
 }
 
+// VM Guest Provisioning types
+export type GuestProvisionPhase =
+  | 'idle'
+  | 'preparing'
+  | 'waiting_for_user'
+  | 'injecting_bootstrap'
+  | 'provisioning'
+  | 'installing_deps'
+  | 'installing_guest_additions'
+  | 'installing_node'
+  | 'installing_navi'
+  | 'configuring_service'
+  | 'verifying'
+  | 'connecting_agent'
+  | 'done'
+  | 'error';
+
+export interface GuestProvisionProgress {
+  vmId: string;
+  phase: GuestProvisionPhase;
+  message: string;
+  detail?: string;
+  progress?: number;
+  error?: string;
+}
+
 // Session types
 export interface Session {
   id: string;
@@ -459,7 +485,9 @@ export type ServerEvent =
   | { type: 'careerbox.pullProgress'; payload: PullProgress }
   | { type: 'vm.downloadProgress'; payload: ImageDownloadProgress }
   | { type: 'vm.bootstrapProgress'; payload: VMBootstrapProgress }
+  | { type: 'vm.stateChanged'; payload: { vmId: string; state: VMState; wsUrl?: string } }
   | { type: 'vm.healthEvent'; payload: VMHealthEvent }
+  | { type: 'vm.provisionProgress'; payload: GuestProvisionProgress }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types

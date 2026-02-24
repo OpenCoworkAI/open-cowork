@@ -337,6 +337,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('vm.setAutoRestart', vmId, enabled),
     notifyBootstrapCreated: (vmId: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('vm.notifyBootstrapCreated', vmId),
+    // Guest provisioning
+    provisionGuest: (vmId: string): Promise<any> =>
+      ipcRenderer.invoke('vm.provisionGuest', vmId),
+    getProvisionStatus: (vmId: string): Promise<any> =>
+      ipcRenderer.invoke('vm.getProvisionStatus', vmId),
+    isProvisioned: (vmId: string): Promise<boolean> =>
+      ipcRenderer.invoke('vm.isProvisioned', vmId),
+    connectGuestNavi: (vmId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('vm.connectGuestNavi', vmId),
+    notifyOSInstallComplete: (vmId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('vm.notifyOSInstallComplete', vmId),
+  },
+
+  // Onboarding methods
+  onboarding: {
+    getWorkEnvironment: (): Promise<'real-machine' | 'vm' | null> =>
+      ipcRenderer.invoke('onboarding.getWorkEnvironment'),
+    setWorkEnvironment: (env: 'real-machine' | 'vm'): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('onboarding.setWorkEnvironment', env),
   },
 
   // Coeadapt API methods
@@ -575,6 +594,16 @@ declare global {
         getHealthSummary: () => Promise<any[]>;
         setAutoRestart: (vmId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
         notifyBootstrapCreated: (vmId: string) => Promise<{ success: boolean; error?: string }>;
+        // Guest provisioning
+        provisionGuest: (vmId: string) => Promise<any>;
+        getProvisionStatus: (vmId: string) => Promise<any>;
+        isProvisioned: (vmId: string) => Promise<boolean>;
+        connectGuestNavi: (vmId: string) => Promise<{ success: boolean; error?: string }>;
+        notifyOSInstallComplete: (vmId: string) => Promise<{ success: boolean; error?: string }>;
+      };
+      onboarding: {
+        getWorkEnvironment: () => Promise<'real-machine' | 'vm' | null>;
+        setWorkEnvironment: (env: 'real-machine' | 'vm') => Promise<{ success: boolean }>;
       };
       coeadapt: {
         getConfig: () => Promise<{ clerkPublishableKey: string; coeadaptApiUrl: string; isConnected: boolean }>;

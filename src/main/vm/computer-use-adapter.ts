@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+// os module available if needed for platform checks
 import { app } from 'electron';
 import { log, logError } from '../utils/logger';
 import type { VirtualBoxBackend } from './backends/virtualbox-backend';

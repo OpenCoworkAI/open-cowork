@@ -12,6 +12,7 @@ import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
 import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
+import { OnboardingModal } from './components/OnboardingModal';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { CoraChat } from './components/CoraChat';
 import type { AppConfig } from './types';
@@ -32,8 +33,11 @@ function App() {
     sandboxSyncStatus,
     activeView,
     coraChatOpen,
+    showOnboardingModal,
     setCoraChatOpen,
     setShowConfigModal,
+    setShowOnboardingModal,
+    setWorkEnvironment,
     setIsConfigured,
     setAppConfig,
     setSandboxSetupComplete,
@@ -84,6 +88,19 @@ function App() {
     setSandboxSetupComplete(true);
   }, [setSandboxSetupComplete]);
 
+  // Check onboarding status on mount (after config is set)
+  useEffect(() => {
+    if (!isConfigured || !isElectronEnv) return;
+
+    window.electronAPI.onboarding.getWorkEnvironment().then((env) => {
+      if (env === null) {
+        setShowOnboardingModal(true);
+      } else {
+        setWorkEnvironment(env);
+      }
+    });
+  }, [isConfigured, setShowOnboardingModal, setWorkEnvironment]);
+
   // Determine if we should show the sandbox setup dialog
   // Show if there's progress and setup is not complete
   const showSandboxSetup = sandboxSetupProgress && !isSandboxSetupComplete;
@@ -132,6 +149,11 @@ function App() {
         isFirstRun={!isConfigured}
       />
       
+      {/* Onboarding Modal */}
+      {showOnboardingModal && (
+        <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />
+      )}
+
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (
         <SandboxSetupDialog 

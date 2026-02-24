@@ -56,7 +56,7 @@ export class VMCoworkSkill implements AgentCapability {
     return GUI_KEYWORDS.some(kw => lower.includes(kw));
   }
 
-  async execute(message: string, session: OpenClawSession): Promise<string> {
+  async execute(_message: string, _session: OpenClawSession): Promise<string> {
     // The actual VM lifecycle is handled via IPC in the main process.
     // This skill's primary role is intent classification and card emission.
     // The ClaudeAgentRunner reads the SKILL.md and uses it for prompt context.

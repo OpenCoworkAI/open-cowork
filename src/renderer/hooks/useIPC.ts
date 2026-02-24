@@ -137,9 +137,35 @@ export function useIPC() {
           store.setVmBootstrapProgress(event.payload);
           break;
 
+        case 'vm.stateChanged': {
+          console.log('[useIPC] vm.stateChanged:', event.payload.vmId, event.payload.state);
+          // Update the VM state in the local list
+          const currentVmList = useAppStore.getState().vmList;
+          const updatedList = currentVmList.map(vm =>
+            vm.id === event.payload.vmId
+              ? { ...vm, state: event.payload.state }
+              : vm
+          );
+          store.setVmList(updatedList);
+
+          // If wsUrl is provided, update cowork VNC state
+          if (event.payload.wsUrl) {
+            const activeVm = useAppStore.getState().activeCoworkVM;
+            if (activeVm?.id === event.payload.vmId) {
+              store.setCoworkVNCUrl(event.payload.wsUrl);
+            }
+          }
+          break;
+        }
+
         case 'vm.healthEvent':
           console.log('[useIPC] vm.healthEvent:', event.payload.type, event.payload.vmName);
           store.handleVmHealthEvent(event.payload);
+          break;
+
+        case 'vm.provisionProgress':
+          console.log('[useIPC] vm.provisionProgress:', event.payload.phase, event.payload.vmId);
+          store.setVmProvisionProgress(event.payload);
           break;
 
         case 'workdir.changed':

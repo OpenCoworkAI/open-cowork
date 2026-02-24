@@ -3,7 +3,6 @@ import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
-import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
 import { log, logWarn, logError } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -18,112 +17,18 @@ import { buildThinkingOptions } from './thinking-options';
 import { redactSensitiveText } from './redaction';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { vmManager } from '../vm/vm-manager';
+import { configStore } from '../config/config-store';
 import { ComputerUseSession } from '../vm/computer-use-session';
-// import { PathGuard } from '../sandbox/path-guard';
+import {
+  summarizeEnvForLog,
+  getShellEnvironment,
+} from './env-resolver';
+import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
 const MAX_CLAUDE_STDERR_LINES = 120;
 const STDERR_TAIL_LINES_FOR_ERROR = 20;
-
-function summarizeEnvForLog(env: NodeJS.ProcessEnv): Record<string, string> {
-  const pick = (key: string): string => {
-    const value = env[key];
-    if (!value) return '(empty/unset)';
-    if (key === 'PATH') return `${value.substring(0, 120)}...`;
-    if (key.includes('KEY') || key.includes('TOKEN')) return '✓ Set';
-    return value;
-  };
-
-  return {
-    ANTHROPIC_API_KEY: pick('ANTHROPIC_API_KEY'),
-    ANTHROPIC_AUTH_TOKEN: pick('ANTHROPIC_AUTH_TOKEN'),
-    ANTHROPIC_BASE_URL: pick('ANTHROPIC_BASE_URL'),
-    CLAUDE_MODEL: pick('CLAUDE_MODEL'),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: pick('ANTHROPIC_DEFAULT_SONNET_MODEL'),
-    OPENAI_API_KEY: pick('OPENAI_API_KEY'),
-    OPENAI_BASE_URL: pick('OPENAI_BASE_URL'),
-    OPENAI_MODEL: pick('OPENAI_MODEL'),
-    CLAUDE_CONFIG_DIR: pick('CLAUDE_CONFIG_DIR'),
-    PATH: pick('PATH'),
-  };
-}
-
-// Cache for shell environment (loaded once at startup)
-let cachedShellEnv: NodeJS.ProcessEnv | null = null;
-
-/**
- * Get shell environment with proper PATH (including node, npm, etc.)
- * GUI apps on macOS don't inherit shell PATH, so we need to extract it
- */
-function getShellEnvironment(): NodeJS.ProcessEnv {
-  const fnStart = Date.now();
-  
-  if (cachedShellEnv) {
-    log(`[ShellEnv] Returning cached env (0ms)`);
-    return cachedShellEnv;
-  }
-
-  const platform = process.platform;
-  let shellPath = process.env.PATH || '';
-  
-  log('[ShellEnv] Original PATH:', shellPath);
-  log(`[ShellEnv] Starting shell PATH extraction...`);
-
-  if (platform === 'darwin' || platform === 'linux') {
-    try {
-      // Get PATH from login shell (includes nvm, homebrew, etc.)
-      const execStart = Date.now();
-      const shellEnvOutput = execSync('/bin/bash -l -c "echo $PATH"', {
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
-      log(`[ShellEnv] execSync took ${Date.now() - execStart}ms`);
-      
-      if (shellEnvOutput) {
-        shellPath = shellEnvOutput;
-        log('[ShellEnv] Got PATH from login shell:', shellPath);
-      }
-    } catch (e) {
-      logWarn('[ShellEnv] Failed to get PATH from login shell, using fallback');
-      
-      // Add common paths as fallback
-      const home = process.env.HOME || '';
-      const fallbackPaths = [
-        '/opt/homebrew/bin',                    // Homebrew Apple Silicon
-        '/usr/local/bin',                       // Homebrew Intel / system
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-        `${home}/.nvm/versions/node/*/bin`,     // nvm (will be expanded below)
-        `${home}/.local/bin`,                   // pip user installs
-        `${home}/.npm-global/bin`,              // npm global
-      ];
-      
-      // Expand nvm paths
-      const nvmDir = path.join(home, '.nvm/versions/node');
-      if (fs.existsSync(nvmDir)) {
-        try {
-          const versions = fs.readdirSync(nvmDir);
-          for (const version of versions) {
-            fallbackPaths.push(path.join(nvmDir, version, 'bin'));
-          }
-        } catch (e) { /* ignore */ }
-      }
-      
-      shellPath = [...fallbackPaths.filter(p => fs.existsSync(p) || p.includes('*')), shellPath].join(':');
-    }
-  }
-
-  cachedShellEnv = {
-    ...process.env,
-    PATH: shellPath,
-  };
-  
-  log(`[ShellEnv] Total getShellEnvironment took ${Date.now() - fnStart}ms`);
-  return cachedShellEnv;
-}
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -227,10 +132,10 @@ Use tool \`mcp__Chrome__click\` with arguments: { "selector": "button.submit" }
       }
 
       // Group credentials by type
-      const emailCredentials = credentials.filter(c => c.type === 'email');
-      const websiteCredentials = credentials.filter(c => c.type === 'website');
-      const apiCredentials = credentials.filter(c => c.type === 'api');
-      const otherCredentials = credentials.filter(c => c.type === 'other');
+      const emailCredentials = credentials.filter((c: UserCredential) => c.type === 'email');
+      const websiteCredentials = credentials.filter((c: UserCredential) => c.type === 'website');
+      const apiCredentials = credentials.filter((c: UserCredential) => c.type === 'api');
+      const otherCredentials = credentials.filter((c: UserCredential) => c.type === 'other');
 
       // Format credentials with actual password for agent use
       const formatCredential = (c: UserCredential) => {
@@ -278,55 +183,66 @@ ${sections.join('\n\n')}
   }
 
   /**
-   * Get VM cowork desktop context for the system prompt.
-   * Tells Navi about the active VM and computer-use capability.
+   * Get workspace mode context for the system prompt.
+   * Based on the user's onboarding preference, tells Navi whether to guide the user
+   * through actions on their real machine or inside a VM.
    */
   private getVMCoworkPrompt(): string {
     try {
-      const activeVMs = vmManager.getActiveCoworkVMs();
-      if (activeVMs.length === 0) {
+      const workEnvironment = configStore.get('workEnvironment');
+
+      // Real-machine mode: guide user through actions on their own computer
+      if (workEnvironment === 'real-machine') {
         return `
-<vm_cowork>
-No virtual desktop is currently running. If the user's task requires a GUI environment (browser, desktop app, design tool, visual testing), suggest launching a Cowork Desktop by emitting a \`\`\`json:vm-suggestion card.
-</vm_cowork>`;
+<workspace_mode>
+The user works on their real machine. You CANNOT use computer_use tools.
+When the user needs to perform GUI or desktop actions:
+1. Break the task into clear, numbered steps
+2. Describe exactly what to click, type, or navigate to
+3. Include keyboard shortcuts where helpful (e.g. Ctrl+S, Alt+Tab)
+4. For multi-step workflows, emit a \`\`\`json:action-steps card with structured steps
+5. For simple single-step actions, describe them inline in your response
+6. Ask the user to confirm when they've completed each major step
+7. Adapt instructions to the user's OS (Windows, macOS, Linux) when possible
+</workspace_mode>`;
       }
 
-      const sections = activeVMs.map((vm: { id: string; name: string; state: string }) => {
-        const cuEnabled = vmManager.isComputerUseEnabled(vm.id);
-        const wsUrl = vmManager.getVNCWebSocketUrl(vm.id);
-        return `- **${vm.name}** (${vm.id}): state=${vm.state}, computerUse=${cuEnabled ? 'ENABLED' : 'disabled'}, vnc=${wsUrl ? 'connected' : 'no connection'}`;
-      });
+      // VM mode: guide user through actions inside a VM
+      if (workEnvironment === 'vm') {
+        const activeVMs = vmManager.getActiveCoworkVMs();
 
-      const anyComputerUse = activeVMs.some((vm: { id: string }) => vmManager.isComputerUseEnabled(vm.id));
+        let vmContext = '';
+        if (activeVMs.length > 0) {
+          const sections = activeVMs.map((vm: { id: string; name: string; state: string }) => {
+            return `- **${vm.name}** (${vm.id}): state=${vm.state}`;
+          });
+          vmContext = `\nActive VM(s):\n${sections.join('\n')}\n`;
+        } else {
+          vmContext = `\nNo VM is currently running. If the task requires a GUI environment, suggest launching a Cowork Desktop by emitting a \`\`\`json:vm-suggestion card.\n`;
+        }
 
-      let prompt = `
-<vm_cowork>
-Active Cowork Desktop(s):
-${sections.join('\n')}
-`;
-
-      if (anyComputerUse) {
-        prompt += `
-Computer Use is ENABLED. You can see and interact with the VM desktop.
-When the user asks you to perform a GUI task, use the computer_use tool to:
-1. Take a screenshot to see the current state
-2. Click, type, scroll, and use keyboard shortcuts to interact
-3. Verify your actions by taking follow-up screenshots
-4. Describe what you see and what you're doing to the user
-
-Emit a \`\`\`json:vm-status card to show the VM state when relevant.
-`;
-      } else {
-        prompt += `
-Computer Use is currently disabled. The user can see the VM desktop but you cannot interact with it.
-If the task requires you to interact with the VM, suggest enabling Computer Use.
-`;
+        return `
+<workspace_mode>
+The user works inside a Virtual Machine. You CANNOT use computer_use tools — you must guide the user with step-by-step instructions instead.
+${vmContext}
+When the user needs to perform GUI or desktop actions inside the VM:
+1. Break the task into clear, numbered steps
+2. Describe exactly what to click, type, or navigate to inside the VM
+3. Include keyboard shortcuts where helpful
+4. For multi-step workflows, emit a \`\`\`json:action-steps card with structured steps
+5. For simple single-step actions, describe them inline in your response
+6. Ask the user to confirm when they've completed each major step
+7. Instructions should target the VM's guest OS (typically Linux)
+</workspace_mode>`;
       }
 
-      prompt += `</vm_cowork>`;
-      return prompt;
+      // Not yet configured — minimal prompt
+      return `
+<workspace_mode>
+The user has not yet selected their preferred work environment. If they ask you to perform desktop/GUI actions, ask them whether they'd like to work on their real machine or in a virtual machine.
+</workspace_mode>`;
     } catch (error) {
-      logError('[AgentRunner] Failed to get VM cowork prompt:', error);
+      logError('[AgentRunner] Failed to get workspace mode prompt:', error);
       return '';
     }
   }

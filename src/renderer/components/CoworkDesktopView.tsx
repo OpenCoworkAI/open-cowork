@@ -6,15 +6,13 @@
  * Placeholder shown when no VM is running.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Monitor,
   Play,
   Square,
   Eye,
   EyeOff,
-  Cpu,
-  HardDrive,
   Server,
   Plus,
   RefreshCw,
@@ -30,8 +28,6 @@ export function CoworkDesktopView() {
     setCoworkComputerUseEnabled,
     setActiveCoworkVM,
     setCoworkVNCUrl,
-    vmList,
-    setActiveView,
   } = useAppStore();
 
   const [viewOnly, setViewOnly] = useState(false);
@@ -100,8 +96,6 @@ interface ControlBarProps {
 }
 
 function ControlBar({
-  vmName,
-  vmState,
   viewOnly,
   computerUseEnabled,
   vncConnected,
@@ -165,7 +159,7 @@ function ControlBar({
 // ── Placeholder ───────────────────────────────────────────────────
 
 function CoworkDesktopPlaceholder() {
-  const { vmList, setActiveView, setActiveCoworkVM, setCoworkVNCUrl } = useAppStore();
+  const { setActiveView, setActiveCoworkVM, setCoworkVNCUrl } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [availableVMs, setAvailableVMs] = useState<Array<{ id: string; name: string; state: string }>>([]);
 

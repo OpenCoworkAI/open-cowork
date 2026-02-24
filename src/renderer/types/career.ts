@@ -113,6 +113,20 @@ export interface SkillReadinessData {
   topPriority?: string;
 }
 
+// ─── Action Steps Card Type ──────────────────────────────────────────────────
+
+export interface ActionStepsCardData {
+  title: string;
+  environment?: 'real-machine' | 'vm';
+  steps: Array<{
+    number: number;
+    instruction: string;
+    details?: string;
+    keyboardShortcut?: string;
+  }>;
+  donePrompt?: string;
+}
+
 // ─── VM Cowork Desktop Card Types ───────────────────────────────────────────
 
 export interface VMStatusCardData {
@@ -153,6 +167,7 @@ export type CareerCardType =
   | 'skill-unlock'
   | 'skill-progress'
   | 'skill-readiness'
+  | 'action-steps'
   | 'vm-status'
   | 'vm-provision'
   | 'vm-suggestion';

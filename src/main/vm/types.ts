@@ -42,6 +42,12 @@ export interface VMConfig {
   backendVmId?: string;       // Backend-specific ID (e.g., VBox UUID)
   diskPath?: string;
   notes?: string;
+  /** Guest provisioning status */
+  provisionStatus?: 'not_provisioned' | 'provisioning' | 'provisioned' | 'error';
+  /** Host port for NAT forwarding to guest Navi MCP server */
+  naviMcpPort?: number;
+  /** Guest OS credentials (default: user/password) */
+  guestCredentials?: { username: string; password: string };
 }
 
 /** Runtime VM status (queried live from backend) */
@@ -156,4 +162,52 @@ export interface VMHealthSummary {
   crashCount: number;
   lastCrash?: number;
   autoRestartEnabled: boolean;
+}
+
+// ── Guest provisioning types ────────────────────────────────────────
+
+/** Phases of guest OS provisioning */
+export type GuestProvisionPhase =
+  | 'idle'
+  | 'preparing'                // Setting up provision directory + HTTP server
+  | 'waiting_for_user'         // User must signal OS install complete
+  | 'injecting_bootstrap'      // Keyboard injection into guest terminal
+  | 'provisioning'             // Guest running provision scripts
+  | 'installing_deps'          // Installing system packages
+  | 'installing_guest_additions' // Installing VirtualBox Guest Additions
+  | 'installing_node'          // Installing Node.js runtime
+  | 'installing_navi'          // Installing Navi agent
+  | 'configuring_service'      // Setting up systemd service
+  | 'verifying'                // Testing guest agent connectivity
+  | 'connecting_agent'         // MCP handshake with guest Navi
+  | 'done'
+  | 'error';
+
+/** Progress event sent to renderer during provisioning */
+export interface GuestProvisionProgress {
+  vmId: string;
+  phase: GuestProvisionPhase;
+  message: string;
+  detail?: string;
+  progress?: number; // 0-100
+  error?: string;
+}
+
+/** Persisted provisioning status per VM */
+export interface GuestProvisionStatus {
+  vmId: string;
+  phase: GuestProvisionPhase;
+  startedAt?: number;
+  completedAt?: number;
+  naviMcpHostPort?: number;
+  error?: string;
+}
+
+/** Config written to provision directory for the guest script */
+export interface GuestProvisionConfig {
+  deviceToken: string;
+  apiUrl: string;
+  guestUsername: string;
+  mcpPort: number;
+  workspacePath: string;
 }
