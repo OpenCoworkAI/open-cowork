@@ -20,7 +20,7 @@ import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
-import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
+import type { GatewayConfig, FeishuChannelConfig, CoeadaptChannelConfig, ChannelType } from './remote/types';
 import {
   log,
   logWarn,
@@ -1341,6 +1341,16 @@ ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannel
     return { success: true };
   } catch (error) {
     logError('[Remote] Error updating Feishu config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.updateCoeadaptConfig', async (_event, config: CoeadaptChannelConfig) => {
+  try {
+    await remoteManager.updateCoeadaptConfig(config);
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error updating Coeadapt config:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

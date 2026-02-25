@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
+import { CoeadaptChannel } from './channels/coeadapt';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -16,6 +17,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  CoeadaptChannelConfig,
   ChannelType,
   RemoteSessionMapping,
   PairedUser,
@@ -275,7 +277,19 @@ export class RemoteManager extends EventEmitter {
    */
   async updateFeishuConfig(config: FeishuChannelConfig): Promise<void> {
     remoteConfigStore.setFeishuConfig(config);
-    
+
+    // Restart to apply changes
+    if (this.gateway?.running) {
+      await this.restart();
+    }
+  }
+
+  /**
+   * Update coeadapt channel config
+   */
+  async updateCoeadaptConfig(config: CoeadaptChannelConfig): Promise<void> {
+    remoteConfigStore.setCoeadaptConfig(config);
+
     // Restart to apply changes
     if (this.gateway?.running) {
       await this.restart();
@@ -920,6 +934,14 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Feishu channel registered');
     }
     
+    // Register Coeadapt channel if configured
+    const coeadaptConfig = config.channels.coeadapt;
+    if (coeadaptConfig && coeadaptConfig.baseUrl) {
+      const coeadaptChannel = new CoeadaptChannel(coeadaptConfig);
+      this.gateway.registerChannel(coeadaptChannel);
+      log('[RemoteManager] Coeadapt channel registered');
+    }
+
     // TODO: Register other channels (WeChat, Telegram, DingTalk)
   }
   

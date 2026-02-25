@@ -21,6 +21,7 @@ import {
   Link2,
   CheckCircle2,
   AlertTriangle,
+  Briefcase,
 } from 'lucide-react';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -81,6 +82,18 @@ interface RemoteConfig {
         policy: string;
       };
     };
+    coeadapt?: {
+      baseUrl: string;
+      apiKey?: string;
+      wsEndpoint?: string;
+      features: {
+        careerSync: boolean;
+        jobSearch: boolean;
+        interviewPrep: boolean;
+        portfolioBuilder: boolean;
+        skillTracking: boolean;
+      };
+    };
   };
 }
 
@@ -92,7 +105,7 @@ interface TunnelStatus {
 }
 
 // 配置步骤
-type ConfigStep = 'feishu' | 'connection' | 'advanced';
+type ConfigStep = 'feishu' | 'coeadapt' | 'connection' | 'advanced';
 
 export function RemoteControlPanel() {
   // @ts-ignore - Reserved for future i18n support
@@ -125,6 +138,15 @@ export function RemoteControlPanel() {
   const [ngrokAuthToken, setNgrokAuthToken] = useState('');
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+
+  // Coeadapt form state
+  const [coeadaptBaseUrl, setCoeadaptBaseUrl] = useState('');
+  const [coeadaptApiKey, setCoeadaptApiKey] = useState('');
+  const [coeadaptCareerSync, setCoeadaptCareerSync] = useState(true);
+  const [coeadaptJobSearch, setCoeadaptJobSearch] = useState(true);
+  const [coeadaptInterviewPrep, setCoeadaptInterviewPrep] = useState(true);
+  const [coeadaptPortfolioBuilder, setCoeadaptPortfolioBuilder] = useState(true);
+  const [coeadaptSkillTracking, setCoeadaptSkillTracking] = useState(true);
   
   // Load data
   useEffect(() => {
@@ -164,6 +186,15 @@ export function RemoteControlPanel() {
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
           setFeishuDmPolicy(configResult.channels.feishu.dm?.policy || 'pairing');
           setUseLongConnection(configResult.channels.feishu.useWebSocket !== false);
+        }
+        if (configResult.channels?.coeadapt) {
+          setCoeadaptBaseUrl(configResult.channels.coeadapt.baseUrl || '');
+          setCoeadaptApiKey(configResult.channels.coeadapt.apiKey || '');
+          setCoeadaptCareerSync(configResult.channels.coeadapt.features?.careerSync !== false);
+          setCoeadaptJobSearch(configResult.channels.coeadapt.features?.jobSearch !== false);
+          setCoeadaptInterviewPrep(configResult.channels.coeadapt.features?.interviewPrep !== false);
+          setCoeadaptPortfolioBuilder(configResult.channels.coeadapt.features?.portfolioBuilder !== false);
+          setCoeadaptSkillTracking(configResult.channels.coeadapt.features?.skillTracking !== false);
         }
       }
     } catch (err) {
@@ -233,7 +264,23 @@ export function RemoteControlPanel() {
           dm: { policy: feishuDmPolicy as 'open' | 'pairing' | 'allowlist' },
         });
       }
-      
+
+      if (coeadaptBaseUrl) {
+        await window.electronAPI.remote.updateCoeadaptConfig({
+          type: 'coeadapt',
+          baseUrl: coeadaptBaseUrl,
+          apiKey: coeadaptApiKey || undefined,
+          userMapping: { strategy: 'email' },
+          features: {
+            careerSync: coeadaptCareerSync,
+            jobSearch: coeadaptJobSearch,
+            interviewPrep: coeadaptInterviewPrep,
+            portfolioBuilder: coeadaptPortfolioBuilder,
+            skillTracking: coeadaptSkillTracking,
+          },
+        });
+      }
+
       setSuccess('配置已保存');
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
@@ -276,6 +323,7 @@ export function RemoteControlPanel() {
 
   // 检查配置完成度
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
+  const isCoeadaptConfigured = !!coeadaptBaseUrl;
   const isConnectionConfigured = useLongConnection || (tunnelEnabled && ngrokAuthToken) || tunnelStatus?.connected;
 
   if (isLoading) {
@@ -397,6 +445,7 @@ export function RemoteControlPanel() {
       <div className="flex items-center gap-2 p-1 bg-surface rounded-xl">
         {[
           { id: 'feishu', label: '飞书配置', icon: MessageSquare, done: isFeishuConfigured },
+          { id: 'coeadapt', label: 'Coeadapt', icon: Briefcase, done: isCoeadaptConfigured },
           { id: 'connection', label: '连接方式', icon: Link2, done: isConnectionConfigured },
           { id: 'advanced', label: '高级设置', icon: Settings2, done: true },
         ].map((step) => (
@@ -494,6 +543,86 @@ export function RemoteControlPanel() {
               <ExternalLink className="w-4 h-4" />
               打开飞书开放平台
             </a>
+          </div>
+        )}
+
+        {/* Coeadapt Configuration */}
+        {activeStep === 'coeadapt' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-medium text-text-primary mb-1">Coeadapt Integration</h3>
+              <p className="text-sm text-text-secondary">
+                Connect to the Coeadapt career development platform for AI-powered career workflows
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  Platform URL
+                </label>
+                <input
+                  type="text"
+                  value={coeadaptBaseUrl}
+                  onChange={(e) => setCoeadaptBaseUrl(e.target.value)}
+                  className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+                  placeholder="https://app.coeadapt.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">
+                  API Key
+                </label>
+                <input
+                  type="password"
+                  value={coeadaptApiKey}
+                  onChange={(e) => setCoeadaptApiKey(e.target.value)}
+                  className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+                  placeholder="coeadapt_key_..."
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  Get your API key from the Coeadapt dashboard settings
+                </p>
+              </div>
+            </div>
+
+            {/* Feature toggles */}
+            <div>
+              <h4 className="text-sm font-medium text-text-secondary mb-3">Enabled Features</h4>
+              <div className="space-y-2">
+                {[
+                  { key: 'careerSync', label: 'Career Sync', desc: 'Sync skills and career roadmaps', value: coeadaptCareerSync, setter: setCoeadaptCareerSync },
+                  { key: 'jobSearch', label: 'Job Search', desc: 'AI-powered job matching and search', value: coeadaptJobSearch, setter: setCoeadaptJobSearch },
+                  { key: 'interviewPrep', label: 'Interview Prep', desc: 'Role-specific interview preparation', value: coeadaptInterviewPrep, setter: setCoeadaptInterviewPrep },
+                  { key: 'portfolioBuilder', label: 'Portfolio Builder', desc: 'Generate case studies and portfolio docs', value: coeadaptPortfolioBuilder, setter: setCoeadaptPortfolioBuilder },
+                  { key: 'skillTracking', label: 'Skill Tracking', desc: 'Daily habit tracking and skill streaks', value: coeadaptSkillTracking, setter: setCoeadaptSkillTracking },
+                ].map((feature) => (
+                  <div key={feature.key} className="flex items-center justify-between p-3 rounded-xl bg-surface-hover">
+                    <div>
+                      <div className="font-medium text-text-primary text-sm">{feature.label}</div>
+                      <p className="text-xs text-text-muted mt-0.5">{feature.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => feature.setter(!feature.value)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                        feature.value ? 'bg-accent' : 'bg-surface-active'
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                        feature.value ? 'left-5' : 'left-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                <strong>Note:</strong> Coeadapt integration enables career-focused AI workflows including resume generation, skill gap analysis, and interview coaching. The platform is currently in beta.
+              </p>
+            </div>
           </div>
         )}
 

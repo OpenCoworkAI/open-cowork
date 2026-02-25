@@ -266,6 +266,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('remote.updateGatewayConfig', config),
     updateFeishuConfig: (config: any): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.updateFeishuConfig', config),
+    updateCoeadaptConfig: (config: any): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('remote.updateCoeadaptConfig', config),
     getPairedUsers: (): Promise<any[]> => ipcRenderer.invoke('remote.getPairedUsers'),
     getPendingPairings: (): Promise<any[]> => ipcRenderer.invoke('remote.getPendingPairings'),
     approvePairing: (channelType: string, userId: string): Promise<{ success: boolean; error?: string }> =>
@@ -436,6 +438,7 @@ declare global {
         setEnabled: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
         updateGatewayConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
         updateFeishuConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
+        updateCoeadaptConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
         getPairedUsers: () => Promise<any[]>;
         getPendingPairings: () => Promise<any[]>;
         approvePairing: (channelType: string, userId: string) => Promise<{ success: boolean; error?: string }>;

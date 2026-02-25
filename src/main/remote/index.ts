@@ -14,6 +14,7 @@ export { RemoteManager, remoteManager, type AgentExecutor, type RemoteInteractio
 // Channels
 export { ChannelBase } from './channels/channel-base';
 export { FeishuChannel, FeishuAPI } from './channels/feishu';
+export { CoeadaptChannel, CoeadaptAPI } from './channels/coeadapt';
 
 // Config
 export { remoteConfigStore } from './remote-config-store';
