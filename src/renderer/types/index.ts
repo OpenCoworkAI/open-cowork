@@ -315,6 +315,8 @@ export type ServerEvent =
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
   | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
+  | { type: 'vm.progress'; payload: VMProgressUpdate }
+  | { type: 'vm.screenshot'; payload: VMScreenshotUpdate }
   | { type: 'error'; payload: { message: string } };
 
 // Settings types
@@ -398,6 +400,45 @@ export interface ApiTestResult {
     | 'network_error'
     | 'unknown';
   details?: string;
+}
+
+// VM Progress Tracking types
+export type VMTaskStatus =
+  | 'queued'
+  | 'initializing'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface VMProgressUpdate {
+  sessionId: string;
+  taskId: string;
+  title: string;
+  status: VMTaskStatus;
+  progress: number;
+  currentStep?: string;
+  stepsCompleted: number;
+  stepsTotal: number;
+  error?: string;
+}
+
+export interface VMScreenshotUpdate {
+  sessionId: string;
+  taskId: string;
+  stepId: string;
+  screenshotBase64: string;
+}
+
+export interface VMTaskStepInfo {
+  id: string;
+  title: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  action?: string;
+  duration?: number;
+  error?: string;
+  hasScreenshot?: boolean;
 }
 
 // MCP types
