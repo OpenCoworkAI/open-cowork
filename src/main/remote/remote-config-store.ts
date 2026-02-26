@@ -13,6 +13,7 @@ import type {
   TelegramChannelConfig,
   DingtalkChannelConfig,
   WebSocketChannelConfig,
+  CoeadaptChannelConfig,
   PairedUser,
 } from './types';
 import { DEFAULT_REMOTE_CONFIG } from './types';
@@ -149,7 +150,22 @@ class RemoteConfigStore {
     this.store.set('channels.websocket', config);
     log('[RemoteConfig] WebSocket config updated');
   }
-  
+
+  /**
+   * Get coeadapt channel config
+   */
+  getCoeadaptConfig(): CoeadaptChannelConfig | undefined {
+    return this.store.get('channels.coeadapt');
+  }
+
+  /**
+   * Set coeadapt channel config
+   */
+  setCoeadaptConfig(config: CoeadaptChannelConfig): void {
+    this.store.set('channels.coeadapt', config);
+    log('[RemoteConfig] Coeadapt config updated');
+  }
+
   /**
    * Check if remote is enabled
    */

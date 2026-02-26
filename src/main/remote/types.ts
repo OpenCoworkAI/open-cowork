@@ -77,7 +77,7 @@ export interface TunnelConfig {
 // Channel Configuration
 // ============================================================================
 
-export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket';
+export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket' | 'coeadapt';
 
 export interface ChannelConfig {
   /** Channel type */
@@ -87,7 +87,7 @@ export interface ChannelConfig {
   enabled: boolean;
   
   /** Channel-specific configuration */
-  config: FeishuChannelConfig | WechatChannelConfig | TelegramChannelConfig | DingtalkChannelConfig | WebSocketChannelConfig;
+  config: FeishuChannelConfig | WechatChannelConfig | TelegramChannelConfig | DingtalkChannelConfig | WebSocketChannelConfig | CoeadaptChannelConfig;
 }
 
 // Feishu (飞书) Channel
@@ -216,13 +216,75 @@ export interface DingtalkChannelConfig {
 // WebSocket Client Channel
 export interface WebSocketChannelConfig {
   type: 'websocket';
-  
+
   /** Allowed client IDs */
   allowedClients?: string[];
-  
+
   /** Whether to allow anonymous connections */
   allowAnonymous?: boolean;
 }
+
+// Coeadapt Career Platform Channel
+export interface CoeadaptChannelConfig {
+  type: 'coeadapt';
+
+  /** Coeadapt platform base URL */
+  baseUrl: string;
+
+  /** API key for authentication */
+  apiKey?: string;
+
+  /** OAuth2 configuration (via Clerk) */
+  oauth?: {
+    clientId: string;
+    redirectUri: string;
+    scopes: string[];
+  };
+
+  /** WebSocket endpoint for real-time events from Coeadapt */
+  wsEndpoint?: string;
+
+  /** Webhook configuration for receiving Coeadapt platform events */
+  webhook?: {
+    /** Shared secret for webhook signature verification */
+    secret: string;
+    /** Event types to subscribe to */
+    events: CoeadaptEventType[];
+  };
+
+  /** How to map Coeadapt users to local sessions */
+  userMapping: {
+    strategy: 'email' | 'coeadapt_id' | 'custom';
+  };
+
+  /** Feature toggles for Coeadapt integration capabilities */
+  features: {
+    /** Sync career skills and roadmaps from Coeadapt */
+    careerSync: boolean;
+    /** Enable AI-powered job search via Coeadapt market data */
+    jobSearch: boolean;
+    /** Enable interview preparation workflows */
+    interviewPrep: boolean;
+    /** Enable portfolio/case-study generation */
+    portfolioBuilder: boolean;
+    /** Enable daily skill tracking and habit streaks */
+    skillTracking: boolean;
+  };
+}
+
+/** Coeadapt platform event types that can trigger agent actions */
+export type CoeadaptEventType =
+  | 'career.roadmap_updated'
+  | 'career.skill_gap_analyzed'
+  | 'career.plan_generated'
+  | 'portfolio.item_added'
+  | 'portfolio.review_requested'
+  | 'interview.session_started'
+  | 'interview.feedback_ready'
+  | 'job.match_found'
+  | 'job.application_status_changed'
+  | 'user.profile_updated'
+  | 'user.message';
 
 // ============================================================================
 // Remote Message Protocol
@@ -519,6 +581,7 @@ export interface RemoteConfig {
     telegram?: TelegramChannelConfig;
     dingtalk?: DingtalkChannelConfig;
     websocket?: WebSocketChannelConfig;
+    coeadapt?: CoeadaptChannelConfig;
   };
 }
 
