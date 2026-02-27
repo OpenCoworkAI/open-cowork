@@ -47,6 +47,7 @@ const BUILT_IN_CATALOG: OSImage[] = [
 export class VMImageRegistry {
   private imageCacheDir: string;
   private activeDownload: { imageId: string; abort: () => void } | null = null;
+  private customImages: Map<string, { image: OSImage; filePath: string }> = new Map();
 
   constructor() {
     const override = vmConfigStore.getImageCachePath();
@@ -57,10 +58,12 @@ export class VMImageRegistry {
     log('[ImageRegistry] Cache dir:', this.imageCacheDir);
   }
 
-  /** Get catalog filtered by host architecture */
+  /** Get catalog filtered by host architecture (includes custom imports) */
   getAvailableCatalog(): OSImage[] {
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-    return BUILT_IN_CATALOG.filter(img => img.arch === arch);
+    const builtIn = BUILT_IN_CATALOG.filter(img => img.arch === arch);
+    const custom = [...this.customImages.values()].map(c => c.image);
+    return [...builtIn, ...custom];
   }
 
   /** Get images that are already downloaded */
@@ -76,6 +79,12 @@ export class VMImageRegistry {
 
   /** Get local file path for a downloaded image, or null */
   getImagePath(imageId: string): string | null {
+    // Check custom imports first
+    const custom = this.customImages.get(imageId);
+    if (custom) {
+      return fs.existsSync(custom.filePath) ? custom.filePath : null;
+    }
+
     const image = BUILT_IN_CATALOG.find(i => i.id === imageId);
     if (!image) return null;
 
@@ -113,6 +122,8 @@ export class VMImageRegistry {
       vboxOsType: 'Linux_64',
     };
 
+    this.customImages.set(id, { image, filePath: targetPath });
+
     return image;
   }
 
@@ -144,9 +155,11 @@ export class VMImageRegistry {
       const tmpPath = targetPath + '.part';
       const file = fs.createWriteStream(tmpPath);
       let aborted = false;
+      let activeResponse: import('http').IncomingMessage | null = null;
 
       const abort = () => {
         aborted = true;
+        if (activeResponse) { activeResponse.destroy(); }
         file.destroy();
         try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
       };
@@ -162,8 +175,11 @@ export class VMImageRegistry {
 
         const proto = url.startsWith('https') ? https : http;
         proto.get(url, (res) => {
+          activeResponse = res;
+
           // Follow redirects
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            activeResponse = null;
             doRequest(res.headers.location, redirectCount + 1);
             return;
           }

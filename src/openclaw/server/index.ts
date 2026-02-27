@@ -51,7 +51,7 @@ async function handleMessage(
   raw: string,
   socket: net.Socket,
   agent: NaviAgent,
-  platformSkill: PlatformConnectSkill,
+  _platformSkill: PlatformConnectSkill,
 ): Promise<void> {
   let request: JsonRpcRequest;
   try {

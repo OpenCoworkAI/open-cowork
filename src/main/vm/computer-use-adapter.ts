@@ -412,13 +412,24 @@ export class ComputerUseAdapter {
   private async guestExec(command: string, args: string[]): Promise<string> {
     // Use VBoxManage guestcontrol to execute commands inside the VM
     // This requires VirtualBox Guest Additions to be installed in the guest
+    const ALLOWED_COMMANDS = ['xdotool', 'xdg-open', 'bash', 'sh', 'cat', 'ls', 'env'];
+    const safeCommand = command.replace(/[/\\\.]/g, '');
+    if (!ALLOWED_COMMANDS.includes(safeCommand)) {
+      throw new Error(`Guest exec command not allowed: ${command}`);
+    }
+
+    // Use guest credentials from VM config, falling back to defaults
+    const vmConfig = (await import('./vm-config-store')).vmConfigStore.getVM(this.vmId);
+    const username = vmConfig?.guestCredentials?.username || 'user';
+    const password = vmConfig?.guestCredentials?.password || 'password';
+
     const allArgs = [
       'guestcontrol', this.vmName, 'run',
-      '--exe', `/usr/bin/${command}`,
-      '--username', 'user',      // Default username; could be configurable
-      '--password', 'password',  // Default password; could be configurable
+      '--exe', `/usr/bin/${safeCommand}`,
+      '--username', username,
+      '--password', password,
       '--wait-stdout', '--wait-stderr',
-      '--', command, ...args,
+      '--', safeCommand, ...args,
     ];
 
     try {

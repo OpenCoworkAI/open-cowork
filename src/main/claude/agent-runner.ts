@@ -219,8 +219,8 @@ export class ClaudeAgentRunner {
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
-            const { execSync } = require('child_process');
-            execSync(`wsl -d ${distro} -e mkdir -p "${sandboxSkillsPath}"`, {
+            const { execFileSync } = require('child_process');
+            execFileSync('wsl', ['-d', distro, '-e', 'mkdir', '-p', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             });
@@ -228,10 +228,9 @@ export class ClaudeAgentRunner {
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               const wslSourcePath = pathConverter.toWSL(builtinSkillsPath);
-              const rsyncCmd = `rsync -av "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying skills with rsync from ${wslSourcePath} to ${sandboxSkillsPath}`);
 
-              execSync(`wsl -d ${distro} -e bash -c "${rsyncCmd}"`, {
+              execFileSync('wsl', ['-d', distro, '-e', 'rsync', '-av', `${wslSourcePath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
@@ -246,17 +245,16 @@ export class ClaudeAgentRunner {
 
             if (fs.existsSync(appSkillsDir)) {
               const wslSourcePath = pathConverter.toWSL(appSkillsDir);
-              const rsyncCmd = `rsync -avL "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying app skills with rsync from ${wslSourcePath} to ${sandboxSkillsPath}`);
 
-              execSync(`wsl -d ${distro} -e bash -c "${rsyncCmd}"`, {
+              execFileSync('wsl', ['-d', distro, '-e', 'rsync', '-avL', `${wslSourcePath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
             // List copied skills for verification
-            const copiedSkills = execSync(`wsl -d ${distro} -e ls "${sandboxSkillsPath}"`, {
+            const copiedSkills = execFileSync('wsl', ['-d', distro, '-e', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             }).trim().split('\n').filter(Boolean);
@@ -354,8 +352,8 @@ export class ClaudeAgentRunner {
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
-            const { execSync } = require('child_process');
-            execSync(`limactl shell claude-sandbox -- mkdir -p "${sandboxSkillsPath}"`, {
+            const { execFileSync } = require('child_process');
+            execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'mkdir', '-p', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             });
@@ -363,10 +361,9 @@ export class ClaudeAgentRunner {
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               // Lima mounts /Users directly, so paths are the same
-              const rsyncCmd = `rsync -av "${builtinSkillsPath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying skills with rsync from ${builtinSkillsPath} to ${sandboxSkillsPath}`);
 
-              execSync(`limactl shell claude-sandbox -- bash -c "${rsyncCmd.replace(/"/g, '\\"')}"`, {
+              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'rsync', '-av', `${builtinSkillsPath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
@@ -380,17 +377,16 @@ export class ClaudeAgentRunner {
             syncUserSkillsToAppDir(appSkillsDir);
 
             if (fs.existsSync(appSkillsDir)) {
-              const rsyncCmd = `rsync -avL "${appSkillsDir}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying app skills with rsync from ${appSkillsDir} to ${sandboxSkillsPath}`);
 
-              execSync(`limactl shell claude-sandbox -- bash -c "${rsyncCmd.replace(/"/g, '\\"')}"`, {
+              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'rsync', '-avL', `${appSkillsDir}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
             // List copied skills for verification
-            const copiedSkills = execSync(`limactl shell claude-sandbox -- ls "${sandboxSkillsPath}"`, {
+            const copiedSkills = execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             }).trim().split('\n').filter(Boolean);

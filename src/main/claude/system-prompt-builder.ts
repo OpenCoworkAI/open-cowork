@@ -78,7 +78,7 @@ export function getCredentialsPrompt(): string {
     const formatCredential = (c: UserCredential) => {
       const lines = [`- **${c.name}**${c.service ? ` (${c.service})` : ''}`];
       lines.push(`  - Username/Email: \`${c.username}\``);
-      lines.push(`  - Password: \`${c.password}\``);
+      lines.push(`  - Password: *stored* (use credential_lookup tool or ask the user to enter it)`);
       if (c.url) lines.push(`  - URL: ${c.url}`);
       if (c.notes) lines.push(`  - Notes: ${c.notes}`);
       return lines.join('\n');

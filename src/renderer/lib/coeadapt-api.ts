@@ -312,27 +312,31 @@ export class CoeadaptApi {
         const reader = res.body?.getReader();
         if (!reader) throw new Error('No readable stream');
 
-        const decoder = new TextDecoder();
-        let buffer = '';
+        try {
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6)) as CoraChatMessage;
-                onMessage(data);
-              } catch {
-                // ignore malformed SSE lines
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6)) as CoraChatMessage;
+                  onMessage(data);
+                } catch {
+                  // ignore malformed SSE lines
+                }
               }
             }
           }
+        } finally {
+          reader.releaseLock();
         }
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === 'AbortError') return;

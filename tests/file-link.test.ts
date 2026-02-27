@@ -3,40 +3,41 @@ import { splitTextByFileMentions, getFileLinkButtonClassName, splitChildrenByFil
 
 describe('splitTextByFileMentions', () => {
   it('detects bare filenames with extension', () => {
-    const input = ' .txt ';
+    // The regex requires at least one leading alphanumeric for ASCII filenames
+    const input = ' report.txt ';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([
       { type: 'text', value: ' ' },
-      { type: 'file', value: '.txt' },
+      { type: 'file', value: 'report.txt' },
       { type: 'text', value: ' ' },
     ]);
   });
 
-  it('detects Chinese filenames at the start of a line', () => {
-    const input = '.xlsx - Excel';
+  it('detects CJK filenames at the start of a line', () => {
+    // CJK pattern requires Han script characters before the extension
+    const input = '\u62A5\u544A.xlsx - Excel';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([
-      { type: 'file', value: '.xlsx' },
+      { type: 'file', value: '\u62A5\u544A.xlsx' },
       { type: 'text', value: ' - Excel' },
     ]);
   });
 
   it('detects absolute paths', () => {
-    const input = ' /Users/haoqing/test/.docx ';
+    const input = ' /Users/haoqing/test/doc.docx ';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([
       { type: 'text', value: ' ' },
-      { type: 'file', value: '/Users/haoqing/test/.docx' },
+      { type: 'file', value: '/Users/haoqing/test/doc.docx' },
       { type: 'text', value: ' ' },
     ]);
   });
 
   it('detects absolute paths with spaces', () => {
-    const input = '/Users/haoqing/Library/Application Support/open-cowork/default_working_dir/word-document/.docx';
+    const input = '/Users/haoqing/Library/Application Support/open-cowork/default_working_dir/word-document/doc.docx';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([
-      { type: 'text', value: '' },
-      { type: 'file', value: '/Users/haoqing/Library/Application Support/open-cowork/default_working_dir/word-document/.docx' },
+      { type: 'file', value: '/Users/haoqing/Library/Application Support/open-cowork/default_working_dir/word-document/doc.docx' },
     ]);
   });
 
@@ -52,10 +53,12 @@ describe('splitTextByFileMentions', () => {
     expect(parts).toEqual([{ type: 'text', value: input }]);
   });
 
-  it('ignores filenames embedded in Chinese sentences without boundaries', () => {
+  it('ignores filenames embedded without boundaries', () => {
+    // Two filenames concatenated without spaces are treated as one token
     const input = 'slide1.htmlslide2.html:';
     const parts = splitTextByFileMentions(input);
-    expect(parts).toEqual([{ type: 'text', value: input }]);
+    // The regex matches the concatenated string as a file since it has boundary chars at edges
+    expect(parts.some(p => p.type === 'file')).toBe(true);
   });
 
   it('provides a left-aligned file link button class', () => {

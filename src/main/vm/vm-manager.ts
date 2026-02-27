@@ -25,10 +25,9 @@ import type {
   ImageDownloadProgress,
   OSImage,
   GuestProvisionStatus,
-  GuestProvisionProgress,
 } from './types';
 import type { ServerEvent } from '../../renderer/types';
-import { VMGuestProvisioner, getVMGuestProvisioner } from './vm-guest-provisioner';
+import { getVMGuestProvisioner } from './vm-guest-provisioner';
 import { NaviGuestClient } from './navi-guest-client';
 
 const HEALTH_POLL_INTERVAL_MS = 5000;
@@ -48,6 +47,9 @@ export class VMManager {
   // Computer Use
   private computerUseAdapters: Map<string, ComputerUseAdapter> = new Map();
   private computerUseEnabledSet: Set<string> = new Set();
+
+  // Guard against concurrent cleanup
+  private cleaningUp: Set<string> = new Set();
 
   // Guest Navi agent connections
   private naviClients: Map<string, NaviGuestClient> = new Map();
@@ -162,6 +164,8 @@ export class VMManager {
       // 3. Start VM in headless mode (VRDE takes over display)
       const startResult = await this.backend.startVM(config.name, false);
       if (!startResult.success) {
+        // Roll back VRDE configuration so next retry gets a clean port
+        await this.vboxBackend.disableVRDE(config.name).catch(() => {});
         this.portManager.releasePort(vmId);
         return { success: false, error: `Failed to start VM: ${startResult.error}` };
       }
@@ -194,7 +198,7 @@ export class VMManager {
       this.portManager.releasePort(vmId);
       const proxy = this.vncProxies.get(vmId);
       if (proxy) {
-        await proxy.stop();
+        try { await proxy.stop(); } catch (err) { logError('[VMManager] Error stopping proxy during cleanup:', err); }
         this.vncProxies.delete(vmId);
       }
       return { success: false, error: msg };
@@ -487,15 +491,21 @@ export class VMManager {
 
           // Auto-cleanup if VM powers off externally
           if (status.state === 'powered_off' || status.state === 'error') {
+            if (this.cleaningUp.has(vmId)) return;
+            this.cleaningUp.add(vmId);
             this.stopHealthMonitor(vmId);
-            const proxy = this.vncProxies.get(vmId);
-            if (proxy) {
-              await proxy.stop();
-              this.vncProxies.delete(vmId);
+            try {
+              const proxy = this.vncProxies.get(vmId);
+              if (proxy) {
+                try { await proxy.stop(); } catch (err) { logError('[VMManager] Error stopping proxy during auto-cleanup:', err); }
+                this.vncProxies.delete(vmId);
+              }
+              this.portManager.releasePort(vmId);
+              this.computerUseAdapters.delete(vmId);
+              this.computerUseEnabledSet.delete(vmId);
+            } finally {
+              this.cleaningUp.delete(vmId);
             }
-            this.portManager.releasePort(vmId);
-            this.computerUseAdapters.delete(vmId);
-            this.computerUseEnabledSet.delete(vmId);
           }
         }
       } catch {

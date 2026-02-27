@@ -27,7 +27,6 @@ interface JsonRpcResponse {
 }
 
 export class NaviGuestClient {
-  private vmId: string;
   private vmName: string;
   private hostPort: number;
   private socket: net.Socket | null = null;
@@ -40,7 +39,6 @@ export class NaviGuestClient {
   private buffer = '';
 
   constructor(options: NaviGuestClientOptions) {
-    this.vmId = options.vmId;
     this.vmName = options.vmName;
     this.hostPort = options.hostPort;
   }

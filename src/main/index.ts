@@ -500,9 +500,11 @@ app.on('window-all-closed', async () => {
 app.on('before-quit', async (event) => {
   if (!isCleaningUp) {
     event.preventDefault();
-    await vmManager.shutdownAll();
-    await cleanupSandboxResources();
-    closeLogFile();
-    app.quit();
+    try {
+      await cleanupSandboxResources();
+      closeLogFile();
+    } finally {
+      setImmediate(() => app.quit());
+    }
   }
 });

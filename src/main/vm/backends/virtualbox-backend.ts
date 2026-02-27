@@ -134,6 +134,12 @@ export class VirtualBoxBackend implements VMBackend {
 
   async createVM(config: VMConfig, isoPath: string): Promise<VMOperationResult> {
     const vmName = config.name;
+
+    // Validate VM name to prevent VBoxManage issues with special characters
+    if (!/^[a-zA-Z0-9 _-]+$/.test(vmName) || vmName.length === 0 || vmName.length > 255) {
+      return { success: false, error: 'Invalid VM name. Use only letters, numbers, spaces, dashes, and underscores (max 255 chars).' };
+    }
+
     const { cpuCount, memoryMb, diskSizeGb, vramMb = 128, enableEFI = true } = config.resources;
     const osType = config.backendVmId || 'Ubuntu_64'; // overridden by caller
 

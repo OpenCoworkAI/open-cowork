@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { createTitleFlowHarness } from './support/session-title-harness';
 
 describe('session title flow', () => {
-  it('updates title after first user message when generator succeeds', async () => {
+  it('does not update title when generator returns empty string', async () => {
+    // normalizeTitle('') returns null, so updateTitle is never called
     const harness = createTitleFlowHarness({ generatedTitle: '' });
     await harness.runFirstMessage('PPT');
-    expect(harness.updatedTitle).toBe('');
+    expect(harness.updatedTitle).toBe(null);
   });
 
   it('does not update when generator fails', async () => {

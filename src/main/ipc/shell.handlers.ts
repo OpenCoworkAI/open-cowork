@@ -8,6 +8,15 @@ export function registerShellHandlers(deps: HandlerDependencies) {
 
   ipcMain.handle('shell.openExternal', async (_event, url: string) => {
     if (!url) return false;
+    try {
+      const parsed = new URL(url);
+      const allowedSchemes = ['http:', 'https:', 'mailto:'];
+      if (!allowedSchemes.includes(parsed.protocol)) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
     return shell.openExternal(url);
   });
 
