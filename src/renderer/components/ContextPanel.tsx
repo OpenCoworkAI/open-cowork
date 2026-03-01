@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
+import { resolveArtifactPath } from '../utils/artifact-path';
+import { extractFilePathFromToolOutput } from '../utils/tool-output-path';
+import { getArtifactLabel, getArtifactIconComponent, getArtifactSteps } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import {
   ChevronDown,
@@ -8,6 +11,13 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileSpreadsheet,
+  FilePieChart,
+  FileCode2,
+  FileArchive,
+  FileAudio2,
+  FileVideo,
+  Image as ImageIcon,
   FolderOpen,
   FolderSync,
   Globe,
@@ -61,6 +71,8 @@ export function ContextPanel() {
   const isRunning = Boolean(activeTurn || pendingCount > 0);
   const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
+  const { artifactSteps, displayArtifactSteps } = getArtifactSteps(steps);
+  const canShowItemInFolder = typeof window !== 'undefined' && !!window.electronAPI?.showItemInFolder;
 
   // Load MCP servers on mount
   useEffect(() => {
@@ -159,22 +171,52 @@ export function ContextPanel() {
         {artifactsOpen && (
           <div className="px-4 pb-4 space-y-1">
             {/* Extract artifacts from trace steps */}
-            {steps.filter(s => s.type === 'tool_result' && s.toolName === 'write_file').length === 0 ? (
+            {displayArtifactSteps.length === 0 ? (
               <p className="text-xs text-text-muted">{t('context.noArtifactsYet')}</p>
             ) : (
-              steps
-                .filter(s => s.type === 'tool_result' && s.toolName === 'write_file')
-                .map((step, index) => (
+              displayArtifactSteps.map((step, index) => {
+                const artifactInfo = parseArtifactOutput(step.toolOutput);
+                const fallbackPath = extractFilePathFromToolOutput(step.toolOutput);
+                const resolvedFallbackPath = fallbackPath
+                  ? resolveArtifactPath(fallbackPath, currentWorkingDir)
+                  : '';
+                const label = artifactSteps.length > 0
+                  ? getArtifactLabel(artifactInfo?.path || '', artifactInfo?.name)
+                  : (fallbackPath ? getArtifactLabel(fallbackPath) : t('context.fileCreated'));
+                const artifactPath = artifactSteps.length > 0
+                  ? resolveArtifactPath(artifactInfo?.path || '', currentWorkingDir)
+                  : resolvedFallbackPath;
+                const canClick = Boolean(artifactPath && canShowItemInFolder);
+                const iconComponent = getArtifactIconComponent(label);
+                const IconComponent =
+                  iconComponent === 'presentation' ? FilePieChart
+                  : iconComponent === 'table' ? FileSpreadsheet
+                  : iconComponent === 'document' ? FileText
+                  : iconComponent === 'code' ? FileCode2
+                  : iconComponent === 'image' ? ImageIcon
+                  : iconComponent === 'audio' ? FileAudio2
+                  : iconComponent === 'video' ? FileVideo
+                  : iconComponent === 'archive' ? FileArchive
+                  : iconComponent === 'text' ? File
+                  : File;
+
+                return (
                   <div
                     key={index}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors"
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
+                    onClick={() => {
+                      if (!canClick) return;
+                      void window.electronAPI.showItemInFolder(artifactPath);
+                    }}
+                    title={canClick ? artifactPath : undefined}
                   >
-                    <FileText className="w-4 h-4 text-text-muted" />
+                    <IconComponent className="w-4 h-4 text-text-muted" />
                     <span className="text-sm text-text-primary truncate">
-                      {step.toolOutput?.split(' ').pop() || t('context.fileCreated')}
+                      {label}
                     </span>
                   </div>
-                ))
+                );
+              })
             )}
           </div>
         )}
@@ -509,22 +551,22 @@ function TraceStepGroupItem({ group }: { group: StepGroup }) {
               {count > 1 && (
                 <p className="text-xs font-medium text-text-muted">{t('context.callNumber', { number: index + 1 })}</p>
               )}
-              {step.toolInput && (
-                <div>
+          {step.toolInput && (
+            <div>
                   <p className="text-xs font-medium text-text-muted mb-1">{t('context.input')}</p>
-                  <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
-                    {JSON.stringify(step.toolInput, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {step.toolOutput && (
-                <div>
+              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
+                {JSON.stringify(step.toolInput, null, 2)}
+              </pre>
+            </div>
+          )}
+          {step.toolOutput && (
+            <div>
                   <p className="text-xs font-medium text-text-muted mb-1">{t('context.output')}</p>
-                  <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                    {step.toolOutput}
-                  </pre>
-                </div>
-              )}
+              <pre className="text-xs bg-surface p-2 rounded overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+                {step.toolOutput}
+              </pre>
+            </div>
+          )}
             </div>
           ))}
         </div>
@@ -542,6 +584,21 @@ function getUniqueNonMCPTools(steps: TraceStep[]): string[] {
     }
   });
   return Array.from(tools);
+}
+
+function parseArtifactOutput(toolOutput?: string): { path?: string; name?: string; type?: string } | null {
+  if (!toolOutput) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(toolOutput);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as { path?: string; name?: string; type?: string };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 

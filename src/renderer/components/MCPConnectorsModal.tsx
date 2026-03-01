@@ -533,20 +533,29 @@ function ServerCard({
               {/* Tools List */}
               {showTools && serverTools.length > 0 && (
                 <div className="mt-3 ml-6 p-3 rounded-lg bg-surface-muted border border-border">
-                  <div className="text-xs font-medium text-text-primary mb-2">Available Tools:</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {serverTools.map((tool, idx) => (
-                      <div
-                        key={idx}
-                        className="px-2 py-1 rounded bg-background border border-border text-xs text-text-secondary"
-                        title={tool.description || tool.name}
-                      >
-                        <div className="font-mono text-accent">{tool.name.replace(/^mcp_[^_]+_/, '')}</div>
-                        {tool.description && (
-                          <div className="text-text-muted mt-0.5 truncate">{tool.description}</div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="text-xs font-medium text-text-primary mb-2">{serverTools.length} 个可用工具:</div>
+                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                    {serverTools.map((tool, idx) => {
+                      // Extract only the part after the last double underscore
+                      // e.g., "mcp__Software_Development__create_or_modify_code" -> "create_or_modify_code"
+                      const parts = tool.name.split('__');
+                      const displayName = parts.length > 1 ? parts[parts.length - 1] : tool.name;
+                      
+                      return (
+                        <div
+                          key={idx}
+                          className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary"
+                          title={`${displayName}\n\n${tool.description || ''}`}
+                        >
+                          <div className="font-mono text-accent break-words whitespace-normal">
+                            {displayName}
+                          </div>
+                          {tool.description && (
+                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">{tool.description}</div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

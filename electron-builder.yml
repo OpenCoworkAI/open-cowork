@@ -11,6 +11,7 @@ npmRebuild: true
 files:
   - dist/**/*
   - dist-electron/**/*
+  - dist-mcp/**/*
   - package.json
   - node_modules/@anthropic-ai/claude-code/**/*
   - node_modules/@anthropic-ai/claude-agent-sdk/**/*
@@ -19,6 +20,7 @@ files:
 
 # WSL Agent resources (for Windows sandbox)
 # Lima Agent resources (for macOS sandbox)
+# MCP servers (compiled JavaScript files)
 extraResources:
   - from: dist-wsl-agent
     to: wsl-agent
@@ -28,10 +30,15 @@ extraResources:
     to: lima-agent
     filter:
       - "**/*"
+  - from: dist-mcp
+    to: mcp
+    filter:
+      - "**/*"
 
 # Unpack claude-code so it can be executed as a CLI
 # Also unpack skills so they can be read/written at runtime
 # Sharp native modules must also be unpacked for image processing
+# Note: MCP servers are now bundled with esbuild, so no need to unpack MCP SDK
 asarUnpack:
   - node_modules/@anthropic-ai/claude-code/**/*
   - node_modules/@anthropic-ai/claude-agent-sdk/**/*
@@ -40,6 +47,7 @@ asarUnpack:
   - .claude/skills/**/*
 
 win:
+  icon: resources/icon.ico
   target:
     - target: nsis
       arch:
@@ -57,6 +65,7 @@ win:
         - "**/*"
 
 mac:
+  icon: resources/icon.icns
   target:
     - target: dmg
       arch:
@@ -73,8 +82,19 @@ mac:
       to: node
       filter:
         - "**/*"
+    # Bundled Python runtime + site-packages for GUI automation helpers (Pillow, pyobjc/Quartz)
+    - from: resources/python/darwin-${arch}
+      to: python
+      filter:
+        - "**/*"
+    # Bundled GUI helper tools (e.g. cliclick) to avoid relying on user-installed Homebrew tools
+    - from: resources/tools/darwin-${arch}
+      to: tools
+      filter:
+        - "**/*"
 
 linux:
+  icon: resources/icon.png
   target:
     - target: AppImage
       arch:

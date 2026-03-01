@@ -5,6 +5,8 @@ import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
+import { PluginCatalogService } from './skills/plugin-catalog-service';
+import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
 import { testApiConnection } from './config/api-tester';
 import { mcpConfigStore } from './mcp/mcp-config-store';
@@ -16,6 +18,9 @@ import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult } from '../renderer/types';
+import { remoteManager, type AgentExecutor } from './remote/remote-manager';
+import { remoteConfigStore } from './remote/remote-config-store';
+import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
 import {
   log,
   logWarn,
@@ -53,6 +58,7 @@ app.disableHardwareAcceleration();
 let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
+let pluginRuntimeService: PluginRuntimeService | null = null;
 
 function createWindow() {
   // Theme colors (warm cream theme)
@@ -77,7 +83,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false, // Temporarily disabled to test if it resolves the console error
     },
   };
 
@@ -96,10 +102,50 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(windowOptions);
 
+  const allowedOrigins = new Set<string>();
+  if (process.env.VITE_DEV_SERVER_URL) {
+    try {
+      allowedOrigins.add(new URL(process.env.VITE_DEV_SERVER_URL).origin);
+    } catch {
+      // 忽略无效的开发服务地址
+    }
+  }
+  const allowedProtocols = new Set<string>(['file:', 'devtools:']);
+
+  const isExternalUrl = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (allowedProtocols.has(parsed.protocol)) {
+        return false;
+      }
+      if (allowedOrigins.has(parsed.origin)) {
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  };
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalUrl(url)) {
+      void shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isExternalUrl(url)) {
+      event.preventDefault();
+      void shell.openExternal(url);
+    }
+  });
+
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools();
+    // mainWindow.webContents.openDevTools(); // Commented out - open manually with Cmd+Option+I if needed
   } else {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   }
@@ -233,8 +279,104 @@ async function startSandboxBootstrap(): Promise<void> {
   }
 }
 
-// Send event to renderer
+// 发送事件到渲染进程（含远程会话拦截）
 function sendToRenderer(event: ServerEvent) {
+  const payload = event.payload as { sessionId?: string; [key: string]: any };
+  const sessionId = payload?.sessionId;
+  
+  // 判断是否远程会话
+  if (sessionId && remoteManager.isRemoteSession(sessionId)) {
+    // 处理远程会话事件
+    
+    // 拦截 stream.message，用于回传到远程通道
+    if (event.type === 'stream.message') {
+      const message = payload.message as { role?: string; content?: Array<{ type: string; text?: string }> };
+      if (message?.role === 'assistant' && message?.content) {
+        // 提取助手文本内容
+        const textContent = message.content
+          .filter((c: any) => c.type === 'text' && c.text)
+          .map((c: any) => c.text)
+          .join('\n');
+        
+        if (textContent) {
+          // 发送到远程通道（带缓冲）
+          remoteManager.sendResponseToChannel(sessionId, textContent).catch((err: Error) => {
+            logError('[Remote] Failed to send response to channel:', err);
+          });
+        }
+      }
+    }
+    
+    // 拦截 trace.step 作为工具进度
+    if (event.type === 'trace.step') {
+      const step = payload.step as { type?: string; toolName?: string; status?: string; title?: string };
+      if (step?.type === 'tool_call' && step?.toolName) {
+        remoteManager.sendToolProgress(
+          sessionId,
+          step.toolName,
+          step.status === 'completed' ? 'completed' : step.status === 'error' ? 'error' : 'running'
+        ).catch((err: Error) => {
+          logError('[Remote] Failed to send tool progress:', err);
+        });
+      }
+    }
+    
+    // trace.update 预留；当前主要用 trace.step
+    
+    // 拦截 session.status 用于清理
+    if (event.type === 'session.status') {
+      const status = payload.status as string;
+      if (status === 'idle' || status === 'error') {
+        // 会话结束，清空缓冲
+        remoteManager.clearSessionBuffer(sessionId).catch((err: Error) => {
+          logError('[Remote] Failed to clear session buffer:', err);
+        });
+      }
+    }
+    
+    // 拦截 question.request
+    if (event.type === 'question.request' && payload.questionId && payload.questions) {
+      log('[Remote] Intercepting question for remote session:', sessionId);
+      remoteManager.handleQuestionRequest(
+        sessionId,
+        payload.questionId,
+        payload.questions
+      ).then((answer) => {
+        if (answer !== null && sessionManager) {
+          sessionManager.handleQuestionResponse(payload.questionId!, answer);
+        }
+      }).catch((err) => {
+        logError('[Remote] Failed to handle question request:', err);
+      });
+      return; // 不发送到本地 UI
+    }
+    
+    // 拦截 permission.request
+    if (event.type === 'permission.request' && payload.toolUseId && payload.toolName) {
+      log('[Remote] Intercepting permission for remote session:', sessionId);
+      remoteManager.handlePermissionRequest(
+        sessionId,
+        payload.toolUseId,
+        payload.toolName,
+        payload.input || {}
+      ).then((result) => {
+        if (result !== null && sessionManager) {
+          let permissionResult: 'allow' | 'deny' | 'allow_always';
+          if (result.allow) {
+            permissionResult = result.remember ? 'allow_always' : 'allow';
+          } else {
+            permissionResult = 'deny';
+          }
+          sessionManager.handlePermissionResponse(payload.toolUseId!, permissionResult);
+        }
+      }).catch((err) => {
+        logError('[Remote] Failed to handle permission request:', err);
+      });
+      return; // 不发送到本地 UI
+    }
+  }
+  
+  // 发送到本地 UI
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('server-event', event);
   }
@@ -269,15 +411,43 @@ app.whenReady().then(async () => {
   // Initialize default working directory
   initializeDefaultWorkingDir();
   log('Working directory:', currentWorkingDir);
+  // 远程会话默认使用全局工作目录
+  remoteManager.setDefaultWorkingDirectory(currentWorkingDir || undefined);
   
   // Initialize database
   const db = initDatabase();
 
   // Initialize skills manager
   skillsManager = new SkillsManager(db);
+  pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
 
   // Initialize session manager
-  sessionManager = new SessionManager(db, sendToRenderer);
+  sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
+
+  // 初始化远程管理器
+  remoteManager.setRendererCallback(sendToRenderer);
+  const agentExecutor: AgentExecutor = {
+    startSession: async (title, prompt, cwd) => {
+      if (!sessionManager) throw new Error('Session manager not initialized');
+      return sessionManager.startSession(title, prompt, cwd);
+    },
+    continueSession: async (sessionId, prompt, content) => {
+      if (!sessionManager) throw new Error('Session manager not initialized');
+      await sessionManager.continueSession(sessionId, prompt, content);
+    },
+    stopSession: async (sessionId) => {
+      if (!sessionManager) throw new Error('Session manager not initialized');
+      await sessionManager.stopSession(sessionId);
+    },
+  };
+  remoteManager.setAgentExecutor(agentExecutor);
+
+  // 远程控制启用时启动
+  if (remoteConfigStore.isEnabled()) {
+    remoteManager.start().catch(error => {
+      logError('[App] Failed to start remote control:', error);
+    });
+  }
 
   createWindow();
 
@@ -301,6 +471,15 @@ async function cleanupSandboxResources(): Promise<void> {
     return;
   }
   isCleaningUp = true;
+
+  // 停止远程控制
+  try {
+    log('[App] Stopping remote control...');
+    await remoteManager.stop();
+    log('[App] Remote control stopped');
+  } catch (error) {
+    logError('[App] Error stopping remote control:', error);
+  }
 
   // Cleanup all sandbox sessions (sync changes back to host OS first)
   try {
@@ -373,6 +552,14 @@ ipcMain.handle('shell.openExternal', async (_event, url: string) => {
   }
 
   return shell.openExternal(url);
+});
+
+ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string) => {
+  if (!filePath) {
+    return false;
+  }
+
+  return shell.showItemInFolder(filePath);
 });
 
 ipcMain.handle('dialog.selectFiles', async () => {
@@ -662,6 +849,118 @@ ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
   } catch (error) {
     logError('[Skills] Error validating skill:', error);
     return { valid: false, errors: ['Validation failed'] };
+  }
+});
+
+ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.listCatalog(options);
+  } catch (error) {
+    logError('[Plugins] Error listing catalog:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.listInstalled', async () => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return pluginRuntimeService.listInstalled();
+  } catch (error) {
+    logError('[Plugins] Error listing installed plugins:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.install', async (_event, pluginName: string) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.install(pluginName);
+  } catch (error) {
+    logError('[Plugins] Error installing plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('plugins.setEnabled', async (_event, pluginId: string, enabled: boolean) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.setEnabled(pluginId, enabled);
+  } catch (error) {
+    logError('[Plugins] Error toggling plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle(
+  'plugins.setComponentEnabled',
+  async (_event, pluginId: string, component: 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp', enabled: boolean) => {
+    try {
+      if (!pluginRuntimeService) {
+        throw new Error('PluginRuntimeService not initialized');
+      }
+      return await pluginRuntimeService.setComponentEnabled(pluginId, component, enabled);
+    } catch (error) {
+      logError('[Plugins] Error toggling plugin component:', error);
+      throw error;
+    }
+  }
+);
+
+ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
+  try {
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    return await pluginRuntimeService.uninstall(pluginId);
+  } catch (error) {
+    logError('[Plugins] Error uninstalling plugin:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.listPlugins', async (_event, installableOnly?: boolean) => {
+  try {
+    logWarn('[Skills] skills.listPlugins is deprecated. Use plugins.listCatalog instead.');
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    const plugins = await pluginRuntimeService.listCatalog({ installableOnly: installableOnly === true });
+    return plugins.map((plugin) => ({
+      ...plugin,
+      skillCount: plugin.componentCounts.skills,
+      hasSkills: plugin.componentCounts.skills > 0,
+    }));
+  } catch (error) {
+    logError('[Skills] Error listing plugins:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('skills.installPlugin', async (_event, pluginName: string) => {
+  try {
+    logWarn('[Skills] skills.installPlugin is deprecated. Use plugins.install instead.');
+    if (!pluginRuntimeService) {
+      throw new Error('PluginRuntimeService not initialized');
+    }
+    const result = await pluginRuntimeService.install(pluginName);
+    return {
+      pluginName: result.plugin.name,
+      installedSkills: result.installedSkills,
+      skippedSkills: [],
+      errors: result.warnings,
+    };
+  } catch (error) {
+    logError('[Skills] Error installing plugin:', error);
+    throw error;
   }
 });
 
@@ -983,6 +1282,166 @@ ipcMain.handle('logs.isEnabled', () => {
     return { success: true, enabled: isDevLogsEnabled() };
   } catch (error) {
     logError('[Logs] Error getting dev logs enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// ============================================================================
+// 远程控制 IPC 处理
+// ============================================================================
+
+ipcMain.handle('remote.getConfig', () => {
+  try {
+    return remoteConfigStore.getAll();
+  } catch (error) {
+    logError('[Remote] Error getting config:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('remote.getStatus', () => {
+  try {
+    return remoteManager.getStatus();
+  } catch (error) {
+    logError('[Remote] Error getting status:', error);
+    return { running: false, channels: [], activeSessions: 0, pendingPairings: 0 };
+  }
+});
+
+ipcMain.handle('remote.setEnabled', async (_event, enabled: boolean) => {
+  try {
+    remoteConfigStore.setEnabled(enabled);
+    
+    if (enabled) {
+      await remoteManager.start();
+    } else {
+      await remoteManager.stop();
+    }
+    
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error setting enabled:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.updateGatewayConfig', async (_event, config: Partial<GatewayConfig>) => {
+  try {
+    await remoteManager.updateGatewayConfig(config);
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error updating gateway config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannelConfig) => {
+  try {
+    await remoteManager.updateFeishuConfig(config);
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error updating Feishu config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.getPairedUsers', () => {
+  try {
+    return remoteManager.getPairedUsers();
+  } catch (error) {
+    logError('[Remote] Error getting paired users:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('remote.getPendingPairings', () => {
+  try {
+    return remoteManager.getPendingPairings();
+  } catch (error) {
+    logError('[Remote] Error getting pending pairings:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('remote.approvePairing', (_event, channelType: ChannelType, userId: string) => {
+  try {
+    const success = remoteManager.approvePairing(channelType, userId);
+    return { success };
+  } catch (error) {
+    logError('[Remote] Error approving pairing:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.revokePairing', (_event, channelType: ChannelType, userId: string) => {
+  try {
+    const success = remoteManager.revokePairing(channelType, userId);
+    return { success };
+  } catch (error) {
+    logError('[Remote] Error revoking pairing:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.getRemoteSessions', () => {
+  try {
+    return remoteManager.getRemoteSessions();
+  } catch (error) {
+    logError('[Remote] Error getting remote sessions:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('remote.clearRemoteSession', (_event, sessionId: string) => {
+  try {
+    const success = remoteManager.clearRemoteSession(sessionId);
+    return { success };
+  } catch (error) {
+    logError('[Remote] Error clearing remote session:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.getTunnelStatus', () => {
+  try {
+    return remoteManager.getTunnelStatus();
+  } catch (error) {
+    logError('[Remote] Error getting tunnel status:', error);
+    return { connected: false, url: null, provider: 'none' };
+  }
+});
+
+ipcMain.handle('remote.getWebhookUrl', () => {
+  try {
+    return remoteManager.getFeishuWebhookUrl();
+  } catch (error) {
+    logError('[Remote] Error getting webhook URL:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('remote.restart', async () => {
+  try {
+    await remoteManager.restart();
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error restarting:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: any[]) => {
+  try {
+    if (level === 'warn') {
+      logWarn(...args);
+    } else if (level === 'error') {
+      logError(...args);
+    } else {
+      log(...args);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[Logs] Error writing log:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

@@ -39,8 +39,17 @@
 <a id="核心特性"></a>
 ## ✨ 核心特性
 
+|               | MCP & Skills | 远程控制 | 图形界面操作 |
+| ------------- | ------------ | -------------- | ------------- |
+| Claude Cowork | ✓            | ✗              | ✗             |
+| OpenClaw      | ✓            | ✓              | ✗             |
+| OpenCowork    | ✓            | ✓              | ✓             |
+
+
 - **一键安装，开箱即用**：提供 Windows 和 macOS 预构建安装包，无需配置环境，下载即可开始使用。。
 - **灵活模型支持**：支持 **Claude**、**OpenAI 兼容接口**，以及国产大模型 **GLM**、**MiniMax**、**Kimi** 等。使用你的 OpenRouter、Anthropic等API Key，灵活配置。更多模型持续接入中！
+- **远程控制**：可以接入**飞书**等协作平台和远程服务，实现工作流自动化和跨平台操作。
+- **图形界面操作**：可以控制和操作电脑上的各种桌面 GUI 应用程序。**推荐使用 Gemini-3-Pro 模型**以获得最佳的 GUI 理解和控制效果。
 - **智能文件管理**：可以在工作区内读取、写入和整理文件。
 - **Skills 系统**：内置 PPTX、DOCX、PDF、XLSX 生成和处理工作流。**支持自定义技能的添加与删除。**
 - **MCP外部服务支持**：通过 **MCP Connectors** 连接器集成浏览器、Notion、自定义等应用，扩展 AI 能力。
@@ -152,7 +161,7 @@ brew install lima
 sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
 ```
 2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
-3. **Notion连接器使用**: 除了设置Notion token之外, 连接. 更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
+3. **Notion连接器使用**: 除了设置Notion token之外，还需要在根页面添加连接。更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
 
 <a id="技能库"></a>
 ## 🧰 技能库

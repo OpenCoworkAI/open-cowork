@@ -1,14 +1,18 @@
 {
   "name": "open-cowork",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "description": "Desktop Agent application with sandboxed environment for AI Agent interaction",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && vite",
-    "build": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && tsc && vite build && electron-builder",
+    "dev": "npm run download:node && npm run prepare:python && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",
+    "build": "npm run download:node && npm run prepare:gui-tools && npm run prepare:python:all && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && tsc && vite build && electron-builder",
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
     "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
+    "build:mcp": "node scripts/bundle-mcp.js",
     "download:node": "node scripts/download-node.js",
+    "prepare:gui-tools": "node scripts/prepare-gui-tools.js",
+    "prepare:python": "node scripts/prepare-python.js",
+    "prepare:python:all": "node scripts/prepare-python.js --all",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
@@ -19,7 +23,9 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.77",
     "@anthropic-ai/claude-code": "^2.1.7",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@larksuiteoapi/node-sdk": "^1.58.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@types/ws": "^8.18.1",
     "archiver": "^7.0.1",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.1",
@@ -30,6 +36,7 @@
     "i18next-browser-languagedetector": "^8.2.0",
     "katex": "^0.16.27",
     "lucide-react": "^0.468.0",
+    "ngrok": "^5.0.0-beta.2",
     "openai": "^6.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -39,6 +46,8 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "uuid": "^11.0.3",
+    "webdriverio": "^9.23.2",
+    "ws": "^8.19.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
@@ -52,8 +61,9 @@
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "electron": "^40.0.0",
+    "electron": "^31.7.7",
     "electron-builder": "^26.4.0",
+    "esbuild": "^0.27.2",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "postcss": "^8.4.49",
@@ -62,12 +72,15 @@
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^4.0.17"
   },
   "overrides": {
     "tar": "6.2.1"
   },
   "author": "Open Cowork Team",
-  "license": "MIT"
+  "license": "MIT",
+  "optionalDependencies": {
+    "bufferutil": "^4.1.0",
+    "utf-8-validate": "^6.0.6"
+  }
 }

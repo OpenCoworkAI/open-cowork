@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus } from '../types';
+import { applySessionUpdate } from '../utils/session-update';
 
 interface AppState {
   // Sessions
@@ -157,9 +158,7 @@ export const useAppStore = create<AppState>((set) => ({
   
   updateSession: (sessionId, updates) =>
     set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, ...updates } : s
-      ),
+      sessions: applySessionUpdate(state.sessions, sessionId, updates),
     })),
   
   removeSession: (sessionId) =>

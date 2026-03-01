@@ -60,6 +60,7 @@ export interface FileAttachmentContent {
   relativePath: string; // Path relative to session's .tmp folder
   size: number;
   mimeType?: string;
+  inlineDataBase64?: string;
 }
 
 export interface ToolUseContent {
@@ -74,6 +75,10 @@ export interface ToolResultContent {
   toolUseId: string;
   content: string;
   isError?: boolean;
+  images?: Array<{
+    data: string;          // base64 encoded image data
+    mimeType: string;      // e.g., 'image/png'
+  }>;
 }
 
 export interface ThinkingContent {
@@ -116,6 +121,72 @@ export interface Skill {
 }
 
 export type SkillType = 'builtin' | 'mcp' | 'custom';
+
+export type PluginComponentKind = 'skills' | 'commands' | 'agents' | 'hooks' | 'mcp';
+
+export interface PluginComponentCounts {
+  skills: number;
+  commands: number;
+  agents: number;
+  hooks: number;
+  mcp: number;
+}
+
+export interface PluginComponentEnabledState {
+  skills: boolean;
+  commands: boolean;
+  agents: boolean;
+  hooks: boolean;
+  mcp: boolean;
+}
+
+export interface PluginCatalogItemV2 {
+  name: string;
+  description?: string;
+  version?: string;
+  authorName?: string;
+  installable: boolean;
+  hasManifest: boolean;
+  componentCounts: PluginComponentCounts;
+}
+
+export interface PluginCatalogItem extends PluginCatalogItemV2 {
+  skillCount: number;
+  hasSkills: boolean;
+}
+
+export interface InstalledPlugin {
+  pluginId: string;
+  name: string;
+  description?: string;
+  version?: string;
+  authorName?: string;
+  enabled: boolean;
+  sourcePath: string;
+  runtimePath: string;
+  componentCounts: PluginComponentCounts;
+  componentsEnabled: PluginComponentEnabledState;
+  installedAt: number;
+  updatedAt: number;
+}
+
+export interface PluginInstallResultV2 {
+  plugin: InstalledPlugin;
+  installedSkills: string[];
+  warnings: string[];
+}
+
+export interface PluginToggleResult {
+  success: boolean;
+  plugin: InstalledPlugin;
+}
+
+export interface PluginInstallResult {
+  pluginName: string;
+  installedSkills: string[];
+  skippedSkills: string[];
+  errors: string[];
+}
 
 // Memory types
 export interface MemoryEntry {
@@ -232,6 +303,7 @@ export type ServerEvent =
   | { type: 'stream.message'; payload: { sessionId: string; message: Message } }
   | { type: 'stream.partial'; payload: { sessionId: string; delta: string } }
   | { type: 'session.status'; payload: { sessionId: string; status: SessionStatus; error?: string } }
+  | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
   | { type: 'session.list'; payload: { sessions: Session[] } }
   | { type: 'permission.request'; payload: PermissionRequest }
   | { type: 'question.request'; payload: UserQuestionRequest }
@@ -241,6 +313,7 @@ export type ServerEvent =
   | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
   | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
+  | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'error'; payload: { message: string } };
 
@@ -283,6 +356,7 @@ export interface AppConfig {
   claudeCodePath?: string;
   defaultWorkdir?: string;
   sandboxEnabled?: boolean;
+  enableThinking?: boolean;
   isConfigured: boolean;
 }
 

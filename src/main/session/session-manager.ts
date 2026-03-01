@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
+import OpenAI from 'openai';
+import { Anthropic } from '@anthropic-ai/sdk';
 import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -11,7 +13,9 @@ import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
+import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { log, logError } from '../utils/logger';
+import { maybeGenerateSessionTitle } from './session-title-flow';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -27,12 +31,18 @@ export class SessionManager {
   private sandboxAdapter: SandboxAdapter;
   private agentRunner!: AgentRunner;
   private mcpManager: MCPManager;
+  private pluginRuntimeService?: PluginRuntimeService;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
   private sandboxInitPromises: Map<string, Promise<void>> = new Map();
+  private sessionTitleAttempts: Set<string> = new Set();
 
-  constructor(db: DatabaseInstance, sendToRenderer: (event: ServerEvent) => void) {
+  constructor(
+    db: DatabaseInstance,
+    sendToRenderer: (event: ServerEvent) => void,
+    pluginRuntimeService?: PluginRuntimeService
+  ) {
     this.db = db;
     this.sendToRenderer = (event) => {
       if (event.type === 'trace.step') {
@@ -45,6 +55,7 @@ export class SessionManager {
     };
     this.pathResolver = new PathResolver();
     this.sandboxAdapter = getSandboxAdapter();
+    this.pluginRuntimeService = pluginRuntimeService;
 
     // Initialize MCP Manager
     this.mcpManager = new MCPManager();
@@ -81,7 +92,8 @@ export class SessionManager {
           saveMessage: (message: Message) => this.saveMessage(message),
         },
         this.pathResolver,
-        this.mcpManager
+        this.mcpManager,
+        this.pluginRuntimeService
       );
       log('[SessionManager] Using Claude Agent runner');
     }
@@ -325,62 +337,72 @@ export class SessionManager {
           }
 
           // Get source file path from the file attachment
-          const sourcePath = fileBlock.relativePath; // This is the full path from Electron
+          const sourcePath = (fileBlock.relativePath || '').trim(); // This is the full path from Electron
           // IMPORTANT: Use path.basename() to extract only the filename, not the full path
-          const destFilename = path.basename(fileBlock.filename || sourcePath);
+          const fallbackFilename = fileBlock.filename || sourcePath || `attachment-${Date.now()}`;
+          const destFilename = path.basename(fallbackFilename);
           const destPath = path.join(tmpDir, destFilename);
+          let actualSize = 0;
 
           // Copy file to .tmp directory
-          if (fs.existsSync(sourcePath)) {
+          if (sourcePath && fs.existsSync(sourcePath)) {
             fs.copyFileSync(sourcePath, destPath);
 
             // Get actual file size
             const stats = fs.statSync(destPath);
-            const actualSize = stats.size;
+            actualSize = stats.size;
 
             log('[SessionManager] Copied file:', sourcePath, '->', destPath, `(${actualSize} bytes)`);
+          } else if (fileBlock.inlineDataBase64) {
+            const buffer = Buffer.from(fileBlock.inlineDataBase64, 'base64');
+            fs.writeFileSync(destPath, buffer);
+            actualSize = buffer.length;
+            log('[SessionManager] Wrote file from inline data:', destPath, `(${actualSize} bytes)`);
+          } else {
+            logError('[SessionManager] Source file not found and inline data missing:', sourcePath || '(empty path)');
+            // Skip this file attachment
+            continue;
+          }
 
-            // If sandbox is already initialized, sync the file to sandbox as well
-            // This handles the case where user attaches files in subsequent messages
-            const sandboxPath = SandboxSync.getSandboxPath(session.id);
-            if (sandboxPath) {
-              const sandboxRelativePath = `.tmp/${destFilename}`;
-              log('[SessionManager] Syncing attached file to sandbox:', sandboxRelativePath);
-              const syncResult = await SandboxSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
-              if (syncResult.success) {
-                log('[SessionManager] File synced to sandbox:', syncResult.sandboxPath);
-              } else {
-                logError('[SessionManager] Failed to sync file to sandbox:', syncResult.error);
-                // Continue anyway - file is in Windows .tmp, agent might still work via /mnt/
-              }
+          // If sandbox is already initialized, sync the file to sandbox as well
+          // This handles the case where user attaches files in subsequent messages
+          const sandboxPath = SandboxSync.getSandboxPath(session.id);
+          if (sandboxPath) {
+            const sandboxRelativePath = `.tmp/${destFilename}`;
+            log('[SessionManager] Syncing attached file to sandbox:', sandboxRelativePath);
+            const syncResult = await SandboxSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
+            if (syncResult.success) {
+              log('[SessionManager] File synced to sandbox:', syncResult.sandboxPath);
             } else {
-              // Check for Lima sandbox
-              const { LimaSync } = await import('../sandbox/lima-sync');
-              const limaSandboxPath = LimaSync.getSandboxPath(session.id);
-              if (limaSandboxPath) {
-                const sandboxRelativePath = `.tmp/${destFilename}`;
-                log('[SessionManager] Syncing attached file to Lima sandbox:', sandboxRelativePath);
-                const syncResult = await LimaSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
-                if (syncResult.success) {
-                  log('[SessionManager] File synced to Lima sandbox:', syncResult.sandboxPath);
-                } else {
-                  logError('[SessionManager] Failed to sync file to Lima sandbox:', syncResult.error);
-                  // Continue anyway - file is in macOS .tmp, agent might still work via direct access
-                }
+              logError('[SessionManager] Failed to sync file to sandbox:', syncResult.error);
+              // Continue anyway - file is in Windows .tmp, agent might still work via /mnt/
+            }
+          } else {
+            // Check for Lima sandbox
+            const { LimaSync } = await import('../sandbox/lima-sync');
+            const limaSandboxPath = LimaSync.getSandboxPath(session.id);
+            if (limaSandboxPath) {
+              const sandboxRelativePath = `.tmp/${destFilename}`;
+              log('[SessionManager] Syncing attached file to Lima sandbox:', sandboxRelativePath);
+              const syncResult = await LimaSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
+              if (syncResult.success) {
+                log('[SessionManager] File synced to Lima sandbox:', syncResult.sandboxPath);
+              } else {
+                logError('[SessionManager] Failed to sync file to Lima sandbox:', syncResult.error);
+                // Continue anyway - file is in macOS .tmp, agent might still work via direct access
               }
             }
-
-            // Update the content block with the new relative path and actual size
-            const relativePathFromCwd = path.join('.tmp', destFilename);
-            processedContent.push({
-              ...fileBlock,
-              relativePath: relativePathFromCwd,
-              size: actualSize,
-            });
-          } else {
-            logError('[SessionManager] Source file not found:', sourcePath);
-            // Skip this file attachment
           }
+
+          // Update the content block with the new relative path and actual size
+          const relativePathFromCwd = path.join('.tmp', destFilename);
+          const restFileBlock = { ...fileBlock };
+          delete restFileBlock.inlineDataBase64;
+          processedContent.push({
+            ...restFileBlock,
+            relativePath: relativePathFromCwd,
+            size: actualSize,
+          });
         } catch (error) {
           logError('[SessionManager] Error copying file:', error);
           // Skip this file attachment
@@ -438,6 +460,8 @@ export class SessionManager {
       // Get existing messages for context (including the one we just saved)
       const existingMessages = this.getMessages(session.id);
 
+      void this.runSessionTitleGeneration(session, prompt, existingMessages);
+
       // Run the agent - this handles everything including sending messages
       // Use enhanced prompt that includes file information
       await this.agentRunner.run(session, enhancedPrompt, existingMessages);
@@ -448,6 +472,71 @@ export class SessionManager {
         payload: { message: error instanceof Error ? error.message : 'Unknown error' },
       });
     }
+  }
+
+  private async runSessionTitleGeneration(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+    const userMessageCount = existingMessages.filter((message) => message.role === 'user').length;
+    try {
+      await maybeGenerateSessionTitle({
+        sessionId: session.id,
+        prompt,
+        userMessageCount,
+        currentTitle: session.title,
+        hasAttempted: this.sessionTitleAttempts.has(session.id),
+        generateTitle: (titlePrompt) => this.generateTitleWithConfig(titlePrompt),
+        getLatestTitle: () => this.db.sessions.get(session.id)?.title ?? null,
+        markAttempt: () => {
+          this.sessionTitleAttempts.add(session.id);
+        },
+        updateTitle: async (title) => {
+          session.title = title;
+          this.updateSessionTitle(session.id, title);
+        },
+        log,
+      });
+    } catch (error) {
+      logError('[SessionTitle] Unexpected error', session.id, error);
+    }
+  }
+
+  private async generateTitleWithConfig(titlePrompt: string): Promise<string | null> {
+    const provider = configStore.get('provider');
+    const customProtocol = configStore.get('customProtocol');
+    const apiKey = configStore.get('apiKey');
+    const baseUrl = configStore.get('baseUrl');
+    const model = configStore.get('model');
+    const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
+
+    if (!apiKey || !model) {
+      log('[SessionTitle] Missing apiKey/model, skip generation');
+      return null;
+    }
+
+    if (useOpenAI) {
+      const client = new OpenAI({
+        apiKey,
+        baseURL: baseUrl || undefined,
+      });
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: titlePrompt }],
+        temperature: 0.2,
+        max_tokens: 64,
+      });
+      return response.choices[0]?.message?.content?.trim() || null;
+    }
+
+    const useAuthTokenHeader = provider === 'openrouter';
+    const client = useAuthTokenHeader
+      ? new Anthropic({ authToken: apiKey, baseURL: baseUrl || undefined })
+      : new Anthropic({ apiKey, baseURL: baseUrl || undefined });
+    const response = await client.messages.create({
+      model,
+      max_tokens: 64,
+      messages: [{ role: 'user', content: titlePrompt }],
+    });
+    const text = response.content.find((item) => item.type === 'text')?.text;
+    return text?.trim() || null;
   }
 
   private enqueuePrompt(session: Session, prompt: string, content?: ContentBlock[]): void {
@@ -524,6 +613,7 @@ export class SessionManager {
 
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
+    this.sessionTitleAttempts.delete(sessionId);
     
     log('[SessionManager] Session deleted:', sessionId);
   }
@@ -535,6 +625,14 @@ export class SessionManager {
     this.sendToRenderer({
       type: 'session.status',
       payload: { sessionId, status },
+    });
+  }
+
+  private updateSessionTitle(sessionId: string, title: string): void {
+    this.db.sessions.update(sessionId, { title });
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: { sessionId, updates: { title } },
     });
   }
 

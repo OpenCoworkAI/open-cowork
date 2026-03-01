@@ -16,6 +16,14 @@ import {
   FileSearch,
 } from 'lucide-react';
 
+type AttachedFile = {
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  inlineDataBase64?: string;
+};
+
 export function WelcomeView() {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
@@ -23,7 +31,7 @@ export function WelcomeView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComposingRef = useRef(false);
   const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { startSession, changeWorkingDir, isElectron } = useIPC();
@@ -216,28 +224,48 @@ export function WelcomeView() {
 
     const files = Array.from(e.dataTransfer.files);
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
 
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length > 0) {
+      const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
 
-    const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
-
-    for (const file of imageFiles) {
-      try {
-        // Resize if needed to stay under API limit
-        const resizedBlob = await resizeImageIfNeeded(file);
-        const base64 = await blobToBase64(resizedBlob);
-        const url = URL.createObjectURL(resizedBlob);
-        newImages.push({
-          url,
-          base64,
-          mediaType: resizedBlob.type,
-        });
-      } catch (err) {
-        console.error('Failed to process dropped image:', err);
+      for (const file of imageFiles) {
+        try {
+          // Resize if needed to stay under API limit
+          const resizedBlob = await resizeImageIfNeeded(file);
+          const base64 = await blobToBase64(resizedBlob);
+          const url = URL.createObjectURL(resizedBlob);
+          newImages.push({
+            url,
+            base64,
+            mediaType: resizedBlob.type,
+          });
+        } catch (err) {
+          console.error('Failed to process dropped image:', err);
+        }
       }
+
+      setPastedImages(prev => [...prev, ...newImages]);
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    if (otherFiles.length > 0) {
+      const newFiles = await Promise.all(
+        otherFiles.map(async (file) => {
+          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
+
+          return {
+            name: file.name,
+            path: droppedPath,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            inlineDataBase64,
+          };
+        })
+      );
+
+      setAttachedFiles(prev => [...prev, ...newFiles]);
+    }
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -271,6 +299,7 @@ export function WelcomeView() {
         relativePath: file.path,
         size: file.size,
         mimeType: file.type,
+        inlineDataBase64: file.inlineDataBase64,
       });
     });
 

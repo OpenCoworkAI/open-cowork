@@ -1,6 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { app } from 'electron';
+import path from 'path';
 import { log, logError, logWarn } from '../utils/logger';
 
 /**
@@ -303,6 +305,84 @@ export class MCPManager {
   }
 
   /**
+   * Get the path to a MCP server file in the mcp directory
+   */
+  private getMcpServerPath(filename: string): string {
+    const fs = require('fs');
+    
+    // In development: __dirname points to dist-electron/main
+    // In production: appPath points to the app.asar or unpacked app
+    if (app.isPackaged) {
+      // Production: use compiled JavaScript files from extraResources/mcp
+      // Convert .ts extension to .js
+      const jsFilename = filename.replace(/\.ts$/, '.js');
+      const mcpPath = path.join(process.resourcesPath || '', 'mcp', jsFilename);
+      
+      // Check if compiled JS file exists in resources
+      try {
+        if (fs.existsSync(mcpPath)) {
+          log(`[MCPManager] Found MCP server at: ${mcpPath}`);
+          return mcpPath;
+        } else {
+          logError(`[MCPManager] File not found at: ${mcpPath}`);
+        }
+      } catch (error) {
+        logError(`[MCPManager] Error checking MCP server path: ${error}`);
+      }
+    }
+    
+    // Development: __dirname is dist-electron/main
+    // Need to go up 2 levels to get to project root (dist-electron/main -> dist-electron -> project root)
+    const projectRoot = path.join(__dirname, '..', '..');
+
+    // Prefer bundled JS from dist-mcp in development.
+    // This avoids running TypeScript directly with `node` (which will fail without a TS loader).
+    const jsFilename = filename.replace(/\.ts$/, '.js');
+    const devBundledPath = path.join(projectRoot, 'dist-mcp', jsFilename);
+    try {
+      if (fs.existsSync(devBundledPath)) {
+        log(`[MCPManager] Found bundled MCP server (dev) at: ${devBundledPath}`);
+        return devBundledPath;
+      }
+    } catch (error) {
+      logWarn(`[MCPManager] Error checking dev bundled MCP server path: ${error}`);
+    }
+
+    // Fallback to source TypeScript (requires running via tsx/ts-node if using command 'node')
+    const sourcePath = path.join(projectRoot, 'src', 'main', 'mcp', filename);
+    
+    // Verify file exists and log for debugging
+    try {
+      if (fs.existsSync(sourcePath)) {
+        log(`[MCPManager] MCP Server path resolved (${filename}):`, sourcePath);
+        return sourcePath;
+      } else {
+        logError(`[MCPManager] File not found at:`, sourcePath);
+        logError('[MCPManager] __dirname:', __dirname);
+        logError('[MCPManager] projectRoot:', projectRoot);
+      }
+    } catch (error) {
+      logError('[MCPManager] Error checking file:', error);
+    }
+    
+    return sourcePath;
+  }
+
+  /**
+   * Get the path to the Software Development MCP server file
+   */
+  private getSoftwareDevServerPath(): string {
+    return this.getMcpServerPath('software-dev-server-example.ts');
+  }
+
+  /**
+   * Get the path to the GUI Operate MCP server file
+   */
+  private getGuiOperateServerPath(): string {
+    return this.getMcpServerPath('gui-operate-server.ts');
+  }
+
+  /**
    * Connect to a single MCP server
    */
   private async connectServer(config: MCPServerConfig): Promise<void> {
@@ -318,7 +398,56 @@ export class MCPManager {
       }
 
       let command = config.command;
-      const args = config.args || [];
+      // Resolve path placeholders for presets
+      let args = config.args || [];
+      
+      // Auto-migrate old configs: if using 'npx -y tsx' with built-in MCP servers, switch to 'node'
+      const isBuiltinServer = (config.name === 'GUI_Operate' || config.name === 'GUI Operate' || 
+                                config.name === 'Software_Development' || config.name === 'Software Development');
+      const isOldConfig = (command === 'npx' || command.endsWith('/npx')) && 
+                          args.includes('-y') && args.includes('tsx');
+      
+      if (isBuiltinServer && isOldConfig && app.isPackaged) {
+        log(`[MCPManager] Auto-migrating ${config.name} from npx/tsx to node (production mode)`);
+        
+        // Get bundled node path
+        const bundledNode = this.getBundledNodePath();
+        if (bundledNode) {
+          command = bundledNode.node;
+          // Remove '-y', 'tsx' from args, keep only the script path
+          args = args.filter(arg => arg !== '-y' && arg !== 'tsx');
+          log(`[MCPManager] Updated command: ${command} ${args.join(' ')}`);
+        }
+      }
+      
+      args = args.map(arg => {
+        // Software Development server path
+        if (arg === '{SOFTWARE_DEV_SERVER_PATH}') {
+          return this.getSoftwareDevServerPath();
+        }
+        // GUI Operate server path
+        if (arg === '{GUI_OPERATE_SERVER_PATH}') {
+          return this.getGuiOperateServerPath();
+      }
+        return arg;
+      });
+
+      // Dev guard: running TypeScript directly with `node` will fail (no TS loader).
+      // We expect built-in servers to be bundled into dist-mcp/*.js in development.
+      if (!app.isPackaged && isBuiltinServer) {
+        const cmdBase = path.basename(command).toLowerCase();
+        const isNodeCmd = cmdBase === 'node' || cmdBase === 'node.exe';
+        const tsScript = args.find(a => typeof a === 'string' && a.endsWith('.ts'));
+        if (isNodeCmd && tsScript) {
+          throw new Error(
+            `[MCPManager] Development config is trying to run a TypeScript MCP server with node:\n` +
+            `  ${command} ${args.join(' ')}\n\n` +
+            `Fix:\n` +
+            `- Run: npm run build:mcp (or restart npm run dev, which should run it)\n` +
+            `- Or change this server command to: npx -y tsx <server.ts>\n`
+          );
+        }
+      }
       
       // If command is 'npx', check if it's in PATH
       if (command === 'npx' || command.endsWith('/npx')) {
@@ -338,6 +467,22 @@ export class MCPManager {
       
       // Get environment variables
       const env = await this.getEnhancedEnv(config.env || {});
+      
+      // In production, set NODE_PATH to include unpacked node_modules
+      if (app.isPackaged && isBuiltinServer) {
+        const unpackedNodeModules = path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules');
+        const asarNodeModules = path.join(process.resourcesPath || '', 'app.asar', 'node_modules');
+        
+        // Add both paths to NODE_PATH (unpacked takes priority)
+        const nodePaths = [unpackedNodeModules, asarNodeModules];
+        
+        env.NODE_PATH = nodePaths.join(path.delimiter);
+        log(`[MCPManager] Set NODE_PATH for MCP server: ${env.NODE_PATH}`);
+
+        // Pass resourcesPath to MCP servers so they can reliably locate bundled tools/resources
+        // (Node processes spawned from bundled Node.js do not have process.resourcesPath)
+        env.OPEN_COWORK_RESOURCES_PATH = process.resourcesPath || '';
+      }
 
       log(`[MCPManager] Creating STDIO transport: ${command} ${args.join(' ')}`);
       log(`[MCPManager] Environment variables: ${Object.keys(env).length} vars`);
@@ -811,7 +956,9 @@ export class MCPManager {
         
         for (const tool of listToolsResult.tools) {
           // Prefix tool name with server name to avoid conflicts
-          const prefixedName = `mcp_${config.name.toLowerCase().replace(/\s+/g, '_')}_${tool.name}`;
+          // Format: mcp__<ServerName>__<toolName> (double underscores, preserve case)
+          const serverKey = config.name.replace(/\s+/g, '_');
+          const prefixedName = `mcp__${serverKey}__${tool.name}`;
           
           this.tools.set(prefixedName, {
             name: prefixedName,
@@ -868,8 +1015,15 @@ export class MCPManager {
       throw new Error(`MCP server not connected: ${tool.serverId}`);
     }
 
-    // Extract the actual tool name (remove prefix)
-    const actualToolName = toolName.replace(/^mcp_[^_]+_/, '');
+    // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
+    let actualToolName = toolName;
+    if (toolName.startsWith('mcp__')) {
+      const remainder = toolName.slice('mcp__'.length);
+      const separatorIndex = remainder.indexOf('__');
+      if (separatorIndex !== -1) {
+        actualToolName = remainder.slice(separatorIndex + 2);
+      }
+    }
 
     log(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
 

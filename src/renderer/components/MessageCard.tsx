@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, isValidElement, cloneElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -6,6 +6,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { useIPC } from '../hooks/useIPC';
 import { useAppStore } from '../store';
+import {
+  splitTextByFileMentions,
+  splitChildrenByFileMentions,
+  getFileLinkButtonClassName
+} from '../utils/file-link';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
 import {
   ChevronDown,
@@ -65,7 +70,7 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
         // User message - compact styling with smaller padding and radius
         <div className="flex items-start gap-2 justify-end group">
         <div
-          className={`message-user px-4 py-2.5 max-w-[80%] break-words ${
+          className={`message-user px-4 py-2.5 max-w-[80%] min-w-0 break-words ${
             isQueued ? 'opacity-70 border-dashed' : ''
           } ${isCancelled ? 'opacity-60' : ''}`}
         >
@@ -134,6 +139,57 @@ interface ContentBlockViewProps {
 }
 
 function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: ContentBlockViewProps) {
+  const { activeSessionId, sessions, workingDir } = useAppStore();
+  const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
+  const currentWorkingDir = activeSession?.cwd || workingDir;
+
+  const resolveFilePath = (value: string) => {
+    if (/^(?:[A-Za-z]:\\|\\\\|\/)/.test(value)) {
+      return value;
+    }
+    if (!currentWorkingDir) {
+      return value;
+    }
+    return `${currentWorkingDir.replace(/[\\/]+$/, '')}/${value}`;
+  };
+
+  const renderFileButton = (value: string, key?: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => {
+        if (typeof window !== 'undefined' && window.electronAPI?.showItemInFolder) {
+          void window.electronAPI.showItemInFolder(resolveFilePath(value));
+        }
+      }}
+      className={getFileLinkButtonClassName()}
+      title="在文件夹中定位"
+    >
+      {value}
+    </button>
+  );
+
+  const renderFileMentionParts = (parts: ReturnType<typeof splitChildrenByFileMentions>, keyPrefix: string) =>
+    parts.map((part, partIndex) => {
+      const key = `${keyPrefix}-${partIndex}`;
+      if (part.type === 'file') {
+        return renderFileButton(part.value, key);
+      }
+      if (part.type === 'text') {
+        return <span key={key}>{part.value}</span>;
+      }
+      if (isValidElement(part.value)) {
+        return part.value.key ? part.value : cloneElement(part.value, { key });
+      }
+      return <span key={key}>{String(part.value)}</span>;
+    });
+
+  const renderChildrenWithFileLinks = (children: unknown, keyPrefix: string) => {
+    const normalized = Array.isArray(children) ? children : [children];
+    const parts = splitChildrenByFileMentions(normalized);
+    return renderFileMentionParts(parts, keyPrefix);
+  };
+
   switch (block.type) {
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
@@ -192,6 +248,11 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 const isInline = !match;
 
                 if (isInline) {
+                  const raw = String(children);
+                  const parts = splitTextByFileMentions(raw);
+                  if (parts.length === 1 && parts[0].type === 'file') {
+                    return renderFileButton(parts[0].value);
+                  }
                   return (
                     <code className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm" {...props}>
                       {children}
@@ -206,7 +267,18 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 );
               },
               p({ children }) {
-                return <p>{children}</p>;
+                return (
+                  <p className="text-left">
+                    {renderChildrenWithFileLinks(children, 'p')}
+                  </p>
+                );
+              },
+              li({ children }) {
+                return (
+                  <li className="text-left">
+                    {renderChildrenWithFileLinks(children, 'li')}
+                  </li>
+                );
               },
               table({ children }) {
                 return (
@@ -243,10 +315,18 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
                 );
               },
               strong({ children }) {
-                return <strong>{children}</strong>;
+                return (
+                  <strong>
+                    {renderChildrenWithFileLinks(children, 'strong')}
+                  </strong>
+                );
               },
               em({ children }) {
-                return <em>{children}</em>;
+                return (
+                  <em>
+                    {renderChildrenWithFileLinks(children, 'em')}
+                  </em>
+                );
               },
             }}
           >
@@ -280,7 +360,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
       const fileBlock = block as FileAttachmentContent;
 
       return (
-        <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border">
+        <div className="flex max-w-full min-w-0 items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border overflow-hidden">
           <FileText className="w-4 h-4 text-accent flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-text-primary truncate">{fileBlock.filename}</p>
@@ -810,6 +890,17 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
   };
 
   const summary = generateSummary(block.content, block.isError || false);
+  const hasImages = block.images && block.images.length > 0;
+
+  // Debug: Log the entire block to see what we're receiving
+  console.log('[ToolResultBlock] Full block:', {
+    toolUseId: block.toolUseId,
+    hasImages: hasImages,
+    imagesCount: block.images?.length || 0,
+    contentLength: block.content?.length || 0,
+    imagesMimeTypes: block.images?.map(img => img.mimeType),
+    imagesDataLengths: block.images?.map(img => img.data?.length || 0)
+  });
 
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-surface">
@@ -826,6 +917,11 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
         )}
         <span className={`font-medium text-sm flex-1 text-left ${block.isError ? 'text-error' : 'text-success'}`}>
           {summary}
+          {hasImages && block.images && (
+            <span className="ml-2 text-xs text-text-muted">
+              📸 {block.images.length} image{block.images.length > 1 ? 's' : ''}
+            </span>
+          )}
         </span>
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-text-muted" />
@@ -835,10 +931,26 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
       </button>
 
       {expanded && (
-        <div className="p-4 bg-surface">
+        <div className="p-4 bg-surface space-y-4">
           <pre className="code-block text-xs whitespace-pre-wrap font-mono">
             {block.content}
           </pre>
+
+          {/* Render images if present */}
+          {block.images && block.images.length > 0 && (
+            <div className="space-y-3">
+              {block.images.map((image, index) => (
+                <div key={index} className="border border-border rounded-lg overflow-hidden">
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={`Screenshot ${index + 1}`}
+                    className="w-full h-auto"
+                    style={{ maxHeight: '600px', objectFit: 'contain' }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

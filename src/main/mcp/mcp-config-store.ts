@@ -1,4 +1,6 @@
 import Store from 'electron-store';
+import { app } from 'electron';
+import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
 
 /**
@@ -23,6 +25,32 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
     requiresEnv: ['NOTION_TOKEN'],
     envDescription: {
       NOTION_TOKEN: 'Notion Internal Integration Token (get from notion.so/profile/integrations)',
+    },
+  },
+  'software-development': {
+    name: 'Software_Development',
+    type: 'stdio',
+    command: 'node',
+    args: ['{SOFTWARE_DEV_SERVER_PATH}'], // Path will be resolved at runtime (compiled JS in production)
+    env: {
+      WORKSPACE_DIR: '',
+      TEST_ENV: 'development',
+    },
+    requiresEnv: [],
+    envDescription: {
+      WORKSPACE_DIR: 'Workspace directory for code development (optional)',
+      TEST_ENV: 'Test environment: development, staging, or production (optional)',
+    },
+  },
+  'gui-operate': {
+    name: 'GUI_Operate',
+    type: 'stdio',
+    command: 'node',
+    args: ['{GUI_OPERATE_SERVER_PATH}'], // Path will be resolved at runtime (compiled JS in production)
+    env: {},
+    requiresEnv: [],
+    envDescription: {
+      // No environment variables required
     },
   },
 };
@@ -104,6 +132,80 @@ class MCPConfigStore {
   }
 
   /**
+   * Get the path to a MCP server file in the mcp directory
+   */
+  private getMcpServerPath(filename: string): string {
+    const fs = require('fs');
+    
+    // In development: __dirname points to dist-electron/main
+    // In production: appPath points to the app.asar or unpacked app
+    if (app.isPackaged) {
+      // Production: use compiled JavaScript files from extraResources/mcp
+      // Convert .ts extension to .js
+      const jsFilename = filename.replace(/\.ts$/, '.js');
+      const mcpPath = path.join(process.resourcesPath || '', 'mcp', jsFilename);
+      
+      // Check if compiled JS file exists in resources
+      try {
+        if (fs.existsSync(mcpPath)) {
+          return mcpPath;
+        }
+      } catch {
+        // Fall through to development path
+      }
+    }
+    
+    // Development: __dirname is dist-electron/main
+    // Need to go up 2 levels to get to project root (dist-electron/main -> dist-electron -> project root)
+    const projectRoot = path.join(__dirname, '..', '..');
+
+    // Prefer bundled JS from dist-mcp in development.
+    // This avoids attempting to run TypeScript directly with `node`.
+    const jsFilename = filename.replace(/\.ts$/, '.js');
+    const devBundledPath = path.join(projectRoot, 'dist-mcp', jsFilename);
+    try {
+      if (fs.existsSync(devBundledPath)) {
+        return devBundledPath;
+      }
+    } catch {
+      // Fall through to source path
+    }
+
+    // Fallback: navigate to src/main/mcp/[filename]
+    const sourcePath = path.join(projectRoot, 'src', 'main', 'mcp', filename);
+    
+    // Verify file exists and log for debugging
+    try {
+      if (fs.existsSync(sourcePath)) {
+        console.log(`[MCPConfigStore] MCP Server path resolved (${filename}):`, sourcePath);
+        return sourcePath;
+      } else {
+        console.error(`[MCPConfigStore] File not found at:`, sourcePath);
+        console.error('[MCPConfigStore] __dirname:', __dirname);
+        console.error('[MCPConfigStore] projectRoot:', projectRoot);
+      }
+    } catch (error) {
+      console.error('[MCPConfigStore] Error checking file:', error);
+    }
+    
+    return sourcePath;
+  }
+
+  /**
+   * Get the path to the Software Development MCP server file
+   */
+  private getSoftwareDevServerPath(): string {
+    return this.getMcpServerPath('software-dev-server-example.ts');
+  }
+
+  /**
+   * Get the path to the GUI Operate MCP server file
+   */
+  private getGuiOperateServerPath(): string {
+    return this.getMcpServerPath('gui-operate-server.ts');
+  }
+
+  /**
    * Create a server config from a preset
    */
   createFromPreset(presetKey: string, enabled: boolean = false): MCPServerConfig | null {
@@ -112,8 +214,28 @@ class MCPConfigStore {
       return null;
     }
 
+    // Resolve path placeholders for presets
+    let resolvedPreset = { ...preset };
+    
+    if (preset.args) {
+      resolvedPreset = {
+        ...preset,
+        args: preset.args.map(arg => {
+          // Software Development server path
+          if (arg === '{SOFTWARE_DEV_SERVER_PATH}') {
+            return this.getSoftwareDevServerPath();
+          }
+          // GUI Operate server path
+          if (arg === '{GUI_OPERATE_SERVER_PATH}') {
+            return this.getGuiOperateServerPath();
+          }
+          return arg;
+        }),
+      };
+    }
+
     return {
-      ...preset,
+      ...resolvedPreset,
       id: `mcp-${presetKey}-${Date.now()}`,
       enabled,
     };

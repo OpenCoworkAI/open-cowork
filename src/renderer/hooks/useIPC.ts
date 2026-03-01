@@ -44,6 +44,10 @@ export function useIPC() {
             store.clearQueuedMessages(event.payload.sessionId);
           }
           break;
+        
+        case 'session.update':
+          store.updateSession(event.payload.sessionId, event.payload.updates);
+          break;
 
         case 'stream.message':
           console.log('[useIPC] stream.message received:', event.payload.message.role, 'content:', JSON.stringify(event.payload.message.content));

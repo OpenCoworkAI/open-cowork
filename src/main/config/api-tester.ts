@@ -11,7 +11,7 @@ const NETWORK_ERROR_CODES = new Set([
   'ENETUNREACH',
 ]);
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 function normalizeApiTestError(error: unknown): ApiTestResult {
   const err = error as {
@@ -39,7 +39,10 @@ function normalizeApiTestError(error: unknown): ApiTestResult {
   if (typeof status === 'number' && status >= 500) {
     return { ok: false, status, errorType: 'server_error' };
   }
-  if ((code && NETWORK_ERROR_CODES.has(code)) || (message && /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH/i.test(message))) {
+  if (
+    (code && NETWORK_ERROR_CODES.has(code)) ||
+    (message && /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|timed?\s*out|timeout|abort/i.test(message))
+  ) {
     return { ok: false, status, errorType: 'network_error', details: message || code };
   }
 
@@ -125,9 +128,11 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
               baseURL: resolvedBaseUrl,
               timeout: REQUEST_TIMEOUT_MS,
             });
-        if (useLiveRequest || useAuthTokenHeader) {
-          // OpenRouter doesn't support models.list(), always use messages.create()
-          // For other providers, use messages.create() only when useLiveRequest is true
+        // Anthropic-compatible custom providers usually don't support models.list().
+        // Use a tiny messages.create request as a universal connectivity check.
+        if (useLiveRequest || useAuthTokenHeader || input.provider === 'custom') {
+          // OpenRouter/custom Anthropic-compatible services don't reliably support models.list(),
+          // so we use a tiny messages.create request for compatibility.
           const model = input.model || 'claude-sonnet-4-5';
           await client.messages.create({
             model,

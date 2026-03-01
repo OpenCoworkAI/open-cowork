@@ -13,6 +13,14 @@ import {
   X,
 } from 'lucide-react';
 
+type AttachedFile = {
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  inlineDataBase64?: string;
+};
+
 export function ChatView() {
   const { t } = useTranslation();
   const {
@@ -33,15 +41,19 @@ export function ChatView() {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const connectorMeasureRef = useRef<HTMLDivElement>(null);
   const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; size: number; type: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isUserAtBottomRef = useRef(true);
   const isComposingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevMessageCountRef = useRef(0);
   const prevPartialLengthRef = useRef(0);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRequestRef = useRef<number | null>(null);
+  const isScrollingRef = useRef(false);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
@@ -79,6 +91,42 @@ export function ChatView() {
     ];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
 
+  // Debounced scroll function to prevent scroll conflicts
+  const scrollToBottom = useRef((behavior: ScrollBehavior = 'auto', immediate: boolean = false) => {
+    // Cancel any pending scroll requests
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+    if (scrollRequestRef.current) {
+      cancelAnimationFrame(scrollRequestRef.current);
+      scrollRequestRef.current = null;
+    }
+
+    const performScroll = () => {
+      if (!isUserAtBottomRef.current) return;
+      
+      // Mark as scrolling to prevent concurrent scrolls
+      isScrollingRef.current = true;
+      
+      messagesEndRef.current?.scrollIntoView({ behavior });
+      
+      // Reset scrolling flag after a short delay
+      setTimeout(() => {
+        isScrollingRef.current = false;
+      }, behavior === 'smooth' ? 300 : 50);
+    };
+
+    if (immediate) {
+      performScroll();
+    } else {
+      // Use RAF + timeout for debouncing
+      scrollRequestRef.current = requestAnimationFrame(() => {
+        scrollTimeoutRef.current = setTimeout(performScroll, 16); // ~1 frame delay
+      });
+    }
+  }).current;
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -98,19 +146,61 @@ export function ChatView() {
     const partialLength = partialMessage.length;
     const hasNewMessage = messageCount !== prevMessageCountRef.current;
     const isStreamingTick = partialLength !== prevPartialLengthRef.current && !hasNewMessage;
-    const behavior: ScrollBehavior = hasNewMessage ? 'smooth' : 'auto';
+
+    // Skip scroll if already scrolling (prevent conflicts)
+    if (isScrollingRef.current) {
+      prevMessageCountRef.current = messageCount;
+      prevPartialLengthRef.current = partialLength;
+      return;
+    }
 
     if (isUserAtBottomRef.current) {
       if (!isStreamingTick) {
-        messagesEndRef.current?.scrollIntoView({ behavior });
+        // New message - use smooth scroll but with debounce
+        const behavior: ScrollBehavior = hasNewMessage ? 'smooth' : 'auto';
+        scrollToBottom(behavior, false);
       } else {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        // Streaming tick - use instant scroll with debounce
+        scrollToBottom('auto', false);
       }
     }
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
   }, [messages.length, partialMessage]);
+
+  // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const messagesContainer = messagesContainerRef.current;
+    if (!container || !messagesContainer) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // Don't interfere with ongoing scrolls
+      if (!isScrollingRef.current && isUserAtBottomRef.current) {
+        // Scroll to bottom when content height changes
+        scrollToBottom('auto', false);
+      }
+    });
+
+    resizeObserver.observe(messagesContainer);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [displayedMessages]); // Re-create observer when messages change to ensure we're observing the right element
+
+  // Cleanup scroll timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      if (scrollRequestRef.current) {
+        cancelAnimationFrame(scrollRequestRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -327,12 +417,20 @@ export function ChatView() {
 
     // Process other files
     if (otherFiles.length > 0) {
-      const newFiles = otherFiles.map(file => ({
-        name: file.name,
-        path: ('path' in file && typeof file.path === 'string') ? file.path : '', // Electron may provide path property
-        size: file.size,
-        type: file.type || 'application/octet-stream',
-      }));
+      const newFiles = await Promise.all(
+        otherFiles.map(async (file) => {
+          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
+
+          return {
+            name: file.name,
+            path: droppedPath,
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            inlineDataBase64,
+          };
+        })
+      );
 
       setAttachedFiles(prev => [...prev, ...newFiles]);
     }
@@ -387,10 +485,10 @@ export function ChatView() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-
+    
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
-
+    
     if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || !activeSessionId || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -418,6 +516,7 @@ export function ChatView() {
           relativePath: file.path, // Will be processed by backend to copy to .tmp
           size: file.size,
           mimeType: file.type,
+          inlineDataBase64: file.inlineDataBase64,
         });
       });
 
@@ -500,7 +599,7 @@ export function ChatView() {
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto py-6 px-4 space-y-4">
+        <div ref={messagesContainerRef} className="w-full max-w-[1180px] mx-auto py-6 px-4 lg:px-6 space-y-4">
           {displayedMessages.length === 0 ? (
             <div className="text-center py-12 text-text-muted">
               <p>{t('chat.startConversation')}</p>
@@ -509,13 +608,13 @@ export function ChatView() {
             displayedMessages.map((message) => {
               const isStreaming = typeof message.id === 'string' && message.id.startsWith('partial-');
               return (
-                <div key={message.id}>
+              <div key={message.id}>
                   <MessageCard message={message} isStreaming={isStreaming} />
-                </div>
+              </div>
               );
             })
           )}
-
+          
           {/* Processing indicator - show when we have an active turn but no partial message yet */}
           {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
@@ -525,7 +624,7 @@ export function ChatView() {
               </span>
             </div>
           )}
-
+          
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -642,13 +741,13 @@ export function ChatView() {
                     <Square className="w-4 h-4" />
                   </button>
                 )}
-                <button
-                  type="submit"
+                  <button
+                    type="submit"
                   disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
               </div>
             </div>
 
