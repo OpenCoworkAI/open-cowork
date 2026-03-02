@@ -1,20 +1,21 @@
 <p align="center">
-  <img src="resources/logo.png" alt="Open Cowork Logo" width="280" />
-</p>
-
-<h1 align="center">🚀 Open Cowork: Your Personal AI Agent Desktop App</h1>
-
-<p align="center">
-  • Open Source Claude Cowork • One-Click Install 
+  <img src="resources/Brand/brandmark-design (1)_1756956005044.png" alt="Coeadapt Logo" width="380" />
 </p>
 
 <p align="center">
-  <a href="./README_zh.md">中文文档</a> •
+  • AI-Powered Desktop Cowork • Adapting Together
+</p>
+
+<p align="center">
+  <a href="./README_zh.md"></a> •
   <a href="#features">Features</a> •
   <a href="#demo">Demo</a> •
   <a href="#installation">Downloads</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#skills">Skills Library</a>
+  <a href="#skills">Skills Library</a> •
+  <a href="docs/architecture.md">Architecture</a> •
+  <a href="docs/development.md">Dev Guide</a> •
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center">
@@ -27,12 +28,12 @@
 
 ## 📖 Introduction
 
-**Open Cowork** is an open-source implementation of **Claude Cowork**, with one-click installers for **Windows** and **macOS**—no coding required.
+**Coeadapt** is an AI-powered desktop application for intelligent cowork, built on the open-source [Open Cowork](https://github.com/OpenCoworkAI/open-cowork) project. It provides one-click installers for **Windows** and **macOS**—no coding required.
 
 It provides a sandboxed workspace where AI can manage files, generate professional outputs (PPTX, DOCX, XLSX, etc.) through our built-in **Skills** system, and **connect to desktop apps via MCP** (browser, Notion, etc.) for better collaboration.
 
 > [!WARNING]
-> **Disclaimer**: Open Cowork is an AI collaboration tool. Please exercise caution with its operations, especially when authorizing file modifications or deletions. We support VM-based sandbox isolation, but some operations may still carry risks.
+> **Disclaimer**: Coeadapt is an AI collaboration tool. Please exercise caution with its operations, especially when authorizing file modifications or deletions. We support VM-based sandbox isolation, but some operations may still carry risks.
 
 ---
 
@@ -43,7 +44,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 | ------------- | ------------ | -------------- | ------------- |
 | Claude Cowork | ✓            | ✗              | ✗             |
 | OpenClaw      | ✓            | ✓              | ✗             |
-| OpenCowork    | ✓            | ✓              | ✓             |
+| Coeadapt      | ✓            | ✓              | ✓             |
 
 - **One-Click Install, Ready to Use**: Pre-built installers for Windows and macOS, no environment setup needed—just download and start using.
 - **Flexible Model Support**: Supports **Claude**, **OpenAI-compatible APIs**, and Chinese models like **GLM**, **MiniMax**, **Kimi**. Use your OpenRouter, Anthropic, or other API keys with flexible configuration. More models coming soon!
@@ -64,7 +65,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 
 ## 🎬 Demo
 
-See Open Cowork in action:
+See Coeadapt in action:
 
 ### 1. Folder Organization & Cleanup 📂
 https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7
@@ -88,7 +89,7 @@ https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74
 
 ### Option 1: Download Installer (Recommended)
 
-Get the latest version from our [Releases Page](https://github.com/OpenCoworkAI/open-cowork/releases).
+Get the latest version from our [Releases Page](https://github.com/coeadapt/coeadapt/releases).
 
 | Platform | File Type |
 |----------|-----------|
@@ -100,8 +101,8 @@ Get the latest version from our [Releases Page](https://github.com/OpenCoworkAI/
 For developers who want to contribute or modify the codebase:
 
 ```bash
-git clone https://github.com/OpenCoworkAI/open-cowork.git
-cd open-cowork
+git clone https://github.com/coeadapt/coeadapt.git
+cd coeadapt
 npm install
 npm run rebuild
 npm run dev
@@ -111,7 +112,7 @@ To build the installer locally: `npm run build`
 
 ### Security Configuration: 🔒 Sandbox Support
 
-Open Cowork provides **multi-level sandbox protection** to keep your system safe:
+Coeadapt provides **multi-level sandbox protection** to keep your system safe:
 
 | Level | Platform | Technology | Description |
 |-------|----------|------------|-------------|
@@ -131,7 +132,7 @@ Open Cowork provides **multi-level sandbox protection** to keep your system safe
 Lima is auto-detected if installed. Install command:
 ```bash
 brew install lima
-# Open Cowork will automatically create and manage a 'claude-sandbox' VM
+# Coeadapt will automatically create and manage a 'claude-sandbox' VM
 ```
 
 ---
@@ -157,7 +158,7 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
 4. Enter the **Model** name you want to use.
 
 ### 3. Start Coworking
-1. **Select a Workspace**: Choose a folder where Claude is allowed to work.
+1. **Select a Workspace**: Choose a folder where the AI agent is allowed to work.
 2. **Enter a Prompt**:
    > "Read the financial_report.csv in this folder and create a PowerPoint summary with 5 slides."
 
@@ -166,7 +167,7 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
 1.  **macOS Installation**: If you see a security warning when opening the app, go to **System Settings > Privacy & Security** and click **Open Anyway**. If it is still blocked, run:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
+sudo xattr -rd com.apple.quarantine "/Applications/Coeadapt.app"
 ```
 2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
 3. **Notion Connector**: Besides setting the integration token, you also need to add connections in a root page. See https://www.notion.com/help/add-and-manage-connections-with-the-api for more details.
@@ -175,74 +176,92 @@ sudo xattr -rd com.apple.quarantine "/Applications/Open Cowork.app"
 <a id="skills"></a>
 ## 🧰 Skills Library
 
-Open Cowork ships with built-in skills under `.claude/skills/`, and supports user-added or custom skills, including:
+Coeadapt ships with built-in skills under `.claude/skills/`, and supports user-added or custom skills, including:
 - `pptx` for PowerPoint generation
 - `docx` for Word document processing
 - `pdf` for PDF handling and forms
 - `xlsx` for Excel spreadsheet support
+- `career` for career development coaching
 - `skill-creator` for creating custom skills
 
 ---
 
 ## 🏗️ Architecture
 
+> For a comprehensive architecture deep-dive, see **[docs/architecture.md](docs/architecture.md)**.
+> For developer setup and contribution guide, see **[docs/development.md](docs/development.md)**.
+
 ```
-open-cowork/
+coeadapt/
 ├── src/
-│   ├── main/                    # Electron Main Process (Node.js)
-│   │   ├── index.ts             # Main entry point
-│   │   ├── claude/              # Agent SDK & Runner
-│   │   │   └── agent-runner.ts  # AI agent execution logic
-│   │   ├── config/              # Configuration management
-│   │   │   └── config-store.ts  # Persistent settings storage
-│   │   ├── db/                  # Database layer
-│   │   │   └── database.ts      # SQLite/data persistence
-│   │   ├── ipc/                 # IPC handlers
-│   │   ├── memory/              # Memory management
-│   │   │   └── memory-manager.ts
-│   │   ├── sandbox/             # Security & Path Resolution
-│   │   │   └── path-resolver.ts # Sandboxed file access
-│   │   ├── session/             # Session management
-│   │   │   └── session-manager.ts
-│   │   ├── skills/              # Skill Loader & Manager
-│   │   │   └── skills-manager.ts
-│   │   └── tools/               # Tool execution
-│   │       └── tool-executor.ts # Tool call handling
-│   ├── preload/                 # Electron preload scripts
-│   │   └── index.ts             # Context bridge setup
-│   └── renderer/                # Frontend UI (React + Tailwind)
-│       ├── App.tsx              # Root component
-│       ├── main.tsx             # React entry point
-│       ├── components/          # UI Components
-│       │   ├── ChatView.tsx     # Main chat interface
-│       │   ├── ConfigModal.tsx  # Settings dialog
-│       │   ├── ContextPanel.tsx # File context display
-│       │   ├── MessageCard.tsx  # Chat message component
-│       │   ├── PermissionDialog.tsx
-│       │   ├── Sidebar.tsx      # Navigation sidebar
-│       │   ├── Titlebar.tsx     # Custom window titlebar
-│       │   ├── TracePanel.tsx   # AI reasoning trace
-│       │   └── WelcomeView.tsx  # Onboarding screen
-│       ├── hooks/               # Custom React hooks
-│       │   └── useIPC.ts        # IPC communication hook
-│       ├── store/               # State management
-│       │   └── index.ts
-│       ├── styles/              # CSS styles
-│       │   └── globals.css
-│       ├── types/               # TypeScript types
-│       │   └── index.ts
-│       └── utils/               # Utility functions
-├── .claude/
-│   └── skills/                  # Default Skill Definitions
-│       ├── pptx/                # PowerPoint generation
-│       ├── docx/                # Word document processing
-│       ├── pdf/                 # PDF handling & forms
-│       ├── xlsx/                # Excel spreadsheet support
-│       └── skill-creator/       # Skill development toolkit
-├── resources/                   # Static Assets (icons, images)
-├── electron-builder.yml         # Build configuration
-├── vite.config.ts               # Vite bundler config
-└── package.json                 # Dependencies & scripts
+│   ├── main/                       # Electron Main Process (Node.js)
+│   │   ├── index.ts                # App entry point & IPC handlers
+│   │   ├── claude/                 # Claude Agent SDK integration
+│   │   │   ├── agent-runner.ts     # Core agent execution engine
+│   │   │   ├── claude-env.ts       # Environment variable builder
+│   │   │   ├── redaction.ts        # Sensitive text redaction
+│   │   │   └── thinking-options.ts # Extended thinking config
+│   │   ├── openai/                 # OpenAI-compatible runner
+│   │   │   └── responses-runner.ts # Responses/Chat completions
+│   │   ├── config/                 # Configuration management
+│   │   │   ├── config-store.ts     # Persistent settings
+│   │   │   └── api-tester.ts       # API connectivity testing
+│   │   ├── db/                     # Database layer
+│   │   │   └── database.ts         # SQLite schema & CRUD
+│   │   ├── mcp/                    # MCP server management
+│   │   │   ├── mcp-manager.ts      # Server connections & tools
+│   │   │   └── mcp-config-store.ts # Server config persistence
+│   │   ├── remote/                 # Remote control system
+│   │   │   ├── remote-manager.ts   # Central orchestrator
+│   │   │   ├── gateway.ts          # HTTP webhook gateway
+│   │   │   ├── tunnel-manager.ts   # Ngrok tunnel management
+│   │   │   └── channels/feishu.ts  # Feishu/Lark bot channel
+│   │   ├── sandbox/                # Execution isolation
+│   │   │   ├── sandbox-adapter.ts  # Unified sandbox interface
+│   │   │   ├── wsl-bridge.ts       # WSL2 integration (Windows)
+│   │   │   ├── lima-bridge.ts      # Lima VM integration (macOS)
+│   │   │   ├── sandbox-sync.ts     # File sync (host ↔ VM)
+│   │   │   └── path-resolver.ts    # Virtual → real path mapping
+│   │   ├── session/                # Session management
+│   │   │   └── session-manager.ts  # Session lifecycle
+│   │   ├── skills/                 # Plugin & Skill system
+│   │   │   ├── plugin-runtime-service.ts  # V2 plugin runtime
+│   │   │   ├── plugin-catalog-service.ts  # Plugin catalog
+│   │   │   └── skills-manager.ts   # Legacy skill management
+│   │   ├── memory/                 # Context management
+│   │   ├── credentials/            # Credential storage
+│   │   ├── tools/                  # Tool execution
+│   │   └── utils/                  # Logging, parsing
+│   ├── preload/                    # Electron preload script
+│   │   └── index.ts                # IPC context bridge
+│   └── renderer/                   # Frontend UI (React + Tailwind)
+│       ├── App.tsx                 # Root component
+│       ├── components/             # UI Components
+│       │   ├── ChatView.tsx        # Main chat interface
+│       │   ├── MessageCard.tsx     # Message rendering
+│       │   ├── SettingsPanel.tsx   # Comprehensive settings
+│       │   ├── TracePanel.tsx      # Agent reasoning trace
+│       │   ├── MCPConnectorsModal.tsx  # MCP server management
+│       │   ├── RemoteControlPanel.tsx  # Remote control config
+│       │   └── ...                 # 12 more components
+│       ├── hooks/useIPC.ts         # IPC communication hook
+│       ├── store/index.ts          # Zustand state management
+│       ├── i18n/                   # Internationalization (EN/ZH)
+│       ├── types/index.ts          # Shared TypeScript types
+│       └── utils/                  # Frontend utilities
+├── .claude/skills/                 # Built-in skill definitions
+│   ├── pptx/    docx/    pdf/     # Document generation
+│   ├── xlsx/    career/            # Spreadsheets, career coaching
+│   └── skill-creator/             # Custom skill creation guide
+├── tests/                          # Vitest test suite (28 files)
+├── scripts/                        # Build automation
+├── resources/                      # Icons, bundled runtimes
+├── docs/                           # Developer documentation
+│   ├── architecture.md            # Architecture deep-dive
+│   └── development.md             # Developer setup guide
+├── CHANGELOG.md                    # Version history
+├── electron-builder.yml            # Packaging configuration
+└── package.json                    # Dependencies & scripts
 ```
 
 ---
@@ -254,10 +273,15 @@ open-cowork/
 - [x] **Skills**: PPTX, DOCX, PDF, XLSX Support + Custom Skill Management
 - [x] **VM Sandbox**: WSL2 (Windows) and Lima (macOS) isolation support
 - [x] **MCP Connectors**: Custom connector support for external service integration
-- [x] **Rich Input**: File upload and image input in chat
+- [x] **Rich Input**: File upload, image input, and drag-drop in chat
 - [x] **Multi-Model**: OpenAI-compatible API support (iterating)
 - [x] **UI/UX**: Enhanced interface with English/Chinese localization
-- [ ] **Memory Optimization**: Improved context management for longer sessions and cross-session memory.
+- [x] **Remote Control**: Feishu/Lark bot integration with ngrok tunneling
+- [x] **GUI Operation**: Desktop GUI automation on Windows and macOS
+- [x] **Plugin System**: V2 plugin runtime with catalog, install, and component management
+- [x] **Career Development**: Integrated career planning, skill gap analysis, and job search
+- [ ] **Memory Optimization**: Improved context management for longer sessions and cross-session memory
+- [ ] **CI/CD**: Automated testing and build pipelines
 - [ ] **New Features**: Stay tuned!
 
 ---
@@ -266,9 +290,10 @@ open-cowork/
 
 We welcome contributions! Whether it's a new Skill, a UI fix, or a security improvement:
 
-1. Fork the repo.
-2. Create a branch (`git checkout -b feature/NewSkill`).
-3. Submit a PR.
+1. Read the **[Developer Guide](docs/development.md)** for setup and conventions.
+2. Fork the repo.
+3. Create a branch (`git checkout -b feature/NewSkill`).
+4. Submit a PR.
 
 ---
 
@@ -284,10 +309,12 @@ Join our WeChat group for support and discussion:
 
 ## 📄 License
 
-MIT © Open Cowork Team
+MIT © [Coeadapt](https://github.com/coeadapt/coeadapt)
+
+Originally created as [Open Cowork](https://github.com/OpenCoworkAI/open-cowork) by OpenCoworkAI.
 
 ---
 
 <p align="center">
-  Made with ❤️ by the Open Cowork Team with the help of opus4.5
+  Adapting Together
 </p>

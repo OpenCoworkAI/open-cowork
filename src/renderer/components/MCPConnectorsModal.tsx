@@ -533,7 +533,7 @@ function ServerCard({
               {/* Tools List */}
               {showTools && serverTools.length > 0 && (
                 <div className="mt-3 ml-6 p-3 rounded-lg bg-surface-muted border border-border">
-                  <div className="text-xs font-medium text-text-primary mb-2">{serverTools.length} 个可用工具:</div>
+                  <div className="text-xs font-medium text-text-primary mb-2">{serverTools.length} :</div>
                   <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
                     {serverTools.map((tool, idx) => {
                       // Extract only the part after the last double underscore
@@ -772,14 +772,14 @@ function ServerForm({
           {/* Environment Variables */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-text-primary">环境变量</label>
+              <label className="block text-sm font-medium text-text-primary"></label>
               <button
                 type="button"
                 onClick={addEnvVar}
                 className="text-xs text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" />
-                添加环境变量
+                
               </button>
             </div>
             {env.length > 0 && (

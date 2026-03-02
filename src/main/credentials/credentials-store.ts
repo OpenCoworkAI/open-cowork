@@ -36,10 +36,11 @@ class CredentialsStore {
   constructor() {
     this.store = new Store<{ credentials: StoredCredential[] }>({
       name: 'credentials',
+      projectName: 'coeadapt',
       defaults: {
         credentials: [],
       },
-    });
+    } as any);
 
     // Generate or retrieve encryption key
     // In production, this should be derived from a master password or system keychain
@@ -51,7 +52,7 @@ class CredentialsStore {
    * Stored separately from credentials for security
    */
   private getOrCreateEncryptionKey(): Buffer {
-    const keyStore = new Store<{ key: string }>({ name: 'credentials-key' });
+    const keyStore = new Store<{ key: string }>({ name: 'credentials-key', projectName: 'coeadapt' } as any);
     let key = keyStore.get('key');
     
     if (!key) {

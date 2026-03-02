@@ -1,6 +1,6 @@
 /**
  * Message Router
- * 消息路由器：将远程消息路由到 Agent，将 Agent 响应路由回 Channel
+ *  Agent Agent  Channel
  */
 
 import { log, logError } from '../utils/logger';
@@ -294,7 +294,7 @@ export class MessageRouter {
       channelId: originalMessage.channelId,
       content: {
         type: 'text',
-        text: `✅ 工作目录已切换到: ${newCwd}`,
+        text: `✅ : ${newCwd}`,
       },
       replyTo: originalMessage.id,
     };
@@ -324,7 +324,7 @@ export class MessageRouter {
           // For now, add as text description
           blocks.push({
             type: 'text',
-            text: `[用户发送了一张图片: ${message.content.imageUrl}]`,
+            text: `[: ${message.content.imageUrl}]`,
           } as TextContent);
         }
         break;
@@ -333,7 +333,7 @@ export class MessageRouter {
         if (message.content.file) {
           blocks.push({
             type: 'text',
-            text: `[用户发送了文件: ${message.content.file.name}]`,
+            text: `[: ${message.content.file.name}]`,
           } as TextContent);
         }
         break;
@@ -342,14 +342,14 @@ export class MessageRouter {
         // TODO: Transcribe voice message
         blocks.push({
           type: 'text',
-          text: '[用户发送了语音消息]',
+          text: '[]',
         } as TextContent);
         break;
         
       default:
         blocks.push({
           type: 'text',
-          text: message.content.text || '[不支持的消息类型]',
+          text: message.content.text || '[]',
         } as TextContent);
     }
     
@@ -358,8 +358,8 @@ export class MessageRouter {
   
   /**
    * Extract prompt text and working directory from message
-   * Supports [cwd:路径] prefix to specify working directory
-   * Also supports !cd 路径 command to change working directory
+   * Supports [cwd:] prefix to specify working directory
+   * Also supports !cd  command to change working directory
    */
   private extractPromptAndCwd(message: RemoteMessage): { prompt: string; cwd?: string } {
     let cwd: string | undefined;
@@ -371,8 +371,8 @@ export class MessageRouter {
       // Remove common mention patterns
       text = text.replace(/@\S+\s*/g, '').trim();
       
-      // Check for [cwd:路径] prefix
-      // Supports both [cwd:路径] and [cwd: 路径] formats
+      // Check for [cwd:] prefix
+      // Supports both [cwd:] and [cwd: ] formats
       const cwdMatch = text.match(/^\[cwd:\s*([^\]]+)\]\s*/i);
       if (cwdMatch) {
         cwd = cwdMatch[1].trim();
@@ -387,10 +387,10 @@ export class MessageRouter {
         return { prompt: '', cwd };
       }
       
-      return { prompt: text || '你好', cwd };
+      return { prompt: text || '', cwd };
     }
     
-    return { prompt: '请处理上述内容', cwd };
+    return { prompt: '', cwd };
   }
   
   /**
@@ -465,7 +465,7 @@ export class MessageRouter {
       channelId: originalMessage.channelId,
       content: {
         type: 'text',
-        text: `❌ 处理消息时发生错误: ${errorMessage}`,
+        text: `❌ : ${errorMessage}`,
       },
       replyTo: originalMessage.id,
     };

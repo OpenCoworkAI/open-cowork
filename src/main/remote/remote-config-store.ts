@@ -1,6 +1,6 @@
 /**
  * Remote Config Store
- * 远程控制配置存储
+ * 
  */
 
 import Store from 'electron-store';
@@ -8,7 +8,6 @@ import { log } from '../utils/logger';
 import type {
   RemoteConfig,
   GatewayConfig,
-  FeishuChannelConfig,
   WechatChannelConfig,
   TelegramChannelConfig,
   DingtalkChannelConfig,
@@ -23,12 +22,13 @@ class RemoteConfigStore {
   constructor() {
     this.store = new Store<RemoteConfig & { pairedUsers: PairedUser[] }>({
       name: 'remote-config',
+      projectName: 'coeadapt',
       defaults: {
         ...DEFAULT_REMOTE_CONFIG,
         pairedUsers: [],
       },
       encryptionKey: 'open-cowork-remote-v1',
-    });
+    } as any);
     
     // Migrate: change pairing mode to allowlist (allow everyone by default)
     this.migrateAuthMode();
@@ -75,21 +75,7 @@ class RemoteConfigStore {
     log('[RemoteConfig] Gateway config updated');
   }
   
-  /**
-   * Get feishu channel config
-   */
-  getFeishuConfig(): FeishuChannelConfig | undefined {
-    return this.store.get('channels.feishu');
-  }
-  
-  /**
-   * Set feishu channel config
-   */
-  setFeishuConfig(config: FeishuChannelConfig): void {
-    this.store.set('channels.feishu', config);
-    log('[RemoteConfig] Feishu config updated');
-  }
-  
+
   /**
    * Get wechat channel config
    */

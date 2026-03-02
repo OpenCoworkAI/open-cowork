@@ -36,6 +36,13 @@ export interface AppConfig {
   
   // First run flag
   isConfigured: boolean;
+
+  // Coeadapt connection
+  clerkPublishableKey: string;
+  coeadaptApiUrl: string;
+
+  // Work environment preference (null = not yet chosen, triggers onboarding)
+  workEnvironment: 'real-machine' | 'vm' | null;
 }
 
 const defaultConfig: AppConfig = {
@@ -51,6 +58,9 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
+  clerkPublishableKey: '',
+  coeadaptApiUrl: 'https://api.coeadapt.com',
+  workEnvironment: null,
 };
 
 // Provider presets
@@ -65,7 +75,7 @@ export const PROVIDER_PRESETS = {
       { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
-    keyHint: '从 openrouter.ai/keys 获取',
+    keyHint: ' openrouter.ai/keys ',
   },
   anthropic: {
     name: 'Anthropic',
@@ -76,7 +86,7 @@ export const PROVIDER_PRESETS = {
       { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' },
     ],
     keyPlaceholder: 'sk-ant-...',
-    keyHint: '从 console.anthropic.com 获取',
+    keyHint: ' console.anthropic.com ',
   },
   openai: {
     name: 'OpenAI',
@@ -87,10 +97,10 @@ export const PROVIDER_PRESETS = {
       { id: 'gpt-5.2-mini', name: 'gpt-5.2-mini' },
     ],
     keyPlaceholder: 'sk-...',
-    keyHint: '从 platform.openai.com 获取',
+    keyHint: ' platform.openai.com ',
   },
   custom: {
-    name: '更多模型',
+    name: '',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     models: [
       { id: 'glm-4.7', name: 'GLM-4.7' },
@@ -98,7 +108,7 @@ export const PROVIDER_PRESETS = {
       { id: 'glm-4-air', name: 'GLM-4-Air' },
     ],
     keyPlaceholder: 'sk-xxx',
-    keyHint: '输入你的 API Key',
+    keyHint: ' API Key',
   },
 };
 
@@ -111,14 +121,11 @@ class ConfigStore {
       defaults: defaultConfig,
       // Encrypt the API key for basic security
       encryptionKey: 'open-cowork-config-v1',
+      // Always provide projectName - required by conf package and
+      // Electron detection can fail when bundled by Vite
+      projectName: 'coeadapt',
     };
-    
-    // Add projectName for non-Electron environments (e.g., MCP servers)
-    // This is required by the underlying 'conf' package
-    if (typeof process !== 'undefined' && !process.versions.electron) {
-      storeOptions.projectName = 'open-cowork';
-    }
-    
+
     this.store = new Store<AppConfig>(storeOptions);
   }
 
@@ -139,6 +146,9 @@ class ConfigStore {
       sandboxEnabled: this.store.get('sandboxEnabled'),
       enableThinking: this.store.get('enableThinking'),
       isConfigured: this.store.get('isConfigured'),
+      clerkPublishableKey: this.store.get('clerkPublishableKey'),
+      coeadaptApiUrl: this.store.get('coeadaptApiUrl'),
+      workEnvironment: this.store.get('workEnvironment'),
     };
   }
 
@@ -178,9 +188,9 @@ class ConfigStore {
    * Apply config to environment variables
    * This should be called before creating sessions
    * 
-   * 环境变量映射：
-   * - OpenAI 直连: OPENAI_API_KEY = apiKey, OPENAI_BASE_URL 可选
-   * - Anthropic 直连: ANTHROPIC_API_KEY = apiKey
+   * 
+   * - OpenAI : OPENAI_API_KEY = apiKey, OPENAI_BASE_URL 
+   * - Anthropic : ANTHROPIC_API_KEY = apiKey
    * - Custom Anthropic: ANTHROPIC_API_KEY = apiKey
    * - OpenRouter: ANTHROPIC_AUTH_TOKEN = apiKey, ANTHROPIC_API_KEY = '' (proxy mode)
    */

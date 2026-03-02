@@ -1,6 +1,6 @@
 /**
  * Remote Gateway
- * WebSocket 控制平面，管理远程连接和消息路由
+ * WebSocket 
  */
 
 import { EventEmitter } from 'events';
@@ -274,7 +274,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: '⚠️ 您没有权限使用此机器人。请联系管理员获取访问权限。',
+            text: '⚠️ ',
           },
           replyTo: message.id,
         });
@@ -398,7 +398,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: '✅ 配对成功！您现在可以开始使用机器人了。',
+            text: '✅ ',
           },
           replyTo: message.id,
         });
@@ -417,7 +417,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: `请输入配对码进行验证。\n\n您的配对码是: **${existing.code}**\n\n请将此配对码发送给管理员进行确认，或直接回复配对码完成配对。`,
+            text: `\n\n: **${existing.code}**\n\n`,
           },
           replyTo: message.id,
         });
@@ -443,7 +443,7 @@ export class RemoteGateway extends EventEmitter {
       channelId: message.channelId,
       content: {
         type: 'text',
-        text: `👋 您好！首次使用需要进行配对验证。\n\n您的配对码是: **${code}**\n\n请将此配对码发送给管理员进行确认。配对码有效期10分钟。`,
+        text: `👋 \n\n: **${code}**\n\n10`,
       },
       replyTo: message.id,
     });

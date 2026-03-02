@@ -10,7 +10,7 @@ const descriptionLine = settingsPanelContent
 
 describe('SettingsPanel sidebar description', () => {
   it('unit: uses widened sidebar width', () => {
-    expect(settingsPanelContent).toContain('w-72');
+    expect(settingsPanelContent).toContain('w-80');
   });
 
   it('unit: includes single-line truncation utility', () => {

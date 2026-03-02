@@ -1,6 +1,6 @@
-appId: com.opencowork.app
-productName: Open Cowork
-copyright: Copyright © 2026 Open Cowork Team
+appId: com.coeadapt.app
+productName: Coeadapt
+copyright: Copyright © 2026 Coeadapt (originally OpenCoworkAI)
 
 directories:
   output: release
@@ -25,15 +25,15 @@ extraResources:
   - from: dist-wsl-agent
     to: wsl-agent
     filter:
-      - "**/*"
+      - '**/*'
   - from: dist-lima-agent
     to: lima-agent
     filter:
-      - "**/*"
+      - '**/*'
   - from: dist-mcp
     to: mcp
     filter:
-      - "**/*"
+      - '**/*'
 
 # Unpack claude-code so it can be executed as a CLI
 # Also unpack skills so they can be read/written at runtime
@@ -47,7 +47,7 @@ asarUnpack:
   - .claude/skills/**/*
 
 win:
-  icon: resources/icon.ico
+  icon: resources/icon.png
   target:
     - target: nsis
       arch:
@@ -58,14 +58,14 @@ win:
     - from: resources/node/win32-x64
       to: node
       filter:
-        - "**/*"
+        - '**/*'
     - from: resources/node/win32-x64/node_modules
       to: node/node_modules
       filter:
-        - "**/*"
+        - '**/*'
 
 mac:
-  icon: resources/icon.icns
+  icon: resources/icon.png
   target:
     - target: dmg
       arch:
@@ -81,17 +81,17 @@ mac:
     - from: resources/node/darwin-${arch}
       to: node
       filter:
-        - "**/*"
+        - '**/*'
     # Bundled Python runtime + site-packages for GUI automation helpers (Pillow, pyobjc/Quartz)
     - from: resources/python/darwin-${arch}
       to: python
       filter:
-        - "**/*"
+        - '**/*'
     # Bundled GUI helper tools (e.g. cliclick) to avoid relying on user-installed Homebrew tools
     - from: resources/tools/darwin-${arch}
       to: tools
       filter:
-        - "**/*"
+        - '**/*'
 
 linux:
   icon: resources/icon.png
@@ -104,7 +104,7 @@ linux:
     - from: resources/node/linux-x64
       to: node
       filter:
-        - "**/*"
+        - '**/*'
 
 nsis:
   oneClick: false
@@ -127,4 +127,4 @@ extraMetadata:
 publish:
   provider: github
   owner: your-username
-  repo: open-cowork
+  repo: coeadapt

@@ -3,12 +3,11 @@ import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
-import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
 import { log, logWarn, logError } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
@@ -17,111 +16,32 @@ import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
 import { buildThinkingOptions } from './thinking-options';
 import { redactSensitiveText } from './redaction';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
-// import { PathGuard } from '../sandbox/path-guard';
+import { vmManager } from '../vm/vm-manager';
+import { configStore } from '../config/config-store';
+import { ComputerUseSession } from '../vm/computer-use-session';
+import {
+  summarizeEnvForLog,
+  getShellEnvironment,
+  getCurrentModel,
+  getDefaultClaudeCodePath,
+  supportsImageInputs,
+} from './env-resolver';
+import {
+  getBuiltinSkillsPath,
+  getAppClaudeDir,
+  syncUserSkillsToAppDir,
+  getAvailableSkillsPrompt,
+} from './skill-discovery';
+import {
+  getMCPToolsPrompt,
+  getCredentialsPrompt,
+  getVMCoworkPrompt,
+} from './system-prompt-builder';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
 const MAX_CLAUDE_STDERR_LINES = 120;
 const STDERR_TAIL_LINES_FOR_ERROR = 20;
-
-function summarizeEnvForLog(env: NodeJS.ProcessEnv): Record<string, string> {
-  const pick = (key: string): string => {
-    const value = env[key];
-    if (!value) return '(empty/unset)';
-    if (key === 'PATH') return `${value.substring(0, 120)}...`;
-    if (key.includes('KEY') || key.includes('TOKEN')) return '✓ Set';
-    return value;
-  };
-
-  return {
-    ANTHROPIC_API_KEY: pick('ANTHROPIC_API_KEY'),
-    ANTHROPIC_AUTH_TOKEN: pick('ANTHROPIC_AUTH_TOKEN'),
-    ANTHROPIC_BASE_URL: pick('ANTHROPIC_BASE_URL'),
-    CLAUDE_MODEL: pick('CLAUDE_MODEL'),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: pick('ANTHROPIC_DEFAULT_SONNET_MODEL'),
-    OPENAI_API_KEY: pick('OPENAI_API_KEY'),
-    OPENAI_BASE_URL: pick('OPENAI_BASE_URL'),
-    OPENAI_MODEL: pick('OPENAI_MODEL'),
-    CLAUDE_CONFIG_DIR: pick('CLAUDE_CONFIG_DIR'),
-    PATH: pick('PATH'),
-  };
-}
-
-// Cache for shell environment (loaded once at startup)
-let cachedShellEnv: NodeJS.ProcessEnv | null = null;
-
-/**
- * Get shell environment with proper PATH (including node, npm, etc.)
- * GUI apps on macOS don't inherit shell PATH, so we need to extract it
- */
-function getShellEnvironment(): NodeJS.ProcessEnv {
-  const fnStart = Date.now();
-  
-  if (cachedShellEnv) {
-    log(`[ShellEnv] Returning cached env (0ms)`);
-    return cachedShellEnv;
-  }
-
-  const platform = process.platform;
-  let shellPath = process.env.PATH || '';
-  
-  log('[ShellEnv] Original PATH:', shellPath);
-  log(`[ShellEnv] Starting shell PATH extraction...`);
-
-  if (platform === 'darwin' || platform === 'linux') {
-    try {
-      // Get PATH from login shell (includes nvm, homebrew, etc.)
-      const execStart = Date.now();
-      const shellEnvOutput = execSync('/bin/bash -l -c "echo $PATH"', {
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
-      log(`[ShellEnv] execSync took ${Date.now() - execStart}ms`);
-      
-      if (shellEnvOutput) {
-        shellPath = shellEnvOutput;
-        log('[ShellEnv] Got PATH from login shell:', shellPath);
-      }
-    } catch (e) {
-      logWarn('[ShellEnv] Failed to get PATH from login shell, using fallback');
-      
-      // Add common paths as fallback
-      const home = process.env.HOME || '';
-      const fallbackPaths = [
-        '/opt/homebrew/bin',                    // Homebrew Apple Silicon
-        '/usr/local/bin',                       // Homebrew Intel / system
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-        `${home}/.nvm/versions/node/*/bin`,     // nvm (will be expanded below)
-        `${home}/.local/bin`,                   // pip user installs
-        `${home}/.npm-global/bin`,              // npm global
-      ];
-      
-      // Expand nvm paths
-      const nvmDir = path.join(home, '.nvm/versions/node');
-      if (fs.existsSync(nvmDir)) {
-        try {
-          const versions = fs.readdirSync(nvmDir);
-          for (const version of versions) {
-            fallbackPaths.push(path.join(nvmDir, version, 'bin'));
-          }
-        } catch (e) { /* ignore */ }
-      }
-      
-      shellPath = [...fallbackPaths.filter(p => fs.existsSync(p) || p.includes('*')), shellPath].join(':');
-    }
-  }
-
-  cachedShellEnv = {
-    ...process.env,
-    PATH: shellPath,
-  };
-  
-  log(`[ShellEnv] Total getShellEnvironment took ${Date.now() - fnStart}ms`);
-  return cachedShellEnv;
-}
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -163,540 +83,6 @@ export class ClaudeAgentRunner {
     }
   }
 
-  /**
-   * Get MCP tools prompt for system instructions
-   */
-  private getMCPToolsPrompt(): string {
-    if (!this.mcpManager) {
-      return '';
-    }
-
-    const mcpTools = this.mcpManager.getTools();
-    if (mcpTools.length === 0) {
-      return '';
-    }
-
-    // Group tools by server
-    const toolsByServer = new Map<string, typeof mcpTools>();
-    for (const tool of mcpTools) {
-      const existing = toolsByServer.get(tool.serverName) || [];
-      existing.push(tool);
-      toolsByServer.set(tool.serverName, existing);
-    }
-
-    // Format tools list
-    const serverSections = Array.from(toolsByServer.entries()).map(([serverName, tools]) => {
-      const toolsList = tools.map(tool => 
-        `  - **${tool.name}**: ${tool.description}`
-      ).join('\n');
-      return `**${serverName}** (${tools.length} tools):\n${toolsList}`;
-    }).join('\n\n');
-
-    return `
-<mcp_tools>
-You have access to ${mcpTools.length} MCP (Model Context Protocol) tools from ${toolsByServer.size} connected server(s):
-
-${serverSections}
-
-**How to use MCP tools:**
-- MCP tools use the format: \`mcp__<ServerName>__<toolName>\`
-- ServerName is case-sensitive and must match exactly (e.g., "Chrome" not "chrome")
-- Common Chrome tools: \`mcp__Chrome__navigate\`, \`mcp__Chrome__click\`, \`mcp__Chrome__type\`, \`mcp__Chrome__screenshot\`
-- If a tool call fails with "No such tool available", the MCP server may not be connected yet
-
-**Example - Navigate to a URL:**
-Use tool \`mcp__Chrome__navigate\` with arguments: { "url": "https://www.google.com" }
-
-**Example - Click an element:**
-Use tool \`mcp__Chrome__click\` with arguments: { "selector": "button.submit" }
-</mcp_tools>
-`;
-  }
-
-  /**
-   * Get saved credentials prompt for system instructions
-   * Credentials are provided directly to the agent for automated login
-   */
-  private getCredentialsPrompt(): string {
-    try {
-      const credentials = credentialsStore.getAll();
-      if (credentials.length === 0) {
-        return '';
-      }
-
-      // Group credentials by type
-      const emailCredentials = credentials.filter(c => c.type === 'email');
-      const websiteCredentials = credentials.filter(c => c.type === 'website');
-      const apiCredentials = credentials.filter(c => c.type === 'api');
-      const otherCredentials = credentials.filter(c => c.type === 'other');
-
-      // Format credentials with actual password for agent use
-      const formatCredential = (c: UserCredential) => {
-        const lines = [`- **${c.name}**${c.service ? ` (${c.service})` : ''}`];
-        lines.push(`  - Username/Email: \`${c.username}\``);
-        lines.push(`  - Password: \`${c.password}\``);
-        if (c.url) lines.push(`  - URL: ${c.url}`);
-        if (c.notes) lines.push(`  - Notes: ${c.notes}`);
-        return lines.join('\n');
-      };
-
-      let sections: string[] = [];
-      
-      if (emailCredentials.length > 0) {
-        sections.push(`**Email Accounts (${emailCredentials.length}):**\n${emailCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (websiteCredentials.length > 0) {
-        sections.push(`**Website Accounts (${websiteCredentials.length}):**\n${websiteCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (apiCredentials.length > 0) {
-        sections.push(`**API Keys (${apiCredentials.length}):**\n${apiCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (otherCredentials.length > 0) {
-        sections.push(`**Other Credentials (${otherCredentials.length}):**\n${otherCredentials.map(formatCredential).join('\n\n')}`);
-      }
-
-      return `
-<saved_credentials>
-The user has saved ${credentials.length} credential(s) for automated login. Use these credentials when the user asks you to access their accounts.
-
-${sections.join('\n\n')}
-
-**IMPORTANT - How to use credentials:**
-- Use these credentials directly when logging into websites or services
-- For email access (e.g., Gmail), use the Chrome MCP tools to navigate to the login page and enter the credentials
-- NEVER display, share, or echo passwords in your responses to the user
-- Only use credentials for tasks the user explicitly requests
-- If login fails, inform the user but do not expose the password
-</saved_credentials>
-`;
-    } catch (error) {
-      logError('[AgentRunner] Failed to get credentials prompt:', error);
-      return '';
-    }
-  }
-
-  /**
-   * Get the built-in skills directory (shipped with the app)
-   */
-  private getBuiltinSkillsPath(): string {
-    // In development, skills are in the project's .claude/skills directory
-    // In production, they're bundled with the app (in app.asar.unpacked for asarUnpack files)
-    const appPath = app.getAppPath();
-    
-    // For asarUnpack files, replace .asar with .asar.unpacked
-    const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
-    
-    const possiblePaths = [
-      // Development: relative to this file
-      path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
-      // Production: in app.asar.unpacked (for asarUnpack files)
-      path.join(unpackedPath, '.claude', 'skills'),
-      // Fallback: in app resources (if not unpacked)
-      path.join(appPath, '.claude', 'skills'),
-      // Alternative: in resources folder
-      path.join(process.resourcesPath || '', 'skills'),
-    ];
-    
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        log('[ClaudeAgentRunner] Found built-in skills at:', p);
-        return p;
-      }
-    }
-    
-    logWarn('[ClaudeAgentRunner] No built-in skills directory found');
-    return '';
-  }
-
-  private getAppClaudeDir(): string {
-    return path.join(app.getPath('userData'), 'claude');
-  }
-
-  private getUserClaudeSkillsDir(): string {
-    return path.join(app.getPath('home'), '.claude', 'skills');
-  }
-
-  private syncUserSkillsToAppDir(appSkillsDir: string): void {
-    const userSkillsDir = this.getUserClaudeSkillsDir();
-    if (!fs.existsSync(userSkillsDir)) {
-      return;
-    }
-
-    const entries = fs.readdirSync(userSkillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const sourcePath = path.join(userSkillsDir, entry.name);
-      const targetPath = path.join(appSkillsDir, entry.name);
-
-      if (fs.existsSync(targetPath)) {
-        try {
-          const stat = fs.lstatSync(targetPath);
-          if (!stat.isSymbolicLink()) {
-            continue;
-          }
-          fs.unlinkSync(targetPath);
-        } catch {
-          continue;
-        }
-      }
-
-      try {
-        fs.symlinkSync(sourcePath, targetPath, 'dir');
-      } catch (err) {
-        try {
-          this.copyDirectorySync(sourcePath, targetPath);
-        } catch (copyErr) {
-          logWarn('[ClaudeAgentRunner] Failed to import user skill:', entry.name, copyErr);
-        }
-      }
-    }
-  }
-
-  private copyDirectorySync(source: string, target: string): void {
-    if (!fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-    }
-
-    const entries = fs.readdirSync(source);
-    for (const entry of entries) {
-      const sourcePath = path.join(source, entry);
-      const targetPath = path.join(target, entry);
-      const stat = fs.statSync(sourcePath);
-
-      if (stat.isDirectory()) {
-        this.copyDirectorySync(sourcePath, targetPath);
-      } else {
-        fs.copyFileSync(sourcePath, targetPath);
-      }
-    }
-  }
-
-  /**
-   * Scan for available skills and return formatted list for system prompt
-   */
-  private getAvailableSkillsPrompt(workingDir?: string): string {
-    const skills: { name: string; description: string; skillMdPath: string }[] = [];
-    
-    // 1. Check built-in skills (highest priority for reading)
-    const builtinSkillsPath = this.getBuiltinSkillsPath();
-    if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-      try {
-        const dirs = fs.readdirSync(builtinSkillsPath, { withFileTypes: true });
-        for (const dir of dirs) {
-          if (dir.isDirectory()) {
-            const skillMdPath = path.join(builtinSkillsPath, dir.name, 'SKILL.md');
-            if (fs.existsSync(skillMdPath)) {
-              // Try to read description from SKILL.md frontmatter
-              let description = `Skill for ${dir.name} file operations`;
-              try {
-                const content = fs.readFileSync(skillMdPath, 'utf-8');
-                const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
-                if (descMatch) {
-                  description = descMatch[1];
-                }
-              } catch (e) { /* ignore */ }
-              
-              skills.push({
-                name: dir.name,
-                description,
-                skillMdPath,
-              });
-            }
-          }
-        }
-      } catch (e) {
-        logError('[ClaudeAgentRunner] Error scanning built-in skills:', e);
-      }
-    }
-    
-    // 2. Check global skills (app-specific directory)
-    const globalSkillsPath = path.join(this.getAppClaudeDir(), 'skills');
-    if (fs.existsSync(globalSkillsPath)) {
-      try {
-        const dirs = fs.readdirSync(globalSkillsPath, { withFileTypes: true });
-        for (const dir of dirs) {
-          if (dir.isDirectory()) {
-            const skillMdPath = path.join(globalSkillsPath, dir.name, 'SKILL.md');
-            if (fs.existsSync(skillMdPath)) {
-              // Global skills can override built-in but not project-level
-              const existingIdx = skills.findIndex(s => s.name === dir.name);
-              let description = `User skill for ${dir.name}`;
-              try {
-                const content = fs.readFileSync(skillMdPath, 'utf-8');
-                const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
-                if (descMatch) {
-                  description = descMatch[1];
-                }
-              } catch (e) { /* ignore */ }
-
-              const skill = { name: dir.name, description, skillMdPath };
-              if (existingIdx >= 0) {
-                skills[existingIdx] = skill;
-              } else {
-                skills.push(skill);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        logError('[ClaudeAgentRunner] Error scanning global skills:', e);
-      }
-    }
-
-    // 3. Check project-level skills (in working directory)
-    if (workingDir) {
-      const projectSkillsPaths = [
-        path.join(workingDir, '.claude', 'skills'),
-        path.join(workingDir, '.skills'),
-        path.join(workingDir, 'skills'),
-      ];
-
-      for (const skillsDir of projectSkillsPaths) {
-        if (fs.existsSync(skillsDir)) {
-          try {
-            const dirs = fs.readdirSync(skillsDir, { withFileTypes: true });
-            for (const dir of dirs) {
-              if (dir.isDirectory()) {
-                const skillMdPath = path.join(skillsDir, dir.name, 'SKILL.md');
-                if (fs.existsSync(skillMdPath)) {
-                  // Project skills can override built-in and global
-                  const existingIdx = skills.findIndex(s => s.name === dir.name);
-                  let description = `Project skill for ${dir.name}`;
-                  try {
-                    const content = fs.readFileSync(skillMdPath, 'utf-8');
-                    const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
-                    if (descMatch) {
-                      description = descMatch[1];
-                    }
-                  } catch (e) { /* ignore */ }
-
-                  const skill = { name: dir.name, description, skillMdPath };
-                  if (existingIdx >= 0) {
-                    skills[existingIdx] = skill;
-                  } else {
-                    skills.push(skill);
-                  }
-                }
-              }
-            }
-          } catch (e) { /* ignore */ }
-        }
-      }
-    }
-    
-    if (skills.length === 0) {
-      return '<available_skills>\nNo skills available.\n</available_skills>';
-    }
-    
-    // Format the skills list
-    const skillsList = skills.map(s => 
-      `- **${s.name}**: ${s.description}\n  SKILL.md path: ${s.skillMdPath}`
-    ).join('\n');
-    
-    return `<available_skills>
-The following skills are available. **CRITICAL**: Before starting any task that involves creating or editing files of these types, you MUST first read the corresponding SKILL.md file using the Read tool:
-
-${skillsList}
-
-**How to use skills:**
-1. Identify which skill is relevant to your task (e.g., "pptx" for PowerPoint, "docx" for Word, "pdf" for PDF)
-2. Use the Read tool to read the SKILL.md file at the path shown above
-3. Follow the instructions in the SKILL.md file exactly
-4. The skills contain proven workflows that produce high-quality results
-
-**Example**: If the user asks to create a PowerPoint presentation:
-\`\`\`
-Read the file: ${skills.find(s => s.name === 'pptx')?.skillMdPath || '[pptx skill path]'}
-\`\`\`
-Then follow the workflow described in that file.
-</available_skills>`;
-  }
-
-  private getDefaultClaudeCodePath(): string {
-    const fnStart = Date.now();
-    const logFnTiming = (label: string) => {
-      log(`[ClaudeCodePath] ${label}: ${Date.now() - fnStart}ms`);
-    };
-    
-    const platform = process.platform;
-    const home = process.env.HOME || process.env.USERPROFILE || '';
-
-    // Check if running in packaged app
-    const isPackaged = app.isPackaged;
-
-    log('[ClaudeAgentRunner] Looking for claude-code...');
-    log('[ClaudeAgentRunner] isPackaged:', isPackaged);
-    log('[ClaudeAgentRunner] app.getAppPath():', app.getAppPath());
-    log('[ClaudeAgentRunner] process.resourcesPath:', process.resourcesPath);
-    log('[ClaudeAgentRunner] __dirname:', __dirname);
-    log('[ClaudeAgentRunner] process.execPath:', process.execPath);
-
-    // 1. FIRST: Check bundled version in app's node_modules (highest priority)
-    // NOTE: app.asar.unpacked is the correct location for unpacked modules
-    const bundledPaths: string[] = [];
-
-    if (isPackaged && process.resourcesPath) {
-      // Production: unpacked modules location (MOST IMPORTANT for packaged apps)
-      bundledPaths.push(
-        path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
-
-      // Also check directly under Resources (some electron-builder configs)
-      bundledPaths.push(
-        path.join(process.resourcesPath, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
-
-      // Check under app (for some build configurations)
-      bundledPaths.push(
-        path.join(process.resourcesPath, 'app', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
-    }
-
-    // Development paths
-    bundledPaths.push(
-      // Development: relative to dist-electron/main
-      path.join(__dirname, '..', '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      // Development: relative to project root
-      path.join(__dirname, '..', '..', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      // Try asar path (for modules that don't need unpacking)
-      path.join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-    );
-
-    for (const bundledPath of bundledPaths) {
-      log('[ClaudeAgentRunner] Checking:', bundledPath, '- exists:', fs.existsSync(bundledPath));
-      if (fs.existsSync(bundledPath)) {
-        log('[ClaudeAgentRunner] ✓ Found bundled claude-code at:', bundledPath);
-        return bundledPath;
-      }
-    }
-    
-    // 2. Try to find claude using shell with full environment (works with nvm, etc.)
-    if (platform !== 'win32') {
-      try {
-        // Use login shell to get full PATH including nvm, etc.
-        const claudePath = execSync('/bin/bash -l -c "which claude"', { 
-          encoding: 'utf-8',
-          timeout: 5000,
-        }).trim();
-        if (claudePath && fs.existsSync(claudePath)) {
-          log('[ClaudeAgentRunner] Found claude via bash -l:', claudePath);
-          return claudePath;
-        }
-      } catch (e) {
-        log('[ClaudeAgentRunner] bash -l which failed, trying fallbacks');
-      }
-    }
-    
-    // 3. Try npm root -g with shell environment
-    logFnTiming('before npm root -g');
-    if (platform !== 'win32') {
-      try {
-        const npmStart = Date.now();
-        const npmRoot = execSync('/bin/bash -l -c "npm root -g"', { 
-          encoding: 'utf-8',
-          timeout: 5000,
-        }).trim();
-        log(`[ClaudeCodePath] npm root -g took ${Date.now() - npmStart}ms`);
-        
-        const cliPath = path.join(npmRoot, '@anthropic-ai', 'claude-code', 'cli.js');
-        if (fs.existsSync(cliPath)) {
-          log('[ClaudeAgentRunner] Found claude-code via npm root:', cliPath);
-          logFnTiming('returning (found via npm root)');
-          return cliPath;
-        }
-      } catch (e) {
-        log(`[ClaudeCodePath] npm root -g failed: ${(e as Error).message}`);
-      }
-    }
-    logFnTiming('after npm root -g');
-    
-    // 4. Build list of possible system paths based on platform
-    const possiblePaths: string[] = [];
-    
-    if (platform === 'win32') {
-      const appData = process.env.APPDATA || '';
-      possiblePaths.push(
-        path.join(appData, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-        path.join(home, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      );
-    } else if (platform === 'darwin') {
-      // macOS: check many common locations
-      possiblePaths.push(
-        // Homebrew (Apple Silicon)
-        '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-        // Homebrew (Intel)
-        '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-        // pnpm global
-        path.join(home, 'Library/pnpm/global/5/node_modules/@anthropic-ai/claude-code/cli.js'),
-        path.join(home, '.local/share/pnpm/global/5/node_modules/@anthropic-ai/claude-code/cli.js'),
-      );
-      
-      // Scan nvm versions directory for all installed node versions
-      const nvmDir = path.join(home, '.nvm/versions/node');
-      if (fs.existsSync(nvmDir)) {
-        try {
-          const versions = fs.readdirSync(nvmDir);
-          for (const version of versions) {
-            possiblePaths.push(
-              path.join(nvmDir, version, 'lib/node_modules/@anthropic-ai/claude-code/cli.js')
-            );
-          }
-        } catch (e) {
-          // Failed to read nvm directory
-        }
-      }
-      
-      // fnm (Fast Node Manager)
-      const fnmDir = path.join(home, 'Library/Application Support/fnm/node-versions');
-      if (fs.existsSync(fnmDir)) {
-        try {
-          const versions = fs.readdirSync(fnmDir);
-          for (const version of versions) {
-            possiblePaths.push(
-              path.join(fnmDir, version, 'installation/lib/node_modules/@anthropic-ai/claude-code/cli.js')
-            );
-          }
-        } catch (e) {
-          // Failed to read fnm directory
-        }
-      }
-    } else {
-      // Linux
-      possiblePaths.push(
-        '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-        '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-        path.join(home, '.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js'),
-      );
-      
-      // nvm on Linux
-      const nvmDir = path.join(home, '.nvm/versions/node');
-      if (fs.existsSync(nvmDir)) {
-        try {
-          const versions = fs.readdirSync(nvmDir);
-          for (const version of versions) {
-            possiblePaths.push(
-              path.join(nvmDir, version, 'lib/node_modules/@anthropic-ai/claude-code/cli.js')
-            );
-          }
-        } catch (e) {
-          // Failed to read nvm directory
-        }
-      }
-    }
-    
-    // Check all possible paths
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        log('[ClaudeAgentRunner] Found claude-code at:', p);
-        return p;
-      }
-    }
-    
-    // Return empty string if not found - will show error to user
-    logError('[ClaudeAgentRunner] Claude Code not found. Searched paths:', possiblePaths);
-    return '';
-  }
-
   constructor(
     options: AgentRunnerOptions,
     pathResolver: PathResolver,
@@ -714,18 +100,6 @@ Then follow the workflow described in that file.
     if (mcpManager) {
       log('[ClaudeAgentRunner] MCP support enabled');
     }
-  }
-  
-  /**
-   * Get current model from environment variables
-   * For OpenRouter, ANTHROPIC_DEFAULT_SONNET_MODEL is the key that controls model selection
-   */
-  private getCurrentModel(): string {
-    // ANTHROPIC_DEFAULT_SONNET_MODEL is the key for OpenRouter API model selection
-    const model = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || process.env.CLAUDE_MODEL || 'anthropic/claude-sonnet-4';
-    log('[ClaudeAgentRunner] Current model:', model);
-    log('[ClaudeAgentRunner] ANTHROPIC_DEFAULT_SONNET_MODEL:', process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(not set)');
-    return model;
   }
 
   // Handle user's answer to AskUserQuestion
@@ -839,14 +213,14 @@ Then follow the workflow described in that file.
           }
 
           // Copy skills to sandbox ~/.claude/skills/
-          const builtinSkillsPath = this.getBuiltinSkillsPath();
+          const builtinSkillsPath = getBuiltinSkillsPath();
           try {
             const distro = sandbox.wslStatus!.distro!;
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
-            const { execSync } = require('child_process');
-            execSync(`wsl -d ${distro} -e mkdir -p "${sandboxSkillsPath}"`, {
+            const { execFileSync } = require('child_process');
+            execFileSync('wsl', ['-d', distro, '-e', 'mkdir', '-p', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             });
@@ -854,35 +228,33 @@ Then follow the workflow described in that file.
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               const wslSourcePath = pathConverter.toWSL(builtinSkillsPath);
-              const rsyncCmd = `rsync -av "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying skills with rsync from ${wslSourcePath} to ${sandboxSkillsPath}`);
 
-              execSync(`wsl -d ${distro} -e bash -c "${rsyncCmd}"`, {
+              execFileSync('wsl', ['-d', distro, '-e', 'rsync', '-av', `${wslSourcePath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
-            const appClaudeDir = this.getAppClaudeDir();
+            const appClaudeDir = getAppClaudeDir();
             const appSkillsDir = path.join(appClaudeDir, 'skills');
             if (!fs.existsSync(appSkillsDir)) {
               fs.mkdirSync(appSkillsDir, { recursive: true });
             }
-            this.syncUserSkillsToAppDir(appSkillsDir);
+            syncUserSkillsToAppDir(appSkillsDir);
 
             if (fs.existsSync(appSkillsDir)) {
               const wslSourcePath = pathConverter.toWSL(appSkillsDir);
-              const rsyncCmd = `rsync -avL "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying app skills with rsync from ${wslSourcePath} to ${sandboxSkillsPath}`);
 
-              execSync(`wsl -d ${distro} -e bash -c "${rsyncCmd}"`, {
+              execFileSync('wsl', ['-d', distro, '-e', 'rsync', '-avL', `${wslSourcePath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
             // List copied skills for verification
-            const copiedSkills = execSync(`wsl -d ${distro} -e ls "${sandboxSkillsPath}"`, {
+            const copiedSkills = execFileSync('wsl', ['-d', distro, '-e', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             }).trim().split('\n').filter(Boolean);
@@ -975,13 +347,13 @@ Then follow the workflow described in that file.
           }
 
           // Copy skills to sandbox ~/.claude/skills/
-          const builtinSkillsPath = this.getBuiltinSkillsPath();
+          const builtinSkillsPath = getBuiltinSkillsPath();
           try {
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
-            const { execSync } = require('child_process');
-            execSync(`limactl shell claude-sandbox -- mkdir -p "${sandboxSkillsPath}"`, {
+            const { execFileSync } = require('child_process');
+            execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'mkdir', '-p', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             });
@@ -989,34 +361,32 @@ Then follow the workflow described in that file.
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
               // Use rsync to recursively copy all skills (much faster and handles subdirectories)
               // Lima mounts /Users directly, so paths are the same
-              const rsyncCmd = `rsync -av "${builtinSkillsPath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying skills with rsync from ${builtinSkillsPath} to ${sandboxSkillsPath}`);
 
-              execSync(`limactl shell claude-sandbox -- bash -c "${rsyncCmd.replace(/"/g, '\\"')}"`, {
+              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'rsync', '-av', `${builtinSkillsPath}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
-            const appClaudeDir = this.getAppClaudeDir();
+            const appClaudeDir = getAppClaudeDir();
             const appSkillsDir = path.join(appClaudeDir, 'skills');
             if (!fs.existsSync(appSkillsDir)) {
               fs.mkdirSync(appSkillsDir, { recursive: true });
             }
-            this.syncUserSkillsToAppDir(appSkillsDir);
+            syncUserSkillsToAppDir(appSkillsDir);
 
             if (fs.existsSync(appSkillsDir)) {
-              const rsyncCmd = `rsync -avL "${appSkillsDir}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(`[ClaudeAgentRunner] Copying app skills with rsync from ${appSkillsDir} to ${sandboxSkillsPath}`);
 
-              execSync(`limactl shell claude-sandbox -- bash -c "${rsyncCmd.replace(/"/g, '\\"')}"`, {
+              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'rsync', '-avL', `${appSkillsDir}/`, `${sandboxSkillsPath}/`], {
                 encoding: 'utf-8',
                 timeout: 120000  // 2 min timeout for large skill directories
               });
             }
 
             // List copied skills for verification
-            const copiedSkills = execSync(`limactl shell claude-sandbox -- ls "${sandboxSkillsPath}"`, {
+            const copiedSkills = execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
             }).trim().split('\n').filter(Boolean);
@@ -1084,15 +454,15 @@ Then follow the workflow described in that file.
       logTiming('before getDefaultClaudeCodePath');
       
       // Use query from @anthropic-ai/claude-agent-sdk
-      const claudeCodePath = process.env.CLAUDE_CODE_PATH || this.getDefaultClaudeCodePath();
+      const claudeCodePath = process.env.CLAUDE_CODE_PATH || getDefaultClaudeCodePath();
       log('[ClaudeAgentRunner] Claude Code path:', claudeCodePath);
       logTiming('after getDefaultClaudeCodePath');
       
       // Check if Claude Code is found
       if (!claudeCodePath || !fs.existsSync(claudeCodePath)) {
         const errorMsg = !claudeCodePath 
-          ? 'Claude Code 未找到。请先安装: npm install -g @anthropic-ai/claude-code，或在设置中手动指定路径。'
-          : `Claude Code 路径不存在: ${claudeCodePath}。请检查路径或在设置中重新配置。`;
+          ? 'Claude Code : npm install -g @anthropic-ai/claude-code'
+          : `Claude Code : ${claudeCodePath}`;
         logError('[ClaudeAgentRunner]', errorMsg);
         this.sendToRenderer({
           type: 'error',
@@ -1102,8 +472,8 @@ Then follow the workflow described in that file.
       }
 
       // SANDBOX: Path validation function with whitelist for skills directories
-      const builtinSkillsPathForValidation = this.getBuiltinSkillsPath();
-      const appClaudeDirForValidation = this.getAppClaudeDir();
+      const builtinSkillsPathForValidation = getBuiltinSkillsPath();
+      const appClaudeDirForValidation = getAppClaudeDir();
       
       // @ts-ignore - Reserved for future use
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1182,30 +552,11 @@ Then follow the workflow described in that file.
       const resumeId = this.sdkSessions.get(session.id);
       
       // Get current model from environment (re-read each time for config changes)
-      const currentModel = this.getCurrentModel();
-
-      const supportsImageInputs = (model: string | undefined, baseUrl: string | undefined): boolean => {
-        const modelLower = (model || '').toLowerCase();
-        const baseLower = (baseUrl || '').toLowerCase();
-
-        if (baseLower.includes('deepseek')) return false;
-        if (baseLower.includes('open.bigmodel.cn')) return false;
-        if (!modelLower) return false;
-
-        return (
-          modelLower.includes('claude-3') ||
-          modelLower.includes('claude-3.5') ||
-          modelLower.includes('claude-3-5') ||
-          modelLower.includes('claude-4') ||
-          modelLower.includes('claude-sonnet') ||
-          modelLower.includes('claude-opus') ||
-          modelLower.includes('claude-haiku')
-        );
-      };
+      const currentModel = getCurrentModel();
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
-      const userClaudeDir = this.getAppClaudeDir();
+      const userClaudeDir = getAppClaudeDir();
 
       // Ensure app Claude config directory exists
       if (!fs.existsSync(userClaudeDir)) {
@@ -1219,7 +570,7 @@ Then follow the workflow described in that file.
       }
 
       // Copy built-in skills to app Claude skills directory if they don't exist
-      const builtinSkillsPath = this.getBuiltinSkillsPath();
+      const builtinSkillsPath = getBuiltinSkillsPath();
       if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
         const builtinSkills = fs.readdirSync(builtinSkillsPath);
         for (const skillName of builtinSkills) {
@@ -1241,10 +592,10 @@ Then follow the workflow described in that file.
         }
       }
 
-      this.syncUserSkillsToAppDir(appSkillsDir);
+      syncUserSkillsToAppDir(appSkillsDir);
 
       // Build available skills section dynamically
-      const availableSkillsPrompt = this.getAvailableSkillsPrompt(workingDir);
+      const availableSkillsPrompt = getAvailableSkillsPrompt(workingDir);
 
       log('[ClaudeAgentRunner] App claude dir:', userClaudeDir);
       log('[ClaudeAgentRunner] User working directory:', workingDir);
@@ -1256,9 +607,8 @@ Then follow the workflow described in that file.
       const shellEnv = getShellEnvironment();
       logTiming('after getShellEnvironment');
 
-      const { configStore } = await import('../config/config-store');
       const envOverrides = getClaudeEnvOverrides(configStore.getAll());
-      // 构建运行环境：shell 环境 + 配置覆盖 + CLAUDE_CONFIG_DIR
+      // shell  +  + CLAUDE_CONFIG_DIR
       const envWithSkills: NodeJS.ProcessEnv = {
         ...buildClaudeEnv(shellEnv, envOverrides),
         CLAUDE_CONFIG_DIR: userClaudeDir,
@@ -1306,7 +656,7 @@ Then follow the workflow described in that file.
         const allConfigs = mcpConfigStore.getEnabledServers();
         log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map(c => c.name));
         
-        // 获取 STDIO 服务的内置 node/npx 路径
+        //  STDIO  node/npx 
         const getBundledNodePaths = (): { node: string; npx: string } | null => {
           const platform = process.platform;
           const arch = process.arch;
@@ -1339,12 +689,12 @@ Then follow the workflow described in that file.
           const serverKey = config.name;
           
           if (config.type === 'stdio') {
-            // 当命令是 npx 或 node 时优先使用内置路径
+            //  npx  node 
             const command = (config.command === 'npx' && bundledNpx)
               ? bundledNpx
               : (config.command === 'node' && bundledNodePaths ? bundledNodePaths.node : config.command);
             
-            // 使用内置 npx/node 时，将内置 node bin 注入 PATH
+            //  npx/node  node bin  PATH
             let serverEnv = { ...config.env };
             if (bundledNodePaths && (config.command === 'npx' || config.command === 'node')) {
               const nodeBinDir = path.dirname(bundledNodePaths.node);
@@ -1363,11 +713,13 @@ Then follow the workflow described in that file.
               const { mcpConfigStore } = await import('../mcp/mcp-config-store');
             
             // Check if any args contain placeholders that need resolving
-            const hasPlaceholders = resolvedArgs.some(arg => 
-              arg.includes('{SOFTWARE_DEV_SERVER_PATH}') || 
-              arg.includes('{GUI_OPERATE_SERVER_PATH}')
+            const hasPlaceholders = resolvedArgs.some(arg =>
+              arg.includes('{SOFTWARE_DEV_SERVER_PATH}') ||
+              arg.includes('{GUI_OPERATE_SERVER_PATH}') ||
+              arg.includes('{SKILLCEPTION_SERVER_PATH}') ||
+              arg.includes('{CAREER_TOOLS_SERVER_PATH}')
             );
-            
+
             if (hasPlaceholders) {
               // Get the appropriate preset based on config name
               let presetKey: string | null = null;
@@ -1375,6 +727,10 @@ Then follow the workflow described in that file.
                 presetKey = 'software-development';
               } else if (config.name === 'GUI_Operate' || config.name === 'GUI Operate') {
                 presetKey = 'gui-operate';
+              } else if (config.name === 'Skillception') {
+                presetKey = 'skillception';
+              } else if (config.name === 'Career_Tools' || config.name === 'Career Tools') {
+                presetKey = 'career-tools';
               }
               
               if (presetKey) {
@@ -1405,6 +761,56 @@ Then follow the workflow described in that file.
         }
         
         log('[ClaudeAgentRunner] Final mcpServers config:', JSON.stringify(mcpServers, null, 2));
+      }
+
+      // ── Auto-inject Skillception MCP server (always available) ──────────
+      if (!mcpServers['Skillception']) {
+        try {
+          const { mcpConfigStore: skillMcpStore } = await import('../mcp/mcp-config-store');
+          const skillPreset = skillMcpStore.createFromPreset('skillception', true);
+          if (skillPreset && skillPreset.args && skillPreset.args.length > 0) {
+            const skillServerPath = skillPreset.args[0];
+            if (fs.existsSync(skillServerPath)) {
+              // Resolve bundled node path for the Skillception server process
+              const skillNodePaths = (() => {
+                const platform = process.platform;
+                const arch = process.arch;
+                let resPath: string;
+                if (process.env.NODE_ENV === 'development') {
+                  resPath = path.join(__dirname, '..', '..', 'resources', 'node', `${platform}-${arch}`);
+                } else {
+                  resPath = path.join(process.resourcesPath, 'node');
+                }
+                const binDir = platform === 'win32' ? resPath : path.join(resPath, 'bin');
+                const nodeExe = platform === 'win32' ? 'node.exe' : 'node';
+                const nodePath = path.join(binDir, nodeExe);
+                return fs.existsSync(nodePath) ? { node: nodePath, binDir } : null;
+              })();
+
+              const skillCommand = skillNodePaths ? skillNodePaths.node : 'node';
+              const skillTreeDir = path.join(app.getPath('userData'), 'navi');
+              const skillTreePath = path.join(skillTreeDir, 'skill-tree.json');
+              const skillEnv: Record<string, string> = {
+                NAVI_SKILL_TREE_PATH: skillTreePath,
+              };
+              if (skillNodePaths) {
+                skillEnv.PATH = `${skillNodePaths.binDir}${path.delimiter}${process.env.PATH || ''}`;
+              }
+              mcpServers['Skillception'] = {
+                type: 'stdio',
+                command: skillCommand,
+                args: [skillServerPath],
+                env: skillEnv,
+              };
+              log('[ClaudeAgentRunner] Auto-injected Skillception MCP server');
+              log(`[ClaudeAgentRunner]   Skill tree: ${skillTreePath}`);
+            } else {
+              logWarn(`[ClaudeAgentRunner] Skillception server not found at: ${skillServerPath}`);
+            }
+          }
+        } catch (e) {
+          logWarn('[ClaudeAgentRunner] Failed to auto-inject Skillception MCP server:', e);
+        }
       }
       logTiming('after building MCP servers config');
       
@@ -1554,9 +960,11 @@ Examples:
 
 ${availableSkillsPrompt}
 
-${this.getMCPToolsPrompt()}
+${getMCPToolsPrompt(this.mcpManager)}
 
-${this.getCredentialsPrompt()}
+${getCredentialsPrompt()}
+
+${getVMCoworkPrompt()}
 <artifact_instructions>
 When you produce a final deliverable file, declare it once using this exact block so the app can show it as the final artifact:
 \`\`\`artifact
@@ -1817,6 +1225,51 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
       }
       log('[ClaudeAgentRunner] Sandbox via canUseTool, workspace:', workingDir);
       logTiming('before query() call - SDK initialization starts');
+
+      // ── Computer Use delegation ──────────────────────────────────
+      // If a VM has Computer Use enabled, delegate to ComputerUseSession
+      // for this turn instead of the normal query() SDK path.
+      const activeCoworkVMs = vmManager.getActiveCoworkVMs();
+      const computerUseVM = activeCoworkVMs.find((vm: { id: string }) => vmManager.isComputerUseEnabled(vm.id));
+      if (computerUseVM) {
+        const adapter = vmManager.getComputerUseAdapter(computerUseVM.id);
+        if (adapter) {
+          log('[ClaudeAgentRunner] Delegating to ComputerUseSession for VM:', computerUseVM.id);
+          logTiming('ComputerUseSession delegation start');
+
+          const apiKey = process.env.ANTHROPIC_API_KEY || '';
+          const cuModel = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929';
+
+          const cuSession = new ComputerUseSession({
+            adapter,
+            apiKey,
+            model: cuModel,
+            sendToRenderer: this.sendToRenderer,
+            saveMessage: this.saveMessage,
+            sessionId: session.id,
+          });
+
+          // Register abort handler
+          controller.signal.addEventListener('abort', () => cuSession.abort());
+
+          const cuSystemPrompt = `You are Navi, the user's career navigation agent inside Coeadapt. You are currently co-working with the user inside a VirtualBox VM desktop (${computerUseVM.name}). Use the computer tool to interact with the desktop — take screenshots, click, type, scroll, and use keyboard shortcuts. Describe what you see and explain your actions as you work.`;
+
+          try {
+            await cuSession.run(contextualPrompt, cuSystemPrompt);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            logError('[ClaudeAgentRunner] ComputerUseSession error:', msg);
+            this.sendToRenderer({
+              type: 'session.status',
+              payload: { sessionId: session.id, status: 'error', error: msg },
+            });
+          }
+
+          logTiming('ComputerUseSession delegation complete');
+          this.activeControllers.delete(session.id);
+          return; // Skip the normal query() path
+        }
+      }
 
       let firstMessageReceived = false;
 
@@ -2208,7 +1661,7 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
           type: 'stream.partial',
           payload: { 
             sessionId: session.id, 
-            delta: `\n\n⚠️ API调用出错，正在重试 (${retryCount}/${MAX_RETRIES})...\n\n` 
+            delta: `\n\n⚠️ API (${retryCount}/${MAX_RETRIES})...\n\n` 
           },
         });
         

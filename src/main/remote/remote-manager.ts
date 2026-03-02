@@ -1,6 +1,6 @@
 /**
  * Remote Manager
- * 远程控制系统管理器，整合 Gateway、Channels 和 MessageRouter
+ *  GatewayChannels  MessageRouter
  */
 
 import { EventEmitter } from 'events';
@@ -8,14 +8,12 @@ import { log, logError } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
-import { FeishuChannel } from './channels/feishu';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
 import type {
   GatewayStatus,
   GatewayConfig,
-  FeishuChannelConfig,
   ChannelType,
   RemoteSessionMapping,
   PairedUser,
@@ -82,7 +80,7 @@ export class RemoteManager extends EventEmitter {
   // Debounce timers for sending buffered responses
   private sendTimers: Map<string, NodeJS.Timeout> = new Map();
 
-  // 远程默认工作目录（用于未指定 cwd 的会话）
+  //  cwd 
   private defaultWorkingDirectory?: string;
   
   constructor() {
@@ -116,7 +114,7 @@ export class RemoteManager extends EventEmitter {
   }
 
   /**
-   * 设置远程会话的默认工作目录
+   * 
    */
   setDefaultWorkingDirectory(dir?: string): void {
     this.defaultWorkingDirectory = dir;
@@ -148,7 +146,7 @@ export class RemoteManager extends EventEmitter {
       // Create gateway
       this.gateway = new RemoteGateway(config.gateway, this.messageRouter);
       
-      // 设置远程默认工作目录（优先使用配置，其次使用全局默认）
+      // 
       const configuredDefaultWorkingDir = config.gateway.defaultWorkingDirectory || this.defaultWorkingDirectory;
       if (configuredDefaultWorkingDir) {
         this.setDefaultWorkingDirectory(configuredDefaultWorkingDir);
@@ -180,7 +178,6 @@ export class RemoteManager extends EventEmitter {
       const tunnelUrl = await tunnelManager.start(config.gateway.port);
       if (tunnelUrl) {
         log('[RemoteManager] Tunnel URL:', tunnelUrl);
-        log('[RemoteManager] Feishu Webhook URL:', `${tunnelUrl}/webhook/feishu`);
       }
       
       log('[RemoteManager] Remote control system started');
@@ -251,12 +248,6 @@ export class RemoteManager extends EventEmitter {
     return tunnelManager.getStatus();
   }
   
-  /**
-   * Get Feishu webhook URL (from tunnel)
-   */
-  getFeishuWebhookUrl(): string | null {
-    return tunnelManager.getWebhookUrl();
-  }
   
   /**
    * Update gateway config
@@ -270,17 +261,6 @@ export class RemoteManager extends EventEmitter {
     }
   }
   
-  /**
-   * Update feishu channel config
-   */
-  async updateFeishuConfig(config: FeishuChannelConfig): Promise<void> {
-    remoteConfigStore.setFeishuConfig(config);
-    
-    // Restart to apply changes
-    if (this.gateway?.running) {
-      await this.restart();
-    }
-  }
   
   /**
    * Approve pairing request
@@ -394,7 +374,7 @@ export class RemoteManager extends EventEmitter {
     log('[RemoteManager] Handling question request for remote session:', remoteSessionId);
     
     // Build question message for Feishu
-    let messageText = '🤔 **需要你的回答**\n\n';
+    let messageText = '🤔 ****\n\n';
     
     // @ts-ignore - qIdx not used in this loop but kept for consistency
     questions.forEach((q, qIdx) => {
@@ -413,16 +393,16 @@ export class RemoteManager extends EventEmitter {
         });
         messageText += '\n';
         if (q.multiSelect) {
-          messageText += `*（可多选，用逗号分隔，如: 1,3）*\n\n`;
+          messageText += `*: 1,3*\n\n`;
         } else {
-          messageText += `*（请回复选项数字，如: 1）*\n\n`;
+          messageText += `*: 1*\n\n`;
         }
       } else {
-        messageText += `*（请直接回复你的答案）*\n\n`;
+        messageText += `**\n\n`;
       }
     });
     
-    messageText += `---\n*回复此消息来作答，或发送 "跳过" 跳过问题*`;
+    messageText += `---\n* "" *`;
     
     // Store pending interaction
     const interaction: RemoteInteraction = {
@@ -510,19 +490,19 @@ export class RemoteManager extends EventEmitter {
       if (safeTools.includes(toolName)) {
         log('[RemoteManager] Auto-approving safe tool:', toolName);
         // Send notification to user
-        await this.doSendToChannel(channelInfo, `🔧 自动执行: **${toolName}**`);
+        await this.doSendToChannel(channelInfo, `🔧 : **${toolName}**`);
         return { allow: true };
       }
     }
     
     // Build permission request message
-    let messageText = '⚠️ **需要你的授权**\n\n';
-    messageText += `工具: **${toolName}**\n\n`;
-    messageText += `参数:\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n`;
+    let messageText = '⚠️ ****\n\n';
+    messageText += `: **${toolName}**\n\n`;
+    messageText += `:\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n`;
     messageText += `---\n`;
-    messageText += `回复 "允许" 或 "y" 授权\n`;
-    messageText += `回复 "拒绝" 或 "n" 拒绝\n`;
-    messageText += `回复 "始终允许" 记住此授权`;
+    messageText += ` ""  "y" \n`;
+    messageText += ` ""  "n" \n`;
+    messageText += ` "" `;
     
     // Store pending interaction
     const interaction: RemoteInteraction = {
@@ -557,9 +537,9 @@ export class RemoteManager extends EventEmitter {
     return new Promise((resolve) => {
       this.interactionResolvers.set(toolUseId, (response) => {
         const lowerResponse = response.toLowerCase().trim();
-        if (lowerResponse === '允许' || lowerResponse === 'y' || lowerResponse === 'yes' || lowerResponse === '是') {
+        if (lowerResponse === '' || lowerResponse === 'y' || lowerResponse === 'yes' || lowerResponse === '') {
           resolve({ allow: true });
-        } else if (lowerResponse === '始终允许' || lowerResponse === 'always') {
+        } else if (lowerResponse === '' || lowerResponse === 'always') {
           resolve({ allow: true, remember: true });
         } else {
           resolve({ allow: false });
@@ -634,8 +614,8 @@ export class RemoteManager extends EventEmitter {
   ): string {
     const answers: Record<number, string[]> = {};
     
-    // Handle "跳过" response
-    if (messageText.toLowerCase().trim() === '跳过' || messageText.toLowerCase().trim() === 'skip') {
+    // Handle "" response
+    if (messageText.toLowerCase().trim() === '' || messageText.toLowerCase().trim() === 'skip') {
       return '{}';
     }
     
@@ -815,18 +795,18 @@ export class RemoteManager extends EventEmitter {
     switch (status) {
       case 'running':
         emoji = '⏳';
-        statusText = `正在执行 **${toolName}**...`;
+        statusText = ` **${toolName}**...`;
         break;
       case 'completed':
         emoji = '✅';
-        statusText = `**${toolName}** 执行完成`;
+        statusText = `**${toolName}** `;
         if (output && output.length < 200) {
           statusText += `\n\`\`\`\n${output}\n\`\`\``;
         }
         break;
       case 'error':
         emoji = '❌';
-        statusText = `**${toolName}** 执行失败`;
+        statusText = `**${toolName}** `;
         if (output) {
           statusText += `: ${output.substring(0, 100)}`;
         }
@@ -902,23 +882,9 @@ export class RemoteManager extends EventEmitter {
   /**
    * Register configured channels
    */
-  private async registerChannels(config: any): Promise<void> {
+  private async registerChannels(_config: any): Promise<void> {
     if (!this.gateway) return;
     
-    // Register Feishu channel if configured
-    const feishuConfig = config.channels.feishu;
-    if (feishuConfig && feishuConfig.appId && feishuConfig.appSecret) {
-      const feishuChannel = new FeishuChannel(feishuConfig);
-      this.gateway.registerChannel(feishuChannel);
-      
-      // Set up webhook handler
-      this.gateway.on('webhook:feishu', (data: any) => {
-        const result = feishuChannel.handleWebhook(data.headers, data.body);
-        data.respond(result.status, result.data);
-      });
-      
-      log('[RemoteManager] Feishu channel registered');
-    }
     
     // TODO: Register other channels (WeChat, Telegram, DingTalk)
   }
@@ -1029,7 +995,7 @@ export class RemoteManager extends EventEmitter {
   }
 
   /**
-   * 发送远程用户消息到本地 UI（仅远程会话使用）
+   *  UI
    */
   private emitRemoteUserMessage(actualSessionId: string, content: ContentBlock[], prompt: string): void {
     if (!this.sendToRenderer) return;

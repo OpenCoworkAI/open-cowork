@@ -88,7 +88,7 @@ export class PluginRuntimeService {
   }
 
   async install(pluginName: string): Promise<PluginInstallResultV2> {
-    const tempDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'open-cowork-plugin-'));
+    const tempDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'coeadapt-plugin-'));
     try {
       const pluginRootPath = await this.catalogService.downloadPlugin(pluginName, tempDir);
       return await this.installFromDirectory(pluginRootPath);

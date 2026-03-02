@@ -6,11 +6,13 @@ const panelPath = path.resolve(process.cwd(), 'src/renderer/components/RemoteCon
 const panelContent = readFileSync(panelPath, 'utf8');
 
 describe('RemoteControlPanel links', () => {
-  it('does not show one-click permission link', () => {
-    expect(panelContent).not.toContain('一键配置权限');
+  it('does not show feishu one-click permission link', () => {
+    // The specific hardcoded auth app URL should not be present
+    expect(panelContent).not.toContain('cli_a90ad18f0f39dcc6');
+    expect(panelContent).not.toContain('one-click');
   });
 
-  it('does not include the feishu auth url', () => {
+  it('does not include the feishu auth url with app id', () => {
     expect(panelContent).not.toContain('open.feishu.cn/app/cli_a90ad18f0f39dcc6/auth');
   });
 });

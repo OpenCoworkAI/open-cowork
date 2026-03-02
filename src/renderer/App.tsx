@@ -4,20 +4,26 @@ import { useIPC } from './hooks/useIPC';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { WelcomeView } from './components/WelcomeView';
+import { CareerBoxView } from './components/CareerBoxView';
+import { CareerBox } from './components/CareerBox';
+import { VMView } from './components/VMView';
+import { CoworkDesktopView } from './components/CoworkDesktopView';
 import { PermissionDialog } from './components/PermissionDialog';
 import { ContextPanel } from './components/ContextPanel';
 import { ConfigModal } from './components/ConfigModal';
 import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
+import { OnboardingModal } from './components/OnboardingModal';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
+import { CoraChat } from './components/CoraChat';
 import type { AppConfig } from './types';
 
 // Check if running in Electron
 const isElectronEnv = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
 function App() {
-  const { 
-    activeSessionId, 
+  const {
+    activeSessionId,
     pendingPermission,
     settings,
     showConfigModal,
@@ -26,7 +32,14 @@ function App() {
     sandboxSetupProgress,
     isSandboxSetupComplete,
     sandboxSyncStatus,
+    activeView,
+    coraChatOpen,
+    showOnboardingModal,
+    showCareerBox,
+    setCoraChatOpen,
     setShowConfigModal,
+    setShowOnboardingModal,
+    setWorkEnvironment,
     setIsConfigured,
     setAppConfig,
     setSandboxSetupComplete,
@@ -77,6 +90,19 @@ function App() {
     setSandboxSetupComplete(true);
   }, [setSandboxSetupComplete]);
 
+  // Check onboarding status on mount (after config is set)
+  useEffect(() => {
+    if (!isConfigured || !isElectronEnv) return;
+
+    window.electronAPI.onboarding.getWorkEnvironment().then((env) => {
+      if (env === null) {
+        setShowOnboardingModal(true);
+      } else {
+        setWorkEnvironment(env);
+      }
+    });
+  }, [isConfigured, setShowOnboardingModal, setWorkEnvironment]);
+
   // Determine if we should show the sandbox setup dialog
   // Show if there's progress and setup is not complete
   const showSandboxSetup = sandboxSetupProgress && !isSandboxSetupComplete;
@@ -93,11 +119,24 @@ function App() {
         
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background">
-          {activeSessionId ? <ChatView /> : <WelcomeView />}
+          {activeView === 'vm' ? (
+            <VMView />
+          ) : activeView === 'cowork-desktop' ? (
+            <CoworkDesktopView />
+          ) : activeView === 'careerbox' ? (
+            showCareerBox ? <CareerBox /> : <CareerBoxView />
+          ) : activeSessionId ? (
+            <ChatView />
+          ) : (
+            <WelcomeView />
+          )}
         </main>
 
-        {/* Context Panel - only show when in session */}
-        {activeSessionId && <ContextPanel />}
+        {/* Context Panel - only show when in chat session */}
+        {activeView === 'chat' && activeSessionId && <ContextPanel />}
+
+        {/* Navi Chat Panel */}
+        <CoraChat isOpen={coraChatOpen} onClose={() => setCoraChatOpen(false)} />
       </div>
       
       {/* Permission Dialog */}
@@ -112,6 +151,11 @@ function App() {
         isFirstRun={!isConfigured}
       />
       
+      {/* Onboarding Modal */}
+      {showOnboardingModal && (
+        <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />
+      )}
+
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (
         <SandboxSetupDialog 

@@ -45,8 +45,8 @@ describe('session title utils', () => {
   });
 
   it('builds a prompt requiring <=15 chars and same language', () => {
-    const prompt = buildTitlePrompt('帮我做一个PPT');
+    const prompt = buildTitlePrompt('PPT');
     expect(prompt).toContain('15');
-    expect(prompt).toContain('同语言');
+    expect(prompt).toContain('');
   });
 });

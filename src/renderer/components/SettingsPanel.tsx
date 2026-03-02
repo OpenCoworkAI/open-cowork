@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield, Wifi } from 'lucide-react';
+import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, ChevronDown, Package, Languages, Shield, Wifi, Search } from 'lucide-react';
 import type {
   ProviderPresets,
   Skill,
@@ -75,6 +75,7 @@ const SERVICE_OPTIONS = [
 export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const [tabQuery, setTabQuery] = useState('');
   // Track which tabs have been viewed at least once (for lazy loading)
   const [viewedTabs, setViewedTabs] = useState<Set<TabId>>(new Set([initialTab]));
 
@@ -82,6 +83,7 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
     if (isOpen) {
       setActiveTab(initialTab);
       setViewedTabs(new Set([initialTab]));
+      setTabQuery('');
     }
   }, [isOpen, initialTab]);
 
@@ -100,31 +102,50 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
     { id: 'credentials' as TabId, label: t('settings.credentials'), icon: Key, description: t('settings.credentialsDesc') },
     { id: 'connectors' as TabId, label: t('settings.connectors'), icon: Plug, description: t('settings.connectorsDesc') },
     { id: 'skills' as TabId, label: t('settings.skills'), icon: Package, description: t('settings.skillsDesc') },
-    { id: 'remote' as TabId, label: t('settings.remote', '远程控制'), icon: Wifi, description: t('settings.remoteDesc', '通过飞书等平台远程使用') },
+    { id: 'remote' as TabId, label: t('settings.remote', ''), icon: Wifi, description: t('settings.remoteDesc', '') },
     { id: 'logs' as TabId, label: t('settings.logs'), icon: AlertCircle, description: t('settings.logsDesc') },
     { id: 'language' as TabId, label: t('settings.language'), icon: Languages, description: t('settings.languageDesc') },
   ];
 
+  const filteredTabs = tabs.filter(tab => {
+    const q = tabQuery.trim().toLowerCase();
+    if (!q) return true;
+    return tab.label.toLowerCase().includes(q) || tab.description.toLowerCase().includes(q);
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[85vh] overflow-hidden border border-border flex">
+      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[88vh] overflow-hidden border border-border flex">
         {/* Sidebar */}
-        <div className="w-72 bg-surface-hover border-r border-border flex flex-col flex-shrink-0">
-          <div className="p-4 border-b border-border">
+        <div className="w-80 bg-surface-hover/80 border-r border-border flex flex-col flex-shrink-0">
+          <div className="p-4 border-b border-border space-y-3">
             <h2 className="text-lg font-semibold text-text-primary">{t('settings.title')}</h2>
+            <label className="relative block">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                value={tabQuery}
+                onChange={(e) => setTabQuery(e.target.value)}
+                placeholder={t('common.search', 'Search settings')}
+                className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-border bg-surface text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+              />
+            </label>
           </div>
           <div className="flex-1 p-2 space-y-1">
-            {tabs.map((tab) => (
+            {filteredTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors active:scale-[0.98] ${
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all active:scale-[0.98] border ${
                   activeTab === tab.id
-                    ? 'bg-accent/10 text-accent'
-                    : 'hover:bg-surface-active text-text-secondary hover:text-text-primary'
+                    ? 'bg-accent/10 text-accent border-accent/30 shadow-sm'
+                    : 'border-transparent hover:border-border hover:bg-surface-active text-text-secondary hover:text-text-primary'
                 }`}
               >
-                <tab.icon className="w-5 h-5 flex-shrink-0" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  activeTab === tab.id ? 'bg-accent/20' : 'bg-surface'
+                }`}>
+                  <tab.icon className="w-4 h-4" />
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{tab.label}</p>
                   <p className="text-xs text-text-muted truncate">{tab.description}</p>
@@ -132,6 +153,11 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
                 {activeTab === tab.id && <ChevronRight className="w-4 h-4 flex-shrink-0" />}
               </button>
             ))}
+            {filteredTabs.length === 0 && (
+              <div className="px-3 py-10 text-center text-text-muted text-sm">
+                {t('settings.noResults', 'No settings matched your search.')}
+              </div>
+            )}
           </div>
           <div className="p-4 border-t border-border">
             <button
@@ -145,8 +171,9 @@ export function SettingsPanel({ isOpen, onClose, initialTab = 'api' }: SettingsP
 
         {/* Content */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
-            <h3 className="text-lg font-semibold text-text-primary">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0 bg-surface">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+              <span className="inline-block w-1.5 h-6 rounded-full bg-accent/70" />
               {tabs.find(t => t.id === activeTab)?.label}
             </h3>
             <button
@@ -971,7 +998,7 @@ function SandboxTab() {
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-semibold text-text-primary">{t('sandbox.enableSandbox')}</h3>
               <p className="text-sm text-amber-500 mt-0.5">
-                🚧 功能调试中，暂时不支持
+                🚧 
               </p>
             </div>
           </div>
@@ -979,7 +1006,7 @@ function SandboxTab() {
           <button
             disabled={true}
             aria-label="Sandbox temporarily unavailable"
-            title="功能调试中，暂时不支持"
+            title=""
             className="relative inline-flex h-8 w-14 items-center rounded-full transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 bg-gray-300 dark:bg-gray-600"
           >
             <span
@@ -2293,7 +2320,7 @@ function ServerForm({
                       type="password"
                       value={newEnvValue}
                       onChange={(e) => setNewEnvValue(e.target.value)}
-                      placeholder="输入值"
+                      placeholder=""
                       className="w-full px-3 py-1.5 rounded bg-surface border border-border text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
                     />
                     <div className="flex gap-2">
@@ -2897,7 +2924,7 @@ function LanguageTab() {
 
   const languages = [
     { code: 'en', nativeName: 'English' },
-    { code: 'zh', nativeName: '中文' },
+    { code: 'zh', nativeName: '' },
   ];
 
   const handleLanguageChange = (langCode: string) => {

@@ -141,7 +141,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 获取网页并返回文本内容
+   * 
    */
   async webFetch(url: string): Promise<string> {
     const trimmed = url.trim();
@@ -161,7 +161,7 @@ export class ToolExecutor {
     }
 
     const response = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
+      headers: { 'User-Agent': 'coeadapt' },
     });
 
     if (!response.ok) {
@@ -179,7 +179,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 使用 DuckDuckGo Instant Answer 搜索网页
+   *  DuckDuckGo Instant Answer 
    */
   async webSearch(query: string): Promise<string> {
     const trimmed = query.trim();
@@ -195,7 +195,7 @@ export class ToolExecutor {
     searchUrl.searchParams.set('skip_disambig', '1');
 
     const response = await fetch(searchUrl.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
+      headers: { 'User-Agent': 'coeadapt' },
     });
 
     if (!response.ok) {

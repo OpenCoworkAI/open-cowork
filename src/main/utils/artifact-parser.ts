@@ -37,7 +37,7 @@ export function extractArtifactsFromText(text: string): ArtifactParseResult {
         artifacts.push({ path, name, type });
       }
     } catch {
-      // 忽略无效的 JSON 块
+      //  JSON 
     }
     return '';
   });

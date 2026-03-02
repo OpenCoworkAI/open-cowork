@@ -541,7 +541,7 @@ export class OpenAIResponsesRunner {
 
     if (status === 422) return true;
     if (combined.includes('context')) return true;
-    if (combined.includes('上下文')) return true;
+    if (combined.includes('')) return true;
     if (combined.includes('messages')) return true;
     if (combined.includes('invalid')) return true;
 
@@ -1239,7 +1239,7 @@ export class OpenAIResponsesRunner {
       id: uuidv4(),
       sessionId,
       role: 'assistant',
-      content: [{ type: 'text', text: '工具执行完成，结果已显示在上方。' }],
+      content: [{ type: 'text', text: '' }],
       timestamp: Date.now(),
     });
     return true;

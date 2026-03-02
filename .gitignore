@@ -60,3 +60,7 @@ dist*
 resources/node
 resources/tools
 resources/python
+
+# Large files
+commit.txt
+*.iso

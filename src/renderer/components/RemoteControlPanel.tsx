@@ -1,6 +1,6 @@
 /**
  * Remote Control Settings Panel
- * 远程控制设置面板 - 重新设计的现代化界面
+ *  - 
  */
 
 import { useState, useEffect } from 'react';
@@ -91,7 +91,7 @@ interface TunnelStatus {
   error?: string;
 }
 
-// 配置步骤
+// 
 type ConfigStep = 'feishu' | 'connection' | 'advanced';
 
 export function RemoteControlPanel() {
@@ -159,12 +159,7 @@ export function RemoteControlPanel() {
         setAutoApproveSafeTools(configResult.gateway?.autoApproveSafeTools !== false);
         setTunnelEnabled(configResult.gateway?.tunnel?.enabled || false);
         setNgrokAuthToken(configResult.gateway?.tunnel?.ngrok?.authToken || '');
-        if (configResult.channels?.feishu) {
-          setFeishuAppId(configResult.channels.feishu.appId || '');
-          setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
-          setFeishuDmPolicy(configResult.channels.feishu.dm?.policy || 'pairing');
-          setUseLongConnection(configResult.channels.feishu.useWebSocket !== false);
-        }
+        // Feishu config removed
       }
     } catch (err) {
       console.error('Failed to load remote config:', err);
@@ -199,10 +194,10 @@ export function RemoteControlPanel() {
       const newEnabled = !status?.running;
       await window.electronAPI.remote.setEnabled(newEnabled);
       await refreshStatus();
-      setSuccess(newEnabled ? '远程控制已启动' : '远程控制已停止');
+      setSuccess(newEnabled ? '' : '');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError('操作失败');
+      setError('');
     } finally {
       setIsTogglingGateway(false);
     }
@@ -224,21 +219,12 @@ export function RemoteControlPanel() {
         } : { enabled: false, type: 'ngrok' },
       });
       
-      if (feishuAppId && feishuAppSecret) {
-        await window.electronAPI.remote.updateFeishuConfig({
-          type: 'feishu',
-          appId: feishuAppId,
-          appSecret: feishuAppSecret,
-          useWebSocket: useLongConnection,
-          dm: { policy: feishuDmPolicy as 'open' | 'pairing' | 'allowlist' },
-        });
-      }
       
-      setSuccess('配置已保存');
+      setSuccess('');
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
     } catch (err) {
-      setError('保存失败');
+      setError('');
     } finally {
       setIsSaving(false);
     }
@@ -248,11 +234,11 @@ export function RemoteControlPanel() {
     if (!isElectron) return;
     try {
       await window.electronAPI.remote.approvePairing(request.channelType, request.userId);
-      setSuccess('配对已批准');
+      setSuccess('');
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
     } catch (err) {
-      setError('批准失败');
+      setError('');
     }
   }
 
@@ -260,21 +246,21 @@ export function RemoteControlPanel() {
     if (!isElectron) return;
     try {
       await window.electronAPI.remote.revokePairing(user.channelType, user.userId);
-      setSuccess('用户已移除');
+      setSuccess('');
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
     } catch (err) {
-      setError('移除失败');
+      setError('');
     }
   }
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    setSuccess('已复制');
+    setSuccess('');
     setTimeout(() => setSuccess(null), 2000);
   }
 
-  // 检查配置完成度
+  // 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
   const isConnectionConfigured = useLongConnection || (tunnelEnabled && ngrokAuthToken) || tunnelStatus?.connected;
 
@@ -288,7 +274,7 @@ export function RemoteControlPanel() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      {/* 通知 */}
+      {/*  */}
       {error && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
@@ -302,7 +288,7 @@ export function RemoteControlPanel() {
         </div>
       )}
 
-      {/* 主控制卡片 */}
+      {/*  */}
       <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface to-surface-hover">
         <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="relative p-6">
@@ -312,9 +298,9 @@ export function RemoteControlPanel() {
                 <Smartphone className={`w-8 h-8 ${status?.running ? 'text-green-500' : 'text-text-muted'}`} />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-text-primary">远程控制</h2>
+                <h2 className="text-xl font-semibold text-text-primary"></h2>
                 <p className="text-sm text-text-secondary mt-0.5">
-                  {status?.running ? '正在运行 - 可通过飞书控制' : '未启动'}
+                  {status?.running ? ' - ' : ''}
                 </p>
               </div>
             </div>
@@ -333,36 +319,36 @@ export function RemoteControlPanel() {
               ) : (
                 <Power className="w-4 h-4" />
               )}
-              {status?.running ? '停止服务' : '启动服务'}
+              {status?.running ? '' : ''}
             </button>
           </div>
           
-          {/* 状态指标 */}
+          {/*  */}
           {status?.running && (
             <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-border/50">
               <div className="text-center p-3 rounded-xl bg-surface/50">
                 <div className="text-2xl font-bold text-accent">{status.activeSessions}</div>
-                <div className="text-xs text-text-muted mt-1">活跃会话</div>
+                <div className="text-xs text-text-muted mt-1"></div>
               </div>
               <div className="text-center p-3 rounded-xl bg-surface/50">
                 <div className="text-2xl font-bold text-green-500">{pairedUsers.length}</div>
-                <div className="text-xs text-text-muted mt-1">已授权用户</div>
+                <div className="text-xs text-text-muted mt-1"></div>
               </div>
               <div className="text-center p-3 rounded-xl bg-surface/50">
                 <div className="text-2xl font-bold text-yellow-500">{pendingPairings.length}</div>
-                <div className="text-xs text-text-muted mt-1">待授权</div>
+                <div className="text-xs text-text-muted mt-1"></div>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* 配对请求 */}
+      {/*  */}
       {pendingPairings.length > 0 && (
         <div className="p-5 rounded-2xl border-2 border-yellow-500/30 bg-yellow-500/5">
           <h3 className="font-medium text-yellow-600 dark:text-yellow-400 mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5" />
-            待授权的配对请求
+            
           </h3>
           <div className="space-y-3">
             {pendingPairings.map((request) => (
@@ -372,17 +358,17 @@ export function RemoteControlPanel() {
               >
                 <div>
                   <div className="font-medium text-text-primary">
-                    {request.userName || '未知用户'}
+                    {request.userName || ''}
                   </div>
                   <div className="text-sm text-text-secondary mt-1">
-                    配对码: <span className="font-mono text-yellow-600 dark:text-yellow-400 font-bold">{request.code}</span>
+                    : <span className="font-mono text-yellow-600 dark:text-yellow-400 font-bold">{request.code}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => approvePairing(request)}
                     className="p-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-500 transition-colors"
-                    title="批准"
+                    title=""
                   >
                     <Check className="w-5 h-5" />
                   </button>
@@ -393,12 +379,12 @@ export function RemoteControlPanel() {
         </div>
       )}
 
-      {/* 配置步骤导航 */}
+      {/*  */}
       <div className="flex items-center gap-2 p-1 bg-surface rounded-xl">
         {[
-          { id: 'feishu', label: '飞书配置', icon: MessageSquare, done: isFeishuConfigured },
-          { id: 'connection', label: '连接方式', icon: Link2, done: isConnectionConfigured },
-          { id: 'advanced', label: '高级设置', icon: Settings2, done: true },
+          { id: 'feishu', label: '', icon: MessageSquare, done: isFeishuConfigured },
+          { id: 'connection', label: '', icon: Link2, done: isConnectionConfigured },
+          { id: 'advanced', label: '', icon: Settings2, done: true },
         ].map((step) => (
           <button
             key={step.id}
@@ -419,15 +405,15 @@ export function RemoteControlPanel() {
         ))}
       </div>
 
-      {/* 配置内容 */}
+      {/*  */}
       <div className="p-6 rounded-2xl border border-border bg-surface">
-        {/* 步骤 1: 飞书配置 */}
+        {/*  1:  */}
         {activeStep === 'feishu' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-medium text-text-primary mb-1">飞书机器人配置</h3>
+              <h3 className="text-lg font-medium text-text-primary mb-1"></h3>
               <p className="text-sm text-text-secondary">
-                在飞书开放平台创建应用后，填入凭证信息
+                
               </p>
             </div>
             
@@ -460,13 +446,13 @@ export function RemoteControlPanel() {
               
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
-                  私聊授权策略
+                  
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { value: 'pairing', label: '配对验证', desc: '需要输入配对码' },
-                    { value: 'allowlist', label: '白名单', desc: '仅允许指定用户' },
-                    { value: 'open', label: '开放', desc: '所有人可用' },
+                    { value: 'pairing', label: '', desc: '' },
+                    { value: 'allowlist', label: '', desc: '' },
+                    { value: 'open', label: '', desc: '' },
                   ].map((option) => (
                     <button
                       key={option.value}
@@ -492,22 +478,22 @@ export function RemoteControlPanel() {
               className="inline-flex items-center gap-2 text-sm text-accent hover:underline"
             >
               <ExternalLink className="w-4 h-4" />
-              打开飞书开放平台
+              
             </a>
           </div>
         )}
 
-        {/* 步骤 2: 连接方式 */}
+        {/*  2:  */}
         {activeStep === 'connection' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-medium text-text-primary mb-1">连接方式</h3>
+              <h3 className="text-lg font-medium text-text-primary mb-1"></h3>
               <p className="text-sm text-text-secondary">
-                选择飞书服务器如何与你的电脑通信
+                
               </p>
             </div>
             
-            {/* 长连接模式 - 推荐 */}
+            {/*  -  */}
             <div
               onClick={() => setUseLongConnection(true)}
               className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${
@@ -522,23 +508,23 @@ export function RemoteControlPanel() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-text-primary">长连接模式</span>
+                    <span className="font-medium text-text-primary"></span>
                     <span className="px-2 py-0.5 text-xs rounded-full bg-green-500/10 text-green-500 font-medium">
-                      推荐
+                      
                     </span>
                   </div>
                   <p className="text-sm text-text-secondary mt-1">
-                    应用主动连接飞书服务器，无需公网 IP 或 ngrok
+                     IP  ngrok
                   </p>
                   <div className="flex items-center gap-4 mt-3 text-xs text-text-muted">
                     <span className="flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 无需公网
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 开箱即用
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 稳定可靠
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 
                     </span>
                   </div>
                 </div>
@@ -550,7 +536,7 @@ export function RemoteControlPanel() {
               </div>
             </div>
             
-            {/* Webhook 模式 */}
+            {/* Webhook  */}
             <div
               onClick={() => setUseLongConnection(false)}
               className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${
@@ -564,9 +550,9 @@ export function RemoteControlPanel() {
                   <Link2 className={`w-6 h-6 ${!useLongConnection ? 'text-accent' : 'text-text-muted'}`} />
                 </div>
                 <div className="flex-1">
-                  <div className="font-medium text-text-primary">Webhook 模式</div>
+                  <div className="font-medium text-text-primary">Webhook </div>
                   <p className="text-sm text-text-secondary mt-1">
-                    飞书主动推送消息到你的服务器，需要公网可访问的地址
+                    
                   </p>
                 </div>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -576,11 +562,11 @@ export function RemoteControlPanel() {
                 </div>
               </div>
               
-              {/* Webhook URL 显示 */}
+              {/* Webhook URL  */}
               {!useLongConnection && (
                 <div className="mt-4 pt-4 border-t border-border/50 space-y-4">
                   <div>
-                    <label className="block text-xs text-text-muted mb-1">本地 Webhook 地址</label>
+                    <label className="block text-xs text-text-muted mb-1"> Webhook </label>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 px-3 py-2 bg-surface-hover rounded-lg text-sm font-mono text-text-secondary truncate">
                         http://127.0.0.1:{gatewayPort}/webhook/feishu
@@ -597,10 +583,10 @@ export function RemoteControlPanel() {
                     </div>
                   </div>
                   
-                  {/* 内置 ngrok */}
+                  {/*  ngrok */}
                   <div className="p-4 rounded-lg bg-surface-hover">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-text-primary">使用内置 ngrok</span>
+                      <span className="text-sm font-medium text-text-primary"> ngrok</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -627,7 +613,7 @@ export function RemoteControlPanel() {
                           placeholder="ngrok authtoken"
                         />
                         <p className="text-xs text-text-muted mt-2">
-                          从 <a href="https://ngrok.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">ngrok.com</a> 免费获取
+                           <a href="https://ngrok.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">ngrok.com</a> 
                         </p>
                       </div>
                     )}
@@ -636,7 +622,7 @@ export function RemoteControlPanel() {
                       <div className="mt-3 p-2 rounded-lg bg-green-500/10">
                         <div className="flex items-center gap-2 text-green-500 text-sm">
                           <CheckCircle2 className="w-4 h-4" />
-                          <span>隧道已连接</span>
+                          <span></span>
                         </div>
                         <code className="block mt-1 text-xs font-mono text-text-secondary truncate">
                           {webhookUrl}
@@ -651,43 +637,43 @@ export function RemoteControlPanel() {
             {useLongConnection && (
               <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
                 <p className="text-sm text-blue-600 dark:text-blue-400">
-                  <strong>配置提示：</strong>在飞书开放平台 → 事件与回调 → 事件配置 中，将订阅方式改为"使用长连接接收事件"
+                  <strong></strong> →  →  ""
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {/* 步骤 3: 高级设置 */}
+        {/*  3:  */}
         {activeStep === 'advanced' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-medium text-text-primary mb-1">高级设置</h3>
+              <h3 className="text-lg font-medium text-text-primary mb-1"></h3>
               <p className="text-sm text-text-secondary">
-                自定义远程控制的行为
+                
               </p>
             </div>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
-                  默认工作目录
+                  
                 </label>
                 <input
                   type="text"
                   value={defaultWorkingDirectory}
                   onChange={(e) => setDefaultWorkingDirectory(e.target.value)}
                   className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary focus:border-accent focus:outline-none"
-                  placeholder="例如: C:\Users\你的用户名\Projects"
+                  placeholder=": C:\Users\\Projects"
                 />
                 <p className="text-xs text-text-muted mt-1">
-                  AI 执行命令时的默认目录，也可以在消息中用 <code className="px-1 py-0.5 bg-surface-active rounded">[cwd:路径]</code> 临时指定
+                  AI  <code className="px-1 py-0.5 bg-surface-active rounded">[cwd:]</code> 
                 </p>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">
-                  服务端口
+                  
                 </label>
                 <input
                   type="number"
@@ -700,9 +686,9 @@ export function RemoteControlPanel() {
               
               <div className="flex items-center justify-between p-4 rounded-xl bg-surface-hover">
                 <div>
-                  <div className="font-medium text-text-primary text-sm">自动批准安全工具</div>
+                  <div className="font-medium text-text-primary text-sm"></div>
                   <p className="text-xs text-text-muted mt-0.5">
-                    自动允许执行读取文件、浏览器操作等安全工具
+                    
                   </p>
                 </div>
                 <button
@@ -720,7 +706,7 @@ export function RemoteControlPanel() {
           </div>
         )}
         
-        {/* 保存按钮 */}
+        {/*  */}
         <div className="flex justify-end mt-6 pt-6 border-t border-border">
           <button
             onClick={saveConfig}
@@ -732,17 +718,17 @@ export function RemoteControlPanel() {
             ) : (
               <Check className="w-4 h-4" />
             )}
-            保存配置
+            
           </button>
         </div>
       </div>
 
-      {/* 已授权用户 */}
+      {/*  */}
       {pairedUsers.length > 0 && (
         <div className="p-6 rounded-2xl border border-border bg-surface">
           <h3 className="font-medium text-text-primary mb-4 flex items-center gap-2">
             <Users className="w-5 h-5" />
-            已授权用户 ({pairedUsers.length})
+             ({pairedUsers.length})
           </h3>
           <div className="space-y-2">
             {pairedUsers.map((user) => (
@@ -766,7 +752,7 @@ export function RemoteControlPanel() {
                 <button
                   onClick={() => revokePairing(user)}
                   className="p-2 rounded-lg hover:bg-red-500/10 text-text-muted hover:text-red-500 transition-colors"
-                  title="移除授权"
+                  title=""
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -776,41 +762,41 @@ export function RemoteControlPanel() {
         </div>
       )}
 
-      {/* 快速帮助 */}
+      {/*  */}
       <div className="p-5 rounded-2xl border border-border bg-surface-hover">
-        <h4 className="font-medium text-text-primary mb-3">快速入门</h4>
+        <h4 className="font-medium text-text-primary mb-3"></h4>
         <ol className="space-y-2 text-sm text-text-secondary">
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
-            <span>在飞书开放平台创建应用，添加"机器人"能力</span>
+            <span>""</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
-            <span>复制 App ID 和 App Secret 填入上方</span>
+            <span> App ID  App Secret </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
             <span>
-              在权限管理中勾选以下权限：
-              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:resource</code>、
-              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message</code>、
-              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message:send_as_bot</code>、
-              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message.group_at_msg:readonly</code>、
-              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message.p2p_msg:readonly</code>、
+              
+              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:resource</code>
+              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message</code>
+              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message:send_as_bot</code>
+              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message.group_at_msg:readonly</code>
+              <code className="px-1 py-0.5 bg-surface rounded ml-1">im:message.p2p_msg:readonly</code>
               <code className="px-1 py-0.5 bg-surface rounded ml-1">contact:user.base:readonly</code>
             </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">4</span>
-            <span>在飞书平台的"事件配置"中选择"使用长连接接收事件"</span>
+            <span>""""</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">5</span>
-            <span>订阅 <code className="px-1 py-0.5 bg-surface rounded">im.message.receive_v1</code> 事件</span>
+            <span> <code className="px-1 py-0.5 bg-surface rounded">im.message.receive_v1</code> </span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-5 h-5 rounded-full bg-accent/10 text-accent text-xs flex items-center justify-center flex-shrink-0 mt-0.5">6</span>
-            <span>发布应用后，点击"启动服务"即可</span>
+            <span>""</span>
           </li>
         </ol>
       </div>

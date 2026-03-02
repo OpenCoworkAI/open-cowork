@@ -1,6 +1,6 @@
 /**
  * Remote Control Module
- * 远程控制模块导出
+ * 
  */
 
 // Types
@@ -13,7 +13,7 @@ export { RemoteManager, remoteManager, type AgentExecutor, type RemoteInteractio
 
 // Channels
 export { ChannelBase } from './channels/channel-base';
-export { FeishuChannel, FeishuAPI } from './channels/feishu';
+
 
 // Config
 export { remoteConfigStore } from './remote-config-store';

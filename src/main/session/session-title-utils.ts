@@ -20,11 +20,11 @@ export function shouldGenerateTitle(input: TitleDecisionInput): boolean {
 
 export function buildTitlePrompt(prompt: string): string {
   return [
-    '请根据用户请求生成一个简短的对话标题：',
-    '- 标题不超过15个字',
-    '- 同语言输出',
-    '- 不要加引号或编号',
     '',
-    `用户请求：${prompt.trim()}`,
+    '- 15',
+    '- ',
+    '- ',
+    '',
+    `${prompt.trim()}`,
   ].join('\n');
 }

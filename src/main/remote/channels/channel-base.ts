@@ -1,6 +1,6 @@
 /**
  * Channel Base Class
- * 所有 Channel 的基类，定义通用接口和方法
+ *  Channel 
  */
 
 import { EventEmitter } from 'events';
@@ -159,7 +159,7 @@ export abstract class ChannelBase extends EventEmitter implements IChannel {
           splitIndex = lineBreak + 1;
         } else {
           // Look for sentence end
-          const sentenceEnd = remaining.lastIndexOf('。', maxLength);
+          const sentenceEnd = remaining.lastIndexOf('', maxLength);
           const periodEnd = remaining.lastIndexOf('. ', maxLength);
           const bestEnd = Math.max(sentenceEnd, periodEnd);
           if (bestEnd > maxLength * 0.5) {

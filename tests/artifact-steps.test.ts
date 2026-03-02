@@ -67,14 +67,14 @@ describe('getArtifactSteps', () => {
   });
 
   it('uses basename when path exists even if name provided', () => {
-    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md', '自定义名称')).toBe('simple.md');
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.md', '')).toBe('simple.md');
   });
 
   it('uses name when path is empty', () => {
-    expect(getArtifactLabel('', '自定义名称')).toBe('自定义名称');
+    expect(getArtifactLabel('', '')).toBe('');
   });
 
   it('prefers basename over translated name', () => {
-    expect(getArtifactLabel('/Users/haoqing/tmp/simple.pptx', '简单PPT演示文稿')).toBe('simple.pptx');
+    expect(getArtifactLabel('/Users/haoqing/tmp/simple.pptx', 'PPT')).toBe('simple.pptx');
   });
 });

@@ -69,7 +69,7 @@ export function useIPC() {
             if (pending.length > 0) {
               store.activateNextTurn(event.payload.sessionId, event.payload.step.id);
             } else if (activeTurn) {
-              // 绑定真实 stepId，避免 mock stepId 导致无法清理
+              //  stepId mock stepId 
               store.updateActiveTurnStep(event.payload.sessionId, event.payload.step.id);
             }
           }
@@ -89,7 +89,7 @@ export function useIPC() {
             const steps = useAppStore.getState().traceStepsBySession[event.payload.sessionId] || [];
             const step = steps.find((item) => item.id === event.payload.stepId);
             if (step?.type === 'thinking') {
-              // 兜底：若 session.status 丢失，仍能结束加载状态
+              //  session.status 
               store.updateSession(event.payload.sessionId, { status: 'idle' });
               store.setLoading(false);
             }
@@ -122,6 +122,50 @@ export function useIPC() {
         case 'sandbox.sync':
           console.log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
           store.setSandboxSyncStatus(event.payload);
+          break;
+
+        case 'careerbox.pullProgress':
+          store.setCareerboxPullProgress(event.payload);
+          break;
+
+        case 'vm.downloadProgress':
+          store.setVmImageDownloadProgress(event.payload);
+          break;
+
+        case 'vm.bootstrapProgress':
+          console.log('[useIPC] vm.bootstrapProgress:', event.payload.phase);
+          store.setVmBootstrapProgress(event.payload);
+          break;
+
+        case 'vm.stateChanged': {
+          console.log('[useIPC] vm.stateChanged:', event.payload.vmId, event.payload.state);
+          // Update the VM state in the local list
+          const currentVmList = useAppStore.getState().vmList;
+          const updatedList = currentVmList.map(vm =>
+            vm.id === event.payload.vmId
+              ? { ...vm, state: event.payload.state }
+              : vm
+          );
+          store.setVmList(updatedList);
+
+          // If wsUrl is provided, update cowork VNC state
+          if (event.payload.wsUrl) {
+            const activeVm = useAppStore.getState().activeCoworkVM;
+            if (activeVm?.id === event.payload.vmId) {
+              store.setCoworkVNCUrl(event.payload.wsUrl);
+            }
+          }
+          break;
+        }
+
+        case 'vm.healthEvent':
+          console.log('[useIPC] vm.healthEvent:', event.payload.type, event.payload.vmName);
+          store.handleVmHealthEvent(event.payload);
+          break;
+
+        case 'vm.provisionProgress':
+          console.log('[useIPC] vm.provisionProgress:', event.payload.phase, event.payload.vmId);
+          store.setVmProvisionProgress(event.payload);
           break;
 
         case 'workdir.changed':

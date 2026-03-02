@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
+import { useFileAttachments } from '../hooks/useFileAttachments';
 import type { ContentBlock } from '../types';
 import {
   FileText,
@@ -14,258 +15,32 @@ import {
   Paperclip,
   BookOpen,
   FileSearch,
+  Target,
+  Briefcase,
+  GraduationCap,
+  MessageSquare,
 } from 'lucide-react';
-
-type AttachedFile = {
-  name: string;
-  path: string;
-  size: number;
-  type: string;
-  inlineDataBase64?: string;
-};
+import CoeadaptLogo from '../assets/logo-full-1.png';
 
 export function WelcomeView() {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [activeCareerCategory, setActiveCareerCategory] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComposingRef = useRef(false);
-  const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { startSession, changeWorkingDir, isElectron } = useIPC();
+  const {
+    pastedImages, attachedFiles, isDragging,
+    handlePaste, handleDragOver, handleDragLeave, handleDrop,
+    handleFileSelect, removeImage, removeFile, clearAll,
+  } = useFileAttachments(isElectron);
   const workingDir = useAppStore((state) => state.workingDir);
+  const setShowCareerBox = useAppStore((state) => state.setShowCareerBox);
 
   const handleSelectFolder = async () => {
     await changeWorkingDir();
-  };
-
-  // Handle paste event for images
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
-    if (imageItems.length === 0) return;
-
-    e.preventDefault();
-
-    const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
-
-    for (const item of imageItems) {
-      const blob = item.getAsFile();
-      if (!blob) continue;
-
-      try {
-        // Resize if needed to stay under API limit
-        const resizedBlob = await resizeImageIfNeeded(blob);
-        const base64 = await blobToBase64(resizedBlob);
-        const url = URL.createObjectURL(resizedBlob);
-        newImages.push({
-          url,
-          base64,
-          mediaType: resizedBlob.type as any,
-        });
-      } catch (err) {
-        console.error('Failed to process pasted image:', err);
-      }
-    }
-
-    setPastedImages(prev => [...prev, ...newImages]);
-  };
-
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        // Remove data URL prefix (e.g., "data:image/png;base64,")
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
-
-  // Resize and compress image if needed to stay under 5MB base64 limit
-  const resizeImageIfNeeded = async (blob: Blob): Promise<Blob> => {
-    // Claude API limit is 5MB for base64 encoded images
-    // Base64 encoding increases size by ~33%, so we target 3.75MB for the blob
-    const MAX_BLOB_SIZE = 3.75 * 1024 * 1024; // 3.75MB
-
-    if (blob.size <= MAX_BLOB_SIZE) {
-      return blob; // No need to resize
-    }
-
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(blob);
-
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-
-        // Calculate scaling factor to reduce file size
-        // We use a more aggressive approach: scale down until size is acceptable
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-
-        // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
-
-        const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
-          canvas.width = Math.floor(img.width * currentScale);
-          canvas.height = Math.floor(img.height * currentScale);
-
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-          return new Promise((resolveBlob) => {
-            canvas.toBlob(
-              (compressedBlob) => {
-                if (!compressedBlob) {
-                  reject(new Error('Failed to compress image'));
-                  return;
-                }
-
-                // If still too large, try again with lower quality or scale
-                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
-                  const newQuality = Math.max(0.5, currentQuality - 0.1);
-                  const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
-                  attemptCompress(newScale, newQuality).then(resolveBlob);
-                } else {
-                  resolveBlob(compressedBlob);
-                }
-              },
-              blob.type || 'image/jpeg',
-              currentQuality
-            );
-          });
-        };
-
-        attemptCompress(scale, quality).then(resolve).catch(reject);
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('Failed to load image'));
-      };
-
-      img.src = url;
-    });
-  };
-
-  const removeImage = (index: number) => {
-    setPastedImages(prev => {
-      const updated = [...prev];
-      URL.revokeObjectURL(updated[index].url);
-      updated.splice(index, 1);
-      return updated;
-    });
-  };
-
-  const removeFile = (index: number) => {
-    setAttachedFiles(prev => {
-      const updated = [...prev];
-      updated.splice(index, 1);
-      return updated;
-    });
-  };
-
-  const handleFileSelect = async () => {
-    if (!isElectron || !window.electronAPI) {
-      console.log('[WelcomeView] Not in Electron, file selection not available');
-      return;
-    }
-
-    try {
-      const filePaths = await window.electronAPI.selectFiles();
-      if (filePaths.length === 0) return;
-
-      const newFiles = filePaths.map((filePath) => {
-        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
-        return {
-          name: fileName,
-          path: filePath,
-          size: 0,
-          type: 'application/octet-stream',
-        };
-      });
-
-      setAttachedFiles(prev => [...prev, ...newFiles]);
-    } catch (error) {
-      console.error('[WelcomeView] Error selecting files:', error);
-    }
-  };
-
-  // Handle drag and drop for images
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
-
-    if (imageFiles.length > 0) {
-      const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
-
-      for (const file of imageFiles) {
-        try {
-          // Resize if needed to stay under API limit
-          const resizedBlob = await resizeImageIfNeeded(file);
-          const base64 = await blobToBase64(resizedBlob);
-          const url = URL.createObjectURL(resizedBlob);
-          newImages.push({
-            url,
-            base64,
-            mediaType: resizedBlob.type,
-          });
-        } catch (err) {
-          console.error('Failed to process dropped image:', err);
-        }
-      }
-
-      setPastedImages(prev => [...prev, ...newImages]);
-    }
-
-    if (otherFiles.length > 0) {
-      const newFiles = await Promise.all(
-        otherFiles.map(async (file) => {
-          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
-          const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
-
-          return {
-            name: file.name,
-            path: droppedPath,
-            size: file.size,
-            type: file.type || 'application/octet-stream',
-            inlineDataBase64,
-          };
-        })
-      );
-
-      setAttachedFiles(prev => [...prev, ...newFiles]);
-    }
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -320,15 +95,17 @@ export function WelcomeView() {
       if (textareaRef.current) {
         textareaRef.current.value = '';
       }
-      pastedImages.forEach(img => URL.revokeObjectURL(img.url));
-      setPastedImages([]);
-      setAttachedFiles([]);
+      clearAll();
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleTagClick = (tag: string, tagPrompt: string) => {
+  const handleTagClick = (tag: string, tagPrompt: string, isCareerBox?: boolean) => {
+    if (isCareerBox) {
+      setShowCareerBox(true);
+      return;
+    }
     setSelectedTag(tag === selectedTag ? null : tag);
     if (tag !== selectedTag) {
       setPrompt(tagPrompt);
@@ -360,7 +137,51 @@ export function WelcomeView() {
     adjustTextareaHeight();
   }, [prompt]);
 
+  const careerCategories = [
+    {
+      id: 'plan',
+      label: t('career.plan'),
+      icon: Target,
+      suggestions: [
+        { text: t('career.plan90day'), prompt: 'Help me create a focused 90-day career development plan based on my current skills and goals.' },
+        { text: t('career.reviewGoals'), prompt: 'Review my current career goals and provide feedback on my progress.' },
+        { text: t('career.weekFocus'), prompt: 'Based on my goals and current tasks, what should I prioritize this week?' },
+      ],
+    },
+    {
+      id: 'learn',
+      label: t('career.learn'),
+      icon: GraduationCap,
+      suggestions: [
+        { text: t('career.skillGap'), prompt: 'Analyze my skill gaps for my target role and recommend learning resources.' },
+        { text: t('career.findCourses'), prompt: 'Recommend courses and learning resources aligned with my career goals.' },
+        { text: t('career.trendingSkills'), prompt: 'What skills are currently in high demand for my industry?' },
+      ],
+    },
+    {
+      id: 'jobs',
+      label: t('career.jobs'),
+      icon: Briefcase,
+      suggestions: [
+        { text: t('career.findJobs'), prompt: 'Search for job opportunities that match my skills, experience, and career goals.' },
+        { text: t('career.resumeReview'), prompt: 'Review my resume and provide specific improvement suggestions for ATS optimization.' },
+        { text: t('career.interviewPrep'), prompt: 'Help me prepare for interviews for my target role with practice questions.' },
+      ],
+    },
+    {
+      id: 'reflect',
+      label: t('career.reflect'),
+      icon: MessageSquare,
+      suggestions: [
+        { text: t('career.weeklyReflection'), prompt: 'Help me do a weekly review of my progress, wins, and areas to improve.' },
+        { text: t('career.processThoughts'), prompt: 'I need to process some thoughts about my work situation. Help me gain clarity.' },
+        { text: t('career.celebrateWins'), prompt: 'Help me recognize and celebrate my recent accomplishments.' },
+      ],
+    },
+  ];
+
   const quickTags = [
+    { id: 'career-box', label: t('career.openCareerBox'), icon: GraduationCap, prompt: '', isCareerBox: true },
     { id: 'create', label: t('welcome.createFile'), icon: FileText, prompt: 'Create a new file for me' },
     { id: 'crunch', label: t('welcome.crunchData'), icon: BarChart3, prompt: 'Help me analyze and process data' },
     { id: 'organize', label: t('welcome.organizeFiles'), icon: FolderOpen, prompt: 'Help me organize my files and folders' },
@@ -389,48 +210,33 @@ export function WelcomeView() {
 
   return (
     <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-6 animate-fade-in">
-        {/* Quick Action Tags */}
-        <div className="flex flex-wrap gap-2 justify-center">
-          {quickTags.map((tag) => (
-            <button
-              key={tag.id}
-              onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`tag ${selectedTag === tag.id ? 'tag-active' : ''} ${
-                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
-              }`}
-            >
-              <tag.icon className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
-              <span>{tag.label}</span>
-              {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                  <Chrome className="w-3 h-3" />
-                  <span>{t('welcome.chromeRequired')}</span>
-                </span>
-              )}
-              {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800/10 text-gray-700 border border-gray-800/20">
-                  <span className="text-sm">📝</span>
-                  <span>{t('welcome.notionRequired')}</span>
-                </span>
-              )}
-            </button>
-          ))}
+      <div className="max-w-2xl w-full space-y-8 animate-fade-in relative z-10">
+
+        {/* Hero Heading */}
+        <div className="flex flex-col items-center justify-center text-center space-y-3">
+          <img
+            src={CoeadaptLogo}
+            alt="Coeadapt"
+            className="h-10 w-auto object-contain drop-shadow-sm transition-transform hover:scale-105 duration-300 dark:brightness-0 dark:invert"
+          />
+          <h1 className="text-3xl font-semibold text-text-primary tracking-tight">
+            {t('welcome.title')}
+          </h1>
         </div>
 
-        {/* Main Input Card - Right aligned */}
+        {/* Main Input — Pill Shape */}
         <form
           onSubmit={handleSubmit}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`card p-4 space-y-4 transition-colors ${
-            isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
+          className={`space-y-3 transition-all duration-300 ${
+            isDragging ? 'ring-2 ring-accent rounded-2xl' : ''
           }`}
         >
           {/* Image previews */}
           {pastedImages.length > 0 && (
-            <div className="grid grid-cols-5 gap-2 pb-2 border-b border-border w-full">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 px-4">
               {pastedImages.map((img, index) => (
                 <div key={index} className="relative group">
                   <img
@@ -452,7 +258,7 @@ export function WelcomeView() {
 
           {/* File attachments */}
           {attachedFiles.length > 0 && (
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2 px-4">
               {attachedFiles.map((file, index) => (
                 <div
                   key={index}
@@ -473,76 +279,148 @@ export function WelcomeView() {
             </div>
           )}
 
-          {/* Text Input - Auto-resizing */}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              adjustTextareaHeight();
-            }}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-            }}
-            onPaste={handlePaste}
-            placeholder={t('welcome.title')}
-            rows={1}
-            style={{ minHeight: '72px', maxHeight: '200px' }}
-            className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
-            onKeyDown={(e) => {
-              // Enter to send, Shift+Enter for new line
-              if (e.key === 'Enter' && !e.shiftKey) {
-                if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
-                  return;
-                }
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-          />
+          {/* Pill Input Container */}
+          <div
+            className="flex items-end gap-2 p-2 rounded-full bg-surface/70 backdrop-blur-md border transition-all duration-300"
+            style={{ borderColor: 'var(--color-card-border)' }}
+          >
+            {/* Folder + Attach buttons */}
+            <button
+              type="button"
+              onClick={handleSelectFolder}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                workingDir
+                  ? 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                  : 'text-accent hover:bg-accent-muted'
+              }`}
+              title={workingDir || t('welcome.selectWorkingFolder')}
+            >
+              <FolderOpen className="w-4 h-4" />
+            </button>
 
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
-            <div className="flex items-center gap-3">
+            {isElectron && (
               <button
                 type="button"
-                onClick={handleSelectFolder}
-                className={`flex items-center gap-2 text-sm transition-colors ${
-                  workingDir
-                    ? 'text-text-secondary hover:text-text-primary'
-                    : 'text-accent hover:text-accent-hover'
-                }`}
-                title={workingDir || t('welcome.selectWorkingFolder')}
+                onClick={handleFileSelect}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                title={t('welcome.attachFiles')}
               >
-                <FolderOpen className="w-4 h-4" />
-                <span>{workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}</span>
+                <Paperclip className="w-4 h-4" />
               </button>
+            )}
 
-              {isElectron && (
-                <button
-                  type="button"
-                  onClick={handleFileSelect}
-                  className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  <Paperclip className="w-4 h-4" />
-                  <span>{t('welcome.attachFiles')}</span>
-                </button>
-              )}
-            </div>
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                adjustTextareaHeight();
+              }}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
+              onPaste={handlePaste}
+              placeholder={t('chat.typeMessage')}
+              rows={1}
+              style={{ minHeight: '40px', maxHeight: '200px' }}
+              className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-2 overflow-hidden"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
+                    return;
+                  }
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+            />
 
+            {/* Send button */}
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn btn-primary px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-all duration-300"
             >
-              <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
-              <ArrowRight className="w-4 h-4" />
+              {isSubmitting ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
             </button>
           </div>
+
+          {/* Workspace indicator */}
+          {workingDir && (
+            <p className="text-xs text-text-muted text-center">
+              {workingDir.split(/[/\\]/).pop()}
+            </p>
+          )}
         </form>
+
+        {/* Quick Action Tags — below input */}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {quickTags.map((tag) => (
+            <button
+              key={tag.id}
+              onClick={() => handleTagClick(tag.id, tag.prompt)}
+              className={`tag text-xs ${selectedTag === tag.id ? 'tag-active' : ''} ${
+                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
+              }`}
+            >
+              <tag.icon className={`w-3.5 h-3.5 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
+              <span>{tag.label}</span>
+              {'requiresChrome' in tag && tag.requiresChrome && (
+                <span className="flex items-center gap-1 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-accent/10 text-accent border border-accent/20">
+                  <Chrome className="w-3 h-3" />
+                </span>
+              )}
+              {'requiresNotion' in tag && tag.requiresNotion && (
+                <span className="flex items-center gap-1 ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-surface-muted text-text-muted border border-border">
+                  <span className="text-xs">N</span>
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Career Category Pills — compact row below */}
+        <div className="flex items-center justify-center gap-2">
+          {careerCategories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCareerCategory(activeCareerCategory === cat.id ? null : cat.id)}
+              className={`tag text-xs py-1.5 px-3 ${activeCareerCategory === cat.id ? 'tag-active' : ''}`}
+            >
+              <cat.icon className={`w-3.5 h-3.5 ${activeCareerCategory === cat.id ? 'text-accent' : 'text-text-muted'}`} />
+              <span>{cat.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Career Suggestions Grid */}
+        {activeCareerCategory && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 animate-fade-in">
+            {careerCategories
+              .find((c) => c.id === activeCareerCategory)
+              ?.suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.text}
+                  onClick={() => {
+                    setActiveCareerCategory(null);
+                    handleTagClick(suggestion.text, suggestion.prompt);
+                  }}
+                  className="tag text-left text-xs justify-between"
+                >
+                  <span className="flex-1">{suggestion.text}</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+                </button>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );

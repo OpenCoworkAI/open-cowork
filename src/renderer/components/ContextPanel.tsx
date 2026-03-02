@@ -31,14 +31,19 @@ import {
   Edit,
   Plug,
   Wrench,
+  Target,
+  Briefcase,
+  GraduationCap,
 } from 'lucide-react';
-import type { TraceStep, TraceStepStatus, MCPServerInfo } from '../types';
+import type { TraceStep, TraceStepStatus, MCPServerInfo, TextContent } from '../types';
+import { extractCareerCardsFromText } from './CareerCards';
 
 export function ContextPanel() {
   const { t } = useTranslation();
   const {
     activeSessionId,
     sessions,
+    messagesBySession,
     traceStepsBySession,
     activeTurnsBySession,
     pendingTurnsBySession,
@@ -49,6 +54,7 @@ export function ContextPanel() {
   const { getMCPServers, changeWorkingDir } = useIPC();
   const [progressOpen, setProgressOpen] = useState(true);
   const [artifactsOpen, setArtifactsOpen] = useState(true);
+  const [careerOpen, setCareerOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(true);
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
@@ -73,6 +79,23 @@ export function ContextPanel() {
   const currentWorkingDir = activeSession?.cwd || workingDir;
   const { artifactSteps, displayArtifactSteps } = getArtifactSteps(steps);
   const canShowItemInFolder = typeof window !== 'undefined' && !!window.electronAPI?.showItemInFolder;
+
+  // Extract career cards from session messages for the career summary
+  const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
+  const careerCards = (() => {
+    const cards: Array<{ type: string; data: any }> = [];
+    for (const msg of messages) {
+      if (msg.role !== 'assistant') continue;
+      for (const block of msg.content) {
+        if (block.type !== 'text') continue;
+        cards.push(...extractCareerCardsFromText((block as TextContent).text));
+      }
+    }
+    return cards;
+  })();
+  const goalCards = careerCards.filter((c) => c.type === 'goal-progress');
+  const skillCards = careerCards.filter((c) => c.type === 'skill-gap');
+  const jobCards = careerCards.filter((c) => c.type === 'job-suggestion');
 
   // Load MCP servers on mount
   useEffect(() => {
@@ -106,7 +129,7 @@ export function ContextPanel() {
 
   return (
     <div className="w-80 bg-surface border-l border-border flex flex-col overflow-hidden">
-      <div className="px-3 py-2 border-b border-border flex items-center justify-start">
+      <div className="px-3 py-2 border-b border-border flex items-center justify-start bg-surface/50 backdrop-blur-md sticky top-0 z-10">
         <button
           onClick={toggleContextPanel}
           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
@@ -221,6 +244,58 @@ export function ContextPanel() {
           </div>
         )}
       </div>
+
+      {/* Career Section */}
+      {careerCards.length > 0 && (
+        <div className="border-b border-border">
+          <button
+            onClick={() => setCareerOpen(!careerOpen)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface-hover transition-colors"
+          >
+            <span className="text-sm font-medium text-text-primary">{t('career.careerProgress')}</span>
+            {careerOpen ? (
+              <ChevronUp className="w-4 h-4 text-text-muted" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-text-muted" />
+            )}
+          </button>
+
+          {careerOpen && (
+            <div className="px-4 pb-4 space-y-1.5">
+              {goalCards.map((card, i) => (
+                <div
+                  key={`goal-${i}`}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-muted"
+                >
+                  <Target className="w-4 h-4 text-accent flex-shrink-0" />
+                  <span className="text-sm text-text-primary truncate flex-1">
+                    {(card.data as any).title}
+                  </span>
+                  <span className="text-xs text-text-muted flex-shrink-0">
+                    {(card.data as any).progress ?? 0}%
+                  </span>
+                </div>
+              ))}
+              {skillCards.length > 0 && (
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-muted">
+                  <GraduationCap className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                  <span className="text-sm text-text-primary">
+                    {t('career.skillGapsFound', { count: skillCards.length })}
+                  </span>
+                </div>
+              )}
+              {jobCards.length > 0 && (
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-muted">
+                  <Briefcase className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm text-text-primary">
+                    {t('career.jobsFound', { count: jobCards.length })}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Context Section */}
       <div className="flex-1 overflow-y-auto">

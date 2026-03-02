@@ -53,6 +53,49 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
       // No environment variables required
     },
   },
+  'career-tools': {
+    name: 'Career_Tools',
+    type: 'stdio',
+    command: 'node',
+    args: ['{CAREER_TOOLS_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      COEADAPT_API_URL: 'https://api.coeadapt.com',
+      COEADAPT_DEVICE_TOKEN: '', // Injected at runtime from DeviceTokenStore
+    },
+    requiresEnv: [],
+    envDescription: {
+      COEADAPT_API_URL: 'Coeadapt backend API URL',
+      COEADAPT_DEVICE_TOKEN: 'Device token for API authentication (auto-managed)',
+    },
+  },
+  skillception: {
+    name: 'Skillception',
+    type: 'stdio',
+    command: 'node',
+    args: ['{SKILLCEPTION_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      NAVI_SKILL_TREE_PATH: '', // Injected at runtime (userData/navi/skill-tree.json)
+    },
+    requiresEnv: [],
+    envDescription: {
+      NAVI_SKILL_TREE_PATH: 'Path to the skill tree JSON file (auto-managed)',
+    },
+  },
+  'vm-management': {
+    name: 'VM_Management',
+    type: 'stdio',
+    command: 'node',
+    args: ['{VM_MANAGEMENT_SERVER_PATH}'], // Path will be resolved at runtime
+    env: {
+      VBOXMANAGE_PATH: '', // Injected at runtime from backend detection
+      VM_CONFIG_PATH: '',  // Injected at runtime (electron-store path)
+    },
+    requiresEnv: [],
+    envDescription: {
+      VBOXMANAGE_PATH: 'Path to VBoxManage CLI (auto-detected)',
+      VM_CONFIG_PATH: 'Path to VM configuration store (auto-managed)',
+    },
+  },
 };
 
 /**
@@ -64,10 +107,11 @@ class MCPConfigStore {
   constructor() {
     this.store = new Store<{ servers: MCPServerConfig[] }>({
       name: 'mcp-config',
+      projectName: 'coeadapt',
       defaults: {
         servers: [],
       },
-    });
+    } as any);
   }
 
   /**
@@ -206,6 +250,27 @@ class MCPConfigStore {
   }
 
   /**
+   * Get the path to the Career Tools MCP server file
+   */
+  private getCareerToolsServerPath(): string {
+    return this.getMcpServerPath('career-tools-server.ts');
+  }
+
+  /**
+   * Get the path to the Skillception MCP server file
+   */
+  private getSkillceptionServerPath(): string {
+    return this.getMcpServerPath('skillception-server.ts');
+  }
+
+  /**
+   * Get the path to the VM Management MCP server file
+   */
+  private getVMManagementServerPath(): string {
+    return this.getMcpServerPath('vm-management-server.ts');
+  }
+
+  /**
    * Create a server config from a preset
    */
   createFromPreset(presetKey: string, enabled: boolean = false): MCPServerConfig | null {
@@ -228,6 +293,18 @@ class MCPConfigStore {
           // GUI Operate server path
           if (arg === '{GUI_OPERATE_SERVER_PATH}') {
             return this.getGuiOperateServerPath();
+          }
+          // Career Tools server path
+          if (arg === '{CAREER_TOOLS_SERVER_PATH}') {
+            return this.getCareerToolsServerPath();
+          }
+          // Skillception server path
+          if (arg === '{SKILLCEPTION_SERVER_PATH}') {
+            return this.getSkillceptionServerPath();
+          }
+          // VM Management server path
+          if (arg === '{VM_MANAGEMENT_SERVER_PATH}') {
+            return this.getVMManagementServerPath();
           }
           return arg;
         }),

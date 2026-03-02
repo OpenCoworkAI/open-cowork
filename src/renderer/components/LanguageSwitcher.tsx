@@ -12,14 +12,14 @@ export function LanguageSwitcher() {
 
   // Get display name for current language
   const getLanguageName = () => {
-    return i18n.language.startsWith('zh') ? '中文' : 'English';
+    return i18n.language.startsWith('zh') ? '' : 'English';
   };
 
   return (
     <button
       onClick={toggleLanguage}
       className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-muted hover:bg-surface-active text-text-secondary hover:text-text-primary transition-colors text-sm"
-      title={`Switch to ${i18n.language.startsWith('zh') ? 'English' : '中文'}`}
+      title={`Switch to ${i18n.language.startsWith('zh') ? 'English' : ''}`}
     >
       <Globe className="w-4 h-4" />
       <span>{getLanguageName()}</span>

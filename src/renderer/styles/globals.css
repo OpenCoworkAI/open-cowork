@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,39 +7,46 @@
 @layer base {
   /* Define CSS variables for theming */
   :root {
-    /* Dark theme (default) */
-    --color-background: #0f0f0f;
-    --color-background-secondary: #1a1a1a;
-    --color-surface: #1e1e1e;
-    --color-surface-hover: #2a2a2a;
-    --color-surface-active: #303030;
-    --color-surface-muted: #171717;
-    --color-border: #2a2a2a;
-    --color-border-muted: #242424;
-    --color-accent: #f97316;
-    --color-accent-hover: #ea580c;
-    --color-accent-muted: rgba(249, 115, 22, 0.1);
-    --color-text-primary: #ececec;
-    --color-text-secondary: #a0a0a0;
-    --color-text-muted: #6b6b6b;
+    /* Dark theme (Premium) */
+    --color-background: #09090b; /* Zinc 950 base */
+    --color-background-secondary: #0c0c0e; /* Even darker zinc */
+    --color-surface: rgba(24, 24, 27, 0.6); /* Zinc 900 translucent */
+    --color-surface-hover: rgba(39, 39, 42, 0.8); /* Zinc 800 */
+    --color-surface-active: rgba(63, 63, 70, 0.8); /* Zinc 700 */
+    --color-surface-muted: rgba(24, 24, 27, 0.4);
+    --color-border: rgba(63, 63, 70, 0.5);
+    --color-border-muted: rgba(39, 39, 42, 0.5);
+    --color-accent: #3b82f6; /* Bright vibrant Blue */
+    --color-accent-hover: #2563eb; /* Vivid Blue hover */
+    --color-accent-muted: rgba(59, 130, 246, 0.15); /* Light blue tint */
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #cbd5e1;
+    --color-text-muted: #94a3b8;
+    --color-card-border: rgba(255, 255, 255, 0.08); /* Sophisticated glass border */
+    --color-card-border-hover: rgba(255, 255, 255, 0.15);
+    --color-card-border-subtle: rgba(255, 255, 255, 0.03);
   }
 
-  /* Light theme override */
+  /* Light theme override — clean white/slate */
   .light {
-    --color-background: #f5f3ee;
-    --color-background-secondary: #faf9f6;
-    --color-surface: #ffffff;
-    --color-surface-hover: #faf9f6;
-    --color-surface-active: #f0eeea;
-    --color-surface-muted: #f7f6f3;
-    --color-border: #e5e3de;
-    --color-border-muted: #ebe9e4;
-    --color-accent: #f97316;
-    --color-accent-hover: #ea580c;
-    --color-accent-muted: #fff7ed;
-    --color-text-primary: #1a1a1a;
-    --color-text-secondary: #5c5c5c;
-    --color-text-muted: #8c8c8c;
+    /* Light theme (Premium) */
+    --color-background: #fafafa;
+    --color-background-secondary: #f4f4f5;
+    --color-surface: rgba(255, 255, 255, 0.8);
+    --color-surface-hover: rgba(244, 244, 245, 0.8);
+    --color-surface-active: rgba(228, 228, 231, 0.8);
+    --color-surface-muted: rgba(255, 255, 255, 0.6);
+    --color-border: rgba(228, 228, 231, 0.8);
+    --color-border-muted: rgba(244, 244, 245, 0.8);
+    --color-accent: #2563eb; /* Bright vibrant Blue */
+    --color-accent-hover: #1d4ed8;
+    --color-accent-muted: rgba(37, 99, 235, 0.1);
+    --color-text-primary: #09090b;
+    --color-text-secondary: #3f3f46;
+    --color-text-muted: #71717a;
+    --color-card-border: rgba(0, 0, 0, 0.06);
+    --color-card-border-hover: rgba(0, 0, 0, 0.12);
+    --color-card-border-subtle: rgba(0, 0, 0, 0.04);
   }
 
   * {
@@ -49,7 +56,8 @@
   body {
     background-color: var(--color-background);
     color: var(--color-text-primary);
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.015em;
   }
 
   /* Custom scrollbar - subtle */
@@ -74,13 +82,14 @@
 @layer components {
   /* Button styles */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-150;
-    @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-30;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 ease-out;
+    @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-40;
+    @apply active:scale-95; /* Micro-interaction scale down on click */
   }
 
   .btn-primary {
     @apply bg-accent text-white hover:bg-accent-hover;
-    @apply shadow-soft;
+    @apply shadow-md hover:shadow-lg;
   }
 
   .btn-secondary {
@@ -101,27 +110,28 @@
 
   /* Card styles */
   .card {
-    @apply bg-surface rounded-3xl shadow-card;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    @apply bg-surface backdrop-blur-md rounded-2xl shadow-card;
+    border: 1px solid var(--color-card-border);
   }
 
   .card-hover {
-    @apply hover:shadow-elevated cursor-pointer transition-all duration-150;
+    @apply hover:shadow-elevated hover:-translate-y-0.5 hover:bg-surface-hover cursor-pointer transition-all duration-300 ease-out;
     &:hover {
-      border-color: rgba(255, 255, 255, 0.12);
+      border-color: var(--color-card-border-hover);
     }
   }
 
-  /* Tag/Chip styles - like the quick action buttons */
+  /* Tag/Chip styles */
   .tag {
-    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface border border-border;
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-muted backdrop-blur-sm border border-border;
     @apply text-sm font-medium text-text-primary;
-    @apply hover:bg-surface-hover hover:shadow-soft cursor-pointer transition-all duration-150;
+    @apply hover:bg-surface-hover hover:shadow-md hover:-translate-y-[1px] cursor-pointer transition-all duration-300 ease-out;
+    @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-40;
   }
 
   .tag-active {
     @apply bg-accent-muted text-accent;
-    border-color: rgba(249, 115, 22, 0.3);
+    border-color: rgba(51, 102, 255, 0.3);
   }
 
   /* Badge styles */
@@ -138,11 +148,13 @@
   }
 
   .badge-completed {
-    @apply bg-success/10 text-success;
+    background-color: rgba(34, 197, 94, 0.1);
+    @apply text-success;
   }
 
   .badge-error {
-    @apply bg-error/10 text-error;
+    background-color: rgba(239, 68, 68, 0.1);
+    @apply text-error;
   }
 
   /* Section header */
@@ -164,7 +176,8 @@
   }
 
   .progress-circle-completed {
-    @apply border-success bg-success/10;
+    @apply border-success;
+    background-color: rgba(34, 197, 94, 0.1);
   }
 }
 
@@ -172,18 +185,16 @@
   /* Window drag region for custom titlebar */
   .titlebar-drag {
     -webkit-app-region: drag;
-    app-region: drag;
   }
 
   .titlebar-no-drag {
     -webkit-app-region: no-drag;
-    app-region: no-drag;
   }
 
-  /* Grid background pattern - uses theme colors from tailwind.config.js */
+  /* Grid background pattern */
   .bg-grid {
     @apply bg-background;
-    background-image: 
+    background-image:
       linear-gradient(to right, theme('colors.border.DEFAULT') 1px, transparent 1px),
       linear-gradient(to bottom, theme('colors.border.DEFAULT') 1px, transparent 1px);
     background-size: 32px 32px;
@@ -191,22 +202,22 @@
 
   /* Message bubbles */
   .message-user {
-    @apply bg-surface rounded-2xl;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    @apply bg-surface backdrop-blur-sm rounded-2xl;
+    border: 1px solid var(--color-card-border);
     width: fit-content;
     margin-left: auto;
   }
 
   .message-assistant {
-    @apply bg-surface rounded-3xl;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    @apply bg-transparent rounded-xl;
+    border: none;
   }
 
-  /* Prose styling for assistant messages - elegant serif font */
+  /* Prose styling for assistant messages — clean sans-serif */
   .prose-chat {
-    font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
-    font-size: 1.0625rem;
-    line-height: 1.75;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1rem;
+    line-height: 1.7;
     letter-spacing: -0.01em;
   }
 
@@ -246,7 +257,7 @@
   }
 
   .prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-weight: 600;
     margin-top: 1.5rem;
     margin-bottom: 0.75rem;
@@ -279,7 +290,7 @@
   .prose-chat blockquote {
     margin: 0.75rem 0;
     padding-left: 1rem;
-    border-left: 2px solid rgba(124, 58, 237, 0.4);
+    border-left: 2px solid rgba(51, 102, 255, 0.4);
     color: theme('colors.text.muted');
   }
 
@@ -303,8 +314,8 @@
 
   /* Code block */
   .code-block {
-    @apply bg-surface-muted rounded-2xl p-4 font-mono text-sm overflow-x-auto;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    @apply bg-surface-muted rounded-xl p-4 font-mono text-sm overflow-x-auto;
+    border: 1px solid var(--color-card-border);
   }
 
   /* Tool name wrapping - force break on any character */
@@ -312,5 +323,13 @@
     word-break: break-all;
     overflow-wrap: anywhere;
     hyphens: auto;
+  }
+
+  /* Line clamp utility */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }

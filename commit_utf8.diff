@@ -1,0 +1,482 @@
+﻿commit 0b693b63732bd0be28940cf0a9764fee13c821dd
+Author: zzx <nonstopfor@gmail.com>
+Date:   Tue Jan 27 23:50:41 2026 +0800
+
+    support iteration in docker
+
+diff --git a/package-lock.json b/package-lock.json
+index 394fab7..61569cd 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -46,7 +46,7 @@
+         "@typescript-eslint/parser": "^7.0.0",
+         "@vitejs/plugin-react": "^4.3.4",
+         "autoprefixer": "^10.4.20",
+-        "electron": "^40.0.0",
++        "electron": "^31.7.7",
+         "electron-builder": "^26.4.0",
+         "eslint": "^8.56.0",
+         "eslint-plugin-react-hooks": "^4.6.0",
+@@ -56,7 +56,6 @@
+         "typescript": "^5.3.3",
+         "vite": "^7.3.1",
+         "vite-plugin-electron": "^0.28.8",
+-        "vite-plugin-electron-renderer": "^0.14.6",
+         "vitest": "^4.0.17"
+       }
+     },
+@@ -5933,15 +5932,15 @@
+       }
+     },
+     "node_modules/electron": {
+-      "version": "40.0.0",
+-      "resolved": "https://registry.npmjs.org/electron/-/electron-40.0.0.tgz",
+-      "integrity": "sha512-UyBy5yJ0/wm4gNugCtNPjvddjAknMTuXR2aCHioXicH7aKRKGDBPp4xqTEi/doVcB3R+MN3wfU9o8d/9pwgK2A==",
++      "version": "31.7.7",
++      "resolved": "https://registry.npmjs.org/electron/-/electron-31.7.7.tgz",
++      "integrity": "sha512-HZtZg8EHsDGnswFt0QeV8If8B+et63uD6RJ7I4/xhcXqmTIbI08GoubX/wm+HdY0DwcuPe1/xsgqpmYvjdjRoA==",
+       "dev": true,
+       "hasInstallScript": true,
+       "license": "MIT",
+       "dependencies": {
+         "@electron/get": "^2.0.0",
+-        "@types/node": "^24.9.0",
++        "@types/node": "^20.9.0",
+         "extract-zip": "^2.0.1"
+       },
+       "bin": {
+@@ -6144,23 +6143,6 @@
+         "node": ">=6 <7 || >=8"
+       }
+     },
+-    "node_modules/electron/node_modules/@types/node": {
+-      "version": "24.10.9",
+-      "resolved": "https://registry.npmjs.org/@types/node/-/node-24.10.9.tgz",
+-      "integrity": "sha512-ne4A0IpG3+2ETuREInjPNhUGis1SFjv1d5asp8MzEAGtOZeTeHVDOYqOgqfhvseqg/iXty2hjBf1zAOb7RNiNw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "undici-types": "~7.16.0"
+-      }
+-    },
+-    "node_modules/electron/node_modules/undici-types": {
+-      "version": "7.16.0",
+-      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.16.0.tgz",
+-      "integrity": "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+     "node_modules/emoji-regex": {
+       "version": "8.0.0",
+       "resolved": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz",
+@@ -13757,7 +13739,9 @@
+       "version": "0.14.6",
+       "resolved": "https://registry.npmjs.org/vite-plugin-electron-renderer/-/vite-plugin-electron-renderer-0.14.6.tgz",
+       "integrity": "sha512-oqkWFa7kQIkvHXG7+Mnl1RTroA4sP0yesKatmAy0gjZC4VwUqlvF9IvOpHd1fpLWsqYX/eZlVxlhULNtaQ78Jw==",
+-      "dev": true
++      "dev": true,
++      "optional": true,
++      "peer": true
+     },
+     "node_modules/vite/node_modules/fdir": {
+       "version": "6.5.0",
+diff --git a/package.json b/package.json
+index 686f324..d0e8f21 100644
+--- a/package.json
++++ b/package.json
+@@ -53,7 +53,7 @@
+     "@typescript-eslint/parser": "^7.0.0",
+     "@vitejs/plugin-react": "^4.3.4",
+     "autoprefixer": "^10.4.20",
+-    "electron": "^40.0.0",
++    "electron": "^31.7.7",
+     "electron-builder": "^26.4.0",
+     "eslint": "^8.56.0",
+     "eslint-plugin-react-hooks": "^4.6.0",
+@@ -63,7 +63,6 @@
+     "typescript": "^5.3.3",
+     "vite": "^7.3.1",
+     "vite-plugin-electron": "^0.28.8",
+-    "vite-plugin-electron-renderer": "^0.14.6",
+     "vitest": "^4.0.17"
+   },
+   "overrides": {
+diff --git a/src/main/claude/agent-runner.ts b/src/main/claude/agent-runner.ts
+index c039108..325ff9e 100644
+--- a/src/main/claude/agent-runner.ts
++++ b/src/main/claude/agent-runner.ts
+@@ -1300,6 +1300,18 @@ Then follow the workflow described in that file.
+       }
+       logTiming('after building MCP servers config');
+       
++      // Get enableThinking from config
++      const { configStore } = await import('../config/config-store');
++      const enableThinking = configStore.get('enableThinking') ?? false;
++      log('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
++      
++      // if (enableThinking) {
++      //   envWithSkills.MAX_THINKING_TOKENS = '10000';
++      // } else {
++      //   envWithSkills.MAX_THINKING_TOKENS = '0';
++      // }
++
++
+       const queryOptions: any = {
+         pathToClaudeCodeExecutable: claudeCodePath,
+         cwd: workingDir,  // Windows path for claude-code process
+@@ -1307,6 +1319,11 @@ Then follow the workflow described in that file.
+         maxTurns: 50,
+         abortController: controller,
+         env: envWithSkills,
++        // Thinking mode configuration based on settings
++        // For Claude API: use 'thinking' parameter with type 'enabled'/'disabled'
++        // thinking: enableThinking 
++        //   ? { type: 'enabled', budget_tokens: 10000 }  // Enable with reasonable budget
++        //   : { type: 'disabled' },                       // Disable thinking
+         
+         // Pass MCP servers to SDK
+         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+@@ -1853,7 +1870,8 @@ Cowork mode includes **WebFetch** and **WebSearch** tools for retrieving web con
+             } else if (['Bash', 'Glob', 'Grep', 'LS'].includes(lastExecutedToolName)) {
+               // These tools show their output directly, no need for extra message
+             } else {
+-              completionText = `Γ£ô Task completed.`;
++              // completionText = `Γ£ô Task completed.`;
++              completionText = `Tool executed.`;
+             }
+             
+             if (completionText) {
+diff --git a/src/main/config/config-store.ts b/src/main/config/config-store.ts
+index d7e440f..a78f2f4 100644
+--- a/src/main/config/config-store.ts
++++ b/src/main/config/config-store.ts
+@@ -31,6 +31,9 @@ export interface AppConfig {
+   // Sandbox mode (WSL/Lima isolation)
+   sandboxEnabled: boolean;
+   
++  // Enable thinking mode (show thinking steps)
++  enableThinking: boolean;
++  
+   // First run flag
+   isConfigured: boolean;
+ }
+@@ -46,6 +49,7 @@ const defaultConfig: AppConfig = {
+   defaultWorkdir: '',
+   enableDevLogs: true,
+   sandboxEnabled: false,
++  enableThinking: false,
+   isConfigured: false,
+ };
+ 
+@@ -102,12 +106,20 @@ class ConfigStore {
+   private store: Store<AppConfig>;
+ 
+   constructor() {
+-    this.store = new Store<AppConfig>({
++    const storeOptions: any = {
+       name: 'config',
+       defaults: defaultConfig,
+       // Encrypt the API key for basic security
+       encryptionKey: 'open-cowork-config-v1',
+-    });
++    };
++    
++    // Add projectName for non-Electron environments (e.g., MCP servers)
++    // This is required by the underlying 'conf' package
++    if (typeof process !== 'undefined' && !process.versions.electron) {
++      storeOptions.projectName = 'open-cowork';
++    }
++    
++    this.store = new Store<AppConfig>(storeOptions);
+   }
+ 
+   /**
+@@ -125,6 +137,7 @@ class ConfigStore {
+       defaultWorkdir: this.store.get('defaultWorkdir'),
+       enableDevLogs: this.store.get('enableDevLogs'),
+       sandboxEnabled: this.store.get('sandboxEnabled'),
++      enableThinking: this.store.get('enableThinking'),
+       isConfigured: this.store.get('isConfigured'),
+     };
+   }
+diff --git a/src/main/index.ts b/src/main/index.ts
+index 4a5bfb0..c85d722 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -77,7 +77,7 @@ function createWindow() {
+       preload: join(__dirname, '../preload/index.js'),
+       nodeIntegration: false,
+       contextIsolation: true,
+-      sandbox: true,
++      sandbox: false, // Temporarily disabled to test if it resolves the console error
+     },
+   };
+ 
+diff --git a/src/main/mcp/software-dev-server-example.ts b/src/main/mcp/software-dev-server-example.ts
+index a6ccb9f..dd2f819 100644
+--- a/src/main/mcp/software-dev-server-example.ts
++++ b/src/main/mcp/software-dev-server-example.ts
+@@ -28,6 +28,7 @@ import { exec } from 'child_process';
+ import { promisify } from 'util';
+ import { start } from 'repl';
+ import { log, logError, logWarn } from '../utils/logger';
++import { configStore } from '../config/config-store';
+ 
+ 
+ const execAsync = promisify(exec);
+@@ -772,12 +773,16 @@ async function callVisionAPI(
+   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+   const baseUrl = process.env.ANTHROPIC_BASE_URL;
+   const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-3-5-sonnet-20241022';
++  // Get enableThinking from configStore
++  // const enableThinking = configStore.get('enableThinking') ?? false;
++  // writeVisionLog(`[Vision] configStore: ${JSON.stringify(configStore.getAll())}`);
++  // writeVisionLog(`[Vision] enableThinking: ${enableThinking}`);
+   
+   if (!apiKey) {
+     throw new Error('API key not configured. Please configure it in Settings.');
+   }
+   
+-  console.error(`[Vision] Using model: ${model} (baseURL: ${baseUrl || 'default'})`);
++  // console.error(`[Vision] Using model: ${model} (baseURL: ${baseUrl || 'default'}), enableThinking: ${enableThinking}`);
+   
+   // Log the prompt
+   writeVisionLog(prompt, 'PROMPT');
+@@ -809,7 +814,8 @@ async function callVisionAPI(
+     const isHttps = urlObj.protocol === 'https:';
+     const httpModule = isHttps ? https : http;
+     
+-    const requestBody = JSON.stringify({
++    // Build request body with optional reasoning parameter for OpenRouter
++    const requestBodyObj: any = {
+       model: model,
+       messages: [
+         {
+@@ -829,7 +835,15 @@ async function callVisionAPI(
+         },
+       ],
+       max_tokens: maxTokens,
+-    });
++    };
++    
++    // For OpenRouter: control reasoning/thinking based on settings
++    // When enableThinking is false, set effort to 'none' to disable extended thinking
++    // if (isOpenRouter && !enableThinking) {
++    //   requestBodyObj.reasoning = { effort: 'none' };
++    // }
++    
++    const requestBody = JSON.stringify(requestBodyObj);
+     
+     const headers: any = {
+       'Content-Type': 'application/json',
+@@ -865,7 +879,7 @@ async function callVisionAPI(
+               const responseContent = jsonData.choices[0]?.message?.content || '';
+               
+               // Log the response
+-              writeVisionLog(responseContent, 'RESPONSE');
++              writeVisionLog(JSON.stringify(jsonData), 'RESPONSE');
+               
+               resolve(responseContent);
+             } catch (e: any) {
+diff --git a/src/renderer/components/MCPConnectorsModal.tsx b/src/renderer/components/MCPConnectorsModal.tsx
+index fa3d751..51e62bc 100644
+--- a/src/renderer/components/MCPConnectorsModal.tsx
++++ b/src/renderer/components/MCPConnectorsModal.tsx
+@@ -533,43 +533,25 @@ function ServerCard({
+               {/* Tools List */}
+               {showTools && serverTools.length > 0 && (
+                 <div className="mt-3 ml-6 p-3 rounded-lg bg-surface-muted border border-border">
+-                  <div className="text-xs font-medium text-text-primary mb-2">Available Tools:</div>
+-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
++                  <div className="text-xs font-medium text-text-primary mb-2">{serverTools.length} Σ╕¬σÅ»τö¿σ╖Ñσà╖:</div>
++                  <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                     {serverTools.map((tool, idx) => {
+-                      // DEBUG: Log the original tool name
+-                      if (isElectron) {
+-                        window.electronAPI.logs.write('info', '='.repeat(80));
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Tool #' + (idx + 1));
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Original tool.name:', tool.name);
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Type of tool.name:', typeof tool.name);
+-                      }
+-                      
+-                      // Get the part after the last double underscore
++                      // Extract only the part after the last double underscore
+                       // e.g., "mcp__Software_Development__create_or_modify_code" -> "create_or_modify_code"
+                       const parts = tool.name.split('__');
+-                      if (isElectron) {
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Split parts:', JSON.stringify(parts));
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Parts length:', parts.length);
+-                      }
+-                      
+                       const displayName = parts.length > 1 ? parts[parts.length - 1] : tool.name;
+-                      if (isElectron) {
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Final displayName:', displayName);
+-                        window.electronAPI.logs.write('info', '≡ƒöì [MCPConnectorsModal DEBUG] Type of displayName:', typeof displayName);
+-                        window.electronAPI.logs.write('info', '='.repeat(80));
+-                      }
+                       
+                       return (
+                         <div
+                           key={idx}
+-                          className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary min-w-0"
++                          className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary"
+                           title={`${displayName}\n\n${tool.description || ''}`}
+                         >
+-                          <div className="font-mono text-accent leading-relaxed break-words">
++                          <div className="font-mono text-accent break-words whitespace-normal">
+                             {displayName}
+                           </div>
+                           {tool.description && (
+-                            <div className="text-text-muted mt-0.5 line-clamp-2 break-words">{tool.description}</div>
++                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">{tool.description}</div>
+                           )}
+                         </div>
+                       );
+diff --git a/src/renderer/components/SettingsPanel.tsx b/src/renderer/components/SettingsPanel.tsx
+index b9c8a84..9210d52 100644
+--- a/src/renderer/components/SettingsPanel.tsx
++++ b/src/renderer/components/SettingsPanel.tsx
+@@ -196,6 +196,7 @@ function APISettingsTab() {
+   const [isTesting, setIsTesting] = useState(false);
+   const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
+   const [useLiveTest, setUseLiveTest] = useState(false);
++  const [enableThinking, setEnableThinking] = useState(false);
+   const previousProviderRef = useRef(provider);
+   const isLoadingConfigRef = useRef(false);
+ 
+@@ -260,6 +261,7 @@ function APISettingsTab() {
+           setUseCustomModel(true);
+           setCustomModel(cfg.model);
+         }
++        setEnableThinking(cfg.enableThinking || false);
+       }
+     } catch (err) {
+       console.error('Failed to load config:', err);
+@@ -343,6 +345,7 @@ function APISettingsTab() {
+         customProtocol,
+         model: finalModel,
+         openaiMode: resolvedOpenaiMode,
++        enableThinking,
+       });
+       setSuccess(true);
+       setTimeout(() => setSuccess(false), 2000);
+@@ -517,6 +520,23 @@ function APISettingsTab() {
+         )}
+       </div>
+ 
++      {/* Enable Thinking Mode */}
++      <div className="space-y-2">
++        <div className="flex items-start gap-2 text-xs text-text-muted">
++          <input
++            type="checkbox"
++            id="enable-thinking"
++            checked={enableThinking}
++            onChange={(e) => setEnableThinking(e.target.checked)}
++            className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
++          />
++          <label htmlFor="enable-thinking" className="space-y-0.5 flex-1">
++            <div className="text-text-primary font-medium">{t('api.enableThinking')}</div>
++            <div>{t('api.enableThinkingHint')}</div>
++          </label>
++        </div>
++      </div>
++
+       {/* Error/Success Messages */}
+       {error && (
+         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
+@@ -1983,19 +2003,24 @@ function ServerCard({
+               {showTools && tools.length > 0 && (
+                 <div className="mt-3 p-3 rounded-lg bg-surface-muted border border-border">
+                   <div className="text-xs font-medium text-text-primary mb-2">{t('mcp.toolsAvailable', { count: tools.length }).split(' ').slice(1).join(' ')}:</div>
+-                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+-                    {tools.map((tool, idx) => (
+-                      <div
+-                        key={idx}
+-                        className="px-2 py-1 rounded bg-background border border-border text-xs text-text-secondary"
+-                        title={tool.description || tool.name}
+-                      >
+-                        <div className="font-mono text-accent">{tool.name.replace(/^mcp_[^_]+_/, '')}</div>
+-                        {tool.description && (
+-                          <div className="text-text-muted mt-0.5 truncate">{tool.description}</div>
+-                        )}
+-                      </div>
+-                    ))}
++                  <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
++                    {tools.map((tool, idx) => {
++                      // Extract only the part after the last double underscore
++                      const parts = tool.name.split('__');
++                      const displayName = parts.length > 1 ? parts[parts.length - 1] : tool.name;
++                      return (
++                        <div
++                          key={idx}
++                          className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary"
++                          title={tool.description || tool.name}
++                        >
++                          <div className="font-mono text-accent break-words whitespace-normal">{displayName}</div>
++                          {tool.description && (
++                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">{tool.description}</div>
++                          )}
++                        </div>
++                      );
++                    })}
+                   </div>
+                 </div>
+               )}
+diff --git a/src/renderer/i18n/locales/en.json b/src/renderer/i18n/locales/en.json
+index a963d0c..86a0e27 100644
+--- a/src/renderer/i18n/locales/en.json
++++ b/src/renderer/i18n/locales/en.json
+@@ -73,6 +73,8 @@
+     "testingConnection": "Testing...",
+     "liveTest": "Live request verification",
+     "liveTestHint": "Sends a minimal request and may consume a small quota",
++    "enableThinking": "Enable Thinking Mode",
++    "enableThinkingHint": "Show Claude's thinking process step by step. This provides more transparency but may increase token usage.",
+     "testSuccess": "Connection successful ({{ms}}ms)",
+     "testError": {
+       "missing_key": "API Key is required",
+diff --git a/src/renderer/i18n/locales/zh.json b/src/renderer/i18n/locales/zh.json
+index 7a71223..0a409e0 100644
+--- a/src/renderer/i18n/locales/zh.json
++++ b/src/renderer/i18n/locales/zh.json
+@@ -73,6 +73,8 @@
+     "testingConnection": "µ╡ïΦ»òΣ╕¡...",
+     "liveTest": "τ£ƒσ«₧Φ»╖µ▒éΘ¬îΦ»ü",
+     "liveTestHint": "Σ╝ÜσÅæΘÇüΣ╕Çµ¼íµ£Çσ░ÅΦ»╖µ▒é∩╝îσÅ»Φâ╜µ╢êΦÇùσ░æΘçÅΘó¥σ║ª",
++    "enableThinking": "σÉ»τö¿µÇ¥ΦÇâµ¿íσ╝Å",
++    "enableThinkingHint": "µÿ╛τñ║ Claude τÜäµÇ¥ΦÇâΦ┐çτ¿ïπÇéΦ┐ÖµÅÉΣ╛¢µ¢┤σñÜΘÇÅµÿÄσ║ª∩╝îΣ╜åσÅ»Φâ╜σó₧σèá token µ╢êΦÇùπÇé",
+     "testSuccess": "Φ┐₧µÄÑµêÉσèƒ∩╝ê{{ms}}ms∩╝ë",
+     "testError": {
+       "missing_key": "Φ»╖σí½σåÖ API Key",
+diff --git a/src/renderer/types/index.ts b/src/renderer/types/index.ts
+index 3a42095..50d59fc 100644
+--- a/src/renderer/types/index.ts
++++ b/src/renderer/types/index.ts
+@@ -283,6 +283,7 @@ export interface AppConfig {
+   claudeCodePath?: string;
+   defaultWorkdir?: string;
+   sandboxEnabled?: boolean;
++  enableThinking?: boolean;
+   isConfigured: boolean;
+ }
+ 
+diff --git a/vite.config.ts b/vite.config.ts
+index b1bfdbe..c580fe5 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,7 +1,6 @@
+ import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ import electron from 'vite-plugin-electron';
+-import renderer from 'vite-plugin-electron-renderer';
+ import { resolve } from 'path';
+ 
+ export default defineConfig({
+@@ -34,7 +33,6 @@ export default defineConfig({
+         },
+       },
+     ]),
+-    renderer(),
+   ],
+   resolve: {
+     alias: {

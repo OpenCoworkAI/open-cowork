@@ -145,13 +145,6 @@ class TunnelManager {
     };
   }
 
-  /**
-   * Get webhook URL for Feishu
-   */
-  getWebhookUrl(): string | null {
-    if (!this.currentUrl) return null;
-    return `${this.currentUrl}/webhook/feishu`;
-  }
 
   /**
    * Emit status update

@@ -6,8 +6,8 @@ import enTranslations from './locales/en.json';
 import zhTranslations from './locales/zh.json';
 
 i18n
-  .use(LanguageDetector) // 自动检测浏览器语言
-  .use(initReactI18next) // 初始化 react-i18next
+  .use(LanguageDetector) // 
+  .use(initReactI18next) //  react-i18next
   .init({
     resources: {
       en: {
@@ -17,16 +17,16 @@ i18n
         translation: zhTranslations,
       },
     },
-    fallbackLng: 'en', // 默认语言
-    supportedLngs: ['en', 'zh'], // 支持的语言
+    fallbackLng: 'en', // 
+    supportedLngs: ['en', 'zh'], // 
     interpolation: {
-      escapeValue: false, // React 已经处理了 XSS
+      escapeValue: false, // React  XSS
     },
-    pluralSeparator: '_', // 复数分隔符
-    contextSeparator: '_', // 上下文分隔符
+    pluralSeparator: '_', // 
+    contextSeparator: '_', // 
     detection: {
-      order: ['localStorage', 'navigator'], // 先检查 localStorage，再检查浏览器语言
-      caches: ['localStorage'], // 将语言选择保存到 localStorage
+      order: ['localStorage', 'navigator'], //  localStorage
+      caches: ['localStorage'], //  localStorage
       lookupLocalStorage: 'i18nextLng', // localStorage key
     },
   });
