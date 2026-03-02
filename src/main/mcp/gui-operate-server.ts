@@ -2820,36 +2820,34 @@ async function performKeyPress(
   let command = '';
   let resultMessage = '';
   
-  // If key is in keyMap, use kp: command for special keys
-  if (cliclickKey) {
-    if (hasCliclick) {
-      if (cliclickModifiers.length > 0) {
-        command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
-      } else {
-        command = `kp:${cliclickKey}`;
-      }
-      await executeCliclick(command);
+  // For special keys that have key codes, prefer AppleScript key code method
+  // because it's more reliable across different applications (e.g., WeChat, browsers)
+  // cliclick's kp: command doesn't work correctly in some apps
+  const specialKeyCode = specialKeyCodeMap[keyLower];
+  
+  if (specialKeyCode !== undefined) {
+    // Use AppleScript key code for special keys (enter, tab, escape, arrows, etc.)
+    // This is more reliable than cliclick for apps like WeChat
+    const modifierFlags: string[] = [];
+    if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
+    if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
+    if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
+    if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
+    const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
+    const appleScript = `tell application "System Events" to key code ${specialKeyCode}${usingClause}`;
+    writeMCPLog(`[performKeyPress] Using AppleScript key code ${specialKeyCode} for "${key}"`, 'Key Press');
+    await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+    const modifierStr = modifiers.join('+');
+    resultMessage = `Pressed: ${modifierStr ? `${modifierStr}+` : ''}${key}`;
+  } else if (cliclickKey && hasCliclick) {
+    // For other mapped keys that cliclick supports but don't have AppleScript key codes
+    if (cliclickModifiers.length > 0) {
+      command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
     } else {
-      // 无 cliclick 时，使用 AppleScript key code 方案
-      const keyCode = specialKeyCodeMap[keyLower];
-      if (keyCode === undefined) {
-        throw new Error(
-          `Key "${key}" requires cliclick on macOS. ` +
-          `Please install/bundle cliclick or use a supported single character key.`
-        );
-      }
-      const modifierFlags: string[] = [];
-      if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
-      if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
-      if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
-      if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
-      const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
-      const appleScript = `tell application "System Events" to key code ${keyCode}${usingClause}`;
-      await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
-      const modifierStr = modifiers.join('+');
-      resultMessage = `Pressed: ${modifierStr ? `${modifierStr}+` : ''}${key} (using key code)`;
+      command = `kp:${cliclickKey}`;
     }
-  } else {
+    await executeCliclick(command);
+  } else if (!cliclickKey) {
     // For single characters, cliclick's kp: doesn't work, use t: command instead
     if (key.length === 1) {
       const escapedKey = key.replace(/"/g, '\\"');
