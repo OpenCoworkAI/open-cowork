@@ -5,4 +5,5 @@ export { MessageCard } from './MessageCard';
 export { ContextPanel } from './ContextPanel';
 export { PermissionDialog } from './PermissionDialog';
 export { MCPConnectorsModal } from './MCPConnectorsModal';
+export { VMProgressPanel } from './VMProgressPanel';
 // UserQuestionDialog removed - AskUserQuestion is now rendered inline in MessageCard
