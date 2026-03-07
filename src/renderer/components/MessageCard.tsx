@@ -1,5 +1,4 @@
 import { useState, isValidElement, cloneElement, memo } from 'react';
-import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -19,7 +18,6 @@ import {
   ChevronRight,
   Copy,
   Check,
-  Terminal,
   AlertCircle,
   CheckCircle2,
   HelpCircle,
@@ -30,7 +28,6 @@ import {
   Square,
   CheckSquare,
   Clock,
-  Plug,
   FileText,
 } from 'lucide-react';
 
@@ -417,7 +414,6 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
 }
 
 function ToolUseBlock({ block }: { block: ToolUseContent }) {
-  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   // Check if this is AskUserQuestion - render inline question UI
@@ -430,94 +426,90 @@ function ToolUseBlock({ block }: { block: ToolUseContent }) {
     return <TodoWriteBlock block={block} />;
   }
 
-  // Get a more descriptive title based on tool name
-  const getToolTitle = (name: string) => {
-    // Check if this is an MCP tool (format: mcp__ServerName__toolname)
+  // Get compact label: tool action + key argument
+  const getToolLabel = (name: string, input: any): string => {
+    const inp = input || {};
+    // MCP tools
     if (name.startsWith('mcp__')) {
       const match = name.match(/^mcp__(.+?)__(.+)$/);
-      if (match) {
-        const toolName = match[2];
-        return `Using ${toolName}`;
-      }
-      return `Using MCP tool`;
+      const toolName = match?.[2] || name;
+      return toolName;
     }
-    
-    const titles: Record<string, string> = {
-      'Bash': 'Running command',
-      'Read': 'Reading file',
-      'Write': 'Writing file',
-      'Edit': 'Editing file',
-      'Glob': 'Searching files',
-      'Grep': 'Searching content',
-      'WebFetch': 'Fetching URL',
-      'WebSearch': 'Searching web',
-      'TodoRead': 'Reading todo list',
-      'TodoWrite': 'Updating todo list',
-      'read_file': 'Reading file',
-      'write_file': 'Writing file',
-      'edit_file': 'Editing file',
-      'list_directory': 'Listing directory',
-      'glob': 'Searching files',
-      'grep': 'Searching content',
-      'execute_command': 'Running command',
-    };
-    return titles[name] || `Using ${name}`;
+
+    const nameLower = name.toLowerCase();
+    // File tools — show path
+    if (nameLower === 'read' || nameLower === 'read_file') {
+      const p = inp.file_path || inp.path || '';
+      return p ? `Read ${shortenPath(p)}` : 'Read file';
+    }
+    if (nameLower === 'write' || nameLower === 'write_file') {
+      const p = inp.file_path || inp.path || '';
+      return p ? `Write ${shortenPath(p)}` : 'Write file';
+    }
+    if (nameLower === 'edit' || nameLower === 'edit_file') {
+      const p = inp.file_path || inp.path || '';
+      return p ? `Edit ${shortenPath(p)}` : 'Edit file';
+    }
+    // Bash — show command snippet
+    if (nameLower === 'bash' || nameLower === 'execute_command') {
+      const cmd = inp.command || inp.cmd || '';
+      if (cmd) {
+        const short = cmd.length > 60 ? cmd.substring(0, 57) + '...' : cmd;
+        return `$ ${short}`;
+      }
+      return 'Run command';
+    }
+    // Search tools
+    if (nameLower === 'glob') return inp.pattern ? `Glob ${inp.pattern}` : 'Glob';
+    if (nameLower === 'grep') return inp.pattern ? `Grep "${inp.pattern}"` : 'Grep';
+    if (nameLower === 'websearch') return inp.query ? `Search "${inp.query}"` : 'Web search';
+    if (nameLower === 'webfetch') {
+      const url = inp.url || '';
+      return url ? `Fetch ${url.length > 50 ? url.substring(0, 47) + '...' : url}` : 'Fetch URL';
+    }
+    return name;
   };
 
-  // Check if this is an MCP tool
   const isMCPTool = block.name.startsWith('mcp__');
   const mcpServerName = isMCPTool ? block.name.match(/^mcp__(.+?)__/)?.[1] : null;
+  const label = getToolLabel(block.name, block.input);
 
   return (
-    <div className={`rounded-xl border overflow-hidden bg-surface ${
-      isMCPTool ? 'border-mcp/30 bg-gradient-to-br from-mcp/5 to-transparent' : 'border-border'
-    }`}>
+    <div className="group">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-full px-4 py-3 flex items-center gap-3 transition-colors ${
-          isMCPTool 
-            ? 'bg-mcp/10 hover:bg-mcp/20' 
-            : 'bg-surface-muted hover:bg-surface-active'
-        }`}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-text-muted hover:bg-surface-muted transition-colors max-w-full"
       >
-        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-          isMCPTool 
-            ? 'bg-mcp/20' 
-            : 'bg-accent-muted'
-        }`}>
-          {isMCPTool ? (
-            <Plug className="w-3.5 h-3.5 text-mcp" />
-          ) : (
-          <Terminal className="w-3.5 h-3.5 text-accent" />
-          )}
-        </div>
-        <div className="flex-1 text-left">
-        <span className="font-medium text-sm text-text-primary">{getToolTitle(block.name)}</span>
-          {isMCPTool && mcpServerName && (
-            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-mcp/20 text-mcp">
-              {mcpServerName}
-            </span>
-          )}
-        </div>
+        <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+        <span className="truncate font-mono">{label}</span>
+        {isMCPTool && mcpServerName && (
+          <span className="px-1 py-0.5 text-[10px] rounded bg-mcp/15 text-mcp flex-shrink-0">
+            {mcpServerName}
+          </span>
+        )}
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-muted" />
+          <ChevronDown className="w-3 h-3 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-muted" />
+          <ChevronRight className="w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100" />
         )}
       </button>
 
       {expanded && (
-        <div className="p-4 space-y-4 bg-surface">
-          <div>
-            <p className="text-xs font-medium text-text-muted mb-2">{t('messageCard.request')}</p>
-            <pre className="code-block text-xs">
-              {JSON.stringify(block.input, null, 2)}
-            </pre>
-          </div>
+        <div className="ml-5 mt-1 mb-2">
+          <pre className="code-block text-xs p-3 rounded-lg">
+            {JSON.stringify(block.input, null, 2)}
+          </pre>
         </div>
       )}
     </div>
   );
+}
+
+/** Shorten a file path to just filename or last 2 segments */
+function shortenPath(p: string): string {
+  const segments = p.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (segments.length <= 2) return segments.join('/');
+  return segments.slice(-2).join('/');
 }
 
 // Todo item interface
@@ -798,14 +790,13 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
 
   if (message?.sessionId) {
     const steps = traceStepsBySession[message.sessionId] || [];
-    // Find the tool_call step that matches this tool_use_id
     const toolCallStep = steps.find((s) => s.id === block.toolUseId && s.type === 'tool_call');
     if (toolCallStep) {
       toolName = toolCallStep.toolName;
     }
   }
 
-  // Fallback: try to find in allBlocks (for same message)
+  // Fallback: try to find in allBlocks
   if (!toolName) {
     const toolUseBlock = allBlocks?.find(
       (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
@@ -813,242 +804,73 @@ function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultConte
     toolName = toolUseBlock?.name;
   }
 
-  // MCP tools start with mcp__ (double underscore)
   const isMCPTool = toolName?.startsWith('mcp__') || false;
-  const toolNameLower = (toolName || '').toLowerCase();
 
-  console.log('[ToolResultBlock] toolUseId:', block.toolUseId, 'toolName:', toolName, 'isMCPTool:', isMCPTool, 'expanded:', expanded);
-
-  const parseJsonPayload = (content: string): Record<string, unknown> | unknown[] | null => {
-    const trimmed = content.trim();
-    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-      return null;
+  // Compact summary
+  const getSummary = (): string => {
+    if (block.isError) {
+      const firstLine = block.content.split('\n')[0];
+      return firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
     }
-    try {
-      return JSON.parse(trimmed) as Record<string, unknown> | unknown[];
-    } catch {
-      return null;
-    }
+    if (shouldUseScreenshotSummary(toolName, block.content)) return 'Screenshot captured';
+    if (block.content.length < 80) return block.content.trim();
+    const lines = block.content.trim().split('\n');
+    return `${lines.length} lines`;
   };
 
-  const normalizeForDedup = (value: string): string => value.replace(/\s+/g, '').trim();
-
-  const sanitizeVisionAnswerForDisplay = (value: string): string => {
-    const normalized = (value || '').replace(/\r\n/g, '\n').trim();
-    if (!normalized) return normalized;
-
-    const withoutJudgment = normalized
-      .replace(
-        /\n?\*\*Operation Success Judgment:\*\*[\s\S]*?(?:- Status:\s*(?:SUCCESS|FAILURE)[\s\S]*?(?:\n{2,}|$))/gi,
-        '\n\n'
-      )
-      .replace(
-        /\n?Operation Success Judgment:\s*[\s\S]*?(?:Status:\s*(?:SUCCESS|FAILURE)[\s\S]*?(?:\n{2,}|$))/gi,
-        '\n\n'
-      )
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
-    const blocks = withoutJudgment.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
-    if (blocks.length <= 1) {
-      return withoutJudgment;
+  // Compact tool display name
+  const getToolDisplayName = (): string => {
+    if (isMCPTool) {
+      const match = (toolName || '').match(/^mcp__(.+?)__(.+)$/);
+      return match?.[2] || toolName || 'tool';
     }
-
-    const kept: string[] = [];
-    for (const blockText of blocks) {
-      const previous = kept[kept.length - 1] || '';
-      if (normalizeForDedup(previous) === normalizeForDedup(blockText)) {
-        continue;
-      }
-      kept.push(blockText);
-    }
-    return kept.join('\n\n').trim();
+    return toolName || 'tool';
   };
 
-  const formatDisplayContent = (content: string): string => {
-    if (!toolNameLower.endsWith('__gui_verify_vision')) {
-      return content;
-    }
-
-    const parsed = parseJsonPayload(content);
-    if (!parsed || Array.isArray(parsed)) {
-      return content;
-    }
-
-    const answer = typeof parsed.answer === 'string' ? parsed.answer.trim() : '';
-    if (answer) {
-      return sanitizeVisionAnswerForDisplay(answer);
-    }
-
-    return sanitizeVisionAnswerForDisplay(content);
-  };
-
-  // Generate summary for tool results
-  const generateSummary = (content: string, isError: boolean): string => {
-    const parsedPayload = parseJsonPayload(content);
-
-    if (isError) {
-      // Simplify error messages
-      if (content.includes('Could not connect to Chrome')) {
-        return '✗ Chrome not connected';
-      }
-      if (content.includes('ECONNREFUSED')) {
-        return '✗ Connection refused';
-      }
-      if (content.includes('timeout')) {
-        return '✗ Operation timed out';
-      }
-      // Generic error
-      const firstLine = content.split('\n')[0];
-      return `✗ ${firstLine.substring(0, 60)}${firstLine.length > 60 ? '...' : ''}`;
-    }
-
-    if (toolNameLower.endsWith('__gui_verify_vision')) {
-      if (parsedPayload && !Array.isArray(parsedPayload)) {
-        const hasAnswer = typeof parsedPayload.answer === 'string' && parsedPayload.answer.trim().length > 0;
-        if (hasAnswer) {
-          return '✓ Screen interpreted';
-        }
-      }
-      return '✓ Vision analysis completed';
-    }
-
-    // Success cases - try to extract meaningful info
-
-    // Chrome DevTools MCP Server responses
-    if (content.includes('Successfully navigated to')) {
-      const urlMatch = content.match(/Successfully navigated to (.+)/);
-      if (urlMatch) {
-        const url = urlMatch[1].trim();
-        return `✓ Navigated to ${url.length > 50 ? url.substring(0, 50) + '...' : url}`;
-      }
-      return '✓ Navigation successful';
-    }
-
-    if (content.includes('Page created')) {
-      return '✓ New page created';
-    }
-
-    if (shouldUseScreenshotSummary(toolName, content)) {
-      return '✓ Screenshot captured';
-    }
-
-    if (content.includes('Successfully clicked')) {
-      return '✓ Element clicked';
-    }
-
-    if (content.includes('Successfully typed')) {
-      const textMatch = content.match(/Successfully typed "(.+?)"/);
-      if (textMatch) {
-        const text = textMatch[1];
-        return `✓ Typed: ${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
-      }
-      return '✓ Text entered';
-    }
-
-    // List pages result
-    if (content.includes('"title"') && content.includes('"url"')) {
-      try {
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          return `✓ Found ${parsed.length} open page${parsed.length !== 1 ? 's' : ''}`;
-        }
-      } catch (e) {
-        // Not valid JSON
-      }
-    }
-
-    // JSON response - try to summarize
-    if (parsedPayload) {
-      if (Array.isArray(parsedPayload)) {
-        return `✓ Returned ${parsedPayload.length} item${parsedPayload.length !== 1 ? 's' : ''}`;
-      }
-      if (typeof parsedPayload === 'object') {
-        const keys = Object.keys(parsedPayload);
-        if (keys.length <= 3) {
-          return `✓ Success (${keys.join(', ')})`;
-        }
-        return `✓ Success (${keys.length} fields)`;
-      }
-    }
-
-    // Generic success - show first line or length
-    const lines = content.trim().split('\n');
-    if (lines.length === 1 && lines[0].length < 80) {
-      return `✓ ${lines[0]}`;
-    }
-
-    if (content.length < 100) {
-      return `✓ ${content.trim()}`;
-    }
-
-    // Long content - show summary
-    const firstLine = lines[0].trim();
-    if (firstLine.length > 0 && firstLine.length < 60) {
-      return `✓ ${firstLine}`;
-    }
-
-    return `✓ Success (${content.length} chars, ${lines.length} lines)`;
-  };
-
-  const summary = generateSummary(block.content, block.isError || false);
   const hasImages = block.images && block.images.length > 0;
-  const displayContent = formatDisplayContent(block.content);
-
-  // Debug: Log the entire block to see what we're receiving
-  console.log('[ToolResultBlock] Full block:', {
-    toolUseId: block.toolUseId,
-    hasImages: hasImages,
-    imagesCount: block.images?.length || 0,
-    contentLength: block.content?.length || 0,
-    imagesMimeTypes: block.images?.map(img => img.mimeType),
-    imagesDataLengths: block.images?.map(img => img.data?.length || 0)
-  });
+  const summary = getSummary();
+  const displayName = getToolDisplayName();
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden bg-surface">
+    <div className="group">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-full px-4 py-3 flex items-center gap-3 transition-colors ${
-          block.isError ? 'bg-error/10 hover:bg-error/20' : 'bg-success/10 hover:bg-success/20'
-        }`}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs hover:bg-surface-muted transition-colors max-w-full"
       >
         {block.isError ? (
-          <AlertCircle className="w-5 h-5 text-error" />
+          <AlertCircle className="w-3 h-3 text-error flex-shrink-0" />
         ) : (
-          <CheckCircle2 className="w-5 h-5 text-success" />
+          <CheckCircle2 className="w-3 h-3 text-success flex-shrink-0" />
         )}
-        <span className={`font-medium text-sm flex-1 text-left ${block.isError ? 'text-error' : 'text-success'}`}>
-          {summary}
-          {hasImages && block.images && (
-            <span className="ml-2 text-xs text-text-muted">
-              📸 {block.images.length} image{block.images.length > 1 ? 's' : ''}
-            </span>
-          )}
+        <span className={`font-mono flex-shrink-0 ${block.isError ? 'text-error' : 'text-text-muted'}`}>
+          {displayName}
         </span>
+        <span className="text-text-muted truncate opacity-60">{summary}</span>
+        {hasImages && (
+          <span className="text-text-muted flex-shrink-0">+{block.images!.length} img</span>
+        )}
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-muted" />
+          <ChevronDown className="w-3 h-3 text-text-muted flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-muted" />
+          <ChevronRight className="w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 text-text-muted" />
         )}
       </button>
 
       {expanded && (
-        <div className="p-4 bg-surface space-y-4">
-          <pre className="code-block text-xs whitespace-pre-wrap font-mono">
-            {displayContent}
+        <div className="ml-5 mt-1 mb-2 space-y-2">
+          <pre className="code-block text-xs p-3 rounded-lg whitespace-pre-wrap font-mono">
+            {block.content}
           </pre>
 
-          {/* Render images if present */}
           {block.images && block.images.length > 0 && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {block.images.map((image, index) => (
                 <div key={index} className="border border-border rounded-lg overflow-hidden">
                   <img
                     src={`data:${image.mimeType};base64,${image.data}`}
                     alt={`Screenshot ${index + 1}`}
                     className="w-full h-auto"
-                    style={{ maxHeight: '600px', objectFit: 'contain' }}
+                    style={{ maxHeight: '400px', objectFit: 'contain' }}
                   />
                 </div>
               ))}

@@ -1,4 +1,12 @@
-import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import {
+  createAgentSession,
+  SessionManager as PiSessionManager,
+  SettingsManager as PiSettingsManager,
+  createCodingTools,
+  type AgentSession as PiAgentSession,
+} from '@mariozechner/pi-coding-agent';
+import { getModel, type Model } from '@mariozechner/pi-ai';
+import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -9,56 +17,18 @@ import { log, logWarn, logError } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { spawn, execSync, type ChildProcess } from 'child_process';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { buildMcpToolsPrompt } from '../utils/cowork-instructions';
-import { buildClaudeEnv, getClaudeEnvOverrides } from './claude-env';
-import { buildThinkingOptions } from './thinking-options';
-import { isSyntheticAssistantTextBlock } from './assistant-text-filter';
-import { redactSensitiveText } from './redaction';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { configStore } from '../config/config-store';
-import { resolveClaudeCodeExecutablePath } from './claude-code-path';
-import { shouldUseUnifiedClaudeProxy, shouldUseUnifiedClaudeSdk } from '../session/claude-unified-mode';
-import { resolveUnifiedGatewayProfile } from './unified-gateway-resolver';
-import { claudeProxyManager } from '../proxy/claude-proxy-manager';
-import { isNodeExecutable, withBunHashShimEnv, withBunHashShimNodeArgs } from './bun-shim';
 // import { PathGuard } from '../sandbox/path-guard';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
-const MAX_CLAUDE_STDERR_LINES = 120;
-const STDERR_TAIL_LINES_FOR_ERROR = 20;
-
-function summarizeEnvForLog(env: NodeJS.ProcessEnv): Record<string, string> {
-  const pick = (key: string): string => {
-    const value = env[key];
-    if (!value) return '(empty/unset)';
-    if (key === 'PATH') return `${value.substring(0, 120)}...`;
-    if (key.includes('KEY') || key.includes('TOKEN')) return '✓ Set';
-    return value;
-  };
-
-  return {
-    ANTHROPIC_API_KEY: pick('ANTHROPIC_API_KEY'),
-    ANTHROPIC_AUTH_TOKEN: pick('ANTHROPIC_AUTH_TOKEN'),
-    ANTHROPIC_BASE_URL: pick('ANTHROPIC_BASE_URL'),
-    CLAUDE_MODEL: pick('CLAUDE_MODEL'),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: pick('ANTHROPIC_DEFAULT_SONNET_MODEL'),
-    OPENAI_API_KEY: pick('OPENAI_API_KEY'),
-    OPENAI_BASE_URL: pick('OPENAI_BASE_URL'),
-    OPENAI_MODEL: pick('OPENAI_MODEL'),
-    CLAUDE_CONFIG_DIR: pick('CLAUDE_CONFIG_DIR'),
-    PATH: pick('PATH'),
-  };
-}
-
-// Cache for shell environment (loaded once at startup)
-let cachedShellEnv: NodeJS.ProcessEnv | null = null;
 
 // Bundled node/npx paths never change at runtime — resolve once.
 let cachedBundledNodePaths: { node: string; npx: string } | null | undefined = undefined;
@@ -85,146 +55,124 @@ function getBundledNodePaths(): { node: string; npx: string } | null {
   return cachedBundledNodePaths;
 }
 
-// Claude Code executable path is stable for the lifetime of the process.
-// The resolution scans many candidate directories and may spawn two `bash -l`
-// sub-processes (which claude, npm root -g) with 5 s timeouts each — memoize.
-let cachedClaudeCodeResolution: { preferredPath: string; result: ReturnType<typeof resolveClaudeCodeExecutablePath> } | undefined;
+// Shared pi-ai auth storage — created once, reused across sessions.
 
-function resolveClaudeCodePathCached(preferredPath?: string): ReturnType<typeof resolveClaudeCodeExecutablePath> {
-  const key = preferredPath ?? '';
-  if (cachedClaudeCodeResolution?.preferredPath === key) {
-    return cachedClaudeCodeResolution.result;
+/**
+ * Infer the pi-ai API type from a protocol/provider string.
+ */
+function inferApi(protocol: string): string {
+  switch (protocol) {
+    case 'anthropic': return 'anthropic-messages';
+    case 'openai': return 'openai-completions';
+    case 'gemini':
+    case 'google': return 'google-generative-ai';
+    default: return 'openai-completions'; // safest default for proxies
   }
-  const result = resolveClaudeCodeExecutablePath({ preferredPath, env: process.env });
-  cachedClaudeCodeResolution = { preferredPath: key, result };
-  return result;
+}
+
+/**
+ * Build a synthetic Model for model IDs not found in the pi-ai registry.
+ * Allows custom/private models behind proxies to work.
+ */
+function buildSyntheticModel(modelId: string, provider: string, protocol: string, baseUrl?: string): Model<any> {
+  const api = baseUrl ? 'openai-completions' : inferApi(protocol);
+  return {
+    id: modelId,
+    name: modelId,
+    api,
+    provider,
+    baseUrl: baseUrl || '',
+    reasoning: false,
+    input: ['text', 'image'] as any,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 16384,
+  } as Model<any>;
+}
+
+/**
+ * Resolve a pi-ai Model from provider/modelId string.
+ * Accepts formats: "provider/model-id" or just "model-id".
+ *
+ * Resolution order for compound IDs like "anthropic/claude-sonnet-4":
+ *   1. Try getModel(keyProvider, fullString) — works for aggregators (openrouter
+ *      uses "anthropic/claude-sonnet-4" as the model ID itself).
+ *   2. Try getModel(parsedProvider, parsedModelId) — works for native providers.
+ *   3. Try common fallback providers.
+ *
+ * When no provider prefix, uses configProvider falling back to 'anthropic'.
+ * If customBaseUrl is provided, overrides the model's baseUrl.
+ */
+function resolvePiModel(modelString: string, configProvider?: string, customBaseUrl?: string, rawProvider?: string): Model<any> | undefined {
+  const keyProvider = configProvider === 'custom' ? 'anthropic' : (configProvider || 'anthropic');
+  const parts = modelString.split('/');
+  let model: Model<any> | undefined;
+
+  if (parts.length >= 2) {
+    const parsedProvider = parts[0];
+    const parsedModelId = parts.slice(1).join('/');
+
+    // 1. Try raw provider (e.g. openrouter) with full model string first
+    if (rawProvider && rawProvider !== keyProvider && rawProvider !== parsedProvider) {
+      model = getModel(rawProvider as any, modelString);
+    }
+
+    // 2. Try key provider (customProtocol) with full model string
+    if (!model && keyProvider !== parsedProvider) {
+      model = getModel(keyProvider as any, modelString);
+    }
+
+    // 3. Try parsed provider with parsed model ID (native lookup)
+    if (!model) {
+      model = getModel(parsedProvider as any, parsedModelId);
+    }
+
+    // 4. Fallback: try common providers
+    if (!model) {
+      for (const fp of ['openai', 'anthropic', 'google'].filter(p => p !== parsedProvider && p !== keyProvider)) {
+        model = getModel(fp as any, parsedModelId);
+        if (model) break;
+      }
+    }
+  } else {
+    // No provider prefix — try config provider, then common fallbacks
+    model = getModel(keyProvider as any, modelString);
+    if (!model) {
+      for (const fp of ['openai', 'anthropic', 'google'].filter(p => p !== keyProvider)) {
+        model = getModel(fp as any, modelString);
+        if (model) break;
+      }
+    }
+  }
+
+  if (!model) return undefined;
+
+  // Override baseUrl only when truly custom — don't overwrite a valid registry baseUrl
+  // with a preset baseUrl (e.g. openrouter's /api vs registry's /api/v1)
+  const isCustomProvider = (rawProvider === 'custom' || configProvider === 'custom');
+  const modelHasBaseUrl = Boolean(model.baseUrl);
+  if (customBaseUrl && (isCustomProvider || !modelHasBaseUrl)) {
+    // When using a custom base URL, force openai-completions API
+    // Most proxies don't support the newer openai-responses API
+    const api = model.api === 'openai-responses' ? 'openai-completions' : model.api;
+    model = { ...model, baseUrl: customBaseUrl, api } as typeof model;
+  }
+
+  // Aggregator providers (openrouter etc.) always use openai-completions API
+  // regardless of the model's native protocol — the aggregator translates internally.
+  // Check rawProvider because configProvider may be the customProtocol (e.g. "anthropic")
+  const effectiveProvider = rawProvider || configProvider;
+  if (effectiveProvider === 'openrouter' && model.api !== 'openai-completions') {
+    model = { ...model, api: 'openai-completions' } as typeof model;
+  }
+
+  return model;
 }
 
 /**
  * Get shell environment with proper PATH (including node, npm, etc.)
  * GUI apps on macOS don't inherit shell PATH, so we need to extract it
  */
-function getShellEnvironment(): NodeJS.ProcessEnv {
-  const fnStart = Date.now();
-  
-  if (cachedShellEnv) {
-    log(`[ShellEnv] Returning cached env (0ms)`);
-    return cachedShellEnv;
-  }
-
-  const platform = process.platform;
-  let shellPath = process.env.PATH || '';
-  
-  log('[ShellEnv] Original PATH:', shellPath);
-  log(`[ShellEnv] Starting shell PATH extraction...`);
-
-  if (platform === 'darwin' || platform === 'linux') {
-    try {
-      const shellEnvTimeoutMs = Number.parseInt(process.env.COWORK_SHELL_ENV_TIMEOUT_MS || '3000', 10);
-      const effectiveShellEnvTimeoutMs = Number.isFinite(shellEnvTimeoutMs) && shellEnvTimeoutMs > 0
-        ? shellEnvTimeoutMs
-        : 3000;
-
-      // Use the user's actual login shell instead of hardcoding /bin/bash.
-      // On macOS / Linux, $SHELL reflects the user's configured shell (zsh, fish, bash …).
-      // Many PATH entries (nvm, pyenv, homebrew node keg-links, etc.) are only set up
-      // in the user's real shell profile, so using /bin/bash misses them.
-      const userShell = process.env.SHELL || '/bin/bash';
-      const shellName = path.basename(userShell);
-
-      // Build the command to extract PATH from a login shell.
-      // -l  → login shell (sources profile/rc files that set PATH)
-      // -i  → interactive (some tools like conda only init in interactive shells)
-      // fish uses a different syntax for echo.
-      let shellCmd: string;
-      if (shellName === 'fish') {
-        shellCmd = `${userShell} -l -c "echo \\$PATH"`;
-      } else {
-        // bash, zsh, and most POSIX shells
-        shellCmd = `${userShell} -l -i -c "echo \\$PATH" 2>/dev/null`;
-      }
-
-      const execStart = Date.now();
-      log(`[ShellEnv] Extracting PATH via: ${shellCmd}`);
-      const shellEnvOutput = execSync(shellCmd, {
-        encoding: 'utf-8',
-        timeout: effectiveShellEnvTimeoutMs,
-      }).trim();
-      log(`[ShellEnv] execSync took ${Date.now() - execStart}ms`);
-
-      if (shellEnvOutput) {
-        // fish separates PATH entries with spaces instead of colons
-        shellPath = shellName === 'fish' ? shellEnvOutput.replace(/ /g, ':') : shellEnvOutput;
-        log('[ShellEnv] Got PATH from login shell (' + shellName + '):', shellPath);
-      }
-    } catch (e) {
-      logWarn('[ShellEnv] Failed to get PATH from login shell, using fallback');
-
-      // Add common paths as fallback
-      const home = process.env.HOME || '';
-      const fallbackPaths = [
-        '/opt/homebrew/bin',                    // Homebrew Apple Silicon
-        '/opt/homebrew/sbin',                   // Homebrew Apple Silicon sbin
-        '/usr/local/bin',                       // Homebrew Intel / system
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-        `${home}/.local/bin`,                   // pip user installs
-        `${home}/.npm-global/bin`,              // npm global
-        `${home}/.bun/bin`,                     // Bun
-        `${home}/.cargo/bin`,                   // Rust / Cargo
-        `${home}/.pyenv/shims`,                 // pyenv
-        `${home}/.volta/bin`,                   // Volta (Node version manager)
-        `${home}/.rbenv/shims`,                 // rbenv
-      ];
-
-      // Expand Homebrew-managed keg-only Node paths (e.g. /opt/homebrew/opt/node@20/bin)
-      const brewOptDir = platform === 'darwin'
-        ? (process.arch === 'arm64' ? '/opt/homebrew/opt' : '/usr/local/opt')
-        : '';
-      if (brewOptDir && fs.existsSync(brewOptDir)) {
-        try {
-          for (const entry of fs.readdirSync(brewOptDir)) {
-            if (entry.startsWith('node@')) {
-              const kegBin = path.join(brewOptDir, entry, 'bin');
-              if (fs.existsSync(kegBin)) fallbackPaths.unshift(kegBin);
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Expand nvm paths
-      const nvmDir = path.join(home, '.nvm/versions/node');
-      if (fs.existsSync(nvmDir)) {
-        try {
-          const versions = fs.readdirSync(nvmDir);
-          for (const version of versions) {
-            fallbackPaths.push(path.join(nvmDir, version, 'bin'));
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Expand miniconda / anaconda paths
-      for (const condaDir of [`${home}/miniconda3`, `${home}/anaconda3`, `${home}/miniforge3`]) {
-        if (fs.existsSync(path.join(condaDir, 'bin'))) {
-          fallbackPaths.push(path.join(condaDir, 'bin'));
-          fallbackPaths.push(path.join(condaDir, 'condabin'));
-        }
-      }
-
-      shellPath = [...fallbackPaths.filter(p => fs.existsSync(p)), shellPath].join(':');
-    }
-  }
-
-  cachedShellEnv = {
-    ...process.env,
-    PATH: shellPath,
-  };
-  
-  log(`[ShellEnv] Total getShellEnvironment took ${Date.now() - fnStart}ms`);
-  return cachedShellEnv;
-}
 
 function safeStringify(value: unknown, space = 0): string {
   try {
@@ -235,36 +183,6 @@ function safeStringify(value: unknown, space = 0): string {
   }
 }
 
-function appendDiagnosticParts(parts: string[], value: unknown): void {
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      appendDiagnosticParts(parts, entry);
-    }
-    return;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed) {
-      parts.push(trimmed);
-    }
-    return;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    parts.push(String(value));
-    return;
-  }
-
-  if (value == null) {
-    return;
-  }
-
-  const serialized = safeStringify(value);
-  if (serialized && serialized !== '{}' && serialized !== '[]') {
-    parts.push(serialized);
-  }
-}
 
 function toErrorText(error: unknown): string {
   if (error instanceof Error) {
@@ -296,363 +214,16 @@ function toUserFacingErrorText(errorText: string): string {
   return errorText;
 }
 
-function isSyntheticEmptyAssistantText(text: string): boolean {
-  return isSyntheticAssistantTextBlock(text);
-}
 
-function redactEnvForLog(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
-  if (!env) {
-    return undefined;
-  }
-  const redacted: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (value == null) {
-      redacted[key] = value;
-      continue;
-    }
-    const upper = key.toUpperCase();
-    const isSecretLike =
-      upper.includes('KEY')
-      || upper.includes('TOKEN')
-      || upper.includes('SECRET')
-      || upper.includes('PASSWORD')
-      || upper.includes('AUTH');
-    if (isSecretLike) {
-      redacted[key] = value ? '***' : value;
-      continue;
-    }
-    redacted[key] = value;
-  }
-  return redacted;
-}
 
-function redactQueryInputForLog(input: unknown): unknown {
-  if (!input || typeof input !== 'object') {
-    return input;
-  }
-  const queryInput = input as { prompt?: unknown; options?: Record<string, unknown> };
-  if (!queryInput.options || typeof queryInput.options !== 'object') {
-    return input;
-  }
-  const options = { ...queryInput.options };
-  options.env = redactEnvForLog(options.env as NodeJS.ProcessEnv | undefined);
-  return {
-    ...queryInput,
-    options,
-  };
-}
 
-function summarizeQueryInputForLog(input: unknown): Record<string, unknown> {
-  if (!input || typeof input !== 'object') {
-    return { kind: typeof input };
-  }
-  const queryInput = input as {
-    prompt?: unknown;
-    options?: Record<string, unknown>;
-  };
-  const options = queryInput.options && typeof queryInput.options === 'object'
-    ? queryInput.options
-    : undefined;
 
-  const prompt = queryInput.prompt;
-  const promptType = typeof prompt === 'string'
-    ? 'text'
-    : prompt && typeof (prompt as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function'
-      ? 'stream'
-      : typeof prompt;
-  const promptLength = typeof prompt === 'string' ? prompt.length : undefined;
 
-  const mcpServers = options?.mcpServers && typeof options.mcpServers === 'object'
-    ? Object.keys(options.mcpServers as Record<string, unknown>)
-    : [];
-  const env = options?.env && typeof options.env === 'object'
-    ? (options.env as NodeJS.ProcessEnv)
-    : undefined;
 
-  return {
-    promptType,
-    promptLength,
-    model: typeof options?.model === 'string' ? options.model : undefined,
-    cwd: typeof options?.cwd === 'string' ? options.cwd : undefined,
-    maxTurns: typeof options?.maxTurns === 'number' ? options.maxTurns : undefined,
-    mcpServerCount: mcpServers.length,
-    mcpServers,
-    envSummary: {
-      anthropicBaseUrl: env?.ANTHROPIC_BASE_URL || '(default)',
-      anthropicApiKeySet: Boolean(env?.ANTHROPIC_API_KEY),
-      anthropicAuthTokenSet: Boolean(env?.ANTHROPIC_AUTH_TOKEN),
-      claudeModel: env?.CLAUDE_MODEL || '(unset)',
-    },
-  };
-}
 
-function summarizeSdkMessageForLog(message: unknown): Record<string, unknown> {
-  if (!message || typeof message !== 'object') {
-    return { kind: typeof message };
-  }
-  const sdkMessage = message as Record<string, unknown>;
-  const type = typeof sdkMessage.type === 'string' ? sdkMessage.type : 'unknown';
 
-  if (type === 'system') {
-    const tools = Array.isArray(sdkMessage.tools) ? sdkMessage.tools : [];
-    const mcpServers = Array.isArray(sdkMessage.mcp_servers) ? sdkMessage.mcp_servers : [];
-    return {
-      type,
-      subtype: sdkMessage.subtype,
-      sessionId: sdkMessage.session_id,
-      model: sdkMessage.model,
-      apiKeySource: sdkMessage.apiKeySource,
-      toolCount: tools.length,
-      mcpServerCount: mcpServers.length,
-    };
-  }
 
-  if (type === 'assistant') {
-    const messageNode = sdkMessage.message && typeof sdkMessage.message === 'object'
-      ? (sdkMessage.message as Record<string, unknown>)
-      : {};
-    const content = Array.isArray(messageNode.content) ? messageNode.content : [];
-    const textLength = content.reduce((total, block) => {
-      if (!block || typeof block !== 'object') {
-        return total;
-      }
-      const text = (block as { text?: unknown }).text;
-      return total + (typeof text === 'string' ? text.length : 0);
-    }, 0);
-    return {
-      type,
-      error: sdkMessage.error,
-      sessionId: sdkMessage.session_id,
-      contentBlockCount: content.length,
-      textLength,
-    };
-  }
 
-  if (type === 'result') {
-    return {
-      type,
-      subtype: sdkMessage.subtype,
-      isError: sdkMessage.is_error,
-      durationMs: sdkMessage.duration_ms,
-      durationApiMs: sdkMessage.duration_api_ms,
-      numTurns: sdkMessage.num_turns,
-      sessionId: sdkMessage.session_id,
-    };
-  }
-
-  return { type };
-}
-
-interface AskUserQuestionOption {
-  label: string;
-  description?: string;
-}
-
-interface AskUserQuestionItem {
-  question: string;
-  header?: string;
-  options?: AskUserQuestionOption[];
-  multiSelect?: boolean;
-}
-
-function sanitizeAskUserQuestions(rawQuestions: unknown): AskUserQuestionItem[] {
-  if (!Array.isArray(rawQuestions)) {
-    return [];
-  }
-
-  return rawQuestions
-    .map((item): AskUserQuestionItem | null => {
-      if (!item || typeof item !== 'object') {
-        return null;
-      }
-
-      const record = item as Record<string, unknown>;
-      const question = typeof record.question === 'string' ? record.question.trim() : '';
-      if (!question) {
-        return null;
-      }
-
-      const sanitized: AskUserQuestionItem = { question };
-      if (typeof record.header === 'string' && record.header.trim().length > 0) {
-        sanitized.header = record.header.trim();
-      }
-
-      if (Array.isArray(record.options)) {
-        const options = record.options
-          .map((option): AskUserQuestionOption | null => {
-            if (!option || typeof option !== 'object') {
-              return null;
-            }
-            const optionRecord = option as Record<string, unknown>;
-            const label = typeof optionRecord.label === 'string' ? optionRecord.label.trim() : '';
-            if (!label) {
-              return null;
-            }
-            const sanitizedOption: AskUserQuestionOption = { label };
-            if (typeof optionRecord.description === 'string' && optionRecord.description.trim().length > 0) {
-              sanitizedOption.description = optionRecord.description.trim();
-            }
-            return sanitizedOption;
-          })
-          .filter((option): option is AskUserQuestionOption => option !== null);
-
-        if (options.length > 0) {
-          sanitized.options = options;
-        }
-      }
-
-      if (typeof record.multiSelect === 'boolean') {
-        sanitized.multiSelect = record.multiSelect;
-      }
-
-      return sanitized;
-    })
-    .filter((question): question is AskUserQuestionItem => question !== null);
-}
-
-function normalizeAskUserAnswers(
-  answersJson: string,
-  questions: AskUserQuestionItem[]
-): Record<string, string> {
-  if (!answersJson.trim()) {
-    return {};
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(answersJson);
-  } catch {
-    return {};
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return {};
-  }
-
-  const rawAnswers = parsed as Record<string, unknown>;
-  const normalized: Record<string, string> = {};
-
-  for (const [rawKey, rawValue] of Object.entries(rawAnswers)) {
-    const index = Number(rawKey);
-    const key = Number.isInteger(index) && index >= 0 && index < questions.length
-      ? String(index)
-      : rawKey;
-
-    let value = '';
-    if (Array.isArray(rawValue)) {
-      value = rawValue
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0)
-        .join(', ');
-    } else if (typeof rawValue === 'string') {
-      value = rawValue.trim();
-    } else if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-      value = String(rawValue);
-    }
-
-    if (value.length > 0) {
-      normalized[key] = value;
-    }
-  }
-
-  return normalized;
-}
-
-function isAskUserQuestionSchemaError(content: string): boolean {
-  return content.includes('<tool_use_error>InputValidationError: AskUserQuestion failed')
-    && content.includes('unexpected parameter');
-}
-
-const ASK_USER_QUESTION_INVALID_ROOT_KEYS = new Set(['type', 'header', 'multiSelect']);
-
-function getInvalidAskUserQuestionRootKeys(input: unknown): string[] {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return [];
-  }
-  const root = input as Record<string, unknown>;
-  return Object.keys(root).filter((key) => ASK_USER_QUESTION_INVALID_ROOT_KEYS.has(key));
-}
-
-function extractStatusCodeFromErrorText(errorText: string): number | null {
-  const patterns = [
-    /api error(?:\s+detected)?\s*:\s*(\d{3})/i,
-    /status\s*code\s*\(?\s*(\d{3})\s*\)?/i,
-    /response\s*\[\s*(\d{3})/i,
-    /\berror\s*:\s*(\d{3})\b/i,
-  ];
-  for (const pattern of patterns) {
-    const match = errorText.match(pattern);
-    if (!match) {
-      continue;
-    }
-    const code = Number.parseInt(match[1], 10);
-    if (Number.isFinite(code)) {
-      return code;
-    }
-  }
-  return null;
-}
-
-function isRetryableApiErrorText(errorText: string): boolean {
-  const text = errorText.toLowerCase();
-  if (text.includes('first_response_timeout')) {
-    return false;
-  }
-  if (text.includes('empty_success_result')) {
-    return true;
-  }
-  const statusCode = extractStatusCodeFromErrorText(errorText);
-  if (statusCode !== null) {
-    if (statusCode === 408 || statusCode === 409 || statusCode === 425 || statusCode === 429) {
-      return true;
-    }
-    if (statusCode >= 400 && statusCode < 500) {
-      return false;
-    }
-    if (statusCode >= 500) {
-      return true;
-    }
-  }
-  const nonRetryableClientError = (
-    text.includes('error: 400')
-    || text.includes('error: 401')
-    || text.includes('error: 403')
-    || text.includes('error: 404')
-    || text.includes('error: 422')
-    || text.includes('badrequesterror')
-    || text.includes('invalid_request_error')
-    || text.includes('llm provider not provided')
-    || text.includes('invalid api key')
-    || text.includes('authentication_failed')
-    || text.includes('unauthorized')
-    || text.includes('forbidden')
-    || text.includes('proxy_upstream_auth_failed')
-    || text.includes('proxy_upstream_not_found')
-  );
-  if (nonRetryableClientError) {
-    return false;
-  }
-
-  return (
-    text.includes('provider returned error')
-    || text.includes('unable to submit request')
-    || text.includes('thought signature')
-    || text.includes('invalid_argument')
-    || text.includes('error: 500')
-    || text.includes('error: 502')
-    || text.includes('error: 503')
-    || text.includes('error: 504')
-    || text.includes('timeout')
-    || text.includes('econnrefused')
-    || text.includes('etimedout')
-    || text.includes('eai_again')
-    || text.includes('connection reset')
-    || text.includes('temporarily unavailable')
-    || /api error:\s*5\d\d/.test(text)
-    || /response\s*\[\s*5\d\d/.test(text)
-  );
-}
 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
@@ -678,9 +249,10 @@ export class ClaudeAgentRunner {
   private saveMessage?: (message: Message) => void;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
-  private pluginRuntimeService?: PluginRuntimeService;
+  // @ts-expect-error stored for future plugin support
+  private _pluginRuntimeService?: PluginRuntimeService;
   private activeControllers: Map<string, AbortController> = new Map();
-  private sdkSessions: Map<string, string> = new Map(); // sessionId -> sdk session_id
+  private piSessions: Map<string, PiAgentSession> = new Map(); // sessionId -> pi AgentSession
   private pendingQuestions: Map<string, PendingQuestion> = new Map(); // questionId -> resolver
 
   // Per-instance caches — invalidated when the underlying config changes.
@@ -693,9 +265,11 @@ export class ClaudeAgentRunner {
    * Called when session's cwd changes - SDK sessions are bound to cwd
    */
   clearSdkSession(sessionId: string): void {
-    if (this.sdkSessions.has(sessionId)) {
-      this.sdkSessions.delete(sessionId);
-      log('[ClaudeAgentRunner] Cleared SDK session cache for:', sessionId);
+    const piSession = this.piSessions.get(sessionId);
+    if (piSession) {
+      piSession.dispose();
+      this.piSessions.delete(sessionId);
+      log('[ClaudeAgentRunner] Disposed pi session for:', sessionId);
     }
   }
 
@@ -1092,9 +666,9 @@ Then follow the workflow described in that file, resolving all script paths agai
     this.saveMessage = options.saveMessage;
     this.pathResolver = pathResolver;
     this.mcpManager = mcpManager;
-    this.pluginRuntimeService = pluginRuntimeService;
+    this._pluginRuntimeService = pluginRuntimeService;
     
-    log('[ClaudeAgentRunner] Initialized with claude-agent-sdk');
+    log('[ClaudeAgentRunner] Initialized with pi-coding-agent SDK');
     log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
     if (mcpManager) {
       log('[ClaudeAgentRunner] MCP support enabled');
@@ -1102,20 +676,16 @@ Then follow the workflow described in that file, resolving all script paths agai
   }
   
   /**
-   * Resolve current model from runtime config/env.
-   * 优先使用配置中的 model，避免读取过期的 process.env 导致模型不一致。
+   * Resolve current model string from runtime config.
    */
-  private getCurrentModel(runtimeEnv: NodeJS.ProcessEnv, preferredModel?: string): string {
+  private getCurrentModelString(preferredModel?: string): string {
     const routeModel = preferredModel?.trim();
     const configuredModel = configStore.get('model')?.trim();
     const model = routeModel
       || configuredModel
-      || runtimeEnv.CLAUDE_MODEL
-      || runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL
       || 'anthropic/claude-sonnet-4';
     log('[ClaudeAgentRunner] Current model:', model);
-    log('[ClaudeAgentRunner] Model source:', routeModel ? 'runtimeRoute.model' : configuredModel ? 'configStore.model' : 'runtime environment');
-    log('[ClaudeAgentRunner] ANTHROPIC_DEFAULT_SONNET_MODEL:', runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL || '(not set)');
+    log('[ClaudeAgentRunner] Model source:', routeModel ? 'runtimeRoute.model' : configuredModel ? 'configStore.model' : 'default');
     return model;
   }
 
@@ -1153,10 +723,6 @@ Then follow the workflow described in that file, resolving all script paths agai
     // Sandbox isolation state (defined outside try for finally access)
     let sandboxPath: string | null = null;
     let useSandboxIsolation = false;
-    let proxyLeaseSignature: string | null = null;
-    
-    // Track last executed tool for completion message generation
-    let lastExecutedToolName: string | null = null;
     
     // Helper to convert real sandbox paths back to virtual workspace paths in output
     const sanitizeOutputPaths = (content: string): string => {
@@ -1459,169 +1025,61 @@ Then follow the workflow described in that file, resolving all script paths agai
       }
 
       // Check if current user message includes images
-      // Images need to be passed via AsyncIterable<SDKUserMessage>, not string prompt
       const lastUserMessage = existingMessages.length > 0
         ? existingMessages[existingMessages.length - 1]
         : null;
 
       log('[ClaudeAgentRunner] Total messages:', existingMessages.length);
-      log('[ClaudeAgentRunner] Last message:', lastUserMessage ? {
-        role: lastUserMessage.role,
-        contentTypes: lastUserMessage.content.map((c: any) => c.type),
-        contentCount: lastUserMessage.content.length,
-      } : 'none');
 
-      let hasImages = lastUserMessage?.content.some((c: any) => c.type === 'image') || false;
-
+      const hasImages = lastUserMessage?.content.some((c: any) => c.type === 'image') || false;
       if (hasImages) {
-        log('[ClaudeAgentRunner] User message contains images, will use AsyncIterable format');
-      } else {
-        log('[ClaudeAgentRunner] No images detected in last message');
+        log('[ClaudeAgentRunner] User message contains images');
       }
 
-      logTiming('before resolveClaudeCodeExecutablePath');
+      logTiming('before pi-ai model resolution');
 
-      // Use query from @anthropic-ai/claude-agent-sdk
-      const resolvedClaudeCode = resolveClaudeCodePathCached(
-        configStore.get('claudeCodePath')?.trim()
-      );
-      const claudeCodePath = resolvedClaudeCode?.executablePath ?? '';
-      log('[ClaudeAgentRunner] Claude Code path:', claudeCodePath);
-      if (resolvedClaudeCode?.source) {
-        log('[ClaudeAgentRunner] Claude Code path source:', resolvedClaudeCode.source);
+      // Resolve model via pi-ai
+      const runtimeConfig = configStore.getAll();
+      const modelString = this.getCurrentModelString(runtimeConfig.model);
+      const configProtocol = runtimeConfig.customProtocol || runtimeConfig.provider || 'anthropic';
+      let piModel = resolvePiModel(modelString, configProtocol, runtimeConfig.baseUrl?.trim() || undefined, runtimeConfig.provider);
+
+      if (!piModel) {
+        // Synthetic fallback: construct a Model for unknown/custom models
+        const parts = modelString.split('/');
+        const syntheticId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
+        const syntheticProvider = parts.length >= 2 ? parts[0] : (configProtocol === 'custom' ? 'anthropic' : configProtocol);
+        piModel = buildSyntheticModel(syntheticId, syntheticProvider, configProtocol, runtimeConfig.baseUrl?.trim() || undefined);
+        logWarn('[ClaudeAgentRunner] Model not in pi-ai registry, using synthetic model:', modelString, '→', piModel.api);
       }
-      logTiming('after resolveClaudeCodeExecutablePath');
-      
-      // Check if Claude Code is found
-      if (!claudeCodePath || !fs.existsSync(claudeCodePath)) {
-        const errorMsg = !claudeCodePath 
-          ? 'Claude Code 未找到。请先安装: npm install -g @anthropic-ai/claude-code，或在设置中手动指定路径。'
-          : `Claude Code 路径不存在: ${claudeCodePath}。请检查路径或在设置中重新配置。`;
-        logError('[ClaudeAgentRunner]', errorMsg);
-        this.sendToRenderer({
-          type: 'error',
-          payload: { message: errorMsg },
-        });
-        throw new Error(errorMsg);
+      log('[ClaudeAgentRunner] Resolved pi-ai model:', piModel.provider, piModel.id);
+
+      // Set up API keys via AuthStorage
+      const authStorage = getSharedAuthStorage();
+      const provider = runtimeConfig.provider || 'anthropic';
+      const apiKey = runtimeConfig.apiKey?.trim();
+      if (apiKey) {
+        // Map our config provider to pi-ai provider name
+        const piProvider = provider === 'custom'
+          ? (runtimeConfig.customProtocol || 'anthropic')
+          : provider;
+        authStorage.setRuntimeApiKey(piProvider, apiKey);
+        // Also set the key for the model's native provider (e.g., when using
+        // google/gemini via openrouter, pi-ai looks up "google" not "openrouter")
+        if (piModel.provider !== piProvider) {
+          authStorage.setRuntimeApiKey(piModel.provider, apiKey);
+          log('[ClaudeAgentRunner] Set runtime API key for model provider:', piModel.provider);
+        }
+        log('[ClaudeAgentRunner] Set runtime API key for config provider:', piProvider);
       }
 
-      // SANDBOX: Path validation function with whitelist for skills directories
-      const builtinSkillsPathForValidation = this.getBuiltinSkillsPath();
-      const appClaudeDirForValidation = this.getAppClaudeDir();
-      const configuredSkillsPathForValidation = this.getConfiguredGlobalSkillsDir();
-      
-      // @ts-ignore - Reserved for future use
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const isPathInsideWorkspace = (targetPath: string): boolean => {
-        if (!targetPath) return true;
-        
-        // Normalize path for comparison
-        const normalizedTarget = path.normalize(targetPath);
-        
-        // WHITELIST: Allow access to skills directories (read-only for AI)
-        // This allows AI to read SKILL.md files from built-in and app-level skills
-        const whitelistedPaths = [
-          builtinSkillsPathForValidation,  // Built-in skills (shipped with app)
-          appClaudeDirForValidation,        // App Claude config dir (includes user skills)
-          configuredSkillsPathForValidation,
-        ].filter(Boolean) as string[];
-        
-        for (const whitelistedPath of whitelistedPaths) {
-          const normalizedWhitelist = path.normalize(whitelistedPath);
-          if (normalizedTarget.toLowerCase().startsWith(normalizedWhitelist.toLowerCase())) {
-            log(`[Sandbox] WHITELIST: Path "${targetPath}" is in whitelisted skills directory`);
-            return true;
-          }
-        }
-        
-        // If no working directory is set, deny all file access (except whitelisted)
-        if (!workingDir) {
-          return false;
-        }
-        
-        const normalizedWorkdir = path.normalize(workingDir);
-        
-        // Check if absolute path
-        const isAbsolute = path.isAbsolute(normalizedTarget) || /^[A-Za-z]:/.test(normalizedTarget);
-        
-        if (isAbsolute) {
-          // Absolute path must be inside workingDir
-          return normalizedTarget.toLowerCase().startsWith(normalizedWorkdir.toLowerCase());
-        }
-        
-        // Relative path - check for .. traversal
-        if (normalizedTarget.includes('..')) {
-          const resolved = path.resolve(workingDir, normalizedTarget);
-          return resolved.toLowerCase().startsWith(normalizedWorkdir.toLowerCase());
-        }
-        
-        return true; // Relative path without .. is OK
-      };
+      // baseUrl is now embedded in the model object via resolvePiModel()
+      log('[ClaudeAgentRunner] Model baseUrl:', piModel.baseUrl, 'api:', piModel.api);
 
-      // Extract paths from tool input
-      const extractPathsFromInput = (toolName: string, input: Record<string, unknown>): string[] => {
-        const paths: string[] = [];
-        
-        // File tools
-        if (input.path) paths.push(String(input.path));
-        if (input.file_path) paths.push(String(input.file_path));
-        if (input.filePath) paths.push(String(input.filePath));
-        if (input.directory) paths.push(String(input.directory));
-        
-        // Bash command - extract paths from command string
-        if (toolName === 'Bash' && input.command) {
-          const cmd = String(input.command);
-          
-          // Extract Windows absolute paths (C:\... or D:\...)
-          const winPaths = cmd.match(/[A-Za-z]:[\\\/][^\s;|&"'<>]*/g) || [];
-          paths.push(...winPaths);
-          
-          // Extract quoted paths
-          const quotedPaths = cmd.match(/"([^"]+)"/g) || [];
-          quotedPaths.forEach(p => paths.push(p.replace(/"/g, '')));
-        }
-        
-        return paths;
-      };
+      logTiming('after pi-ai model resolution');
 
-      // Build options with resume support and SANDBOX via canUseTool
-      const resumeId = this.sdkSessions.get(session.id);
-      
-      const supportsImageInputs = (model: string | undefined, baseUrl: string | undefined): boolean => {
-        const modelLower = (model || '').toLowerCase();
-        const baseLower = (baseUrl || '').toLowerCase();
-
-        if (baseLower.includes('deepseek')) return false;
-        if (baseLower.includes('open.bigmodel.cn')) return false;
-        if (!modelLower) return false;
-
-        const knownImageCapableModel = (
-          modelLower.includes('claude-3') ||
-          modelLower.includes('claude-3.5') ||
-          modelLower.includes('claude-3-5') ||
-          modelLower.includes('claude-4') ||
-          modelLower.includes('claude-sonnet') ||
-          modelLower.includes('claude-opus') ||
-          modelLower.includes('claude-haiku') ||
-          modelLower.includes('gpt-4o') ||
-          modelLower.includes('gpt-4.1') ||
-          modelLower.includes('gpt-5') ||
-          modelLower.includes('o1') ||
-          modelLower.includes('o3') ||
-          modelLower.includes('gemini')
-        );
-
-        if (knownImageCapableModel) {
-          return true;
-        }
-
-        // openai/* 与 gemini/* 前缀模型默认按可图像输入处理
-        if (modelLower.startsWith('openai/') || modelLower.startsWith('gemini/')) {
-          return true;
-        }
-
-        return false;
-      };
+      // pi-coding-agent handles path sandboxing via its own tools
+      const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
@@ -1684,77 +1142,10 @@ Then follow the workflow described in that file, resolving all script paths agai
       log('[ClaudeAgentRunner] App claude dir:', userClaudeDir);
       log('[ClaudeAgentRunner] User working directory:', workingDir);
 
-      logTiming('before getShellEnvironment');
+      logTiming('before building conversation context');
 
-      // Get shell environment with proper PATH (node, npm, etc.)
-      // GUI apps on macOS don't inherit shell PATH, so we need to extract it
-      const shellEnv = getShellEnvironment();
-      logTiming('after getShellEnvironment');
-
-      const runtimeConfig = configStore.getAll();
-      const unifiedSdkEnabled = shouldUseUnifiedClaudeSdk(runtimeConfig);
-      const unifiedProxyEnabled = shouldUseUnifiedClaudeProxy(runtimeConfig);
-
-      let runtimeConfigForSdk = runtimeConfig;
-      let envOverrides = getClaudeEnvOverrides(runtimeConfigForSdk);
-      if (unifiedProxyEnabled) {
-        const route = resolveUnifiedGatewayProfile(runtimeConfig);
-        if (!route.ok || !route.profile) {
-          const reason = route.reason || 'unknown';
-          if (reason === 'missing_key') {
-            throw new Error('proxy_upstream_auth_failed:missing_key');
-          }
-          if (reason === 'missing_base_url') {
-            throw new Error('proxy_upstream_not_found:missing_base_url');
-          }
-          throw new Error(`proxy_upstream_not_found:${reason}`);
-        }
-        // Wait briefly for any in-progress warmup before ensureReady
-        await claudeProxyManager.awaitWarmup(3000);
-        const proxyRuntime = await claudeProxyManager.ensureReady(route.profile);
-        claudeProxyManager.retain(proxyRuntime.signature);
-        proxyLeaseSignature = proxyRuntime.signature;
-        runtimeConfigForSdk = {
-          ...runtimeConfig,
-          model: route.profile.model,
-        };
-        if (runtimeConfigForSdk.model !== runtimeConfig.model) {
-          log('[ClaudeAgentRunner] Normalized model for proxy route', {
-            originalModel: runtimeConfig.model,
-            normalizedModel: runtimeConfigForSdk.model,
-          });
-        }
-        envOverrides = getClaudeEnvOverrides(runtimeConfigForSdk, {
-          proxyBaseUrl: proxyRuntime.baseUrl,
-          proxyApiKey: proxyRuntime.sdkApiKey,
-        });
-      }
-      // 构建运行环境：shell 环境 + 配置覆盖 + CLAUDE_CONFIG_DIR
-      const envWithSkills: NodeJS.ProcessEnv = {
-        ...buildClaudeEnv(shellEnv, envOverrides),
-        CLAUDE_CONFIG_DIR: userClaudeDir,
-      };
-      const currentModel = this.getCurrentModel(envWithSkills, runtimeConfigForSdk.model);
-
-      log('[ClaudeAgentRunner] CLAUDE_CONFIG_DIR:', userClaudeDir);
-      log('[ClaudeAgentRunner] PATH in env:', (envWithSkills.PATH || '').substring(0, 200) + '...');
-      log('[ClaudeAgentRunner] Auth env summary:', {
-        provider: runtimeConfig.provider,
-        customProtocol: runtimeConfig.customProtocol,
-        unifiedProxyEnabled,
-        anthropicApiKeySet: Boolean(envWithSkills.ANTHROPIC_API_KEY),
-        anthropicAuthTokenSet: Boolean(envWithSkills.ANTHROPIC_AUTH_TOKEN),
-        anthropicBaseUrl: envWithSkills.ANTHROPIC_BASE_URL || '(default)',
-        openaiApiKeySet: Boolean(envWithSkills.OPENAI_API_KEY),
-        openaiBaseUrl: envWithSkills.OPENAI_BASE_URL || '(default)',
-        openaiCodexOAuth: envWithSkills.OPENAI_CODEX_OAUTH || '(not set)',
-      });
-
-      const imageCapable = supportsImageInputs(currentModel, envWithSkills.ANTHROPIC_BASE_URL);
-      if (hasImages && !imageCapable) {
-        logWarn('[ClaudeAgentRunner] Image content detected but model/provider does not support images; dropping image blocks');
-        hasImages = false;
-      }
+      // pi-ai handles auth and model routing natively — no proxy, no env overrides needed.
+      log('[ClaudeAgentRunner] Using pi-ai native routing for:', piModel.provider, piModel.id);
 
       // Build conversation context for text-only history
       let contextualPrompt = prompt;
@@ -1779,7 +1170,7 @@ Then follow the workflow described in that file, resolving all script paths agai
         contextualPrompt = `${historyItems.join('\n')}\nHuman: ${prompt}\nAssistant:`;
         log('[ClaudeAgentRunner] Including', historyItems.length, 'history messages in context');
       }
-      
+
       logTiming('before building MCP servers config');
 
       // Build MCP servers configuration for SDK
@@ -1922,22 +1313,6 @@ Then follow the workflow described in that file, resolving all script paths agai
       const enableThinking = configStore.get('enableThinking') ?? false;
       log('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
 
-      const runtimePlugins = this.pluginRuntimeService
-        ? await this.pluginRuntimeService.getEnabledRuntimePlugins()
-        : [];
-      const sdkPlugins = runtimePlugins.map((plugin) => ({
-        type: 'local' as const,
-        path: plugin.runtimePath,
-      }));
-      if (sdkPlugins.length > 0) {
-        log('[ClaudeAgentRunner] Runtime plugins enabled:', runtimePlugins.map((plugin) => ({
-          pluginId: plugin.pluginId,
-          name: plugin.name,
-          runtimePath: plugin.runtimePath,
-          enabledComponents: plugin.componentsEnabled,
-        })));
-      }
-
       const workspaceInfoPrompt = useSandboxIsolation && sandboxPath
         ? `<workspace_info>
 Your current workspace is located at: ${VIRTUAL_WORKSPACE_PATH}
@@ -1947,13 +1322,16 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
           ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
           : '';
 
-      // 默认保留完整 MCP 工具说明，避免改变已稳定的提示词行为。
-      // 仅在显式设置 COWORK_INCLUDE_MCP_TOOLS_PROMPT=0 时切换到精简版。
       const includeVerboseMcpPrompt = process.env.COWORK_INCLUDE_MCP_TOOLS_PROMPT !== '0';
       const includeCredentialsPrompt = /login|sign[\s-]?in|credential|password|gmail|邮箱|登录|账号|密码/i.test(prompt);
       const systemPromptSections = [
-        'You are an Open Cowork coding assistant. Be concise, accurate, and tool-capable.',
-        'When a request is actionable, proceed with reasonable assumptions instead of asking for clarification unless a missing detail would make the next action likely wrong. For relative windows like "within two days" in browsing or research tasks, assume the most recent two relevant publication days unless the user explicitly defines another date range.',
+        'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
+        `CRITICAL BEHAVIORAL RULES:
+1. CHAT FIRST: By default, respond to the user in plain text within the conversation. Do NOT create, write, or edit files unless the user explicitly asks you to (e.g., "create a file", "write this to...", "edit the code", "save as...", mentions a specific file path, or describes code changes they want applied). For questions, summaries, explanations, analysis, and general conversation — always reply directly in chat text.
+2. NEVER ask clarification questions in plain text. When a request is actionable, proceed immediately with reasonable assumptions. If you truly cannot proceed without user input, you MUST use the AskUserQuestion tool — never write questions as regular assistant text.
+3. For relative time windows like "within two days" in browsing or research tasks, assume the most recent two relevant publication days unless the user explicitly defines another date range.
+4. For bracketed placeholders like [Agent], [Topic], etc., treat the word inside brackets as the literal search keyword unless the user says otherwise.
+5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.`,
         workspaceInfoPrompt,
         availableSkillsPrompt,
         includeVerboseMcpPrompt
@@ -1964,847 +1342,210 @@ MCP tools are available at runtime. Use tool names exactly as exposed by the ini
         `<citation_requirements>
 If your answer uses linkable content from MCP tools, include a "Sources:" section and otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL).
 </citation_requirements>`,
+        `<tool_behavior>
+AskUserQuestion:
+- ONLY use AskUserQuestion when you absolutely cannot proceed without user input AND the missing detail would make the next action likely wrong.
+- NEVER write questions, confirmations, or "before I start" preambles in plain assistant text. This is strictly forbidden.
+- When in doubt, make a reasonable assumption and proceed. Action is always preferred over asking.
+
+TodoWrite:
+- Use TodoWrite for non-trivial tasks that involve tool calls.
+- Keep one item marked as in_progress when actively executing.
+- Include a final verification step before completion.
+
+Tool routing:
+- If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over generic WebSearch/WebFetch.
+- Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
+</tool_behavior>`,
         includeCredentialsPrompt ? this.getCredentialsPrompt() : '',
-        `<artifact_instructions>
-When you produce a final deliverable file, declare it once using this exact block so the app can show it as the final artifact:
-\`\`\`artifact
-{"path":"/workspace/path/to/file.ext","name":"optional display name","type":"optional type"}
-\`\`\`
-</artifact_instructions>`,
       ].filter((section): section is string => Boolean(section && section.trim()));
-      const systemPromptAppend = systemPromptSections.join('\n\n');
-      
-      // if (enableThinking) {
-      //   envWithSkills.MAX_THINKING_TOKENS = '10000';
-      // } else {
-      //   envWithSkills.MAX_THINKING_TOKENS = '0';
-      // }
+      const systemPromptText = systemPromptSections.join('\n\n');
 
-      const maxTurnsFromEnv = Number.parseInt(process.env.COWORK_MAX_TURNS || '200', 10);
-      const maxTurns = Number.isFinite(maxTurnsFromEnv) && maxTurnsFromEnv > 0
-        ? maxTurnsFromEnv
-        : 200;
+      logTiming('before pi-coding-agent session creation');
 
-      // Capture Claude Code stderr so "exit code 1" includes root-cause context.
-      const claudeStderrLines: string[] = [];
-      const onClaudeStderr = (data: string): void => {
-        if (!data) return;
-        const lines = data.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        for (const line of lines) {
-          const redactedLine = redactSensitiveText(line);
-          claudeStderrLines.push(redactedLine);
-          if (claudeStderrLines.length > MAX_CLAUDE_STDERR_LINES) {
-            claudeStderrLines.shift();
-          }
-          logError(`[ClaudeAgentRunner][stderr] ${redactedLine}`);
+      // Resolve thinking level for pi-coding-agent
+      type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+      const thinkingLevel: PiThinkingLevel = enableThinking ? 'medium' : 'off';
+
+      // Create or reuse pi-coding-agent session
+      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
+
+      const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
+      const resourceLoader = new DefaultResourceLoader({
+        cwd: effectiveCwd,
+        systemPromptOverride: () => systemPromptText,
+      });
+      await resourceLoader.reload();
+
+      const modelRegistry = new ModelRegistry(authStorage);
+      const { session: piSession } = await createAgentSession({
+        model: piModel,
+        thinkingLevel,
+        authStorage,
+        modelRegistry,
+        tools: createCodingTools(effectiveCwd),
+        sessionManager: PiSessionManager.inMemory(),
+        settingsManager: PiSettingsManager.inMemory({
+          compaction: { enabled: true },
+          retry: { enabled: true, maxRetries: 2 },
+        }),
+        resourceLoader,
+        cwd: effectiveCwd,
+      });
+
+      // Store session reference for potential reuse/abort
+      this.piSessions.set(session.id, piSession);
+
+      logTiming('pi-coding-agent session created');
+
+      // Set up event handler to bridge pi-coding-agent events → our ServerEvent protocol
+
+      const unsubscribe = piSession.subscribe((event) => {
+        if (controller.signal.aborted) return;
+
+        // Debug: log every event type
+        if (event.type === 'message_update') {
+          log(`[ClaudeAgentRunner] Event: ${event.type} → ${event.assistantMessageEvent.type}`);
+        } else if (event.type === 'message_start' || event.type === 'message_end') {
+          log(`[ClaudeAgentRunner] Event: ${event.type}`, JSON.stringify((event.message as any)?.content || 'no content').substring(0, 500));
+        } else if (event.type === 'turn_end') {
+          log(`[ClaudeAgentRunner] Event: ${event.type}`, JSON.stringify((event.message as any)?.content || 'no content').substring(0, 500));
+        } else {
+          log(`[ClaudeAgentRunner] Event: ${event.type}`);
         }
-      };
-      const getClaudeStderrTail = (): string => (
-        claudeStderrLines.slice(-STDERR_TAIL_LINES_FOR_ERROR).join('\n')
-      );
 
-      const queryOptions: any = {
-        pathToClaudeCodeExecutable: claudeCodePath,
-        cwd: workingDir,  // Windows path for claude-code process
-        model: currentModel,
-        maxTurns,
-        abortController: controller,
-        env: envWithSkills,
-        thinking: buildThinkingOptions(enableThinking),
-        plugins: sdkPlugins.length > 0 ? sdkPlugins : undefined,
-        stderr: onClaudeStderr,
-        
-        // Pass MCP servers to SDK
-        mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-
-        // Custom spawn function to handle Node.js execution
-        // Prefer system Node.js to avoid Electron's Dock icon appearing on macOS
-        spawnClaudeCodeProcess: (spawnOptions: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal }) => {
-          const { command, args, cwd: spawnCwd, env: spawnEnv, signal } = spawnOptions;
-          const hasIncomingEnv = Boolean(spawnEnv && Object.keys(spawnEnv).length > 0);
-          if (!hasIncomingEnv) {
-            logWarn('[ClaudeAgentRunner] SDK spawn env is empty; falling back to configured runtime env');
-          }
-
-          let actualCommand = command;
-          let actualArgs = args;
-          let actualEnv: NodeJS.ProcessEnv = { ...(hasIncomingEnv ? spawnEnv : envWithSkills) };
-          const hasAuthInSpawnEnv = Boolean(
-            actualEnv.ANTHROPIC_API_KEY
-              || actualEnv.ANTHROPIC_AUTH_TOKEN
-              || actualEnv.OPENAI_API_KEY
-          );
-          if (!hasAuthInSpawnEnv) {
-            actualEnv = { ...envWithSkills, ...actualEnv };
-            logWarn('[ClaudeAgentRunner] Spawn env missing auth vars, merged runtime auth env fallback');
-          }
-          actualEnv = withBunHashShimEnv(actualEnv);
-          let spawnOptions2: any = {
-            cwd: spawnCwd,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: actualEnv,
-            signal,
-          };
-          
-          // If the command is 'node', use bundled Node.js from resources
-          if (command === 'node') {
-            // Get bundled Node.js path (same logic as MCPManager)
-            const platform = process.platform;
-            const arch = process.arch;
-            
-            let resourcesPath: string;
-            if (process.env.NODE_ENV === 'development') {
-              // Development: use downloaded node in resources/node
-              const projectRoot = path.join(__dirname, '..', '..');
-              resourcesPath = path.join(projectRoot, 'resources', 'node', `${platform}-${arch}`);
-            } else {
-              // Production: use bundled node in extraResources
-              resourcesPath = path.join(process.resourcesPath, 'node');
-            }
-            
-            const binDir = platform === 'win32' ? resourcesPath : path.join(resourcesPath, 'bin');
-            const nodeExe = platform === 'win32' ? 'node.exe' : 'node';
-            const bundledNodePath = path.join(binDir, nodeExe);
-            
-            if (fs.existsSync(bundledNodePath)) {
-              actualCommand = bundledNodePath;
-              log('[ClaudeAgentRunner] Using bundled Node.js:', bundledNodePath);
-            } else {
-              // Fallback to Electron as Node.js if bundled node not found
-              log('[ClaudeAgentRunner] Bundled Node.js not found, using Electron as fallback');
-              if (process.platform === 'darwin') {
-                const electronPath = process.execPath.replace(/'/g, "'\''");
-                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\''")}'`).join(' ');
-                const shellCommand = `ELECTRON_RUN_AS_NODE=1 '${electronPath}' ${quotedArgs}`;
-                actualCommand = '/bin/bash';
-                actualArgs = ['-c', shellCommand];
-              } else {
-                actualCommand = process.execPath;
-                actualEnv = { ...actualEnv, ELECTRON_RUN_AS_NODE: '1' };
-              }
-              spawnOptions2.env = actualEnv;
-            }
-          }
-
-          if (isNodeExecutable(actualCommand)) {
-            actualArgs = withBunHashShimNodeArgs(actualArgs);
-          }
-          
-          log('[ClaudeAgentRunner] Custom spawn:', actualCommand, actualArgs.slice(0, 2).join(' ').substring(0, 100), '...');
-          log('[ClaudeAgentRunner] Process cwd:', spawnCwd);
-
-          const childProcess = spawn(actualCommand, actualArgs, spawnOptions2) as ChildProcess;
-          childProcess.stderr?.on('data', (data) => {
-            const stderrText = data.toString().trim();
-            if (!stderrText) {
-              return;
-            }
-            logError('[ClaudeAgentRunner][stderr]', stderrText);
-            if (!lastAssistantApiErrorText) {
-              lastAssistantApiErrorText = stderrText;
-            }
-          });
-
-          return childProcess;
-        },
-        
-        // System prompt: keep stable default prompt shape; MCP tools details are enabled unless explicitly disabled.
-        systemPrompt: {
-          type: 'preset',
-          preset: 'claude_code',
-          append: systemPromptAppend,
-        },
-        
-        // Use 'default' mode so canUseTool will be called for permission checks
-        // 'bypassPermissions' skips canUseTool entirely!
-        permissionMode: 'default',
-        
-        // CRITICAL: canUseTool callback for HARD sandbox enforcement + AskUserQuestion handling
-        canUseTool: async (
-          toolName: string,
-          input: Record<string, unknown>,
-          options: { signal: AbortSignal; toolUseID: string }
-        ): Promise<PermissionResult> => {
-          log(`[Sandbox] Checking tool: ${toolName}`, safeStringify(input));
-          
-          // Special handling for AskUserQuestion - need to wait for user response
-          if (toolName === 'AskUserQuestion') {
-            const questionId = uuidv4();
-            const questions = sanitizeAskUserQuestions(input.questions);
-            
-            log(`[AskUserQuestion] Sending ${questions.length} questions to UI`);
-            
-            // Send questions to frontend
-            this.sendToRenderer({
-              type: 'question.request',
-              payload: {
-                questionId,
-                sessionId: session.id,
-                toolUseId: options.toolUseID,
-                questions,
-              },
-            });
-            
-            // Wait for user's answers
-            const answersJson = await new Promise<string>((resolve) => {
-              this.pendingQuestions.set(questionId, { questionId, resolve });
-              
-              // Handle abort
-              options.signal.addEventListener('abort', () => {
-                this.pendingQuestions.delete(questionId);
-                resolve('{}'); // Return empty object on abort
+        switch (event.type) {
+          case 'message_update': {
+            const ame = event.assistantMessageEvent;
+            if (ame.type === 'text_delta') {
+              this.sendPartial(session.id, ame.delta);
+            } else if (ame.type === 'thinking_delta') {
+              // Thinking output — optionally forward to UI
+              log('[ClaudeAgentRunner] Thinking delta:', ame.delta.substring(0, 100));
+            } else if (ame.type === 'toolcall_start') {
+              const partial = ame.partial;
+              const toolContent = partial?.content?.[ame.contentIndex];
+              const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
+              const toolCallId = toolContent?.type === 'toolCall' ? toolContent.id : uuidv4();
+              this.sendTraceStep(session.id, {
+                id: toolCallId,
+                type: 'tool_call',
+                status: 'running',
+                title: toolName,
+                toolName,
+                toolInput: toolContent?.type === 'toolCall' ? (toolContent.arguments as Record<string, unknown> || {}) : undefined,
+                timestamp: Date.now(),
               });
-            });
-            
-            log(`[AskUserQuestion] User answered:`, answersJson);
-            
-            const normalizedAnswers = normalizeAskUserAnswers(answersJson, questions);
-            if (answersJson.trim() && Object.keys(normalizedAnswers).length === 0) {
-              logWarn('[AskUserQuestion] No valid answers parsed from user response payload');
+            } else if (ame.type === 'done') {
+              // Some providers emit 'done' via message_update — we handle it
+              // in message_end below as a unified path for all providers.
+              log('[ClaudeAgentRunner] message_update done event (handled in message_end)');
+            } else if (ame.type === 'error') {
+              const errorDetail = JSON.stringify(ame.error?.content || 'no content');
+              logError('[ClaudeAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
             }
-            
-            const updatedInput: Record<string, unknown> = { questions };
-            if (Object.keys(normalizedAnswers).length > 0) {
-              updatedInput.answers = normalizedAnswers;
-            }
-
-            return {
-              behavior: 'allow',
-              updatedInput,
-            };
+            break;
           }
-          
-          // Extract all paths from input for sandbox validation
-          const paths = extractPathsFromInput(toolName, input);
-          log(`[Sandbox] Extracted paths:`, paths);
-          
-          // Validate each path
-          // for (const p of paths) {
-          //   if (!isPathInsideWorkspace(p)) {
-          //     logWarn(`[Sandbox] BLOCKED: Path "${p}" is outside workspace "${workingDir}"`);
-          //     return {
-          //       behavior: 'deny',
-          //       message: `Access denied: Path "${p}" is outside the allowed workspace "${workingDir}". Only files within the workspace can be accessed.`
-          //     };
-          //   }
-          // }
-          
-          // NOTE: Bash tool is intercepted by PreToolUse hook above for WSL wrapping
-          // Glob/Grep/Read/Write/Edit use the shared filesystem (/mnt/)
-          // They execute on Windows but access the same files as WSL
-          // Path validation is done above
-          
-          log(`[Sandbox] ALLOWED: Tool ${toolName}`);
-          return { behavior: 'allow', updatedInput: input };
-        },
-      };
-      
-      if (resumeId) {
-        queryOptions.resume = resumeId;
-        log('[ClaudeAgentRunner] Resuming SDK session:', resumeId);
-      }
-      log('[ClaudeAgentRunner] Sandbox via canUseTool, workspace:', workingDir);
-      logTiming('before query() call - SDK initialization starts');
 
-      let firstMessageReceived = false;
-      let apiWaitStartedAt: number | null = null;
-
-      // Create query input based on whether we have images
-      const queryInput = hasImages
-        ? {
-            // For images: use AsyncIterable format with full message content
-            prompt: (async function* () {
-              // Convert last user message to SDK format with images
-              if (lastUserMessage && lastUserMessage.role === 'user') {
-                // Convert ContentBlock[] to Anthropic SDK's ContentBlockParam[]
-                const sdkContent = lastUserMessage.content.map((block: any) => {
-                  if (block.type === 'text') {
-                    return { type: 'text' as const, text: block.text };
-                  } else if (block.type === 'image') {
-                    return {
-                      type: 'image' as const,
-                      source: {
-                        type: 'base64' as const,
-                        media_type: block.source.media_type,
-                        data: block.source.data,
-                      },
-                    };
+          case 'message_end': {
+            // Unified handler: send the final assistant message to the renderer.
+            // Works for all providers (some emit 'done' via message_update, others don't).
+            const msg = event.message;
+            if (msg && msg.role === 'assistant') {
+              const contentBlocks: ContentBlock[] = [];
+              for (const block of (msg as any).content || []) {
+                if (block.type === 'text') {
+                  const { cleanText, artifacts } = extractArtifactsFromText(block.text);
+                  if (cleanText) {
+                    contentBlocks.push({ type: 'text', text: sanitizeOutputPaths(cleanText) });
                   }
-                  return block; // fallback for other types
-                });
-
-                yield {
-                  type: 'user' as const,
-                  message: {
-                    role: 'user' as const,
-                    content: sdkContent, // Include all content blocks (text + images)
-                  },
-                  parent_tool_use_id: null,
-                  session_id: session.id,
-                } as any; // Use 'as any' to bypass type checking since SDK types are complex
-              }
-            })(),
-            options: queryOptions,
-          }
-        : {
-            // For text-only: use simple string prompt
-            prompt: contextualPrompt,
-            options: queryOptions,
-          };
-
-      const queryInputSummary = summarizeQueryInputForLog(queryInput);
-      log('[ClaudeAgentRunner] Query input summary:', safeStringify(queryInputSummary, 2));
-      if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
-        log('[ClaudeAgentRunner] Query input (full):', safeStringify(redactQueryInputForLog(queryInput), 2));
-      }
-      
-      // Retry configuration
-      const maxRetriesFromEnv = Number.parseInt(
-        process.env.COWORK_MAX_API_RETRIES || process.env.COWORK_MAX_RETRIES || '2',
-        10
-      );
-      const MAX_RETRIES = Number.isFinite(maxRetriesFromEnv) && maxRetriesFromEnv >= 0
-        ? Math.min(maxRetriesFromEnv, 5)
-        : 2;
-      const retryBaseDelayFromEnv = Number.parseInt(process.env.COWORK_API_RETRY_BASE_DELAY_MS || '600', 10);
-      const retryMaxDelayFromEnv = Number.parseInt(process.env.COWORK_API_RETRY_MAX_DELAY_MS || '4000', 10);
-      const RETRY_BASE_DELAY_MS = Number.isFinite(retryBaseDelayFromEnv) && retryBaseDelayFromEnv > 0
-        ? retryBaseDelayFromEnv
-        : 600;
-      const RETRY_MAX_DELAY_MS = Number.isFinite(retryMaxDelayFromEnv) && retryMaxDelayFromEnv > 0
-        ? retryMaxDelayFromEnv
-        : 4000;
-      let retryCount = 0;
-      let shouldContinue = true;
-      let sdkApiKeySource: string | null = null;
-      let lastAssistantApiErrorText = '';
-      let emittedVisibleOutput = false;
-      let emittedNarrativeOutput = false;
-      let suppressedSyntheticAssistantOutput = false;
-      const firstResponseTimeoutFromEnv = Number.parseInt(process.env.COWORK_FIRST_RESPONSE_TIMEOUT_MS || '120000', 10);
-      const firstResponseTimeoutMs = Number.isFinite(firstResponseTimeoutFromEnv) && firstResponseTimeoutFromEnv > 0
-        ? firstResponseTimeoutFromEnv
-        : 120000;
-      let responseWatchdog: NodeJS.Timeout | null = null;
-      let timeoutTriggered = false;
-      const clearResponseWatchdog = () => {
-        if (responseWatchdog) {
-          clearTimeout(responseWatchdog);
-          responseWatchdog = null;
-        }
-      };
-      const resetResponseWatchdog = () => {
-        if (controller.signal.aborted || firstResponseTimeoutMs <= 0) {
-          return;
-        }
-        clearResponseWatchdog();
-        responseWatchdog = setTimeout(() => {
-          timeoutTriggered = true;
-          logWarn('[ClaudeAgentRunner] First response watchdog timeout triggered', {
-            sessionId: session.id,
-            timeoutMs: firstResponseTimeoutMs,
-          });
-          controller.abort();
-        }, firstResponseTimeoutMs);
-      };
-      
-      while (shouldContinue) {
-        try {
-      lastAssistantApiErrorText = '';
-      claudeStderrLines.length = 0;
-      timeoutTriggered = false;
-      resetResponseWatchdog();
-      for await (const message of query(queryInput)) {
-        resetResponseWatchdog();
-        if (!firstMessageReceived) {
-          logTiming('FIRST MESSAGE RECEIVED from SDK');
-          firstMessageReceived = true;
-        }
-        
-        if (controller.signal.aborted) break;
-
-        log('[ClaudeAgentRunner] Message type:', message.type);
-        log('[ClaudeAgentRunner] Message summary:', safeStringify(summarizeSdkMessageForLog(message), 2));
-        if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
-          log('[ClaudeAgentRunner] Full message:', safeStringify(message, 2));
-        }
-
-        if (message.type === 'system' && (message as any).subtype === 'init') {
-          const source = (message as any).apiKeySource;
-          if (typeof source === 'string' && source.trim()) {
-            sdkApiKeySource = source.trim();
-            log('[ClaudeAgentRunner] SDK apiKeySource:', sdkApiKeySource);
-          }
-          const sdkSessionId = (message as any).session_id;
-          if (sdkSessionId) {
-            this.sdkSessions.set(session.id, sdkSessionId);
-            log('[ClaudeAgentRunner] SDK session initialized:', sdkSessionId);
-            log('[ClaudeAgentRunner] Waiting for API response...');
-            apiWaitStartedAt = Date.now();
-          }
-          const sdkPluginsInSession = ((message as any).plugins ?? []) as Array<{ name?: string; path?: string }>;
-          this.sendToRenderer({
-            type: 'plugins.runtimeApplied',
-            payload: {
-              sessionId: session.id,
-              plugins: sdkPluginsInSession
-                .filter((plugin) => typeof plugin.name === 'string' && typeof plugin.path === 'string')
-                .map((plugin) => ({ name: plugin.name as string, path: plugin.path as string })),
-            },
-          });
-        } else if (message.type === 'assistant') {
-          log('[ClaudeAgentRunner] First assistant response received (API processing complete)');
-          if (apiWaitStartedAt) {
-            log('[ClaudeAgentRunner] API wait duration after SDK init:', Date.now() - apiWaitStartedAt, 'ms');
-            apiWaitStartedAt = null;
-          }
-          logTiming('assistant response received');
-          const assistantErrorText = typeof (message as any).error === 'string'
-            ? (message as any).error.trim()
-            : '';
-          if (assistantErrorText) {
-            lastAssistantApiErrorText = assistantErrorText;
-          }
-          // Assistant message - extract content from message.message.content
-          const content = (message as any).message?.content || (message as any).content;
-          log('[ClaudeAgentRunner] Assistant content:', safeStringify(content));
-          
-          if (content && Array.isArray(content) && content.length > 0) {
-            // Handle content - could be string or array of blocks
-            let textContent = '';
-            const contentBlocks: ContentBlock[] = [];
-
-              if (typeof content === 'string') {
-                if (isSyntheticEmptyAssistantText(content)) {
-                  suppressedSyntheticAssistantOutput = true;
-                  log('[ClaudeAgentRunner] Suppressing synthetic empty assistant text block');
-                } else {
-                  textContent = content;
-                  contentBlocks.push({ type: 'text', text: content });
-                }
-              } else if (Array.isArray(content)) {
-                for (const block of content) {
-                  if (block.type === 'text') {
-                    const blockText = typeof block.text === 'string' ? block.text : '';
-                    if (isSyntheticEmptyAssistantText(blockText)) {
-                      suppressedSyntheticAssistantOutput = true;
-                      log('[ClaudeAgentRunner] Suppressing synthetic empty assistant text block');
-                      continue;
+                  if (artifacts.length > 0) {
+                    for (const step of buildArtifactTraceSteps(artifacts)) {
+                      this.sendTraceStep(session.id, step);
                     }
-                    textContent += blockText;
-                    contentBlocks.push({ type: 'text', text: blockText });
-                  } else if (block.type === 'tool_use') {
-                  const invalidAskUserQuestionKeys = block.name === 'AskUserQuestion'
-                    ? getInvalidAskUserQuestionRootKeys(block.input)
-                    : [];
-                  if (block.name === 'AskUserQuestion' && invalidAskUserQuestionKeys.length > 0) {
-                    logWarn(
-                      '[ClaudeAgentRunner] Skipping invalid AskUserQuestion tool_use from chat message',
-                      safeStringify({ toolUseId: block.id, invalidRootKeys: invalidAskUserQuestionKeys })
-                    );
-                    this.sendTraceStep(session.id, {
-                      id: block.id || uuidv4(),
-                      type: 'tool_call',
-                      status: 'running',
-                      title: `${block.name}`,
-                      toolName: block.name,
-                      toolInput: block.input,
-                      timestamp: Date.now(),
-                    });
-                    continue;
                   }
-
-                  // Tool call - track the tool name for completion message
-                  lastExecutedToolName = block.name as string;
-                  
+                } else if (block.type === 'toolCall') {
                   contentBlocks.push({
                     type: 'tool_use',
                     id: block.id,
                     name: block.name,
-                    input: block.input
-                  });
-
-                  this.sendTraceStep(session.id, {
-                    id: block.id || uuidv4(),
-                    type: 'tool_call',
-                    status: 'running',
-                    title: `${block.name}`,
-                    toolName: block.name,
-                    toolInput: block.input,
-                    timestamp: Date.now(),
+                    input: block.arguments,
                   });
                 }
               }
-            }
-
-            if (
-              textContent
-              && /invalid api key|run\s*\/login/i.test(textContent)
-              && sdkApiKeySource === 'none'
-            ) {
-              const provider = configStore.get('provider');
-              const customProtocol = configStore.get('customProtocol');
-              const isOpenAIProfile = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
-              if (isOpenAIProfile && !unifiedSdkEnabled) {
-                const runtimeBaseUrl = envWithSkills.OPENAI_BASE_URL || envWithSkills.ANTHROPIC_BASE_URL || '(default)';
-                const hint = `\n\n[Config hint] Runtime profile is ${provider}/${customProtocol || 'anthropic'} with base URL ${runtimeBaseUrl}. Claude Code reports apiKeySource=none, which means OPENAI_* credentials were not accepted in this SDK path. Try switching to Custom + Anthropic protocol for the same gateway, then save and retry.`;
-                textContent += hint;
-                contentBlocks.push({ type: 'text', text: hint });
-                logWarn('[ClaudeAgentRunner] Added OpenAI-profile auth hint for apiKeySource=none', {
-                  provider,
-                  customProtocol,
-                  runtimeBaseUrl,
+              if (contentBlocks.length > 0) {
+                // Clear any partial text
+                this.sendToRenderer({
+                  type: 'stream.partial',
+                  payload: { sessionId: session.id, delta: '' },
                 });
-              }
-            }
-
-            const { cleanText, artifacts } = extractArtifactsFromText(textContent);
-            if (artifacts.length > 0) {
-              textContent = cleanText;
-              let replacedText = false;
-              const cleanedBlocks: ContentBlock[] = [];
-              for (const block of contentBlocks) {
-                if (block.type === 'text') {
-                  if (!replacedText) {
-                    if (cleanText) {
-                      cleanedBlocks.push({ type: 'text', text: cleanText });
-                    }
-                    replacedText = true;
-                  }
-                  continue;
-                }
-                cleanedBlocks.push(block);
-              }
-              if (!replacedText && cleanText) {
-                cleanedBlocks.unshift({ type: 'text', text: cleanText });
-              }
-              contentBlocks.length = 0;
-              contentBlocks.push(...cleanedBlocks);
-
-              for (const step of buildArtifactTraceSteps(artifacts)) {
-                this.sendTraceStep(session.id, step);
-              }
-            }
-
-            // 记录上游 API 错误文本用于后续分类（例如进程退出 code=1 时判定是否重试）。
-            if (textContent && textContent.toLowerCase().includes('api error')) {
-              lastAssistantApiErrorText = textContent;
-              logError('[ClaudeAgentRunner] Detected API error in assistant message:', textContent);
-            }
-
-            // Stream text to UI
-            if (textContent) {
-              const chunks = textContent.match(/.{1,30}/g) || [textContent];
-              for (const chunk of chunks) {
-                if (controller.signal.aborted) break;
-                this.sendPartial(session.id, chunk);
-                await this.delay(12, controller.signal);
-              }
-
-              // Clear partial
-              this.sendToRenderer({
-                type: 'stream.partial',
-                payload: { sessionId: session.id, delta: '' },
-              });
-            }
-
-            // Send message to UI
-            if (contentBlocks.length > 0) {
-              log('[ClaudeAgentRunner] Sending assistant message with', contentBlocks.length, 'blocks');
-              emittedVisibleOutput = true;
-              if (contentBlocks.some((block) => block.type === 'text' && block.text.trim().length > 0)) {
-                emittedNarrativeOutput = true;
-              }
-              const assistantMsg: Message = {
-                id: uuidv4(),
-                sessionId: session.id,
-                role: 'assistant',
-                content: contentBlocks,
-                timestamp: Date.now(),
-              };
-              this.sendMessage(session.id, assistantMsg);
-            } else {
-              log('[ClaudeAgentRunner] No content blocks to send!');
-            }
-          }
-        } else if (message.type === 'user') {
-          // Tool results from SDK
-          const content = (message as any).message?.content;
-
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'tool_result') {
-                const isError = block.is_error === true;
-
-                // Debug: Log the raw block structure
-                log(`[ClaudeAgentRunner] Raw tool_result block:`, safeStringify(block, 2).substring(0, 500));
-                log(`[ClaudeAgentRunner] block.content type: ${Array.isArray(block.content) ? 'array' : typeof block.content}`);
-
-                // Handle MCP tool results with content arrays (e.g., text + image)
-                let textContent = '';
-                const images: Array<{ data: string; mimeType: string }> = [];
-
-                if (Array.isArray(block.content)) {
-                  // MCP tool returned content array (e.g., screenshot_for_display)
-                  log(`[ClaudeAgentRunner] Tool result content is array, length: ${block.content.length}`);
-                  for (const contentItem of block.content) {
-                    log(`[ClaudeAgentRunner] Content item type: ${contentItem.type}`);
-                    if (contentItem.type === 'text') {
-                      textContent += (contentItem.text || '');
-                    } else if (contentItem.type === 'image') {
-                      // Extract image data from MCP SDK format
-                      // MCP SDK returns: { type: 'image', source: { data: '...', media_type: '...', type: 'base64' } }
-                      const imageData = contentItem.source?.data || contentItem.data || '';
-                      const mimeType = contentItem.source?.media_type || contentItem.mimeType || 'image/png';
-                      const imageDataLength = imageData.length;
-                      log(`[ClaudeAgentRunner] Extracting image data, length: ${imageDataLength}, mimeType: ${mimeType}`);
-                      images.push({
-                        data: imageData,
-                        mimeType: mimeType
-                      });
-                    }
-                  }
-                  log(`[ClaudeAgentRunner] Extracted ${images.length} images`);
-                } else {
-                  // Standard string content
-                  textContent = typeof block.content === 'string'
-                    ? block.content
-                    : safeStringify(block.content);
-                }
-
-                // Sanitize output to replace real sandbox paths with virtual workspace paths
-                const sanitizedContent = sanitizeOutputPaths(textContent);
-
-                if (isError && isAskUserQuestionSchemaError(sanitizedContent)) {
-                  logWarn('[ClaudeAgentRunner] AskUserQuestion schema validation failed, waiting for model retry');
-                  this.sendTraceUpdate(session.id, block.tool_use_id, {
-                    status: 'error',
-                    toolOutput: sanitizedContent.slice(0, 800),
-                  });
-                  continue;
-                }
-
-                // Update the existing tool_call trace step instead of creating a new one
-                this.sendTraceUpdate(session.id, block.tool_use_id, {
-                  status: isError ? 'error' : 'completed',
-                  toolOutput: sanitizedContent.slice(0, 800),
-                });
-
-                // Send tool result message with optional images
-                const toolResultMsg: Message = {
+                const assistantMsg: Message = {
                   id: uuidv4(),
                   sessionId: session.id,
                   role: 'assistant',
-                  content: [{
-                    type: 'tool_result',
-                    toolUseId: block.tool_use_id,
-                    content: sanitizedContent,
-                    isError,
-                    ...(images.length > 0 && { images })
-                  }],
+                  content: contentBlocks,
                   timestamp: Date.now(),
+                  tokenUsage: (msg as any).usage ? {
+                    input: (msg as any).usage.input,
+                    output: (msg as any).usage.output,
+                  } : undefined,
                 };
-                emittedVisibleOutput = true;
-                this.sendMessage(session.id, toolResultMsg);
+                this.sendMessage(session.id, assistantMsg);
               }
             }
-          }
-        } else if (message.type === 'result') {
-          // Final result
-          log('[ClaudeAgentRunner] Result received');
-          const resultSubtype = typeof (message as any).subtype === 'string'
-            ? (message as any).subtype
-            : 'unknown';
-          const resultIsError = Boolean((message as any).is_error);
-          const resultParts: string[] = [];
-          const resultText = typeof (message as any).result === 'string' ? (message as any).result.trim() : '';
-          const resultError = typeof (message as any).error === 'string' ? (message as any).error.trim() : '';
-          if (resultText) {
-            resultParts.push(resultText);
-          }
-          if (resultError) {
-            resultParts.push(resultError);
-          }
-          const resultErrors = Array.isArray((message as any).errors) ? (message as any).errors : [];
-          appendDiagnosticParts(resultParts, resultErrors);
-          const permissionDenials = Array.isArray((message as any).permission_denials)
-            ? (message as any).permission_denials
-            : [];
-          if (permissionDenials.length > 0) {
-            resultParts.push(`permission_denials=${safeStringify(permissionDenials)}`);
-          }
-          if (lastAssistantApiErrorText) {
-            appendDiagnosticParts(resultParts, lastAssistantApiErrorText);
+            break;
           }
 
-          if (resultSubtype !== 'success' || resultIsError) {
-            let diagnostic = resultParts.join(' | ');
-            if (!diagnostic) {
-              const rawResultMessage = safeStringify(message);
-              diagnostic = rawResultMessage && rawResultMessage !== '{}'
-                ? rawResultMessage
-                : `result_subtype=${resultSubtype}`;
-            }
-            if (!lastAssistantApiErrorText && diagnostic) {
-              lastAssistantApiErrorText = diagnostic;
-            }
-            logError('[ClaudeAgentRunner] SDK result indicates execution failure', {
-              subtype: resultSubtype,
-              isError: resultIsError,
-              diagnostic: diagnostic.slice(0, 400),
+          case 'tool_execution_start': {
+            log(`[ClaudeAgentRunner] Tool execution start: ${event.toolName}`);
+            break;
+          }
+
+          case 'tool_execution_end': {
+            const toolCallId = event.toolCallId;
+            const isError = event.isError;
+            const outputText = typeof event.result === 'string'
+              ? event.result
+              : JSON.stringify(event.result || '');
+            this.sendTraceUpdate(session.id, toolCallId, {
+              status: isError ? 'error' : 'completed',
+              toolName: event.toolName,
+              toolOutput: sanitizeOutputPaths(outputText).slice(0, 800),
             });
-            throw new Error(`sdk_result_${resultSubtype}: ${diagnostic}`);
+
+            // Send tool result message
+            const toolResultMsg: Message = {
+              id: uuidv4(),
+              sessionId: session.id,
+              role: 'assistant',
+              content: [{
+                type: 'tool_result',
+                toolUseId: toolCallId,
+                content: sanitizeOutputPaths(outputText),
+                isError,
+              }],
+              timestamp: Date.now(),
+            };
+            this.sendMessage(session.id, toolResultMsg);
+            break;
           }
-          
-          // If the result text is empty but tools were executed, add a completion message
-          // This happens when Claude calls tools but doesn't generate follow-up text
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const finalResultText = (message as any).result as string || '';
-          if (!finalResultText.trim() && !emittedVisibleOutput) {
-            throw new Error('empty_success_result: upstream returned success with no visible assistant content');
-          }
-          if (!finalResultText.trim() && suppressedSyntheticAssistantOutput && !emittedNarrativeOutput) {
-            throw new Error('empty_success_result: upstream returned only synthetic tool transcript content');
-          }
-          if (!finalResultText.trim() && lastExecutedToolName) {
-            log(`[ClaudeAgentRunner] Empty result after tool execution (${lastExecutedToolName}), adding completion message`);
-            
-            // Generate appropriate completion message based on the tool
-            let completionText = '';
-            if (lastExecutedToolName === 'Write') {
-              completionText = `✓ File has been created successfully.`;
-            } else if (lastExecutedToolName === 'Edit') {
-              completionText = `✓ File has been edited successfully.`;
-            } else if (lastExecutedToolName === 'Read') {
-              // Read tool typically shows content, no need for extra message
-            } else if (['Bash', 'Glob', 'Grep', 'LS'].includes(lastExecutedToolName)) {
-              // These tools show their output directly, no need for extra message
-            } else {
-              // completionText = `✓ Task completed.`;
-              // completionText = `Tool executed.`;
-            }
-            
-            if (completionText) {
-              emittedVisibleOutput = true;
-              emittedNarrativeOutput = true;
-              const completionMsg: Message = {
-                id: uuidv4(),
-                sessionId: session.id,
-                role: 'assistant',
-                content: [{ type: 'text', text: completionText }],
-                timestamp: Date.now(),
-              };
-              this.sendMessage(session.id, completionMsg);
-            }
+
+          case 'agent_end': {
+            log('[ClaudeAgentRunner] Agent finished');
+            break;
           }
         }
+      });
+
+      // Execute the prompt
+      try {
+        const promptResult = await piSession.prompt(contextualPrompt);
+        log('[ClaudeAgentRunner] prompt() returned:', JSON.stringify(promptResult ?? 'void').substring(0, 1000));
+      } finally {
+        unsubscribe();
       }
-      
-      // Successfully completed the query loop
-      log('[ClaudeAgentRunner] Query completed successfully');
-      clearResponseWatchdog();
-      shouldContinue = false;
-      
-    } catch (error) {
-      clearResponseWatchdog();
-      // Handle errors with retry logic
-      const err = error as Error;
-      
-      // Log the full error for debugging
-      logError(`[ClaudeAgentRunner] Caught error:`, err);
-      logError(`[ClaudeAgentRunner] Error name: ${err.name}`);
-      logError(`[ClaudeAgentRunner] Error message: ${err.message}`);
-      logError(`[ClaudeAgentRunner] Error stack: ${err.stack}`);
-      
-      // Check if this is an abort error - don't retry
-      if (err.name === 'AbortError') {
-        if (timeoutTriggered) {
-          throw new Error(`first_response_timeout: no SDK activity for ${firstResponseTimeoutMs}ms`);
-        }
-        log('[ClaudeAgentRunner] Query aborted by user');
-        throw err;
-      }
-      
-      // Check if this is a retryable error
-      const errorMessage = err.message || String(error);
-      const errorString = String(error);
-      const stderrTail = getClaudeStderrTail();
-      if (stderrTail) {
-        logError(`[ClaudeAgentRunner] Claude Code stderr tail:\n${stderrTail}`);
-      }
-      const fullErrorText = `${errorMessage} ${errorString} ${lastAssistantApiErrorText} ${stderrTail}`;
-      const isRetryable = isRetryableApiErrorText(fullErrorText);
-      
-      logError(`[ClaudeAgentRunner] Is retryable: ${isRetryable}, retryCount: ${retryCount}/${MAX_RETRIES}`);
-      
-      if (isRetryable && retryCount < MAX_RETRIES) {
-        retryCount++;
-        const waitTime = Math.min(
-          RETRY_BASE_DELAY_MS * Math.pow(2, retryCount - 1),
-          RETRY_MAX_DELAY_MS
-        );
-        
-        logError(`[ClaudeAgentRunner] Retryable error (attempt ${retryCount}/${MAX_RETRIES}): ${errorMessage}`);
-        log(`[ClaudeAgentRunner] Waiting ${waitTime}ms before retry...`);
-        
-        // Show retry message to user
-        this.sendToRenderer({
-          type: 'stream.partial',
-          payload: { 
-            sessionId: session.id, 
-            delta: `\n\n⚠️ API调用出错，正在重试 (${retryCount}/${MAX_RETRIES})...\n\n` 
-          },
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        // Clear the retry message
-        this.sendToRenderer({
-          type: 'stream.partial',
-          payload: { sessionId: session.id, delta: '' },
-        });
-        
-        // Get the current SDK session ID for resume
-        const currentSdkSessionId = this.sdkSessions.get(session.id);
-        if (currentSdkSessionId) {
-          log(`[ClaudeAgentRunner] Resuming from SDK session: ${currentSdkSessionId}`);
-          
-          // Update queryInput to use resume
-          if (hasImages) {
-            (queryInput as any).options.resume = currentSdkSessionId;
-          } else {
-            (queryInput as any).options.resume = currentSdkSessionId;
-          }
-          
-          // Continue the while loop to retry
-          shouldContinue = true;
-        } else {
-          logError(`[ClaudeAgentRunner] No SDK session ID found for resume, cannot retry`);
-          throw err;
-        }
-      } else {
-        // Not retryable or max retries exceeded
-        if (retryCount >= MAX_RETRIES) {
-          logError(`[ClaudeAgentRunner] Max retries (${MAX_RETRIES}) exceeded`);
-        } else {
-          logError(`[ClaudeAgentRunner] Non-retryable error: ${errorMessage}`);
-        }
-        if (stderrTail) {
-          const enhancedMessage = `${errorMessage}\n\nClaude Code stderr (tail):\n${stderrTail}`;
-          const enhancedError = new Error(enhancedMessage);
-          enhancedError.name = err.name || 'Error';
-          enhancedError.stack = err.stack;
-          throw enhancedError;
-        }
-        throw err;
-      }
-    }
-  }
-  
-  // If we exit the retry loop, check if there was an error
-  if (shouldContinue) {
-    throw new Error('Retry loop exited unexpectedly');
-      }
+
+      logTiming('pi-coding-agent prompt completed');
 
       // Complete - update the initial thinking step
       this.sendTraceUpdate(session.id, thinkingStepId, {
@@ -2817,7 +1558,7 @@ When you produce a final deliverable file, declare it once using this exact bloc
         log('[ClaudeAgentRunner] Aborted');
       } else {
         logError('[ClaudeAgentRunner] Error:', error);
-        
+
         const errorText = toUserFacingErrorText(toErrorText(error));
         const errorMsg: Message = {
           id: uuidv4(),
@@ -2837,19 +1578,15 @@ When you produce a final deliverable file, declare it once using this exact bloc
         });
       }
     } finally {
-      if (proxyLeaseSignature) {
-        claudeProxyManager.release(proxyLeaseSignature);
-      }
       this.activeControllers.delete(session.id);
       this.pathResolver.unregisterSession(session.id);
 
       // Sync changes from sandbox back to host OS (but don't cleanup - sandbox persists)
-      // Cleanup happens on session delete or app shutdown
       if (useSandboxIsolation && sandboxPath) {
         const sandbox = getSandboxAdapter();
 
         if (sandbox.isWSL) {
-          log('[ClaudeAgentRunner] Syncing sandbox changes to Windows (sandbox persists for this conversation)...');
+          log('[ClaudeAgentRunner] Syncing sandbox changes to Windows...');
           const syncResult = await SandboxSync.syncToWindows(session.id);
           if (syncResult.success) {
             log('[ClaudeAgentRunner] Sync completed successfully');
@@ -2857,7 +1594,7 @@ When you produce a final deliverable file, declare it once using this exact bloc
             logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
           }
         } else if (sandbox.isLima) {
-          log('[ClaudeAgentRunner] Syncing sandbox changes to macOS (sandbox persists for this conversation)...');
+          log('[ClaudeAgentRunner] Syncing sandbox changes to macOS...');
           const { LimaSync } = await import('../sandbox/lima-sync');
           const syncResult = await LimaSync.syncToMac(session.id);
           if (syncResult.success) {
@@ -2866,14 +1603,10 @@ When you produce a final deliverable file, declare it once using this exact bloc
             logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
           }
         }
-
-        // Note: Sandbox is NOT cleaned up here - it persists across messages in the same conversation
-        // Cleanup occurs when:
-        // 1. User deletes the conversation (SessionManager.deleteSession)
-        // 2. App is closed (SandboxSync/LimaSync.cleanupAllSessions)
       }
     }
   }
+
 
   cancel(sessionId: string): void {
     const controller = this.activeControllers.get(sessionId);
@@ -2903,25 +1636,4 @@ When you produce a final deliverable file, declare it once using this exact bloc
     this.sendToRenderer({ type: 'stream.partial', payload: { sessionId, delta } });
   }
 
-  private delay(ms: number, signal: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        signal.removeEventListener('abort', onAbort);
-      };
-      const timeout = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, ms);
-      const onAbort = () => {
-        clearTimeout(timeout);
-        cleanup();
-        reject(new DOMException('Aborted', 'AbortError'));
-      };
-      if (signal.aborted) {
-        onAbort();
-        return;
-      }
-      signal.addEventListener('abort', onAbort, { once: true });
-    });
-  }
 }

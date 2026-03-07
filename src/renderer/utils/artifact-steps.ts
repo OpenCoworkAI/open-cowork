@@ -6,6 +6,8 @@ const FILE_TOOL_NAMES = new Set([
   'edit_file',
   'Write',
   'Edit',
+  'write',
+  'edit',
   'NotebookEdit',
   'notebook_edit',
 ]);
