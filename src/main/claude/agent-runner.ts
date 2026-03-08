@@ -25,6 +25,7 @@ import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
+import type { SkillsAdapter } from '../skills/skills-adapter';
 import { configStore } from '../config/config-store';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -288,6 +289,7 @@ export class ClaudeAgentRunner {
   private mcpManager?: MCPManager;
   // @ts-expect-error stored for future plugin support
   private _pluginRuntimeService?: PluginRuntimeService;
+  private _skillsAdapter?: SkillsAdapter;
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, PiAgentSession> = new Map(); // sessionId -> pi AgentSession
 
@@ -378,6 +380,16 @@ ${sections.join('\n\n')}
       logError('[AgentRunner] Failed to get credentials prompt:', error);
       return '';
     }
+  }
+
+  /** Fallback skill path resolution when SkillsAdapter is not provided. */
+  private legacySkillPaths(): string[] {
+    const paths: string[] = [];
+    const builtin = this.getBuiltinSkillsPath();
+    if (builtin && fs.existsSync(builtin)) paths.push(builtin);
+    const global = this.getConfiguredGlobalSkillsDir();
+    if (global && fs.existsSync(global)) paths.push(global);
+    return paths;
   }
 
   /**
@@ -535,13 +547,15 @@ ${sections.join('\n\n')}
     options: AgentRunnerOptions,
     pathResolver: PathResolver,
     mcpManager?: MCPManager,
-    pluginRuntimeService?: PluginRuntimeService
+    pluginRuntimeService?: PluginRuntimeService,
+    skillsAdapter?: SkillsAdapter
   ) {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.pathResolver = pathResolver;
     this.mcpManager = mcpManager;
     this._pluginRuntimeService = pluginRuntimeService;
+    this._skillsAdapter = skillsAdapter;
     
     log('[ClaudeAgentRunner] Initialized with pi-coding-agent SDK');
     log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
@@ -1210,16 +1224,12 @@ Tool routing:
       // Create or reuse pi-coding-agent session
       const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
 
-      // Collect skill directories for pi's native skill discovery
-      const skillPaths: string[] = [];
-      const builtinSkillsPath = this.getBuiltinSkillsPath();
-      if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-        skillPaths.push(builtinSkillsPath);
-      }
-      const globalSkillsPath = this.getConfiguredGlobalSkillsDir();
-      if (globalSkillsPath && fs.existsSync(globalSkillsPath)) {
-        skillPaths.push(globalSkillsPath);
-      }
+      // Collect skill directories for pi's native skill discovery.
+      // SkillsAdapter handles path resolution, disabled skill filtering,
+      // and compatibility with Claude Code / OpenClaw ecosystems.
+      const skillPaths = this._skillsAdapter
+        ? this._skillsAdapter.getSkillPaths()
+        : this.legacySkillPaths();
       log('[ClaudeAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
 
       const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
