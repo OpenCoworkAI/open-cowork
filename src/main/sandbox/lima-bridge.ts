@@ -189,87 +189,82 @@ export class LimaBridge implements SandboxExecutor {
         };
       }
 
-      // Check if Node.js is available
-      let nodeAvailable = false;
-      let nodeVersion = '';
-      try {
-        const { stdout } = await execLimaShellWithRetry('node --version', 10000);
-        nodeVersion = stdout.trim();
-        if (nodeVersion.startsWith('v')) {
-          nodeAvailable = true;
-          log('[Lima] Node.js found:', nodeVersion);
-        }
-      } catch (error) {
-        if (!isLimaShellConnectionError(error)) {
-          // Try with nvm
+      // Run all dependency checks in parallel for faster status detection
+      const [nodeResult, pythonResult, claudeResult] = await Promise.allSettled([
+        // Check Node.js
+        (async () => {
+          try {
+            const { stdout } = await execLimaShellWithRetry('node --version', 10000);
+            const ver = stdout.trim();
+            if (ver.startsWith('v')) return { available: true, version: ver };
+          } catch (error) {
+            if (!isLimaShellConnectionError(error)) {
+              try {
+                const { stdout } = await execLimaShellWithRetry(
+                  'bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"',
+                  10000
+                );
+                const ver = stdout.trim();
+                if (ver.startsWith('v')) return { available: true, version: ver + ' (nvm)' };
+              } catch { /* ignore */ }
+            }
+          }
+          return { available: false, version: '' };
+        })(),
+        // Check Python and pip in a single shell invocation
+        (async () => {
           try {
             const { stdout } = await execLimaShellWithRetry(
-              'bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"',
+              'bash -c "echo PYTHON:$(python3 --version 2>&1); echo PIP:$(python3 -m pip --version 2>&1 || echo MISSING)"',
               10000
             );
-            nodeVersion = stdout.trim();
-            if (nodeVersion.startsWith('v')) {
-              nodeAvailable = true;
-              nodeVersion += ' (nvm)';
-              log('[Lima] Node.js found via nvm:', nodeVersion);
-            }
+            const pythonMatch = stdout.match(/PYTHON:(Python [\d.]+)/);
+            const pipMissing = stdout.includes('PIP:MISSING');
+            return {
+              available: !!pythonMatch,
+              version: pythonMatch ? pythonMatch[1] : '',
+              pipAvailable: !!pythonMatch && !pipMissing,
+            };
           } catch {
-            log('[Lima] Node.js not found');
+            return { available: false, version: '', pipAvailable: false };
           }
-        } else {
-          log('[Lima] Node.js check failed: SSH not ready');
-        }
-      }
-
-      // Check Python
-      let pythonAvailable = false;
-      let pipAvailable = false;
-      let pythonVersion = '';
-      try {
-        const { stdout } = await execLimaShellWithRetry('python3 --version', 10000);
-        pythonVersion = stdout.trim();
-        if (pythonVersion.startsWith('Python')) {
-          pythonAvailable = true;
-          log('[Lima] Python found:', pythonVersion);
-
-          // Check pip
+        })(),
+        // Check claude-code
+        (async () => {
           try {
-            await execLimaShellWithRetry('python3 -m pip --version', 10000);
-            pipAvailable = true;
+            await execLimaShellWithRetry(
+              'bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude"',
+              10000
+            );
+            return true;
           } catch {
-            log('[Lima] pip not available');
+            return false;
           }
-        }
-      } catch {
-        log('[Lima] Python not found');
-      }
+        })(),
+      ]);
 
-      // Check claude-code
-      let claudeCodeAvailable = false;
-      if (nodeAvailable) {
-        try {
-          await execLimaShellWithRetry(
-            'bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude"',
-            10000
-          );
-          claudeCodeAvailable = true;
-          log('[Lima] claude-code found');
-        } catch {
-          log('[Lima] claude-code not found');
-        }
-      }
+      const node = nodeResult.status === 'fulfilled' ? nodeResult.value : { available: false, version: '' };
+      const python = pythonResult.status === 'fulfilled' ? pythonResult.value : { available: false, version: '', pipAvailable: false };
+      const claudeCodeAvailable = claudeResult.status === 'fulfilled' ? claudeResult.value : false;
+
+      if (node.available) log('[Lima] Node.js found:', node.version);
+      else log('[Lima] Node.js not found');
+      if (python.available) log('[Lima] Python found:', python.version);
+      else log('[Lima] Python not found');
+      if (claudeCodeAvailable) log('[Lima] claude-code found');
+      else log('[Lima] claude-code not found');
 
       return {
         available: true,
         instanceExists,
         instanceRunning,
         instanceName: LIMA_INSTANCE_NAME,
-        nodeAvailable,
-        pythonAvailable,
-        pipAvailable,
-        claudeCodeAvailable,
-        version: nodeVersion,
-        pythonVersion,
+        nodeAvailable: node.available,
+        pythonAvailable: python.available,
+        pipAvailable: python.pipAvailable,
+        claudeCodeAvailable: node.available && claudeCodeAvailable,
+        version: node.version,
+        pythonVersion: python.version,
       };
     } catch (error) {
       log('[Lima] Error checking status:', error);
@@ -623,8 +618,12 @@ export class LimaBridge implements SandboxExecutor {
       if (!started) {
         throw new Error('Failed to start Lima instance');
       }
-      // Re-check status
-      status = await LimaBridge.checkLimaStatus();
+      status.instanceRunning = true;
+      // Only re-check dependency availability, not instance status we already know
+      const freshStatus = await LimaBridge.checkLimaStatus();
+      status.nodeAvailable = freshStatus.nodeAvailable;
+      status.pythonAvailable = freshStatus.pythonAvailable;
+      status.pipAvailable = freshStatus.pipAvailable;
     }
 
     // Dependencies should already be installed by bootstrap
@@ -709,23 +708,25 @@ export class LimaBridge implements SandboxExecutor {
       logError('[Lima] Agent process error:', error);
     });
 
-    // Wait for agent to be ready
+    // Wait for agent to be ready with exponential backoff
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Lima agent startup timeout'));
       }, 30000);
 
+      let retryDelay = 100; // Start checking quickly
       const checkReady = async () => {
         try {
-          await this.sendRequest('ping', {});
+          await this.sendRequest('ping', {}, 3000);
           clearTimeout(timeout);
           resolve();
         } catch {
-          setTimeout(checkReady, 500);
+          retryDelay = Math.min(retryDelay * 1.5, 2000); // Exponential backoff, cap at 2s
+          setTimeout(checkReady, retryDelay);
         }
       };
 
-      setTimeout(checkReady, 1000);
+      setTimeout(checkReady, 200); // Start checking after 200ms instead of 1s
     });
 
     log('[Lima] Agent is ready');
@@ -795,6 +796,25 @@ export class LimaBridge implements SandboxExecutor {
 
       this.limaProcess!.stdin!.write(JSON.stringify(request) + '\n');
     });
+  }
+
+  /**
+   * Send a batch of operations in a single IPC round-trip.
+   * Useful for reducing overhead when multiple independent operations are needed.
+   */
+  async sendBatchRequest(
+    operations: Array<{ method: string; params: Record<string, unknown> }>,
+    timeoutMs: number = 60000
+  ): Promise<Array<{ success: boolean; result?: unknown; error?: string }>> {
+    if (!this.isInitialized) {
+      throw new Error('Lima bridge not initialized');
+    }
+
+    const result = await this.sendRequest<{
+      results: Array<{ success: boolean; result?: unknown; error?: string }>;
+    }>('batch', { operations }, timeoutMs);
+
+    return result.results;
   }
 
   /**

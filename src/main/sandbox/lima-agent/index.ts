@@ -436,6 +436,30 @@ class SandboxAgent {
       case 'runClaudeCode':
         return this.runClaudeCode(params as Parameters<typeof this.runClaudeCode>[0]);
 
+      case 'batch': {
+        // Execute multiple operations in a single round-trip
+        const operations = params.operations as Array<{ method: string; params: Record<string, unknown> }>;
+        if (!Array.isArray(operations)) {
+          throw new Error('batch requires an operations array');
+        }
+        const results: Array<{ success: boolean; result?: unknown; error?: string }> = [];
+        for (const op of operations) {
+          try {
+            const fakeRequest: JSONRPCRequest = {
+              jsonrpc: '2.0',
+              id: 'batch',
+              method: op.method,
+              params: op.params,
+            };
+            const result = await this.handleRequest(fakeRequest);
+            results.push({ success: true, result });
+          } catch (err) {
+            results.push({ success: false, error: err instanceof Error ? err.message : String(err) });
+          }
+        }
+        return { results };
+      }
+
       case 'shutdown':
         return this.shutdown();
 

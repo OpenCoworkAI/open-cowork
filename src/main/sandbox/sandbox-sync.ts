@@ -133,17 +133,20 @@ export class SandboxSync {
       const excludeArgs = SYNC_EXCLUDES.map(e => `--exclude="${e}"`).join(' ');
 
       // Sync files from Windows to sandbox
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${wslSourcePath}/" "${sandboxPath}/"`;
+      // Use -rlptD instead of -a to skip owner/group (faster cross-filesystem sync)
+      const rsyncCmd = `rsync -rlptD --delete ${excludeArgs} "${wslSourcePath}/" "${sandboxPath}/"`;
       log(`[SandboxSync] Running: ${rsyncCmd}`);
 
       await this.wslExec(distro, rsyncCmd, 300000); // 5 min timeout
 
-      // Count files and get size
-      const countResult = await this.wslExec(distro, `find "${sandboxPath}" -type f | wc -l`);
-      const sizeResult = await this.wslExec(distro, `du -sb "${sandboxPath}" | cut -f1`);
-
-      const fileCount = parseInt(countResult.stdout.trim()) || 0;
-      const totalSize = parseInt(sizeResult.stdout.trim()) || 0;
+      // Count files and get size in a single command to reduce WSL overhead
+      const statsResult = await this.wslExec(
+        distro,
+        `echo "$(find "${sandboxPath}" -type f | wc -l) $(du -sb "${sandboxPath}" | cut -f1)"`
+      );
+      const [countStr, sizeStr] = statsResult.stdout.trim().split(/\s+/);
+      const fileCount = parseInt(countStr) || 0;
+      const totalSize = parseInt(sizeStr) || 0;
 
       // Store session info
       const session: SyncSession = {
@@ -207,8 +210,8 @@ export class SandboxSync {
 
       // Sync back to Windows (via /mnt/)
       // NOTE: We use --delete to ensure files deleted/moved in sandbox are also deleted locally
-      // This is important for file organization tasks where files are moved to new locations
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${session.sandboxPath}/" "${wslDestPath}/"`;
+      // Use -rlptD instead of -a to skip owner/group (faster cross-filesystem sync)
+      const rsyncCmd = `rsync -rlptD --delete ${excludeArgs} "${session.sandboxPath}/" "${wslDestPath}/"`;
       log(`[SandboxSync] Running: ${rsyncCmd}`);
 
       await this.wslExec(session.distro, rsyncCmd, 300000); // 5 min timeout

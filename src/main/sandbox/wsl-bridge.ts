@@ -188,104 +188,85 @@ export class WSLBridge implements SandboxExecutor {
       }
       log('[WSL] Distro is responding');
 
-      // Check if Node.js is available in the distro
-      // Use -e to execute a simple command
-      let nodeAvailable = false;
-      let nodeVersion = '';
-      try {
-        // Use simpler command format without bash -c
-        const nodeResult = await execAsync(`wsl -d ${selectedDistro} -e node --version`, {
-          timeout: 10000,
-          encoding: 'utf-8',
-        });
-        const output = nodeResult.stdout.trim();
-        if (output.startsWith('v')) {
-          nodeAvailable = true;
-          nodeVersion = output;
-          log('[WSL] Node.js found:', nodeVersion);
-        }
-      } catch (error) {
-        // Try alternative: check with nvm
-        try {
-          const nvmResult = await execAsync(
-            `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"`,
-            { timeout: 10000, encoding: 'utf-8' }
-          );
-          const output = nvmResult.stdout.trim();
-          if (output.startsWith('v')) {
-            nodeAvailable = true;
-            nodeVersion = output + ' (nvm)';
-            log('[WSL] Node.js found via nvm:', nodeVersion);
-          }
-        } catch {
-          log('[WSL] Node.js not found');
-          nodeAvailable = false;
-        }
-      }
-
-      // Check if claude-code is available
-      let claudeCodeAvailable = false;
-      if (nodeAvailable) {
-        try {
-          const claudeResult = await execAsync(
-            `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude && claude --version"`,
-            { timeout: 10000, encoding: 'utf-8' }
-          );
-          const output = claudeResult.stdout.trim();
-          if (output) {
-            claudeCodeAvailable = true;
-            log('[WSL] claude-code found:', output);
-          }
-        } catch (error) {
-          log('[WSL] claude-code not found');
-          claudeCodeAvailable = false;
-        }
-      }
-
-      // Check if Python and pip are available
-      let pythonAvailable = false;
-      let pipAvailable = false;
-      let pythonVersion = '';
-      try {
-        const pythonResult = await execAsync(
-          `wsl -d ${selectedDistro} -e python3 --version`,
-          { timeout: 10000, encoding: 'utf-8' }
-        );
-        const output = pythonResult.stdout.trim();
-        if (output.startsWith('Python')) {
-          pythonAvailable = true;
-          pythonVersion = output;
-          log('[WSL] Python found:', pythonVersion);
-          
-          // Also check if pip is available
+      // Run all dependency checks in parallel for faster status detection
+      const [nodeResult, pythonResult, claudeResult] = await Promise.allSettled([
+        // Check Node.js
+        (async () => {
           try {
-            await execAsync(
-              `wsl -d ${selectedDistro} -e python3 -m pip --version`,
+            const result = await execAsync(`wsl -d ${selectedDistro} -e node --version`, {
+              timeout: 10000,
+              encoding: 'utf-8',
+            });
+            const output = result.stdout.trim();
+            if (output.startsWith('v')) return { available: true, version: output };
+          } catch {
+            // Try alternative: check with nvm
+            try {
+              const nvmResult = await execAsync(
+                `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"`,
+                { timeout: 10000, encoding: 'utf-8' }
+              );
+              const output = nvmResult.stdout.trim();
+              if (output.startsWith('v')) return { available: true, version: output + ' (nvm)' };
+            } catch { /* ignore */ }
+          }
+          return { available: false, version: '' };
+        })(),
+        // Check Python and pip in a single shell invocation
+        (async () => {
+          try {
+            const result = await execAsync(
+              `wsl -d ${selectedDistro} -e bash -c "echo PYTHON:$(python3 --version 2>&1); echo PIP:$(python3 -m pip --version 2>&1 || echo MISSING)"`,
               { timeout: 10000, encoding: 'utf-8' }
             );
-            pipAvailable = true;
-            log('[WSL] pip is available');
+            const output = result.stdout;
+            const pythonMatch = output.match(/PYTHON:(Python [\d.]+)/);
+            const pipMissing = output.includes('PIP:MISSING');
+            return {
+              available: !!pythonMatch,
+              version: pythonMatch ? pythonMatch[1] : '',
+              pipAvailable: !!pythonMatch && !pipMissing,
+            };
           } catch {
-            log('[WSL] pip is NOT available (python3-pip not installed)');
-            pipAvailable = false;
+            return { available: false, version: '', pipAvailable: false };
           }
-        }
-      } catch (error) {
-        log('[WSL] Python not found');
-        pythonAvailable = false;
-      }
+        })(),
+        // Check claude-code
+        (async () => {
+          try {
+            const result = await execAsync(
+              `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude && claude --version"`,
+              { timeout: 10000, encoding: 'utf-8' }
+            );
+            return !!result.stdout.trim();
+          } catch {
+            return false;
+          }
+        })(),
+      ]);
+
+      const node = nodeResult.status === 'fulfilled' ? nodeResult.value : { available: false, version: '' };
+      const python = pythonResult.status === 'fulfilled' ? pythonResult.value : { available: false, version: '', pipAvailable: false };
+      const claudeCodeAvailable = claudeResult.status === 'fulfilled' ? claudeResult.value : false;
+
+      if (node.available) log('[WSL] Node.js found:', node.version);
+      else log('[WSL] Node.js not found');
+      if (python.available) log('[WSL] Python found:', python.version);
+      else log('[WSL] Python not found');
+      if (claudeCodeAvailable) log('[WSL] claude-code found');
+      else log('[WSL] claude-code not found');
 
       const status: WSLStatus = {
         available: true,
         distro: selectedDistro,
-        nodeAvailable,
-        pythonAvailable,
-        pipAvailable,
-        claudeCodeAvailable,
-        version: nodeVersion,
-        pythonVersion,
+        nodeAvailable: node.available,
+        pythonAvailable: python.available,
+        pipAvailable: python.pipAvailable,
+        claudeCodeAvailable: node.available && claudeCodeAvailable,
+        version: node.version,
+        pythonVersion: python.version,
       };
-      
+
       log('[WSL] Status check complete:', JSON.stringify(status));
       return status;
     } catch (error) {
@@ -744,23 +725,25 @@ export class WSLBridge implements SandboxExecutor {
       logError('[WSL] Agent process error:', error);
     });
 
-    // Wait for agent to be ready
+    // Wait for agent to be ready with exponential backoff
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('WSL agent startup timeout'));
       }, 30000);
 
+      let retryDelay = 100; // Start checking quickly
       const checkReady = async () => {
         try {
-          await this.sendRequest('ping', {});
+          await this.sendRequest('ping', {}, 3000);
           clearTimeout(timeout);
           resolve();
         } catch {
-          setTimeout(checkReady, 500);
+          retryDelay = Math.min(retryDelay * 1.5, 2000); // Exponential backoff, cap at 2s
+          setTimeout(checkReady, retryDelay);
         }
       };
 
-      setTimeout(checkReady, 1000);
+      setTimeout(checkReady, 200); // Start checking after 200ms instead of 1s
     });
 
     log('[WSL] Agent is ready');
@@ -830,6 +813,25 @@ export class WSLBridge implements SandboxExecutor {
 
       this.wslProcess!.stdin!.write(JSON.stringify(request) + '\n');
     });
+  }
+
+  /**
+   * Send a batch of operations in a single IPC round-trip.
+   * Useful for reducing overhead when multiple independent operations are needed.
+   */
+  async sendBatchRequest(
+    operations: Array<{ method: string; params: Record<string, unknown> }>,
+    timeoutMs: number = 60000
+  ): Promise<Array<{ success: boolean; result?: unknown; error?: string }>> {
+    if (!this.isInitialized) {
+      throw new Error('WSL bridge not initialized');
+    }
+
+    const result = await this.sendRequest<{
+      results: Array<{ success: boolean; result?: unknown; error?: string }>;
+    }>('batch', { operations }, timeoutMs);
+
+    return result.results;
   }
 
   /**

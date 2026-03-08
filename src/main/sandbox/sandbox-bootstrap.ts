@@ -355,9 +355,16 @@ export class SandboxBootstrap {
         return { mode: 'native', limaStatus, error: 'Lima instance start failed' };
       }
       limaStatus.instanceRunning = true;
-      
-      // Re-check status after starting
-      limaStatus = await LimaBridge.checkLimaStatus();
+
+      // Only re-check dependency status (not instance existence/running which we already know)
+      // This avoids redundant limactl list + SSH connection checks
+      const freshStatus = await LimaBridge.checkLimaStatus();
+      limaStatus.nodeAvailable = freshStatus.nodeAvailable;
+      limaStatus.pythonAvailable = freshStatus.pythonAvailable;
+      limaStatus.pipAvailable = freshStatus.pipAvailable;
+      limaStatus.claudeCodeAvailable = freshStatus.claudeCodeAvailable;
+      limaStatus.version = freshStatus.version;
+      limaStatus.pythonVersion = freshStatus.pythonVersion;
     }
 
     // Phase 4: Install Node.js if needed

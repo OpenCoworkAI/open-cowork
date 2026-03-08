@@ -128,17 +128,19 @@ export class LimaSync {
       const excludeArgs = SYNC_EXCLUDES.map(e => `--exclude="${e}"`).join(' ');
 
       // Sync files from macOS to sandbox (within Lima VM)
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${limaSourcePath}/" "${sandboxPath}/"`;
+      // Use -rlptD instead of -a to skip owner/group (faster), add --info=progress2 for stats
+      const rsyncCmd = `rsync -rlptD --delete ${excludeArgs} "${limaSourcePath}/" "${sandboxPath}/"`;
       log(`[LimaSync] Running: ${rsyncCmd}`);
 
       await this.limaExec(rsyncCmd, 300000); // 5 min timeout
 
-      // Count files and get size
-      const countResult = await this.limaExec(`find "${sandboxPath}" -type f | wc -l`);
-      const sizeResult = await this.limaExec(`du -sb "${sandboxPath}" | cut -f1`);
-
-      const fileCount = parseInt(countResult.stdout.trim()) || 0;
-      const totalSize = parseInt(sizeResult.stdout.trim()) || 0;
+      // Count files and get size in a single command to reduce SSH overhead
+      const statsResult = await this.limaExec(
+        `echo "$(find "${sandboxPath}" -type f | wc -l) $(du -sb "${sandboxPath}" | cut -f1)"`
+      );
+      const [countStr, sizeStr] = statsResult.stdout.trim().split(/\s+/);
+      const fileCount = parseInt(countStr) || 0;
+      const totalSize = parseInt(sizeStr) || 0;
 
       // Store session info
       const session: LimaSyncSession = {
@@ -201,8 +203,8 @@ export class LimaSync {
 
       // Sync back to macOS (Lima mounts /Users directly)
       // NOTE: We use --delete to ensure files deleted/moved in sandbox are also deleted locally
-      // This is important for file organization tasks where files are moved to new locations
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${session.sandboxPath}/" "${limaDestPath}/"`;
+      // Use -rlptD instead of -a to skip owner/group (faster)
+      const rsyncCmd = `rsync -rlptD --delete ${excludeArgs} "${session.sandboxPath}/" "${limaDestPath}/"`;
       log(`[LimaSync] Running: ${rsyncCmd}`);
 
       await this.limaExec(rsyncCmd, 300000); // 5 min timeout
