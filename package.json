@@ -10,7 +10,9 @@
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
     "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
     "build:mcp": "node scripts/bundle-mcp.js",
+    "commitlint": "commitlint --config commitlint.config.cjs",
     "download:node": "node scripts/download-node.js",
+    "prepare": "husky",
     "prepare:gui-tools": "node scripts/prepare-gui-tools.js",
     "prepare:python": "node scripts/prepare-python.js",
     "prepare:python:all": "node scripts/prepare-python.js --all",
@@ -54,6 +56,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.4.3",
+    "@commitlint/config-conventional": "^20.4.3",
     "@types/archiver": "^6.0.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.10.0",
@@ -69,6 +73,7 @@
     "esbuild": "^0.27.2",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^9.1.7",
     "postcss": "^8.4.49",
     "prettier": "^3.4.2",
     "tailwindcss": "^3.4.16",

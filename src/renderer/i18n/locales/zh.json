@@ -232,6 +232,8 @@
     "enableConnector": "启用此连接器"
   },
   "credentials": {
+    "title": "凭证",
+    "credentialsDesc": "仅保存在本机的登录信息与 API 密钥。",
     "encrypted": "🔐 安全加密",
     "encryptedDesc": "凭证已在本地加密。代理可以使用这些凭证自动登录您的账户。",
     "noCredentials": "没有保存的凭证",
@@ -259,6 +261,10 @@
     "noEnvVars": "未配置环境变量"
   },
   "skills": {
+    "storagePathHint": "选择自定义技能的存储位置，以及应用如何刷新这些技能。",
+    "builtinSkillsDesc": "内置技能随应用提供，可按需启用或停用。",
+    "pluginsTitle": "插件与导入",
+    "pluginsDesc": "浏览插件市场，或从本地文件夹导入自定义技能。",
     "title": "📦 技能",
     "description": "技能通过专业知识和工具扩展 Claude 的能力。",
     "builtinSkills": "内置技能",
@@ -305,6 +311,7 @@
     "failedToToggle": "切换技能失败"
   },
   "logs": {
+    "actionsTitle": "日志操作",
     "title": "应用日志",
     "description": "查看和导出应用日志以进行调试。日志超过 10MB 时会自动轮转。",
     "enableDevLogs": "启用开发者日志",

@@ -19,9 +19,9 @@ export function TracePanel({ sessionId }: TracePanelProps) {
   const steps = traceStepsBySession[sessionId] || [];
 
   return (
-    <div className="w-80 border-l border-border bg-surface-muted flex flex-col">
+    <div className="w-[18.5rem] border-l border-border-muted bg-background-secondary/88 flex flex-col">
       {/* Header */}
-      <div className="h-14 border-b border-border flex items-center px-4">
+      <div className="h-14 border-b border-border-muted flex items-center px-4 bg-background/75">
         <h3 className="font-semibold text-text-primary">Execution Trace</h3>
       </div>
 
@@ -105,7 +105,7 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
 
   return (
     <div
-      className={`card p-3 animate-slide-up ${
+      className={`rounded-2xl border border-border-subtle bg-background/55 p-3 animate-slide-up ${
         step.status === 'running' ? 'border-accent/30' : ''
       }`}
       style={{ animationDelay: `${index * 50}ms` }}

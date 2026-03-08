@@ -62,7 +62,7 @@ export function SandboxSyncToast({ status }: Props) {
         fadeOut ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
       }`}
     >
-      <div className="bg-surface/95 backdrop-blur-sm border border-border rounded-2xl shadow-elevated max-w-sm overflow-hidden">
+      <div className="bg-background/92 backdrop-blur-md border border-border-subtle rounded-[1.6rem] shadow-elevated max-w-sm overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3">
           <div className={`text-xl ${isComplete ? '' : 'animate-pulse'}`}>
@@ -91,7 +91,7 @@ export function SandboxSyncToast({ status }: Props) {
 
         {/* File info bar */}
         {status.fileCount !== undefined && status.totalSize !== undefined && (
-          <div className="px-4 py-2 bg-surface-muted border-t border-border flex items-center justify-between text-xs text-text-muted">
+          <div className="px-4 py-2 bg-background-secondary/70 border-t border-border-muted flex items-center justify-between text-xs text-text-muted">
             <span>{status.fileCount} files</span>
             <span>{formatSize(status.totalSize)}</span>
           </div>
@@ -99,7 +99,7 @@ export function SandboxSyncToast({ status }: Props) {
 
         {/* Explanation for slow sync */}
         {status.phase === 'syncing_files' && (
-          <div className="px-4 py-2.5 bg-accent-muted/50 border-t border-border">
+          <div className="px-4 py-2.5 bg-accent-muted/50 border-t border-border-muted">
             <p className="text-xs text-text-secondary leading-relaxed">
               Syncing project files to isolated sandbox for secure code execution.
               <span className="text-accent font-medium"> First sync is slower</span>, incremental syncs will be faster.

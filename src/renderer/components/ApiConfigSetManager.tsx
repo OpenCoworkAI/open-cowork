@@ -87,7 +87,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 rounded-[1.6rem] border border-border-subtle bg-background/55 px-4 py-4">
       <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
         <Layers className="w-4 h-4" />
         {t('api.configSet')}
@@ -115,14 +115,14 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
             autoFocus
             disabled={isMutatingConfigSet || hasDialogOpen}
             placeholder={t('api.createSetNamePlaceholder')}
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
+            className="w-full px-3 py-2.5 rounded-xl bg-background/80 border border-border-muted text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
           />
         ) : (
           <select
             value={activeConfigSetId}
             onChange={(e) => { void onSwitchSet(e.target.value); }}
             disabled={isMutatingConfigSet || hasDialogOpen}
-            className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
+            className="w-full px-3 py-2.5 rounded-xl bg-background/80 border border-border-muted text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
           >
             {configSets.map((set) => (
               <option key={set.id} value={set.id}>
@@ -139,7 +139,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
             type="button"
             onClick={() => { void onSaveCurrentSet(); }}
             disabled={isMutatingConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="px-3 py-2 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <Save className="w-3.5 h-3.5" />
             {t('common.save')}
@@ -148,7 +148,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
             type="button"
             onClick={() => { void onRequestCreateBlankSet(); }}
             disabled={isMutatingConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-1.5 rounded-lg border border-border text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="px-3 py-2 rounded-xl border border-border-muted text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" />
             {t('api.newSet')}
@@ -163,7 +163,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
               setIsInlineRenaming(true);
             }}
             disabled={isMutatingConfigSet || !canRenameCurrentConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-1.5 rounded-lg border border-border text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="px-3 py-2 rounded-xl border border-border-muted text-text-secondary text-xs hover:bg-surface-active disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <Pencil className="w-3.5 h-3.5" />
             {t('api.renameSet')}
@@ -173,7 +173,7 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
             type="button"
             onClick={() => setActiveLocalDialog('delete')}
             disabled={isMutatingConfigSet || !canDeleteCurrentConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-2.5 py-1.5 rounded-lg text-text-muted text-xs hover:text-error hover:bg-error/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="px-2.5 py-2 rounded-xl text-text-muted text-xs hover:text-error hover:bg-error/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

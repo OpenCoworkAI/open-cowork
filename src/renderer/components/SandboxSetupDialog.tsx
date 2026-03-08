@@ -3,7 +3,7 @@
  * Supports light/dark theme
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SandboxSetupProgress, SandboxSetupPhase } from '../types';
 
 interface Props {
@@ -30,13 +30,13 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
   const [fadeOut, setFadeOut] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setFadeOut(true);
     setTimeout(() => {
       setIsVisible(false);
       onComplete?.();
     }, 500);
-  };
+  }, [onComplete]);
 
   const handleRetryLima = async () => {
     if (!window.electronAPI?.sandbox?.retryLimaSetup) {
@@ -62,7 +62,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [progress?.phase, onComplete]);
+  }, [progress?.phase, handleClose]);
 
   useEffect(() => {
     if (progress && progress.phase !== 'error') {
@@ -83,9 +83,9 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
     <div 
       className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500 ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
     >
-      <div className="bg-surface border border-border rounded-2xl shadow-elevated max-w-md w-full mx-4 overflow-hidden">
+      <div className="bg-background border border-border-subtle rounded-[2rem] shadow-elevated max-w-md w-full mx-4 overflow-hidden">
         {/* Header */}
-        <div className="bg-accent-muted px-6 py-5 border-b border-border">
+        <div className="bg-background-secondary/88 px-6 py-5 border-b border-border-muted">
           <div className="flex items-center gap-3">
             <div className="text-3xl animate-pulse">{config.icon}</div>
             <div>
@@ -196,7 +196,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-surface-muted border-t border-border">
+        <div className="px-6 py-4 bg-background-secondary/70 border-t border-border-muted">
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
               {window.electronAPI?.platform === 'win32' ? 'WSL2 Sandbox' : window.electronAPI?.platform === 'darwin' ? 'Lima Sandbox' : 'Native Mode'}

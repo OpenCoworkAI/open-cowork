@@ -95,14 +95,14 @@ interface TunnelStatus {
 type ConfigStep = 'feishu' | 'connection' | 'advanced';
 
 export function RemoteControlPanel() {
-  // @ts-ignore - Reserved for future i18n support
+  // @ts-expect-error - Reserved for future i18n support
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { t } = useTranslation();
   
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
-  // @ts-ignore - Reserved for future use
+  // @ts-expect-error - Reserved for future use
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [config, setConfig] = useState<RemoteConfig | null>(null);
   const [pairedUsers, setPairedUsers] = useState<PairedUser[]>([]);
@@ -303,7 +303,7 @@ export function RemoteControlPanel() {
       )}
 
       {/* 主控制卡片 */}
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface to-surface-hover">
+      <div className="relative overflow-hidden rounded-[2rem] border border-border-subtle bg-gradient-to-br from-background/80 to-background-secondary/80">
         <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="relative p-6">
           <div className="flex items-start justify-between">
@@ -420,7 +420,7 @@ export function RemoteControlPanel() {
       </div>
 
       {/* 配置内容 */}
-      <div className="p-6 rounded-2xl border border-border bg-surface">
+      <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60">
         {/* 步骤 1: 飞书配置 */}
         {activeStep === 'feishu' && (
           <div className="space-y-6">
@@ -739,7 +739,7 @@ export function RemoteControlPanel() {
 
       {/* 已授权用户 */}
       {pairedUsers.length > 0 && (
-        <div className="p-6 rounded-2xl border border-border bg-surface">
+      <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60">
           <h3 className="font-medium text-text-primary mb-4 flex items-center gap-2">
             <Users className="w-5 h-5" />
             已授权用户 ({pairedUsers.length})
@@ -777,7 +777,7 @@ export function RemoteControlPanel() {
       )}
 
       {/* 快速帮助 */}
-      <div className="p-5 rounded-2xl border border-border bg-surface-hover">
+      <div className="p-5 rounded-[2rem] border border-border-subtle bg-background/55">
         <h4 className="font-medium text-text-primary mb-3">快速入门</h4>
         <ol className="space-y-2 text-sm text-text-secondary">
           <li className="flex items-start gap-2">

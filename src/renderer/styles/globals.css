@@ -8,25 +8,25 @@
   /* Define CSS variables for theming */
   :root {
     /* Dark theme (default) — Claude warm palette */
-    --color-background: #131314;
-    --color-background-secondary: #1a1a1b;
-    --color-surface: #1e1e1f;
-    --color-surface-hover: #272728;
-    --color-surface-active: #303031;
-    --color-surface-muted: #171718;
-    --color-border: #2a2a2b;
-    --color-border-muted: #222223;
-    --color-border-subtle: rgba(255, 255, 255, 0.06);
-    --color-mcp: #9a85b8;
-    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.3);
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
-    --color-accent: #d97757;
-    --color-accent-hover: #c46849;
-    --color-accent-muted: rgba(217, 119, 87, 0.1);
-    --color-text-primary: #ececec;
-    --color-text-secondary: #a0a0a0;
-    --color-text-muted: #6b6b6b;
+    --color-background: #171614;
+    --color-background-secondary: #1d1b18;
+    --color-surface: #22201d;
+    --color-surface-hover: #2a2723;
+    --color-surface-active: #33302b;
+    --color-surface-muted: #1b1916;
+    --color-border: #34302a;
+    --color-border-muted: #2a2722;
+    --color-border-subtle: rgba(255, 245, 232, 0.07);
+    --color-mcp: #9d8abc;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.24);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 245, 232, 0.03);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 245, 232, 0.04);
+    --color-accent: #d67a52;
+    --color-accent-hover: #c56c46;
+    --color-accent-muted: rgba(214, 122, 82, 0.14);
+    --color-text-primary: #f1ece4;
+    --color-text-secondary: #b6ada2;
+    --color-text-muted: #8c8378;
   }
 
   /* Light theme override — Claude warm cream */

@@ -87,4 +87,21 @@ describe('logger fallback behavior', () => {
     expect(secondLogPath).toBeTruthy();
     expect(secondLogPath).not.toBe(firstLogPath);
   });
+
+  it('swallows broken pipe errors from console output', async () => {
+    vi.doMock('electron', () => ({
+      app: {},
+    }));
+
+    const logger = await import('../src/main/utils/logger');
+    const epipeError = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {
+      throw epipeError;
+    });
+
+    expect(() => logger.log('stdout closed')).not.toThrow();
+
+    consoleSpy.mockRestore();
+    logger.closeLogFile();
+  });
 });

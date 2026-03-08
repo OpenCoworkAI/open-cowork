@@ -117,16 +117,19 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-surface rounded-2xl shadow-elevated w-full max-w-2xl mx-4 max-h-[88vh] overflow-hidden border border-border flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
+      <div className="bg-background rounded-[2rem] shadow-elevated w-full max-w-[880px] mx-4 max-h-[88vh] overflow-hidden border border-border-subtle flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border-muted bg-background/88">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-hover flex items-center justify-center">
-              <Key className="w-5 h-5 text-white" />
+            <div className="w-11 h-11 rounded-2xl border border-border-subtle bg-background-secondary/88 flex items-center justify-center text-accent">
+              <Key className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-text-primary">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                {t('settings.title')}
+              </p>
+              <h2 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
                 {isFirstRun ? t('api.firstRunTitle') : t('api.settingsTitle')}
               </h2>
               <p className="text-sm text-text-secondary">
@@ -136,14 +139,14 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
           >
             <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+        <div className="p-6 space-y-5 flex-1 overflow-y-auto bg-background/70">
           {/* Config Set Switcher */}
           <ApiConfigSetManager
             configSets={configSets}

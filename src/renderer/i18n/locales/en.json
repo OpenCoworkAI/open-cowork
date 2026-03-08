@@ -232,6 +232,8 @@
     "enableConnector": "Enable this connector"
   },
   "credentials": {
+    "title": "Credentials",
+    "credentialsDesc": "Saved login details and API secrets available only on this device.",
     "encrypted": "🔐 Securely Encrypted",
     "encryptedDesc": "Credentials are encrypted locally. The agent can use these to automatically log in to your accounts.",
     "noCredentials": "No saved credentials",
@@ -259,6 +261,10 @@
     "noEnvVars": "No environment variables configured"
   },
   "skills": {
+    "storagePathHint": "Choose where custom skills live and how the app refreshes them.",
+    "builtinSkillsDesc": "Built-in skills ship with the app and can be toggled when needed.",
+    "pluginsTitle": "Plugins & Imports",
+    "pluginsDesc": "Browse marketplace plugins or import custom skills from a local folder.",
     "title": "📦 Skills",
     "description": "Skills extend Claude's capabilities with specialized knowledge and tools.",
     "builtinSkills": "Built-in Skills",
@@ -305,6 +311,7 @@
     "failedToToggle": "Failed to toggle skill"
   },
   "logs": {
+    "actionsTitle": "Log Actions",
     "title": "Application Logs",
     "description": "View and export application logs for debugging. Logs are automatically rotated when they exceed 10MB.",
     "enableDevLogs": "Enable Developer Logs",

@@ -186,7 +186,7 @@ export function ContextPanel() {
 
   if (contextPanelCollapsed) {
     return (
-      <div className="w-10 bg-surface border-l border-border flex items-start justify-center py-3">
+      <div className="w-11 bg-background-secondary/88 border-l border-border-muted flex items-start justify-center py-3">
         <button
           onClick={toggleContextPanel}
           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
@@ -199,8 +199,8 @@ export function ContextPanel() {
   }
 
   return (
-    <div className="w-80 bg-surface border-l border-border flex flex-col overflow-hidden">
-      <div className="px-3 py-3 border-b border-border flex items-center justify-start">
+    <div className="w-[18.5rem] bg-background-secondary/88 border-l border-border-muted flex flex-col overflow-hidden">
+      <div className="px-3 py-3 border-b border-border-muted flex items-center justify-start">
         <button
           onClick={toggleContextPanel}
           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
@@ -212,7 +212,8 @@ export function ContextPanel() {
 
       {/* Session Info Card */}
       {activeSession && (
-        <div className="px-4 py-3 border-b border-border space-y-2">
+        <div className="px-4 py-4 border-b border-border-muted">
+          <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
             <Cpu className="w-3.5 h-3.5 text-accent flex-shrink-0" />
             <span className="text-sm font-medium text-text-primary truncate">{modelName}</span>
@@ -227,19 +228,22 @@ export function ContextPanel() {
               {toolCallCount}
             </span>
           </div>
+          </div>
         </div>
       )}
 
       {/* Token Usage */}
       {tokenUsage.total > 0 && (
-        <div className="px-4 py-2 border-b border-border flex items-center justify-between text-xs text-text-muted">
-          <span>{t('context.inputTokens')}: {formatTokenCount(tokenUsage.input)}</span>
-          <span>{t('context.outputTokens')}: {formatTokenCount(tokenUsage.output)}</span>
+        <div className="px-4 pb-4 border-b border-border-muted">
+          <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-2.5 flex items-center justify-between text-xs text-text-muted">
+            <span>{t('context.inputTokens')}: {formatTokenCount(tokenUsage.input)}</span>
+            <span>{t('context.outputTokens')}: {formatTokenCount(tokenUsage.output)}</span>
+          </div>
         </div>
       )}
 
       {/* Artifacts Section */}
-      <div className="border-b border-border">
+      <div className="border-b border-border-muted">
         <button
           onClick={() => setArtifactsOpen(!artifactsOpen)}
           className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface-hover transition-colors"
@@ -307,8 +311,8 @@ export function ContextPanel() {
       </div>
 
       {/* Working Directory */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="px-4 py-4 border-b border-border-muted">
+        <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-3 flex items-center gap-2 min-w-0">
           <FolderOpen className="w-3.5 h-3.5 text-accent flex-shrink-0" />
           <span className="text-sm text-text-primary truncate flex-1" title={currentWorkingDir || ''}>
             {currentWorkingDir ? formatPath(currentWorkingDir) : t('context.noFolderSelected')}
@@ -351,7 +355,7 @@ export function ContextPanel() {
       {/* MCP Connectors */}
       {mcpServers.length > 0 && (
         <div className="flex-1 overflow-y-auto">
-          <div className="px-4 py-3 space-y-1">
+          <div className="px-4 py-4 space-y-2">
             <p className="text-xs text-text-muted mb-2">{t('context.mcpConnectors')}</p>
             {mcpServers.map((server) => (
               <ConnectorItem

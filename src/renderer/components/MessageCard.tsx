@@ -89,7 +89,7 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
         // User message - compact styling with smaller padding and radius
         <div className="flex items-start gap-2 justify-end group">
         <div
-          className={`message-user px-4 py-2.5 max-w-[80%] min-w-0 break-words ${
+          className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
             isQueued ? 'opacity-70 border-dashed' : ''
           } ${isCancelled ? 'opacity-60' : ''}`}
         >
@@ -525,12 +525,12 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
 
   return (
     <div
-      className={`rounded-lg border overflow-hidden transition-colors ${
+      className={`rounded-2xl border overflow-hidden transition-colors ${
         isError
-          ? 'border-error/30 bg-error/5'
+          ? 'border-error/25 bg-error/5'
           : isRunning
-            ? 'border-accent/20 bg-accent/5'
-            : 'border-border bg-surface-muted/50'
+            ? 'border-accent/15 bg-accent/5'
+            : 'border-border-subtle bg-background/40'
       }`}
     >
       {/* Header — always visible */}
@@ -590,7 +590,7 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t border-border/50 animate-fade-in">
+        <div className="border-t border-border/50 animate-fade-in bg-background/35">
           {/* Input section */}
           <div className="px-3 py-2">
             <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">Input</div>
@@ -905,8 +905,8 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
   const hasImages = block.images && block.images.length > 0;
 
   return (
-    <div className={`rounded-xl border overflow-hidden ${
-      block.isError ? 'border-error/30 bg-error/5' : 'border-border bg-surface-muted/50'
+    <div className={`rounded-2xl border overflow-hidden ${
+      block.isError ? 'border-error/25 bg-error/5' : 'border-border-subtle bg-background/40'
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
@@ -967,7 +967,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ block }: { block: { type: 't
   const preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-muted/30 overflow-hidden">
+    <div className="rounded-2xl border border-border-subtle bg-background/40 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover/50 transition-colors"

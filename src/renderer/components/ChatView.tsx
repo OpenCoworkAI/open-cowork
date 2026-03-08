@@ -280,8 +280,8 @@ export function ChatView() {
         }
 
         // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
+        const scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
+        const quality = 0.9;
 
         const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
           canvas.width = Math.floor(img.width * currentScale);
@@ -558,14 +558,16 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background">
       {/* Header */}
       <div
         ref={headerRef}
-        className="relative h-14 border-b border-border grid grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-6 bg-surface/80 backdrop-blur-sm"
+        className="relative h-12 border-b border-border-muted grid grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8 bg-background/88 backdrop-blur-md"
       >
-        <div />
-        <h2 ref={titleRef} className="heading-serif text-lg font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-lg">
+        <div className="text-[11px] font-medium tracking-[0.08em] uppercase text-text-muted">
+          Open Cowork
+        </div>
+        <h2 ref={titleRef} className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]">
           {activeSession.title}
         </h2>
         {activeConnectors.length > 0 && (
@@ -582,7 +584,7 @@ export function ChatView() {
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-mcp/10 border border-mcp/20 justify-self-end">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
               <Plug className="w-3.5 h-3.5 text-mcp" />
               <span className="text-xs text-mcp font-medium">
                 {showConnectorLabel ? (
@@ -598,15 +600,13 @@ export function ChatView() {
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div ref={messagesContainerRef} className="w-full max-w-[1180px] mx-auto py-6 px-4 lg:px-6 space-y-4">
+        <div ref={messagesContainerRef} className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5">
           {displayedMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-text-muted space-y-3">
-              <div className="w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center">
-                <svg className="w-5 h-5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
-                </svg>
-              </div>
-              <p className="text-sm">{t('chat.startConversation')}</p>
+            <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted/80">
+                Open Cowork
+              </p>
+              <p className="text-base text-text-secondary">{t('chat.startConversation')}</p>
             </div>
           ) : (
             displayedMessages.map((message) => {
@@ -621,7 +621,7 @@ export function ChatView() {
           
           {/* Processing indicator - show when we have an active turn but no partial message yet */}
           {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
+            <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-background/80 border border-border-subtle max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
               <span className="text-sm text-text-secondary">
                 {t('chat.processing')}
@@ -634,8 +634,8 @@ export function ChatView() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-border bg-surface/80 backdrop-blur-sm">
-        <div className="max-w-[1180px] mx-auto px-4 lg:px-6 py-4">
+      <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
+        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
@@ -689,14 +689,14 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3 rounded-2xl bg-surface border border-border-subtle transition-colors ${
+              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
             >
               <button
                 type="button"
                 onClick={handleFileSelect}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                 title={t('welcome.attachFiles')}
               >
                 <Plus className="w-5 h-5" />
@@ -726,12 +726,12 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-1.5"
+                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
               />
 
               <div className="flex items-center gap-2">
                 {/* Model display */}
-                <span className="px-2 py-1 text-xs text-text-muted">
+                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
                   {appConfig?.model || 'No model'}
                 </span>
 
@@ -739,7 +739,7 @@ export function ChatView() {
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
                     title={t('chat.stop')}
                   >
                     <Square className="w-4 h-4" />
@@ -748,7 +748,7 @@ export function ChatView() {
                   <button
                     type="submit"
                   disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
                     title={t('chat.send')}
                   >
                     <Send className="w-4 h-4" />
@@ -756,7 +756,7 @@ export function ChatView() {
               </div>
             </div>
 
-            <p className="text-[11px] text-text-muted/60 text-center mt-2">
+            <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
               Open Cowork is AI-powered and may make mistakes. Please double-check responses.
             </p>
           </form>
