@@ -153,7 +153,7 @@ export function useIPC() {
           store.setPendingPermission(event.payload);
           break;
 
-        case 'config.status':
+        case 'config.status': {
           console.log('[useIPC] config.status received:', event.payload.isConfigured);
           const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
           store.setIsConfigured(event.payload.isConfigured);
@@ -165,6 +165,7 @@ export function useIPC() {
             store.setShowConfigModal(true);
           }
           break;
+        }
 
         case 'sandbox.progress':
           console.log('[useIPC] sandbox.progress received:', event.payload.phase, event.payload.message);
@@ -211,6 +212,12 @@ export function useIPC() {
               type: 'warning',
               message: event.payload.message,
               action: event.payload.action === 'open_api_settings' ? 'open_api_settings' : undefined,
+            });
+          } else {
+            store.setGlobalNotice({
+              id: `notice-error-${Date.now()}`,
+              type: 'error',
+              message: event.payload.message,
             });
           }
           break;
@@ -277,62 +284,58 @@ export function useIPC() {
 
       // Browser mode mock
       if (!isElectron) {
-        try {
-          const sessionId = `mock-session-${Date.now()}`;
-          const session: Session = {
-            id: sessionId,
-            title: title || 'New Session',
-            status: 'running',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            cwd: cwd || '',
-            mountedPaths: [],
-            allowedTools: [
-              'webfetch',
-              'websearch',
-              'read',
-              'write',
-              'edit',
-              'list_directory',
-              'glob',
-              'grep',
-            ],
-            memoryEnabled: false,
-          };
+        const sessionId = `mock-session-${Date.now()}`;
+        const session: Session = {
+          id: sessionId,
+          title: title || 'New Session',
+          status: 'running',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cwd: cwd || '',
+          mountedPaths: [],
+          allowedTools: [
+            'webfetch',
+            'websearch',
+            'read',
+            'write',
+            'edit',
+            'list_directory',
+            'glob',
+            'grep',
+          ],
+          memoryEnabled: false,
+        };
 
-          addSession(session);
-          useAppStore.getState().setActiveSession(sessionId);
+        addSession(session);
+        useAppStore.getState().setActiveSession(sessionId);
 
-          const userMessage: Message = {
-            id: `msg-user-${Date.now()}`,
-            sessionId,
-            role: 'user',
-            content,
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, userMessage);
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
+        const userMessage: Message = {
+          id: `msg-user-${Date.now()}`,
+          sessionId,
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, userMessage);
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
 
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          setLoading(false);
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        setLoading(false);
 
-          return session;
-        } catch (e) {
-          throw e;
-        }
+        return session;
       }
 
       // Electron mode
@@ -368,7 +371,12 @@ export function useIPC() {
         return session;
       } catch (e) {
         setLoading(false);
-        throw e;
+        useAppStore.getState().setGlobalNotice({
+          id: `notice-session-start-${Date.now()}`,
+          type: 'error',
+          message: e instanceof Error ? e.message : '启动会话失败，请稍后重试',
+        });
+        return null;
       }
     },
     [invoke, addSession, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn]
@@ -407,29 +415,25 @@ export function useIPC() {
       
       // Browser mode mock
       if (!isElectron) {
-        try {
-          updateSession(sessionId, { status: 'running' });
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
-          
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
-          
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          clearPendingTurns(sessionId);
-          setLoading(false);
-        } catch (e) {
-          throw e;
-        }
+        updateSession(sessionId, { status: 'running' });
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
+        
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        clearPendingTurns(sessionId);
+        setLoading(false);
         return;
       }
       
@@ -450,7 +454,7 @@ export function useIPC() {
       });
       // Loading will be reset when we receive session.status event
     },
-    [send, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn]
+    [send, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn, clearPendingTurns]
   );
 
   const stopSession = useCallback(

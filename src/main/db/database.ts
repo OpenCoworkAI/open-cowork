@@ -6,8 +6,8 @@
 import Database from 'better-sqlite3';
 import { app } from 'electron';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { log } from '../utils/logger';
+import { existsSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync } from 'fs';
+import { log, logError, logWarn } from '../utils/logger';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)
@@ -110,6 +110,85 @@ export interface ScheduledTaskRow {
 }
 
 let db: DatabaseInstance | null = null;
+const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'utf8');
+
+function buildBackupPath(targetPath: string, suffix: string): string {
+  return `${targetPath}.${suffix}-${Date.now()}`;
+}
+
+function moveIfExists(sourcePath: string, destinationPath: string): void {
+  if (!existsSync(sourcePath)) {
+    return;
+  }
+  renameSync(sourcePath, destinationPath);
+}
+
+function ensureDirectory(pathToEnsure: string, label: string): void {
+  if (!existsSync(pathToEnsure)) {
+    mkdirSync(pathToEnsure, { recursive: true });
+    return;
+  }
+
+  const stats = statSync(pathToEnsure);
+  if (stats.isDirectory()) {
+    return;
+  }
+
+  const backupPath = buildBackupPath(pathToEnsure, 'backup');
+  renameSync(pathToEnsure, backupPath);
+  logWarn(`[Database] ${label} path is not a directory, moved to backup:`, backupPath);
+  mkdirSync(pathToEnsure, { recursive: true });
+}
+
+function isSqliteFile(filePath: string): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(filePath, 'r');
+    const buffer = Buffer.alloc(SQLITE_HEADER.length);
+    const bytesRead = readSync(fd, buffer, 0, SQLITE_HEADER.length, 0);
+    if (bytesRead < SQLITE_HEADER.length) {
+      return false;
+    }
+    return buffer.equals(SQLITE_HEADER);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) {
+      closeSync(fd);
+    }
+  }
+}
+
+function prepareDatabaseDirectory(userDataPath: string): string {
+  ensureDirectory(userDataPath, 'userData');
+
+  const dbDir = join(userDataPath, 'data');
+  if (!existsSync(dbDir)) {
+    mkdirSync(dbDir, { recursive: true });
+    return dbDir;
+  }
+
+  const stats = statSync(dbDir);
+  if (stats.isDirectory()) {
+    return dbDir;
+  }
+
+  const preservedPath = buildBackupPath(dbDir, isSqliteFile(dbDir) ? 'legacy-db' : 'conflict');
+  renameSync(dbDir, preservedPath);
+  mkdirSync(dbDir, { recursive: true });
+
+  if (isSqliteFile(preservedPath)) {
+    const recoveredDbPath = join(dbDir, 'cowork.db');
+    renameSync(preservedPath, recoveredDbPath);
+    moveIfExists(`${dbDir}-wal`, `${recoveredDbPath}-wal`);
+    moveIfExists(`${dbDir}-shm`, `${recoveredDbPath}-shm`);
+    logWarn('[Database] Recovered legacy SQLite file into:', recoveredDbPath);
+  } else {
+    logWarn('[Database] Database directory path was occupied by a file, moved to backup:', preservedPath);
+  }
+
+  return dbDir;
+}
 
 /**
  * Get the database file path
@@ -117,14 +196,16 @@ let db: DatabaseInstance | null = null;
 function getDatabasePath(): string {
   // Use electron's userData path for persistent storage
   const userDataPath = app.getPath('userData');
-  const dbDir = join(userDataPath, 'data');
-  
-  // Ensure directory exists
-  if (!existsSync(dbDir)) {
-    mkdirSync(dbDir, { recursive: true });
+  const dbDir = prepareDatabaseDirectory(userDataPath);
+  const dbPath = join(dbDir, 'cowork.db');
+
+  if (existsSync(dbPath) && statSync(dbPath).isDirectory()) {
+    const backupPath = buildBackupPath(dbPath, 'dir-backup');
+    renameSync(dbPath, backupPath);
+    logWarn('[Database] Database file path is a directory, moved to backup:', backupPath);
   }
-  
-  return join(dbDir, 'cowork.db');
+
+  return dbPath;
 }
 
 /**
@@ -283,9 +364,15 @@ export function initDatabase(): DatabaseInstance {
   
   const dbPath = getDatabasePath();
   log('[Database] Opening database at:', dbPath);
-  
-  const rawDb = new Database(dbPath);
-  
+
+  let rawDb: Database.Database;
+  try {
+    rawDb = new Database(dbPath);
+  } catch (error) {
+    logError('[Database] Failed to open database at:', dbPath, error);
+    throw error;
+  }
+
   // Enable foreign keys
   rawDb.pragma('foreign_keys = ON');
   
