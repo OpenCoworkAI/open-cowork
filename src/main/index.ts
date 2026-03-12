@@ -593,7 +593,7 @@ app.whenReady().then(async () => {
         ? await resolveScheduledTaskTitle(task.prompt, task.cwd, task.title)
         : buildScheduledTaskTitle(task.title);
       if (title !== task.title) {
-        scheduledTaskManager?.update(task.id, { title });
+        scheduledTaskStore.update(task.id, { title });
       }
       const started = await sessionManager.startSession(title, task.prompt, task.cwd);
       // 定时任务创建的新会话需要主动同步到前端会话列表
@@ -2125,6 +2125,12 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return sessionManager.handlePermissionResponse(
         event.payload.toolUseId,
         event.payload.result
+      );
+
+    case 'sudo.password.response':
+      return sessionManager.handleSudoPasswordResponse(
+        event.payload.toolUseId,
+        event.payload.password
       );
 
     case 'folder.select': {

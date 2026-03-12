@@ -6,7 +6,6 @@ import type {
   ScheduledTaskStore,
   ScheduledTaskUpdateInput,
 } from './scheduled-task-manager';
-import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 
 export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskStore {
   return {
@@ -19,7 +18,7 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
       const now = Date.now();
       const row: ScheduledTaskRow = {
         id: uuidv4(),
-        title: buildScheduledTaskTitle(input.title ?? ''),
+        title: input.title ?? '',
         prompt: input.prompt,
         cwd: input.cwd,
         run_at: input.runAt,

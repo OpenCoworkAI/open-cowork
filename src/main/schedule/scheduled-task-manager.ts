@@ -142,9 +142,9 @@ export class ScheduledTaskManager {
 
   create(input: ScheduledTaskCreateInput): ScheduledTask {
     const normalizedPrompt = input.prompt.trim();
-    const normalizedTitle = buildScheduledTaskTitle(
-      input.title ?? buildScheduledTaskFallbackTitle(normalizedPrompt)
-    );
+    const normalizedTitle = input.title
+      ? buildScheduledTaskTitle(input.title)
+      : buildScheduledTaskFallbackTitle(normalizedPrompt);
     const normalizedScheduleConfig = normalizeScheduleConfig(input.scheduleConfig);
     const normalizedRepeatEvery = normalizedScheduleConfig
       ? null
@@ -216,7 +216,7 @@ export class ScheduledTaskManager {
     if (enabled && !isRepeatingTask(current)) {
       const oneTimeRunAt = current.nextRunAt ?? current.runAt;
       if (oneTimeRunAt <= this.now()) {
-        throw new Error('一次性任务执行时间已过，请先编辑任务时间再启用');
+        throw new Error('Cannot enable: one-time task is overdue. Edit the schedule first.');
       }
     }
     const nextRunAt = enabled ? this.computeToggleNextRunAt(current) : null;
@@ -232,7 +232,7 @@ export class ScheduledTaskManager {
     const taskToExecute = this.prepareExecution(task);
     const execution = await this.executeAndRecord(taskToExecute);
     if (!execution.success) {
-      throw new Error(execution.error ?? '定时任务执行失败');
+      throw new Error(execution.error ?? 'Scheduled task execution failed');
     }
     return this.store.get(id);
   }
@@ -260,7 +260,9 @@ export class ScheduledTaskManager {
       return;
     }
     const taskToExecute = this.prepareExecution(task);
-    void this.executeAndRecord(taskToExecute);
+    this.executeAndRecord(taskToExecute).catch((err) => {
+      console.error(`[ScheduledTask] Unhandled error executing task ${taskToExecute.id}:`, err);
+    });
   }
 
   private prepareExecution(task: ScheduledTask): ScheduledTask {

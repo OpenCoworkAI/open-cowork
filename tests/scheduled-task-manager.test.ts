@@ -337,7 +337,7 @@ describe('ScheduledTaskManager', () => {
     expect(created.repeatUnit).toBeNull();
   });
 
-  it('keeps provided title and normalizes schedule prefix', () => {
+  it('normalizes provided title with schedule prefix', () => {
     const now = Date.now();
     const store = createStore([]);
     const executeTask = vi.fn().mockResolvedValue({ sessionId: 'session-title-create' });
@@ -491,9 +491,48 @@ describe('ScheduledTaskManager', () => {
     const executeTask = vi.fn().mockResolvedValue({ sessionId: 'session-toggle-once-overdue' });
     const manager = new ScheduledTaskManager({ store, executeTask, now: () => Date.now() });
 
-    expect(() => manager.toggle('toggle-once-overdue', true)).toThrow('一次性任务执行时间已过');
+    expect(() => manager.toggle('toggle-once-overdue', true)).toThrow('Cannot enable: one-time task is overdue');
     const after = store.get('toggle-once-overdue');
     expect(after?.enabled).toBe(false);
     expect(after?.nextRunAt).toBeNull();
+  });
+
+  it('logs error via .catch when store.update inside executeAndRecord throws', async () => {
+    const now = Date.now();
+    const store = createStore([
+      createTask({
+        id: 'trigger-error',
+        runAt: now + 1000,
+        nextRunAt: now + 1000,
+      }),
+    ]);
+    const executeTask = vi.fn().mockResolvedValue({ sessionId: 'session-trigger-error' });
+    // Make store.update throw on the second call (first call is from prepareExecution,
+    // second is from executeAndRecord recording the result)
+    const originalUpdate = store.update.bind(store);
+    let updateCallCount = 0;
+    store.update = (id, updates) => {
+      updateCallCount++;
+      if (updateCallCount >= 2) {
+        throw new Error('db locked');
+      }
+      return originalUpdate(id, updates);
+    };
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const manager = new ScheduledTaskManager({ store, executeTask, now: () => Date.now() });
+    manager.start();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    // Flush microtask queue so the .catch() handler runs
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(executeTask).toHaveBeenCalledTimes(1);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[ScheduledTask] Unhandled error executing task'),
+      expect.any(Error)
+    );
+    consoleSpy.mockRestore();
   });
 });
