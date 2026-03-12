@@ -11,7 +11,7 @@ import {
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
 import { getSharedAuthStorage } from './shared-auth';
-import { buildSyntheticPiModel, resolvePiModelString, resolvePiRegistryModel } from './pi-model-resolution';
+import { buildSyntheticPiModel, inferPiApi, resolvePiModelString, resolvePiRegistryModel } from './pi-model-resolution';
 
 const NETWORK_ERROR_RE = /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
 const AUTH_ERROR_RE = /authentication[_\s-]?failed|unauthorized|invalid[_\s-]?api[_\s-]?key|forbidden|401|403/i;
@@ -30,6 +30,7 @@ function resolveCustomProtocol(provider: AppConfig['provider'], customProtocol?:
   }
   if (provider === 'ollama') return 'openai';
   if (provider === 'openai') return 'openai';
+  if (provider === 'openrouter') return 'openai';
   if (provider === 'gemini') return 'gemini';
   return 'anthropic';
 }
@@ -64,7 +65,7 @@ function resolveProbeApiKey(
     })?.apiKey || '';
   }
 
-  if (input.provider === 'openai' || (input.provider === 'custom' && resolvedCustomProtocol === 'openai')) {
+  if (input.provider === 'openai' || input.provider === 'openrouter' || (input.provider === 'custom' && resolvedCustomProtocol === 'openai')) {
     return resolveOpenAICredentials({
       provider: input.provider,
       customProtocol: resolvedCustomProtocol,
@@ -100,7 +101,7 @@ function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
   const resolvedBaseUrl = resolveProbeBaseUrl(input);
   const normalizedInputApiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : undefined;
   const resolvedCustomProtocol = resolveCustomProtocol(input.provider, input.customProtocol);
-  const effectiveRawBaseUrl = input.provider === 'custom' ? resolvedBaseUrl || '' : resolvedBaseUrl || config.baseUrl;
+  const effectiveRawBaseUrl = resolvedBaseUrl || '';
   const effectiveBaseUrl = resolvedCustomProtocol === 'openai' || resolvedCustomProtocol === 'gemini'
     ? effectiveRawBaseUrl
     : normalizeAnthropicBaseUrl(effectiveRawBaseUrl);
@@ -116,7 +117,7 @@ function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
     provider: input.provider,
     customProtocol: resolvedCustomProtocol,
     apiKey: effectiveApiKey,
-    baseUrl: input.provider === 'custom' ? effectiveBaseUrl || '' : effectiveBaseUrl || config.baseUrl,
+    baseUrl: effectiveBaseUrl,
     model: typeof input.model === 'string' ? input.model.trim() : config.model,
   };
 }
@@ -147,7 +148,7 @@ async function runPiAiOneShot(
   prompt: string,
   systemPrompt: string,
   config: AppConfig,
-): Promise<{ text: string; durationMs: number }> {
+): Promise<{ text: string; hasThinking: boolean; durationMs: number }> {
   const modelString = resolvePiModelString(config);
   const keyProvider = config.customProtocol || config.provider || 'anthropic';
   const parts = modelString.split('/');
@@ -162,7 +163,7 @@ async function runPiAiOneShot(
   if (!piModel) {
     // Synthetic fallback for unknown/custom models
     const effectiveProtocol = resolveCustomProtocol(config.provider, config.customProtocol);
-    const api = config.baseUrl?.trim() ? 'openai-completions' : undefined;
+    const api = config.baseUrl?.trim() ? inferPiApi(effectiveProtocol) : undefined;
     piModel = buildSyntheticPiModel(modelId, provider, effectiveProtocol, config.baseUrl?.trim() || '', api);
     logWarn('[OneShot] Model not in pi-ai registry, using synthetic model:', modelString, '→', api);
   }
@@ -193,15 +194,21 @@ async function runPiAiOneShot(
     messages: [userMsg],
   }, { apiKey: apiKey || undefined });
 
-  // Extract text from response
+  // Extract text and thinking content from response
   const textBlocks = response.content.filter(b => b.type === 'text');
+  const thinkingBlocks = response.content.filter(b => b.type === 'thinking');
   const text = textBlocks.map(b => (b as { text: string }).text).join('').trim();
-  log('[OneShot] Response:', text ? text.substring(0, 200) : '(empty)', 'blocks:', response.content.length, 'textBlocks:', textBlocks.length);
-  return { text, durationMs: Date.now() - start };
+  const hasThinking = thinkingBlocks.some(
+    b => (b as { thinking: string }).thinking?.trim().length > 0
+  );
+  log('[OneShot] Response:', text ? text.substring(0, 200) : '(empty)', 'blocks:', response.content.length, 'textBlocks:', textBlocks.length, 'thinkingBlocks:', thinkingBlocks.length);
+  return { text, hasThinking, durationMs: Date.now() - start };
 }
 
 function normalizeProbeAck(raw: string): string {
-  return raw.replace(/^["'`]+|["'`]+$/g, '').trim().toLowerCase();
+  // Strip markdown formatting and quotes around/between words, but preserve
+  // underscores inside words (PROBE_ACK = 'sdk_probe_ok' contains underscores).
+  return raw.replace(/(?<!\w)[*_~`"']+|[*_~`"']+(?!\w)/g, '').replace(/[.,!?;:]+$/g, '').trim().toLowerCase();
 }
 
 export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig): Promise<ApiTestResult> {
@@ -226,7 +233,7 @@ export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig)
       probeConfig,
     );
 
-    if (!result.text) {
+    if (!result.text && !result.hasThinking) {
       return {
         ok: false,
         latencyMs: result.durationMs,
@@ -234,7 +241,13 @@ export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig)
         details: 'empty_probe_response',
       };
     }
-    if (normalizeProbeAck(result.text) !== PROBE_ACK) {
+    // Thinking models may respond only with reasoning content and no text —
+    // treat as successful probe since the model is reachable and responding.
+    if (!result.text && result.hasThinking) {
+      log('[Probe] Thinking-only response — treating as ok (model reachable, cannot validate ack text)');
+      return { ok: true, latencyMs: result.durationMs };
+    }
+    if (!normalizeProbeAck(result.text).includes(PROBE_ACK)) {
       return {
         ok: false,
         latencyMs: result.durationMs,
@@ -260,7 +273,11 @@ export async function generateTitleWithClaudeSdk(
       'Generate a concise title. Reply with only the title text and no extra markup.',
       config,
     );
-    return normalizeGeneratedTitle(result.text);
+    const title = normalizeGeneratedTitle(result.text);
+    if (!title && result.hasThinking) {
+      logWarn('[SessionTitle] Thinking model returned reasoning only — no usable title text');
+    }
+    return title;
   } catch (error) {
     logWarn('[SessionTitle] pi-ai title generation failed:', error);
     return null;

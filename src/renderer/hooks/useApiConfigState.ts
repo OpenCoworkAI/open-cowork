@@ -6,6 +6,7 @@ import type {
   AppConfig,
   ApiTestResult,
   CustomProtocolType,
+  DiagnosticResult,
   ProviderModelInfo,
   ProviderProfile,
   ProviderProfileKey,
@@ -575,6 +576,8 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const [lastSaveCompletedAt, setLastSaveCompletedAt] = useState(0);
   const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
   const [useLiveTest, setUseLiveTest] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
 
   const clearError = useCallback(() => {
     setErrorText('');
@@ -774,19 +777,6 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     }
     if (hintKind === 'probeMismatchGeneric') {
       return t('api.guidance.errorHints.probeMismatchGeneric');
-    }
-
-    if (effectiveProviderSetup) {
-      if (detectedProviderSetup?.preferProviderTab) {
-        return t('api.guidance.errorHints.emptyProbePreferProvider', {
-          service: t(detectedProviderSetup.nameKey),
-          provider: providerTabLabel(detectedProviderSetup.preferProviderTab, presets, t),
-        });
-      }
-      return t('api.guidance.errorHints.probeMismatchDetected', {
-        service: t(effectiveProviderSetup.nameKey),
-        recommendedProtocol: setupDisplayProtocol(effectiveProviderSetup),
-      });
     }
 
     return '';
@@ -1091,6 +1081,52 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     useLiveTest,
     showErrorKey,
     showSuccessKey,
+  ]);
+
+  const handleDiagnose = useCallback(async () => {
+    if (requiresApiKey && !apiKey.trim()) {
+      showErrorKey('api.testError.missing_key');
+      return;
+    }
+
+    clearError();
+    setIsDiagnosing(true);
+    setDiagnosticResult(null);
+    setTestResult(null);
+    try {
+      const resolvedBaseUrl =
+        provider === 'custom' || provider === 'ollama'
+          ? baseUrl.trim()
+          : (currentPreset.baseUrl || baseUrl).trim();
+
+      const finalModel = useCustomModel ? customModel.trim() : model;
+
+      const result = await window.electronAPI.config.diagnose({
+        provider,
+        apiKey: apiKey.trim(),
+        baseUrl: resolvedBaseUrl || undefined,
+        customProtocol,
+        model: finalModel || undefined,
+      });
+      setDiagnosticResult(result);
+    } catch (err) {
+      showErrorText((err as Error).message || 'Diagnosis failed');
+    } finally {
+      setIsDiagnosing(false);
+    }
+  }, [
+    requiresApiKey,
+    apiKey,
+    baseUrl,
+    provider,
+    customProtocol,
+    model,
+    customModel,
+    useCustomModel,
+    currentPreset.baseUrl,
+    clearError,
+    showErrorKey,
+    showErrorText,
   ]);
 
   const refreshModelOptions = useCallback(async () => {
@@ -1525,6 +1561,9 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     friendlyTestDetails,
     useLiveTest,
     supportsLiveRequestTest,
+    diagnosticResult,
+    isDiagnosing,
+    handleDiagnose,
     isOllamaMode: provider === 'ollama',
     requiresApiKey,
     showsCompatibilityProbeHint,
