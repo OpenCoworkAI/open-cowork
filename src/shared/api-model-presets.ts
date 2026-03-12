@@ -1,4 +1,4 @@
-export type SharedProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini';
+export type SharedProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 
 export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 
@@ -16,6 +16,7 @@ export interface SharedProviderPresets {
   custom: SharedProviderPreset;
   openai: SharedProviderPreset;
   gemini: SharedProviderPreset;
+  ollama: SharedProviderPreset;
 }
 
 export interface ModelInputGuidance {
@@ -82,13 +83,24 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     keyPlaceholder: 'AIza...',
     keyHint: '从 aistudio.google.com 获取',
   },
+  ollama: {
+    name: 'Ollama',
+    baseUrl: 'http://localhost:11434/v1',
+    models: [
+      { id: 'qwen3.5:0.8b', name: 'qwen3.5:0.8b' },
+      { id: 'llama3.2:latest', name: 'llama3.2:latest' },
+      { id: 'deepseek-r1:latest', name: 'deepseek-r1:latest' },
+    ],
+    keyPlaceholder: '可留空',
+    keyHint: '多数 Ollama 部署可留空；如果你的代理层要求鉴权，也可以填写 Key',
+  },
   custom: {
     name: '更多模型',
     baseUrl: '',
     models: [
       { id: 'deepseek-chat', name: 'deepseek-chat' },
       { id: 'deepseek-reasoner', name: 'deepseek-reasoner' },
-      { id: 'kimi-thinking-preview', name: 'kimi-thinking-preview' },
+      { id: 'kimi-k2-thinking', name: 'kimi-k2-thinking' },
       { id: 'glm-5', name: 'glm-5' },
       { id: 'MiniMax-M2.5', name: 'MiniMax-M2.5' },
       { id: 'qwen-max', name: 'qwen-max' },
@@ -135,47 +147,54 @@ export function getModelInputGuidance(
   if (provider === 'openrouter') {
     return {
       placeholder: 'openai/gpt-5.4, anthropic/claude-sonnet-4-6, google/gemini-3-flash-preview',
-      hint: 'Use the exact model ID from provider docs.',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
     };
   }
 
   if (provider === 'custom' && customProtocol === 'openai') {
     return {
-      placeholder: 'deepseek-chat, deepseek-reasoner, kimi-thinking-preview, glm-5',
-      hint: 'Use the exact model ID from provider docs.',
+      placeholder: 'deepseek-chat, deepseek-reasoner, qwen-max, gpt-4.1',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
     };
   }
 
   if (provider === 'custom' && customProtocol === 'gemini') {
     return {
       placeholder: 'gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-flash',
-      hint: 'Use the exact model ID from provider docs.',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
     };
   }
 
   if (provider === 'custom') {
     return {
-      placeholder: 'claude-sonnet-4-6, claude-opus-4-6, glm-5',
-      hint: 'Use the exact model ID from provider docs.',
+      placeholder: 'glm-5, kimi-k2-thinking, claude-sonnet-4-6',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
     };
   }
 
   if (provider === 'openai') {
     return {
       placeholder: 'gpt-5.4, gpt-5.3-codex, o3',
-      hint: 'Use the exact model ID from provider docs.',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
+    };
+  }
+
+  if (provider === 'ollama') {
+    return {
+      placeholder: 'qwen3.5:0.8b, llama3.2:latest, deepseek-r1:latest',
+      hint: 'Use the exact model ID returned by your Ollama server.',
     };
   }
 
   if (provider === 'gemini') {
     return {
       placeholder: 'gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-flash',
-      hint: 'Use the exact model ID from provider docs.',
+      hint: 'Use the exact model ID for the selected protocol or endpoint.',
     };
   }
 
   return {
     placeholder: 'claude-sonnet-4-6, claude-opus-4-6',
-    hint: 'Use the exact model ID from provider docs.',
+    hint: 'Use the exact model ID for the selected protocol or endpoint.',
   };
 }

@@ -6,6 +6,8 @@ const CHATGPT_ACCOUNT_ID_RE = /^[-_a-zA-Z0-9]{6,}$/;
 const OFFICIAL_OPENAI_HOSTS = new Set(['api.openai.com', 'chatgpt.com']);
 
 export const OPENAI_PLATFORM_BASE_URL = 'https://api.openai.com/v1';
+export const LOCAL_OPENAI_PLACEHOLDER_KEY = 'sk-openai-local-proxy';
+export const OLLAMA_PLACEHOLDER_KEY = 'sk-ollama-local-proxy';
 
 type OpenAIConfigLike = Pick<AppConfig, 'provider' | 'customProtocol' | 'apiKey' | 'baseUrl'>;
 
@@ -34,7 +36,9 @@ export function shouldUseAnthropicAuthToken(config: Pick<AppConfig, 'provider' |
 }
 
 export function isOpenAIProvider(config: Pick<AppConfig, 'provider' | 'customProtocol'>): boolean {
-  return config.provider === 'openai' || (config.provider === 'custom' && config.customProtocol === 'openai');
+  return config.provider === 'openai'
+    || config.provider === 'ollama'
+    || (config.provider === 'custom' && config.customProtocol === 'openai');
 }
 
 export function sanitizeOpenAIAccountId(raw: string | undefined): string | undefined {
@@ -80,6 +84,29 @@ export function normalizeOpenAICompatibleBaseUrl(baseUrl: string | undefined): s
     return parsed.toString().replace(/\/+$/, '');
   } catch {
     return normalized;
+  }
+}
+
+export function normalizeOllamaBaseUrl(baseUrl: string | undefined): string | undefined {
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (!normalized) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(normalized);
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    if (!pathname || pathname === '/') {
+      parsed.pathname = '/v1';
+      return parsed.toString().replace(/\/+$/, '');
+    }
+    if (pathname.endsWith('/v1')) {
+      parsed.pathname = pathname;
+      return parsed.toString().replace(/\/+$/, '');
+    }
+    parsed.pathname = `${pathname}/v1`;
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return /\/v1$/i.test(normalized) ? normalized : `${normalized}/v1`;
   }
 }
 
@@ -140,14 +167,38 @@ export function resolveOpenAICredentials(
   config: OpenAIConfigLike
 ): ResolvedOpenAICredentials | null {
   const trimmedApiKey = config.apiKey?.trim();
-  if (trimmedApiKey) {
+  const effectiveApiKey = trimmedApiKey || (
+    shouldAllowEmptyOpenAIApiKey(config)
+      ? LOCAL_OPENAI_PLACEHOLDER_KEY
+      : ''
+  );
+  if (effectiveApiKey) {
     return {
-      apiKey: trimmedApiKey,
+      apiKey: effectiveApiKey,
       baseUrl: normalizeOpenAICompatibleBaseUrl(config.baseUrl),
     };
   }
 
   return null;
+}
+
+export function shouldAllowEmptyOllamaApiKey(
+  config: Pick<AppConfig, 'provider' | 'customProtocol' | 'baseUrl'>
+): boolean {
+  return config.provider === 'ollama';
+}
+
+export function resolveOllamaCredentials(
+  config: OpenAIConfigLike
+): ResolvedOpenAICredentials | null {
+  if (config.provider !== 'ollama') {
+    return null;
+  }
+  const trimmedApiKey = config.apiKey?.trim();
+  return {
+    apiKey: trimmedApiKey || OLLAMA_PLACEHOLDER_KEY,
+    baseUrl: normalizeOllamaBaseUrl(config.baseUrl),
+  };
 }
 
 export function isLoopbackBaseUrl(baseUrl: string | undefined): boolean {
@@ -168,6 +219,26 @@ export function shouldAllowEmptyOpenAIApiKey(
   return config.provider === 'custom'
     && (config.customProtocol ?? 'anthropic') === 'openai'
     && isLoopbackBaseUrl(config.baseUrl);
+}
+
+export function isOllamaLegacyCustomOpenAIConfig(
+  config: Pick<AppConfig, 'provider' | 'customProtocol' | 'baseUrl'>
+): boolean {
+  if (!(config.provider === 'custom' && (config.customProtocol ?? 'anthropic') === 'openai')) {
+    return false;
+  }
+  const normalized = normalizeBaseUrl(config.baseUrl);
+  if (!normalized || !isLoopbackBaseUrl(normalized)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(normalized);
+    const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    return port === '11434' && (!pathname || pathname === '/v1');
+  } catch {
+    return false;
+  }
 }
 
 export function shouldAllowEmptyGeminiApiKey(

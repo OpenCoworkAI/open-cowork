@@ -4,14 +4,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
-import {
-  Send,
-  Square,
-  Plus,
-  Loader2,
-  Plug,
-  X,
-} from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X } from 'lucide-react';
 
 type AttachedFile = {
   name: string;
@@ -38,7 +31,9 @@ export function ChatView() {
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const connectorMeasureRef = useRef<HTMLDivElement>(null);
-  const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [pastedImages, setPastedImages] = useState<
+    Array<{ url: string; base64: string; mediaType: string }>
+  >([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -83,11 +78,7 @@ export function ChatView() {
       timestamp: Date.now(),
     };
 
-    return [
-      ...messages.slice(0, insertIndex),
-      streamingMessage,
-      ...messages.slice(insertIndex),
-    ];
+    return [...messages.slice(0, insertIndex), streamingMessage, ...messages.slice(insertIndex)];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
 
   // Debounced scroll function to prevent scroll conflicts
@@ -104,16 +95,19 @@ export function ChatView() {
 
     const performScroll = () => {
       if (!isUserAtBottomRef.current) return;
-      
+
       // Mark as scrolling to prevent concurrent scrolls
       isScrollingRef.current = true;
-      
+
       messagesEndRef.current?.scrollIntoView({ behavior });
-      
+
       // Reset scrolling flag after a short delay
-      setTimeout(() => {
-        isScrollingRef.current = false;
-      }, behavior === 'smooth' ? 300 : 50);
+      setTimeout(
+        () => {
+          isScrollingRef.current = false;
+        },
+        behavior === 'smooth' ? 300 : 50
+      );
     };
 
     if (immediate) {
@@ -130,7 +124,8 @@ export function ChatView() {
     const container = scrollContainerRef.current;
     if (!container) return;
     const updateScrollState = () => {
-      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const distanceToBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
       isUserAtBottomRef.current = distanceToBottom <= 80;
     };
     updateScrollState();
@@ -210,7 +205,7 @@ export function ChatView() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
 
     e.preventDefault();
@@ -236,7 +231,7 @@ export function ChatView() {
       }
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    setPastedImages((prev) => [...prev, ...newImages]);
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -299,7 +294,10 @@ export function ChatView() {
                 }
 
                 // If still too large, try again with lower quality or scale
-                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
+                if (
+                  compressedBlob.size > MAX_BLOB_SIZE &&
+                  (currentQuality > 0.5 || currentScale > 0.3)
+                ) {
                   const newQuality = Math.max(0.5, currentQuality - 0.1);
                   const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
                   attemptCompress(newScale, newQuality).then(resolveBlob);
@@ -326,7 +324,7 @@ export function ChatView() {
   };
 
   const removeImage = (index: number) => {
-    setPastedImages(prev => {
+    setPastedImages((prev) => {
       const updated = [...prev];
       URL.revokeObjectURL(updated[index].url);
       updated.splice(index, 1);
@@ -335,7 +333,7 @@ export function ChatView() {
   };
 
   const removeFile = (index: number) => {
-    setAttachedFiles(prev => {
+    setAttachedFiles((prev) => {
       const updated = [...prev];
       updated.splice(index, 1);
       return updated;
@@ -363,7 +361,7 @@ export function ChatView() {
         };
       });
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[ChatView] Error selecting files:', error);
     }
@@ -388,8 +386,8 @@ export function ChatView() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    const otherFiles = files.filter((file) => !file.type.startsWith('image/'));
 
     // Process images
     if (imageFiles.length > 0) {
@@ -411,14 +409,14 @@ export function ChatView() {
         }
       }
 
-      setPastedImages(prev => [...prev, ...newImages]);
+      setPastedImages((prev) => [...prev, ...newImages]);
     }
 
     // Process other files
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
         otherFiles.map(async (file) => {
-          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
           const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
 
           return {
@@ -431,7 +429,7 @@ export function ChatView() {
         })
       );
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     }
   };
 
@@ -484,11 +482,16 @@ export function ChatView() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    
+
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
-    
-    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || !activeSessionId || isSubmitting) return;
+
+    if (
+      (!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) ||
+      !activeSessionId ||
+      isSubmitting
+    )
+      return;
 
     setIsSubmitting(true);
     try {
@@ -496,7 +499,7 @@ export function ChatView() {
       const contentBlocks: ContentBlock[] = [];
 
       // Add images first
-      pastedImages.forEach(img => {
+      pastedImages.forEach((img) => {
         contentBlocks.push({
           type: 'image',
           source: {
@@ -508,7 +511,7 @@ export function ChatView() {
       });
 
       // Add file attachments
-      attachedFiles.forEach(file => {
+      attachedFiles.forEach((file) => {
         contentBlocks.push({
           type: 'file_attachment',
           filename: file.name,
@@ -535,7 +538,7 @@ export function ChatView() {
       if (textareaRef.current) {
         textareaRef.current.value = '';
       }
-      pastedImages.forEach(img => URL.revokeObjectURL(img.url));
+      pastedImages.forEach((img) => URL.revokeObjectURL(img.url));
       setPastedImages([]);
       setAttachedFiles([]);
     } finally {
@@ -567,7 +570,10 @@ export function ChatView() {
         <div className="text-[11px] font-medium tracking-[0.08em] uppercase text-text-muted">
           Open Cowork
         </div>
-        <h2 ref={titleRef} className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]">
+        <h2
+          ref={titleRef}
+          className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]"
+        >
           {activeSession.title}
         </h2>
         {activeConnectors.length > 0 && (
@@ -587,11 +593,9 @@ export function ChatView() {
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
               <Plug className="w-3.5 h-3.5 text-mcp" />
               <span className="text-xs text-mcp font-medium">
-                {showConnectorLabel ? (
-                  t('chat.connectorCount', { count: activeConnectors.length })
-                ) : (
-                  activeConnectors.length
-                )}
+                {showConnectorLabel
+                  ? t('chat.connectorCount', { count: activeConnectors.length })
+                  : activeConnectors.length}
               </span>
             </div>
           </>
@@ -600,7 +604,10 @@ export function ChatView() {
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div ref={messagesContainerRef} className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5">
+        <div
+          ref={messagesContainerRef}
+          className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5"
+        >
           {displayedMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
               <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted/80">
@@ -610,25 +617,24 @@ export function ChatView() {
             </div>
           ) : (
             displayedMessages.map((message) => {
-              const isStreaming = typeof message.id === 'string' && message.id.startsWith('partial-');
+              const isStreaming =
+                typeof message.id === 'string' && message.id.startsWith('partial-');
               return (
-              <div key={message.id}>
+                <div key={message.id}>
                   <MessageCard message={message} isStreaming={isStreaming} />
-              </div>
+                </div>
               );
             })
           )}
-          
+
           {/* Processing indicator - show when we have an active turn but no partial message yet */}
           {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-background/80 border border-border-subtle max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
-              <span className="text-sm text-text-secondary">
-                {t('chat.processing')}
-              </span>
+              <span className="text-sm text-text-secondary">{t('chat.processing')}</span>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -650,7 +656,7 @@ export function ChatView() {
                   <div key={index} className="relative group">
                     <img
                       src={img.url}
-                      alt={`Pasted ${index + 1}`}
+                      alt={t('common.pastedImageAlt', { index: index + 1 })}
                       className="w-full aspect-square object-cover rounded-lg border border-border block"
                     />
                     <button
@@ -732,7 +738,7 @@ export function ChatView() {
               <div className="flex items-center gap-2">
                 {/* Model display */}
                 <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
-                  {appConfig?.model || 'No model'}
+                  {appConfig?.model || t('chat.noModel')}
                 </span>
 
                 {canStop && (
@@ -745,19 +751,25 @@ export function ChatView() {
                     <Square className="w-4 h-4" />
                   </button>
                 )}
-                  <button
-                    type="submit"
-                  disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
-                    title={t('chat.send')}
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+                <button
+                  type="submit"
+                  disabled={
+                    (!prompt.trim() &&
+                      !textareaRef.current?.value.trim() &&
+                      pastedImages.length === 0 &&
+                      attachedFiles.length === 0) ||
+                    isSubmitting
+                  }
+                  className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                  title={t('chat.sendMessage')}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
             <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
-              Open Cowork is AI-powered and may make mistakes. Please double-check responses.
+              {t('chat.disclaimer')}
             </p>
           </form>
         </div>

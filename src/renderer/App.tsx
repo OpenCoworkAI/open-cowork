@@ -1,14 +1,10 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from './store';
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
 import { Sidebar } from './components/Sidebar';
-import { ChatView } from './components/ChatView';
 import { WelcomeView } from './components/WelcomeView';
 import { PermissionDialog } from './components/PermissionDialog';
-import { ContextPanel } from './components/ContextPanel';
-import { ConfigModal } from './components/ConfigModal';
-import { SettingsPanel } from './components/SettingsPanel';
 import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
@@ -18,6 +14,23 @@ import type { GlobalNoticeAction } from './store';
 
 // Check if running in Electron
 const isElectronEnv = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
+const ChatView = lazy(() => import('./components/ChatView').then((module) => ({ default: module.ChatView })));
+const ContextPanel = lazy(() => import('./components/ContextPanel').then((module) => ({ default: module.ContextPanel })));
+const ConfigModal = lazy(() => import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal })));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel })));
+
+function MainPanelFallback() {
+  return (
+    <div className="flex-1 min-h-0 bg-background px-6 py-6">
+      <div className="h-full rounded-[1.75rem] border border-border-subtle bg-background/70" />
+    </div>
+  );
+}
+
+function ContextPanelFallback() {
+  return <div className="hidden xl:block w-[340px] shrink-0 border-l border-border-subtle bg-background/60" aria-hidden="true" />;
+}
 
 function App() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -130,29 +143,39 @@ function App() {
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
           {showSettings ? (
-            <SettingsPanel onClose={() => setShowSettings(false)} />
+            <Suspense fallback={<MainPanelFallback />}>
+              <SettingsPanel onClose={() => setShowSettings(false)} />
+            </Suspense>
           ) : activeSessionId ? (
-            <ChatView />
+            <Suspense fallback={<MainPanelFallback />}>
+              <ChatView />
+            </Suspense>
           ) : (
             <WelcomeView />
           )}
         </main>
 
         {/* Context Panel - only show when in session and not in settings */}
-        {activeSessionId && !showSettings && <ContextPanel />}
+        {activeSessionId && !showSettings && (
+          <Suspense fallback={<ContextPanelFallback />}>
+            <ContextPanel />
+          </Suspense>
+        )}
       </div>
       
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}
       
       {/* Config Modal */}
-      <ConfigModal
-        isOpen={showConfigModal}
-        onClose={handleConfigClose}
-        onSave={handleConfigSave}
-        initialConfig={appConfig}
-        isFirstRun={!isConfigured}
-      />
+      <Suspense fallback={null}>
+        <ConfigModal
+          isOpen={showConfigModal}
+          onClose={handleConfigClose}
+          onSave={handleConfigSave}
+          initialConfig={appConfig}
+          isFirstRun={!isConfigured}
+        />
+      </Suspense>
       
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (

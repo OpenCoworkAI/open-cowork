@@ -10,6 +10,7 @@ import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { configStore, getPiAiModelPresets, type AppConfig, type CreateConfigSetPayload } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
+import { listOllamaModels } from './config/ollama-api';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
@@ -18,7 +19,7 @@ import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
 import type { MCPServerConfig } from './mcp/mcp-manager';
-import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult } from '../renderer/types';
+import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult, ProviderModelInfo } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
@@ -508,10 +509,6 @@ function sendToRenderer(event: ServerEvent) {
 
 // Initialize app
 app.whenReady().then(async () => {
-  // TODO: Re-enable sandbox when debugging is complete
-  // Force disable sandbox on startup (temporary fix)
-  configStore.set('sandboxEnabled', false);
-  
   // Apply dev logs setting from config
   const enableDevLogs = configStore.get('enableDevLogs');
   setDevLogsEnabled(enableDevLogs);
@@ -542,7 +539,14 @@ app.whenReady().then(async () => {
   // Initialize database
   const db = initDatabase();
 
-  // Show window early — heavy backend init proceeds in parallel below
+  pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
+
+  // Initialize session manager before creating an interactive window.
+  // This avoids session.start racing the startup path and hitting a null manager.
+  sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
+  // pi-ai handles model routing natively — no proxy warmup needed
+
+  // Show window after session manager is ready so the first click can be handled.
   createWindow();
   startNavServer(() => mainWindow);
 
@@ -560,11 +564,6 @@ app.whenReady().then(async () => {
       payload: event,
     });
   });
-  pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
-
-  // Initialize session manager
-  sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
-  // pi-ai handles model routing natively — no proxy warmup needed
 
   const scheduledTaskStore = createScheduledTaskStore(db);
   scheduledTaskManager = new ScheduledTaskManager({
@@ -624,6 +623,11 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+}).catch((error) => {
+  logError('[App] Startup failed:', error);
+  const message = error instanceof Error ? error.message : 'Unknown startup error';
+  dialog.showErrorBox('Open Cowork 启动失败', `${message}\n\n请查看日志获取更多信息。`);
+  app.quit();
 });
 
 // Flag to prevent double cleanup
@@ -1012,6 +1016,16 @@ ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<Api
     };
   }
 });
+
+ipcMain.handle(
+  'config.listModels',
+  async (_event, payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }): Promise<ProviderModelInfo[]> => {
+    if (payload.provider !== 'ollama') {
+      return [];
+    }
+    return listOllamaModels(payload);
+  }
+);
 
 ipcMain.handle('auth.getStatus', () => {
   return [];

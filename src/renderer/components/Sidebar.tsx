@@ -13,6 +13,7 @@ import {
   Plus,
 } from 'lucide-react';
 import type { Session } from '../types';
+import { formatRelativeAppTime } from '../utils/i18n-format';
 
 const sidebarLogoSrc = new URL('../../../resources/logo.png', import.meta.url).href;
 
@@ -52,49 +53,52 @@ export function Sidebar() {
     [filteredSessions, t]
   );
 
-  const handleSessionClick = useCallback(async (sessionId: string) => {
-    setShowSettings(false);
+  const handleSessionClick = useCallback(
+    async (sessionId: string) => {
+      setShowSettings(false);
 
-    if (activeSessionId === sessionId) return;
+      if (activeSessionId === sessionId) return;
 
-    setActiveSession(sessionId);
+      setActiveSession(sessionId);
 
-    const existingMessages = messagesBySession[sessionId];
-    if ((!existingMessages || existingMessages.length === 0) && isElectron) {
-      setLoadingSession(sessionId);
-      try {
-        const messages = await getSessionMessages(sessionId);
-        if (messages && messages.length > 0) {
-          setMessages(sessionId, messages);
+      const existingMessages = messagesBySession[sessionId];
+      if ((!existingMessages || existingMessages.length === 0) && isElectron) {
+        setLoadingSession(sessionId);
+        try {
+          const messages = await getSessionMessages(sessionId);
+          if (messages && messages.length > 0) {
+            setMessages(sessionId, messages);
+          }
+        } catch (error) {
+          console.error('[Sidebar] Failed to load messages:', error);
+        } finally {
+          setLoadingSession(null);
         }
-      } catch (error) {
-        console.error('[Sidebar] Failed to load messages:', error);
-      } finally {
-        setLoadingSession(null);
       }
-    }
 
-    const existingSteps = traceStepsBySession[sessionId];
-    if ((!existingSteps || existingSteps.length === 0) && isElectron) {
-      try {
-        const steps = await getSessionTraceSteps(sessionId);
-        setTraceSteps(sessionId, steps || []);
-      } catch (error) {
-        console.error('[Sidebar] Failed to load trace steps:', error);
+      const existingSteps = traceStepsBySession[sessionId];
+      if ((!existingSteps || existingSteps.length === 0) && isElectron) {
+        try {
+          const steps = await getSessionTraceSteps(sessionId);
+          setTraceSteps(sessionId, steps || []);
+        } catch (error) {
+          console.error('[Sidebar] Failed to load trace steps:', error);
+        }
       }
-    }
-  }, [
-    activeSessionId,
-    getSessionMessages,
-    getSessionTraceSteps,
-    isElectron,
-    messagesBySession,
-    setActiveSession,
-    setMessages,
-    setShowSettings,
-    setTraceSteps,
-    traceStepsBySession,
-  ]);
+    },
+    [
+      activeSessionId,
+      getSessionMessages,
+      getSessionTraceSteps,
+      isElectron,
+      messagesBySession,
+      setActiveSession,
+      setMessages,
+      setShowSettings,
+      setTraceSteps,
+      traceStepsBySession,
+    ]
+  );
 
   const handleNewSession = () => {
     setActiveSession(null);
@@ -146,11 +150,7 @@ export function Sidebar() {
             className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
             title={t('sidebar.themeToggle')}
           >
-            {settings.theme === 'dark' ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
+            {settings.theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
           <button
             onClick={() => setShowSettings(true)}
@@ -174,7 +174,7 @@ export function Sidebar() {
           <div className="min-w-0 flex items-center gap-3">
             <img
               src={sidebarLogoSrc}
-              alt="Open Cowork logo"
+              alt={t('common.appLogoAlt')}
               className="w-10 h-10 rounded-2xl object-cover border border-border-subtle bg-background/60 flex-shrink-0"
             />
             <div className="min-w-0">
@@ -253,7 +253,9 @@ export function Sidebar() {
                             {session.title}
                           </div>
                           <div className="mt-1 text-[11px] leading-4 text-text-muted">
-                            {isLoading ? t('common.loading') : formatRelativeTime(session.updatedAt || session.createdAt)}
+                            {isLoading
+                              ? t('common.loading')
+                              : formatRelativeTime(session.updatedAt || session.createdAt)}
                           </div>
                         </div>
 
@@ -284,7 +286,9 @@ export function Sidebar() {
           >
             <Settings className="w-4 h-4 flex-shrink-0" />
             <div className="min-w-0">
-              <div className="text-[13px] font-medium text-text-primary">{t('sidebar.settings')}</div>
+              <div className="text-[13px] font-medium text-text-primary">
+                {t('sidebar.settings')}
+              </div>
               <div className="text-[11px] text-text-muted truncate">
                 {isConfigured ? t('sidebar.apiConfigured') : t('sidebar.apiNotConfigured')}
               </div>
@@ -296,11 +300,7 @@ export function Sidebar() {
             className="w-8 h-8 rounded-xl flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
             title={t('sidebar.themeToggle')}
           >
-            {settings.theme === 'dark' ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
+            {settings.theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -308,10 +308,7 @@ export function Sidebar() {
   );
 }
 
-function groupSessionsByDate(
-  sessions: Session[],
-  t: (key: string) => string
-): SessionGroup[] {
+function groupSessionsByDate(sessions: Session[], t: (key: string) => string): SessionGroup[] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfYesterday = startOfToday - 86_400_000;
@@ -324,7 +321,9 @@ function groupSessionsByDate(
     { key: 'older', label: t('sidebar.older'), sessions: [] },
   ];
 
-  const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  const sortedSessions = [...sessions].sort(
+    (a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
+  );
   for (const session of sortedSessions) {
     const timestamp = session.updatedAt || session.createdAt;
     if (timestamp >= startOfToday) {
@@ -342,14 +341,5 @@ function groupSessionsByDate(
 }
 
 function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60_000);
-  const hours = Math.floor(diff / 3_600_000);
-  const days = Math.floor(diff / 86_400_000);
-
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatRelativeAppTime(timestamp);
 }

@@ -239,6 +239,37 @@ describe('ConfigStore provider profiles', () => {
     expect(store.isConfigured()).toBe(true);
   });
 
+  it('treats loopback custom openai gateway as usable without api key', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'custom',
+      customProtocol: 'openai',
+      apiKey: '',
+      baseUrl: 'http://127.0.0.1:8082/v1',
+      model: 'gpt-4.1-mini',
+    });
+
+    expect(store.hasUsableCredentialsForActiveSet()).toBe(true);
+    expect(store.hasAnyUsableCredentials()).toBe(true);
+    expect(store.isConfigured()).toBe(true);
+  });
+
+  it('does not treat ollama as configured when model is still empty', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'ollama',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/v1',
+      model: '',
+    });
+
+    expect(store.hasUsableCredentialsForActiveSet()).toBe(false);
+    expect(store.hasAnyUsableCredentials()).toBe(false);
+    expect(store.isConfigured()).toBe(false);
+  });
+
   it('keeps non-loopback custom anthropic gateway requiring api key', () => {
     const store = new ConfigStore();
 

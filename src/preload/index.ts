@@ -18,6 +18,7 @@ import type {
   ScheduleTask,
   ScheduleCreateInput,
   ScheduleUpdateInput,
+  ProviderModelInfo,
 } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
@@ -108,6 +109,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
     test: (config: ApiTestInput): Promise<ApiTestResult> =>
       ipcRenderer.invoke('config.test', config),
+    listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }): Promise<ProviderModelInfo[]> =>
+      ipcRenderer.invoke('config.listModels', payload),
   },
 
   auth: {
@@ -365,6 +368,7 @@ declare global {
         switchSet: (payload: { id: string }) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
+        listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }) => Promise<ProviderModelInfo[]>;
       };
       auth: {
         getStatus: () => Promise<Array<Record<string, unknown>>>;

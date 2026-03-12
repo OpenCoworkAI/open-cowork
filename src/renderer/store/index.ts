@@ -1,5 +1,15 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus, SkillsStorageChangeEvent } from '../types';
+import type {
+  Session,
+  Message,
+  TraceStep,
+  PermissionRequest,
+  Settings,
+  AppConfig,
+  SandboxSetupProgress,
+  SandboxSyncStatus,
+  SkillsStorageChangeEvent,
+} from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
 export type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
@@ -8,6 +18,8 @@ export type GlobalNoticeAction = 'open_api_settings';
 export interface GlobalNotice {
   id: string;
   message: string;
+  messageKey?: string;
+  messageValues?: Record<string, string | number>;
   type: GlobalNoticeType;
   actionLabel?: string;
   action?: GlobalNoticeAction;
@@ -17,55 +29,55 @@ interface AppState {
   // Sessions
   sessions: Session[];
   activeSessionId: string | null;
-  
+
   // Messages
   messagesBySession: Record<string, Message[]>;
   partialMessagesBySession: Record<string, string>;
   pendingTurnsBySession: Record<string, string[]>;
   activeTurnsBySession: Record<string, { stepId: string; userMessageId: string } | null>;
-  
+
   // Trace steps
   traceStepsBySession: Record<string, TraceStep[]>;
-  
+
   // UI state
   isLoading: boolean;
   sidebarCollapsed: boolean;
   contextPanelCollapsed: boolean;
   showSettings: boolean;
   settingsTab: string | null;
-  
+
   // Permission
   pendingPermission: PermissionRequest | null;
-  
+
   // Settings
   settings: Settings;
-  
+
   // App Config (API settings)
   appConfig: AppConfig | null;
   isConfigured: boolean;
   showConfigModal: boolean;
   hasSeenInitialConfigStatus: boolean;
   globalNotice: GlobalNotice | null;
-  
+
   // Working directory
   workingDir: string | null;
-  
+
   // Sandbox setup
   sandboxSetupProgress: SandboxSetupProgress | null;
   isSandboxSetupComplete: boolean;
-  
+
   // Sandbox sync (per-session)
   sandboxSyncStatus: SandboxSyncStatus | null;
   skillsStorageChangedAt: number;
   skillsStorageChangeEvent: SkillsStorageChangeEvent | null;
-  
+
   // Actions
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
   updateSession: (sessionId: string, updates: Partial<Session>) => void;
   removeSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
-  
+
   addMessage: (sessionId: string, message: Message) => void;
   setMessages: (sessionId: string, messages: Message[]) => void;
   setPartialMessage: (sessionId: string, partial: string) => void;
@@ -76,11 +88,11 @@ interface AppState {
   clearPendingTurns: (sessionId: string) => void;
   clearQueuedMessages: (sessionId: string) => void;
   cancelQueuedMessages: (sessionId: string) => void;
-  
+
   addTraceStep: (sessionId: string, step: TraceStep) => void;
   updateTraceStep: (sessionId: string, stepId: string, updates: Partial<TraceStep>) => void;
   setTraceSteps: (sessionId: string, steps: TraceStep[]) => void;
-  
+
   setLoading: (loading: boolean) => void;
   toggleSidebar: () => void;
   toggleContextPanel: () => void;
@@ -92,7 +104,7 @@ interface AppState {
   setPendingPermission: (permission: PermissionRequest | null) => void;
 
   updateSettings: (updates: Partial<Settings>) => void;
-  
+
   // Config actions
   setAppConfig: (config: AppConfig | null) => void;
   setIsConfigured: (configured: boolean) => void;
@@ -100,14 +112,14 @@ interface AppState {
   markInitialConfigStatusSeen: () => void;
   setGlobalNotice: (notice: GlobalNotice | null) => void;
   clearGlobalNotice: () => void;
-  
+
   // Working directory actions
   setWorkingDir: (path: string | null) => void;
-  
+
   // Sandbox setup actions
   setSandboxSetupProgress: (progress: SandboxSetupProgress | null) => void;
   setSandboxSetupComplete: (complete: boolean) => void;
-  
+
   // Sandbox sync actions
   setSandboxSyncStatus: (status: SandboxSyncStatus | null) => void;
   setSkillsStorageChangedAt: (timestamp: number) => void;
@@ -169,10 +181,10 @@ export const useAppStore = create<AppState>((set) => ({
   sandboxSyncStatus: null,
   skillsStorageChangedAt: 0,
   skillsStorageChangeEvent: null,
-  
+
   // Session actions
   setSessions: (sessions) => set({ sessions }),
-  
+
   addSession: (session) =>
     set((state) => ({
       sessions: [session, ...state.sessions],
@@ -182,12 +194,12 @@ export const useAppStore = create<AppState>((set) => ({
       activeTurnsBySession: { ...state.activeTurnsBySession, [session.id]: null },
       traceStepsBySession: { ...state.traceStepsBySession, [session.id]: [] },
     })),
-  
+
   updateSession: (sessionId, updates) =>
     set((state) => ({
       sessions: applySessionUpdate(state.sessions, sessionId, updates),
     })),
-  
+
   removeSession: (sessionId) =>
     set((state) => {
       const { [sessionId]: _, ...restMessages } = state.messagesBySession;
@@ -205,9 +217,9 @@ export const useAppStore = create<AppState>((set) => ({
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
     }),
-  
+
   setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
-  
+
   // Message actions
   addMessage: (sessionId, message) =>
     set((state) => {
@@ -254,13 +266,13 @@ export const useAppStore = create<AppState>((set) => ({
         pendingTurnsBySession: updatedPendingTurns,
         partialMessagesBySession: shouldClearPartial
           ? {
-            ...state.partialMessagesBySession,
-            [sessionId]: '',
-          }
+              ...state.partialMessagesBySession,
+              [sessionId]: '',
+            }
           : state.partialMessagesBySession,
       };
     }),
-  
+
   setMessages: (sessionId, messages) =>
     set((state) => ({
       messagesBySession: {
@@ -268,7 +280,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: messages,
       },
     })),
-  
+
   setPartialMessage: (sessionId, partial) =>
     set((state) => ({
       partialMessagesBySession: {
@@ -276,7 +288,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: (state.partialMessagesBySession[sessionId] || '') + partial,
       },
     })),
-  
+
   clearPartialMessage: (sessionId) =>
     set((state) => ({
       partialMessagesBySession: {
@@ -391,7 +403,7 @@ export const useAppStore = create<AppState>((set) => ({
         },
       };
     }),
-  
+
   // Trace actions
   addTraceStep: (sessionId, step) =>
     set((state) => ({
@@ -400,7 +412,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: [...(state.traceStepsBySession[sessionId] || []), step],
       },
     })),
-  
+
   updateTraceStep: (sessionId, stepId, updates) =>
     set((state) => ({
       traceStepsBySession: {
@@ -418,11 +430,12 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: steps,
       },
     })),
-  
+
   // UI actions
   setLoading: (loading) => set({ isLoading: loading }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  toggleContextPanel: () => set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
+  toggleContextPanel: () =>
+    set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setContextPanelCollapsed: (collapsed) => set({ contextPanelCollapsed: collapsed }),
   setShowSettings: (show) => set({ showSettings: show }),
@@ -436,7 +449,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       settings: { ...state.settings, ...updates },
     })),
-  
+
   // Config actions
   setAppConfig: (config) => set({ appConfig: config }),
   setIsConfigured: (configured) => set({ isConfigured: configured }),
@@ -444,14 +457,14 @@ export const useAppStore = create<AppState>((set) => ({
   markInitialConfigStatusSeen: () => set({ hasSeenInitialConfigStatus: true }),
   setGlobalNotice: (notice) => set({ globalNotice: notice }),
   clearGlobalNotice: () => set({ globalNotice: null }),
-  
+
   // Working directory actions
   setWorkingDir: (path) => set({ workingDir: path }),
-  
+
   // Sandbox setup actions
   setSandboxSetupProgress: (progress) => set({ sandboxSetupProgress: progress }),
   setSandboxSetupComplete: (complete) => set({ isSandboxSetupComplete: complete }),
-  
+
   // Sandbox sync actions
   setSandboxSyncStatus: (status) => set({ sandboxSyncStatus: status }),
   setSkillsStorageChangedAt: (timestamp) => set({ skillsStorageChangedAt: timestamp }),

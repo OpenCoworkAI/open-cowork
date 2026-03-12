@@ -43,6 +43,7 @@ vi.mock('../src/main/config/config-store', () => ({
     openai: { baseUrl: 'https://api.openai.com/v1' },
     openrouter: { baseUrl: 'https://openrouter.ai/api' },
     anthropic: { baseUrl: 'https://api.anthropic.com' },
+    ollama: { baseUrl: 'http://localhost:11434/v1' },
     custom: { baseUrl: 'https://example.com' },
   },
 }));
@@ -161,6 +162,47 @@ describe('testApiConnection', () => {
         baseURL: 'http://[::1]:8082',
       }),
     );
+  });
+
+  it('allows empty api key for local custom openai gateway by injecting placeholder', async () => {
+    const result = await testApiConnection({
+      provider: 'custom',
+      customProtocol: 'openai',
+      apiKey: '',
+      baseUrl: 'http://127.0.0.1:8082/v1',
+      model: 'gpt-4.1-mini',
+      useLiveRequest: false,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.openaiCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-openai-local-proxy',
+        baseURL: 'http://127.0.0.1:8082/v1',
+        timeout: 30000,
+      }),
+    );
+    expect(mocks.openaiModelsList).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows empty api key for ollama provider by injecting placeholder credentials', async () => {
+    const result = await testApiConnection({
+      provider: 'ollama',
+      apiKey: '',
+      baseUrl: 'https://ollama.example.internal/proxy',
+      model: 'qwen3.5:0.8b',
+      useLiveRequest: false,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.openaiCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-ollama-local-proxy',
+        baseURL: 'https://ollama.example.internal/proxy/v1',
+        timeout: 30000,
+      }),
+    );
+    expect(mocks.openaiModelsList).toHaveBeenCalledTimes(1);
   });
 
   it('keeps models.list check for direct anthropic when not live request', async () => {

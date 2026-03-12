@@ -2,8 +2,12 @@ import Store from 'electron-store';
 import { log, logWarn } from '../utils/logger';
 import {
   isOpenAIProvider,
+  isOllamaLegacyCustomOpenAIConfig,
   normalizeAnthropicBaseUrl,
+  normalizeOllamaBaseUrl,
+  resolveOllamaCredentials,
   resolveOpenAICredentials,
+  shouldAllowEmptyOllamaApiKey,
   shouldAllowEmptyAnthropicApiKey,
   shouldAllowEmptyGeminiApiKey,
   shouldUseAnthropicAuthToken,
@@ -13,13 +17,14 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
 /**
  * Application configuration schema
  */
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini';
+export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
   | 'openai'
   | 'gemini'
+  | 'ollama'
   | 'custom:anthropic'
   | 'custom:openai'
   | 'custom:gemini';
@@ -128,6 +133,11 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-5.4',
   },
+  ollama: {
+    apiKey: '',
+    baseUrl: 'http://localhost:11434/v1',
+    model: '',
+  },
   gemini: {
     apiKey: '',
     baseUrl: 'https://generativelanguage.googleapis.com',
@@ -220,7 +230,7 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
       }
     }
 
-    cachedDynamicPresets = result as typeof PROVIDER_PRESETS;
+    cachedDynamicPresets = result as unknown as typeof PROVIDER_PRESETS;
     return cachedDynamicPresets;
   } catch (err) {
     logWarn('[ConfigStore] Failed to load pi-ai model presets, using hardcoded fallback:', err);
@@ -233,13 +243,14 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'anthropic',
   'openai',
   'gemini',
+  'ollama',
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
 ];
 
 function isProviderType(value: unknown): value is ProviderType {
-  return value === 'openrouter' || value === 'anthropic' || value === 'custom' || value === 'openai' || value === 'gemini';
+  return value === 'openrouter' || value === 'anthropic' || value === 'custom' || value === 'openai' || value === 'gemini' || value === 'ollama';
 }
 
 function isCustomProtocol(value: unknown): value is CustomProtocolType {
@@ -279,6 +290,9 @@ function profileKeyToProvider(profileKey: ProviderProfileKey): { provider: Provi
   if (profileKey === 'gemini') {
     return { provider: 'gemini', customProtocol: 'gemini' };
   }
+  if (profileKey === 'ollama') {
+    return { provider: 'ollama', customProtocol: 'openai' };
+  }
   return { provider: profileKey, customProtocol: 'anthropic' };
 }
 
@@ -303,6 +317,16 @@ function normalizeCustomProtocol(value: CustomProtocolType | undefined, fallback
     return value;
   }
   return fallback;
+}
+
+function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType {
+  if (provider === 'openai' || provider === 'ollama') {
+    return 'openai';
+  }
+  if (provider === 'gemini') {
+    return 'gemini';
+  }
+  return 'anthropic';
 }
 
 export class ConfigStore {
@@ -382,9 +406,12 @@ export class ConfigStore {
     const model = typeof profile?.model === 'string' && profile.model.trim()
       ? profile.model.trim()
       : fallback.model;
-    const baseUrl = typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
+    const rawBaseUrl = typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
       ? profile.baseUrl.trim()
       : fallback.baseUrl;
+    const baseUrl = profileKey === 'ollama'
+      ? (normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl)
+      : rawBaseUrl;
     return {
       apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
       baseUrl,
@@ -410,7 +437,9 @@ export class ConfigStore {
     enableThinking: boolean;
   } {
     const provider = isProviderType(raw.provider) ? raw.provider : defaultConfig.provider;
-    const customProtocol: CustomProtocolType = isCustomProtocol(raw.customProtocol) ? raw.customProtocol : 'anthropic';
+    const customProtocol: CustomProtocolType = isCustomProtocol(raw.customProtocol)
+      ? raw.customProtocol
+      : defaultProtocolForProvider(provider);
     const derivedProfileKey = profileKeyFromProvider(provider, customProtocol);
 
     const hasAnyRawProfiles = Boolean(raw.profiles && Object.keys(raw.profiles).length > 0);
@@ -450,6 +479,17 @@ export class ConfigStore {
         model: typeof raw.model === 'string' ? raw.model : undefined,
       });
       activeProfileKey = derivedProfileKey;
+    }
+
+    if (
+      activeProfileKey === 'custom:openai'
+      && isOllamaLegacyCustomOpenAIConfig({
+        provider,
+        customProtocol,
+        baseUrl: profiles['custom:openai']?.baseUrl,
+      })
+    ) {
+      profiles.ollama = this.normalizeProfile('ollama', profiles['custom:openai']);
     }
 
     if (!profiles[activeProfileKey]) {
@@ -509,7 +549,7 @@ export class ConfigStore {
     const provider = isProviderType(rawSet?.provider) ? rawSet.provider : fallback.provider;
     const customProtocol: CustomProtocolType = isCustomProtocol(rawSet?.customProtocol)
       ? rawSet.customProtocol
-      : fallback.customProtocol;
+      : defaultProtocolForProvider(provider);
 
     const derivedProfileKey = profileKeyFromProvider(provider, customProtocol);
     const activeProfileKey = isProfileKey(rawSet?.activeProfileKey)
@@ -864,7 +904,10 @@ export class ConfigStore {
     if (mode === 'blank') {
       const activeSet = current.configSets.find((set) => set.id === current.activeConfigSetId) || current.configSets[0];
       const seedProvider = activeSet?.provider || current.provider;
-      const seedProtocol: CustomProtocolType = normalizeCustomProtocol(activeSet?.customProtocol, 'anthropic');
+      const seedProtocol: CustomProtocolType = normalizeCustomProtocol(
+        activeSet?.customProtocol,
+        defaultProtocolForProvider(seedProvider)
+      );
       newSet = this.buildBlankConfigSet({
         id,
         name,
@@ -969,7 +1012,7 @@ export class ConfigStore {
     if (Array.isArray(updates.configSets) && updates.configSets.length > 0) {
       const normalizedSets = this.normalizeConfigSets(updates.configSets, {
         provider: current.provider,
-        customProtocol: normalizeCustomProtocol(current.customProtocol, 'anthropic'),
+        customProtocol: normalizeCustomProtocol(current.customProtocol, defaultProtocolForProvider(current.provider)),
         activeProfileKey: current.activeProfileKey,
         profiles: this.cloneProfiles(current.profiles),
         enableThinking: current.enableThinking,
@@ -990,7 +1033,10 @@ export class ConfigStore {
     const nextProfiles = this.cloneProfiles(targetSet.profiles);
     let nextActiveProfileKey = targetSet.activeProfileKey;
     let nextProvider = targetSet.provider;
-    let nextCustomProtocol: CustomProtocolType = normalizeCustomProtocol(targetSet.customProtocol, 'anthropic');
+    let nextCustomProtocol: CustomProtocolType = normalizeCustomProtocol(
+      targetSet.customProtocol,
+      defaultProtocolForProvider(targetSet.provider)
+    );
 
     const mutatesActiveSet =
       updates.profiles !== undefined ||
@@ -1022,7 +1068,7 @@ export class ConfigStore {
         const requestedProvider = isProviderType(updates.provider) ? updates.provider : nextProvider;
         const requestedProtocol = requestedProvider === 'custom'
           ? (isCustomProtocol(updates.customProtocol) ? updates.customProtocol : nextCustomProtocol)
-          : 'anthropic';
+          : defaultProtocolForProvider(requestedProvider);
         nextActiveProfileKey = profileKeyFromProvider(requestedProvider, requestedProtocol);
         const fromProfile = profileKeyToProvider(nextActiveProfileKey);
         nextProvider = fromProfile.provider;
@@ -1084,7 +1130,11 @@ export class ConfigStore {
     customProtocol?: CustomProtocolType;
     apiKey?: string;
     baseUrl?: string;
+    model?: string;
   }): boolean {
+    if (projection.provider === 'ollama' && !(projection.model?.trim())) {
+      return false;
+    }
     const apiKey = projection.apiKey?.trim();
     if (apiKey) {
       return true;
@@ -1103,16 +1153,35 @@ export class ConfigStore {
     })) {
       return true;
     }
-    const protocol: CustomProtocolType = normalizeCustomProtocol(projection.customProtocol, 'anthropic');
+    if (shouldAllowEmptyOllamaApiKey({
+      provider: projection.provider,
+      customProtocol: projection.customProtocol,
+      baseUrl: projection.baseUrl,
+    })) {
+      return true;
+    }
+    const protocol: CustomProtocolType = normalizeCustomProtocol(
+      projection.customProtocol,
+      defaultProtocolForProvider(projection.provider)
+    );
     if (!isOpenAIProvider({ provider: projection.provider, customProtocol: protocol })) {
       return false;
     }
-    return resolveOpenAICredentials({
-      provider: projection.provider,
-      customProtocol: protocol,
-      apiKey: projection.apiKey ?? '',
-      baseUrl: projection.baseUrl,
-    }) !== null;
+    return (
+      (projection.provider === 'ollama'
+        ? resolveOllamaCredentials({
+            provider: projection.provider,
+            customProtocol: protocol,
+            apiKey: projection.apiKey ?? '',
+            baseUrl: projection.baseUrl,
+          })
+        : resolveOpenAICredentials({
+            provider: projection.provider,
+            customProtocol: protocol,
+            apiKey: projection.apiKey ?? '',
+            baseUrl: projection.baseUrl,
+          })) !== null
+    );
   }
 
   hasUsableCredentials(config: AppConfig = this.getAll()): boolean {
@@ -1126,6 +1195,7 @@ export class ConfigStore {
       customProtocol: normalized.customProtocol,
       apiKey: normalized.apiKey,
       baseUrl: normalized.baseUrl,
+      model: normalized.model,
     });
   }
 
@@ -1138,6 +1208,7 @@ export class ConfigStore {
         customProtocol: projected.customProtocol,
         apiKey: projected.apiKey,
         baseUrl: projected.baseUrl,
+        model: projected.model,
       });
     });
   }
@@ -1184,13 +1255,16 @@ export class ConfigStore {
 
     const useOpenAI =
       projectedConfig.provider === 'openai' ||
+      projectedConfig.provider === 'ollama' ||
       (projectedConfig.provider === 'custom' && projectedConfig.customProtocol === 'openai');
     const useGemini =
       projectedConfig.provider === 'gemini' ||
       (projectedConfig.provider === 'custom' && projectedConfig.customProtocol === 'gemini');
 
     if (useOpenAI) {
-      const resolvedOpenAI = resolveOpenAICredentials(projectedConfig);
+      const resolvedOpenAI = projectedConfig.provider === 'ollama'
+        ? resolveOllamaCredentials(projectedConfig)
+        : resolveOpenAICredentials(projectedConfig);
       if (resolvedOpenAI?.apiKey) {
         process.env.OPENAI_API_KEY = resolvedOpenAI.apiKey;
       }

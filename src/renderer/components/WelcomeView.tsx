@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
+import { getInitialSessionTitle } from '../../shared/session-title';
 import {
   FileText,
   BarChart3,
@@ -31,12 +32,15 @@ export function WelcomeView() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComposingRef = useRef(false);
-  const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [pastedImages, setPastedImages] = useState<
+    Array<{ url: string; base64: string; mediaType: string }>
+  >([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { startSession, changeWorkingDir, isElectron } = useIPC();
   const workingDir = useAppStore((state) => state.workingDir);
+  const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
 
   const handleSelectFolder = async () => {
     await changeWorkingDir();
@@ -47,7 +51,7 @@ export function WelcomeView() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
 
     e.preventDefault();
@@ -73,7 +77,7 @@ export function WelcomeView() {
       }
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    setPastedImages((prev) => [...prev, ...newImages]);
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -136,7 +140,10 @@ export function WelcomeView() {
                 }
 
                 // If still too large, try again with lower quality or scale
-                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
+                if (
+                  compressedBlob.size > MAX_BLOB_SIZE &&
+                  (currentQuality > 0.5 || currentScale > 0.3)
+                ) {
                   const newQuality = Math.max(0.5, currentQuality - 0.1);
                   const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
                   attemptCompress(newScale, newQuality).then(resolveBlob);
@@ -163,7 +170,7 @@ export function WelcomeView() {
   };
 
   const removeImage = (index: number) => {
-    setPastedImages(prev => {
+    setPastedImages((prev) => {
       const updated = [...prev];
       URL.revokeObjectURL(updated[index].url);
       updated.splice(index, 1);
@@ -172,7 +179,7 @@ export function WelcomeView() {
   };
 
   const removeFile = (index: number) => {
-    setAttachedFiles(prev => {
+    setAttachedFiles((prev) => {
       const updated = [...prev];
       updated.splice(index, 1);
       return updated;
@@ -199,7 +206,7 @@ export function WelcomeView() {
         };
       });
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[WelcomeView] Error selecting files:', error);
     }
@@ -224,8 +231,8 @@ export function WelcomeView() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    const otherFiles = files.filter((file) => !file.type.startsWith('image/'));
 
     if (imageFiles.length > 0) {
       const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
@@ -246,13 +253,13 @@ export function WelcomeView() {
         }
       }
 
-      setPastedImages(prev => [...prev, ...newImages]);
+      setPastedImages((prev) => [...prev, ...newImages]);
     }
 
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
         otherFiles.map(async (file) => {
-          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
           const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
 
           return {
@@ -265,7 +272,7 @@ export function WelcomeView() {
         })
       );
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     }
   };
 
@@ -275,13 +282,17 @@ export function WelcomeView() {
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
 
-    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting) return;
+    if (
+      (!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) ||
+      isSubmitting
+    )
+      return;
 
     // Build content blocks
     const contentBlocks: ContentBlock[] = [];
 
     // Add images first
-    pastedImages.forEach(img => {
+    pastedImages.forEach((img) => {
       contentBlocks.push({
         type: 'image',
         source: {
@@ -293,7 +304,7 @@ export function WelcomeView() {
     });
 
     // Add file attachments
-    attachedFiles.forEach(file => {
+    attachedFiles.forEach((file) => {
       contentBlocks.push({
         type: 'file_attachment',
         filename: file.name,
@@ -315,15 +326,17 @@ export function WelcomeView() {
     // Use the global working directory (always available after app startup)
     setIsSubmitting(true);
     try {
-      const sessionTitle = currentPrompt.slice(0, 50) + (currentPrompt.length > 50 ? '...' : '');
-      await startSession(sessionTitle, contentBlocks, workingDir || undefined);
-      setPrompt('');
-      if (textareaRef.current) {
-        textareaRef.current.value = '';
+      const sessionTitle = getInitialSessionTitle(currentPrompt, attachedFiles[0]?.name);
+      const session = await startSession(sessionTitle, contentBlocks, workingDir || undefined);
+      if (session) {
+        setPrompt('');
+        if (textareaRef.current) {
+          textareaRef.current.value = '';
+        }
+        pastedImages.forEach((img) => URL.revokeObjectURL(img.url));
+        setPastedImages([]);
+        setAttachedFiles([]);
       }
-      pastedImages.forEach(img => URL.revokeObjectURL(img.url));
-      setPastedImages([]);
-      setAttachedFiles([]);
     } finally {
       setIsSubmitting(false);
     }
@@ -362,29 +375,44 @@ export function WelcomeView() {
   }, [prompt]);
 
   const quickTags = [
-    { id: 'create', label: t('welcome.createFile'), icon: FileText, prompt: 'Create a new file for me' },
-    { id: 'crunch', label: t('welcome.crunchData'), icon: BarChart3, prompt: 'Help me analyze and process data' },
-    { id: 'organize', label: t('welcome.organizeFiles'), icon: FolderOpen, prompt: 'Help me organize my files and folders' },
-    { 
-      id: 'email', 
-      label: t('welcome.checkEmails'), 
-      icon: Mail, 
-      prompt: 'Help me use Chrome to summarize the new emails from the past three days in my Gmail and NetEase Mail. Note that the saved accounts already include the full email suffix. Therefore, if the email suffix is already pre-filled on the webpage or in a screenshot, do not enter it again, to avoid login failure. Also, first check whether the corresponding account credentials are saved. If the username or password for a given email service is not saved, you can skip that email account.',
-      requiresChrome: true 
+    {
+      id: 'create',
+      label: t('welcome.createFile'),
+      icon: FileText,
+      prompt: t('welcome.quickPromptCreate'),
     },
-    { 
-      id: 'papers', 
-      label: t('welcome.searchPapers'), 
-      icon: BookOpen, 
-      prompt: 'Please help me use Chrome to search for and summarize papers related to [Agent] within two days.\nSource websites:\n1. HuggingFace Daily Papers. Please include the vote information and a brief summary. Note that it may not include papers in the weekend, so you may need to check the papers in previous days. But make sure that there is a total of two days.',
-      requiresChrome: true 
+    {
+      id: 'crunch',
+      label: t('welcome.crunchData'),
+      icon: BarChart3,
+      prompt: t('welcome.quickPromptCrunch'),
     },
-    { 
-      id: 'research-notion', 
-      label: t('welcome.summarizePapersToNotion'), 
-      icon: FileSearch, 
-      prompt: 'Help me research three representative survey papers related to agents, and add them under a Notion page titled "Agent Survey". For each paper, include the title, authors, publication venue/year, and a brief summary of the main contributions.',
-      requiresNotion: true 
+    {
+      id: 'organize',
+      label: t('welcome.organizeFiles'),
+      icon: FolderOpen,
+      prompt: t('welcome.quickPromptOrganize'),
+    },
+    {
+      id: 'email',
+      label: t('welcome.checkEmails'),
+      icon: Mail,
+      prompt: t('welcome.quickPromptEmail'),
+      requiresChrome: true,
+    },
+    {
+      id: 'papers',
+      label: t('welcome.searchPapers'),
+      icon: BookOpen,
+      prompt: t('welcome.quickPromptPapers'),
+      requiresChrome: true,
+    },
+    {
+      id: 'research-notion',
+      label: t('welcome.summarizePapersToNotion'),
+      icon: FileSearch,
+      prompt: t('welcome.quickPromptNotion'),
+      requiresNotion: true,
     },
   ];
 
@@ -395,7 +423,7 @@ export function WelcomeView() {
           <div className="flex items-center justify-center gap-4">
             <img
               src={welcomeLogoSrc}
-              alt="Open Cowork logo"
+              alt={t('welcome.logoAlt')}
               className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
             />
             <div className="text-left">
@@ -420,10 +448,15 @@ export function WelcomeView() {
                   ? 'border-accent/30 bg-accent-muted text-accent'
                   : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
               } ${
-                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
+                ('requiresChrome' in tag && tag.requiresChrome) ||
+                ('requiresNotion' in tag && tag.requiresNotion)
+                  ? 'relative'
+                  : ''
               }`}
             >
-              <tag.icon className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
+              <tag.icon
+                className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`}
+              />
               <span>{tag.label}</span>
               {'requiresChrome' in tag && tag.requiresChrome && (
                 <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
@@ -456,7 +489,7 @@ export function WelcomeView() {
                 <div key={index} className="relative group">
                   <img
                     src={img.url}
-                    alt={`Pasted ${index + 1}`}
+                    alt={t('welcome.pastedImageAlt', { index: index + 1 })}
                     className="w-full aspect-square object-cover rounded-lg border border-border"
                   />
                   <button
@@ -539,7 +572,9 @@ export function WelcomeView() {
                 title={workingDir || t('welcome.selectWorkingFolder')}
               >
                 <FolderOpen className="w-4 h-4" />
-                <span>{workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}</span>
+                <span>
+                  {workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}
+                </span>
               </button>
 
               {isElectron && (
@@ -556,7 +591,7 @@ export function WelcomeView() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={!canSubmit || isSubmitting}
               className="btn btn-primary px-5 py-2.5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>

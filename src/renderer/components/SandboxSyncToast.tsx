@@ -5,7 +5,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SandboxSyncStatus, SandboxSyncPhase } from '../types';
+import { getSandboxSyncDisplayText } from '../utils/sandbox-i18n';
 
 interface Props {
   status: SandboxSyncStatus | null;
@@ -27,6 +29,7 @@ function formatSize(bytes: number): string {
 }
 
 export function SandboxSyncToast({ status }: Props) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
 
@@ -55,9 +58,10 @@ export function SandboxSyncToast({ status }: Props) {
   const config = phaseConfig[status.phase];
   const isComplete = status.phase === 'ready';
   const isError = status.phase === 'error';
+  const displayText = getSandboxSyncDisplayText(t, status);
 
   return (
-    <div 
+    <div
       className={`fixed bottom-4 right-4 z-40 transition-all duration-300 ${
         fadeOut ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
       }`}
@@ -65,21 +69,17 @@ export function SandboxSyncToast({ status }: Props) {
       <div className="bg-background/92 backdrop-blur-md border border-border-subtle rounded-[1.6rem] shadow-elevated max-w-sm overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className={`text-xl ${isComplete ? '' : 'animate-pulse'}`}>
-            {config.icon}
-          </div>
+          <div className={`text-xl ${isComplete ? '' : 'animate-pulse'}`}>{config.icon}</div>
           <div className="flex-1 min-w-0">
-            <p className={`font-medium text-sm ${
-              isComplete ? 'text-success' : 
-              isError ? 'text-error' :
-              'text-accent'
-            }`}>
-              {status.message}
+            <p
+              className={`font-medium text-sm ${
+                isComplete ? 'text-success' : isError ? 'text-error' : 'text-accent'
+              }`}
+            >
+              {displayText.message}
             </p>
-            {status.detail && (
-              <p className="text-xs text-text-muted mt-0.5 truncate">
-                {status.detail}
-              </p>
+            {displayText.detail && (
+              <p className="text-xs text-text-muted mt-0.5 truncate">{displayText.detail}</p>
             )}
           </div>
           {!isComplete && !isError && (
@@ -92,7 +92,7 @@ export function SandboxSyncToast({ status }: Props) {
         {/* File info bar */}
         {status.fileCount !== undefined && status.totalSize !== undefined && (
           <div className="px-4 py-2 bg-background-secondary/70 border-t border-border-muted flex items-center justify-between text-xs text-text-muted">
-            <span>{status.fileCount} files</span>
+            <span>{t('sandbox.syncFiles', { count: status.fileCount })}</span>
             <span>{formatSize(status.totalSize)}</span>
           </div>
         )}
@@ -101,8 +101,9 @@ export function SandboxSyncToast({ status }: Props) {
         {status.phase === 'syncing_files' && (
           <div className="px-4 py-2.5 bg-accent-muted/50 border-t border-border-muted">
             <p className="text-xs text-text-secondary leading-relaxed">
-              Syncing project files to isolated sandbox for secure code execution.
-              <span className="text-accent font-medium"> First sync is slower</span>, incremental syncs will be faster.
+              {t('sandbox.syncExplanation')}
+              <span className="text-accent font-medium"> {t('sandbox.syncFirst')}</span>{' '}
+              {t('sandbox.syncFollowup')}
             </p>
           </div>
         )}

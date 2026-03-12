@@ -141,4 +141,42 @@ describe('api config set helpers', () => {
     expect(bootstrap.configSets).toHaveLength(1);
     expect(bootstrap.activeConfigSetId).toBe('default');
   });
+
+  it('upgrades legacy localhost ollama config sets to ollama in UI bootstrap', () => {
+    const config = {
+      provider: 'custom',
+      customProtocol: 'openai',
+      activeProfileKey: 'custom:openai',
+      activeConfigSetId: 'legacy-ollama',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/v1',
+      model: 'qwen3.5:0.8b',
+      configSets: [
+        {
+          id: 'legacy-ollama',
+          name: 'Legacy Ollama',
+          isSystem: false,
+          provider: 'custom',
+          customProtocol: 'openai',
+          activeProfileKey: 'custom:openai',
+          profiles: {
+            'custom:openai': {
+              apiKey: '',
+              baseUrl: 'http://localhost:11434/v1',
+              model: 'qwen3.5:0.8b',
+            },
+          },
+          enableThinking: false,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      isConfigured: true,
+    } as AppConfig;
+
+    const bootstrap = buildApiConfigBootstrap(config, FALLBACK_PROVIDER_PRESETS);
+    expect(bootstrap.snapshot.activeProfileKey).toBe('ollama');
+    expect(bootstrap.configSets[0].provider).toBe('ollama');
+    expect(bootstrap.configSets[0].activeProfileKey).toBe('ollama');
+    expect(bootstrap.configSets[0].profiles.ollama?.baseUrl).toBe('http://localhost:11434/v1');
+  });
 });

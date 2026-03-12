@@ -3,6 +3,7 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { PROVIDER_PRESETS } from './config-store';
 import {
   normalizeAnthropicBaseUrl,
+  resolveOllamaCredentials,
   resolveOpenAICredentials,
   shouldAllowEmptyAnthropicApiKey,
   shouldUseAnthropicAuthToken,
@@ -59,7 +60,7 @@ function normalizeApiTestError(error: unknown): ApiTestResult {
 
 function resolveBaseUrl(input: ApiTestInput): string | undefined {
   const normalizeForAnthropic = (value: string | undefined): string | undefined => (
-    input.provider === 'openai' || (input.provider === 'custom' && input.customProtocol === 'openai')
+    input.provider === 'openai' || input.provider === 'ollama' || (input.provider === 'custom' && input.customProtocol === 'openai')
       ? value
       : normalizeAnthropicBaseUrl(value)
   );
@@ -113,19 +114,28 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
   const apiKey = input.apiKey?.trim() || '';
   const resolvedBaseUrl = resolveBaseUrl(input);
   const customUsesOpenAI = input.provider === 'custom' && input.customProtocol === 'openai';
-  const useOpenAI = input.provider === 'openai' || customUsesOpenAI;
+  const useOpenAI = input.provider === 'openai' || input.provider === 'ollama' || customUsesOpenAI;
   const allowEmptyAnthropicApiKey = shouldAllowEmptyAnthropicApiKey({
     provider: input.provider,
     customProtocol: input.customProtocol,
     baseUrl: resolvedBaseUrl,
   });
   const resolvedOpenAI = useOpenAI
-    ? resolveOpenAICredentials({
-        provider: input.provider,
-        customProtocol: input.customProtocol,
-        apiKey,
-        baseUrl: resolvedBaseUrl,
-      })
+    ? (
+      input.provider === 'ollama'
+        ? resolveOllamaCredentials({
+            provider: input.provider,
+            customProtocol: input.customProtocol,
+            apiKey,
+            baseUrl: resolvedBaseUrl,
+          })
+        : resolveOpenAICredentials({
+            provider: input.provider,
+            customProtocol: input.customProtocol,
+            apiKey,
+            baseUrl: resolvedBaseUrl,
+          })
+    )
     : null;
   const effectiveApiKey = apiKey || (allowEmptyAnthropicApiKey ? LOCAL_ANTHROPIC_PLACEHOLDER_KEY : '');
   const useAuthTokenHeader = shouldUseAnthropicAuthToken({
@@ -144,7 +154,7 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
     live: useLiveRequest,
   });
 
-  if (useOpenAI && !apiKey) {
+  if (useOpenAI && !resolvedOpenAI?.apiKey) {
     logWarn('[Config][ApiTest] Missing credentials for test');
     return {
       ok: false,
@@ -170,9 +180,12 @@ export async function testApiConnection(input: ApiTestInput): Promise<ApiTestRes
 
   try {
     if (useOpenAI) {
+      if (!resolvedOpenAI) {
+        return { ok: false, errorType: 'missing_key', details: 'No API key provided.' };
+      }
       await testOpenAICredentials(
         {
-          apiKey,
+          apiKey: resolvedOpenAI.apiKey,
           baseUrl: resolvedOpenAI?.baseUrl || resolvedBaseUrl,
         },
         input.model,

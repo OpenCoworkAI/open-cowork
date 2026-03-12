@@ -1,6 +1,14 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
-import type { ClientEvent, ServerEvent, PermissionResult, Session, Message, TraceStep, ContentBlock } from '../types';
+import type {
+  ClientEvent,
+  ServerEvent,
+  PermissionResult,
+  Session,
+  Message,
+  TraceStep,
+  ContentBlock,
+} from '../types';
 import i18n from '../i18n/config';
 
 // Check if running in Electron
@@ -10,7 +18,7 @@ export function useIPC() {
   // Use refs to store stable references to store actions
   // This prevents useEffect from re-running when actions change
   const storeRef = useRef(useAppStore.getState());
-  
+
   // Update ref on every render to always have latest actions
   useEffect(() => {
     storeRef.current = useAppStore.getState();
@@ -22,7 +30,7 @@ export function useIPC() {
       console.log('[useIPC] Not in Electron, skipping IPC setup');
       return;
     }
-    
+
     console.log('[useIPC] Setting up IPC listener (once)');
 
     // --- RAF batching for high-frequency events ---
@@ -78,7 +86,7 @@ export function useIPC() {
     const cleanup = window.electronAPI.on((event: ServerEvent) => {
       const store = storeRef.current;
       console.log('[useIPC] Received event:', event.type);
-      
+
       switch (event.type) {
         case 'session.list':
           store.setSessions(event.payload.sessions);
@@ -95,13 +103,18 @@ export function useIPC() {
             store.clearQueuedMessages(event.payload.sessionId);
           }
           break;
-        
+
         case 'session.update':
           store.updateSession(event.payload.sessionId, event.payload.updates);
           break;
 
         case 'stream.message':
-          console.log('[useIPC] stream.message received:', event.payload.message.role, 'content:', JSON.stringify(event.payload.message.content));
+          console.log(
+            '[useIPC] stream.message received:',
+            event.payload.message.role,
+            'content:',
+            JSON.stringify(event.payload.message.content)
+          );
           store.addMessage(event.payload.sessionId, event.payload.message);
           break;
 
@@ -110,10 +123,7 @@ export function useIPC() {
           break;
 
         case 'trace.step': {
-          if (
-            event.payload.step.type === 'thinking' &&
-            event.payload.step.status === 'running'
-          ) {
+          if (event.payload.step.type === 'thinking' && event.payload.step.status === 'running') {
             const currentState = useAppStore.getState();
             const pending = currentState.pendingTurnsBySession[event.payload.sessionId] || [];
             const activeTurn = currentState.activeTurnsBySession[event.payload.sessionId];
@@ -124,18 +134,28 @@ export function useIPC() {
               store.updateActiveTurnStep(event.payload.sessionId, event.payload.step.id);
             }
           }
-          bufferTrace({ kind: 'add', sessionId: event.payload.sessionId, step: event.payload.step });
+          bufferTrace({
+            kind: 'add',
+            sessionId: event.payload.sessionId,
+            step: event.payload.step,
+          });
           break;
         }
 
         case 'trace.update':
           if (
             event.payload.updates.status &&
-            (event.payload.updates.status === 'completed' || event.payload.updates.status === 'error')
+            (event.payload.updates.status === 'completed' ||
+              event.payload.updates.status === 'error')
           ) {
             store.clearActiveTurn(event.payload.sessionId, event.payload.stepId);
           }
-          bufferTrace({ kind: 'update', sessionId: event.payload.sessionId, stepId: event.payload.stepId, updates: event.payload.updates });
+          bufferTrace({
+            kind: 'update',
+            sessionId: event.payload.sessionId,
+            stepId: event.payload.stepId,
+            updates: event.payload.updates,
+          });
           if (event.payload.updates.status && event.payload.updates.status !== 'running') {
             // Flush pending traces so the store reflects any trace.step adds from this frame
             flushTraces();
@@ -153,7 +173,7 @@ export function useIPC() {
           store.setPendingPermission(event.payload);
           break;
 
-        case 'config.status':
+        case 'config.status': {
           console.log('[useIPC] config.status received:', event.payload.isConfigured);
           const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
           store.setIsConfigured(event.payload.isConfigured);
@@ -165,19 +185,32 @@ export function useIPC() {
             store.setShowConfigModal(true);
           }
           break;
+        }
 
         case 'sandbox.progress':
-          console.log('[useIPC] sandbox.progress received:', event.payload.phase, event.payload.message);
+          console.log(
+            '[useIPC] sandbox.progress received:',
+            event.payload.phase,
+            event.payload.message
+          );
           store.setSandboxSetupProgress(event.payload);
           break;
 
         case 'sandbox.sync':
-          console.log('[useIPC] sandbox.sync received:', event.payload.phase, event.payload.message);
+          console.log(
+            '[useIPC] sandbox.sync received:',
+            event.payload.phase,
+            event.payload.message
+          );
           store.setSandboxSyncStatus(event.payload);
           break;
 
         case 'skills.storageChanged':
-          console.log('[useIPC] skills.storageChanged received:', event.payload.path, event.payload.reason);
+          console.log(
+            '[useIPC] skills.storageChanged received:',
+            event.payload.path,
+            event.payload.reason
+          );
           store.setSkillsStorageChangeEvent(event.payload);
           store.setSkillsStorageChangedAt(Date.now());
           break;
@@ -193,6 +226,7 @@ export function useIPC() {
               id: 'proxy-warmup',
               type: 'info',
               message: i18n.t('api.proxyWarming'),
+              messageKey: 'api.proxyWarming',
             });
           } else {
             const current = useAppStore.getState().globalNotice;
@@ -209,8 +243,16 @@ export function useIPC() {
             store.setGlobalNotice({
               id: `notice-config-required-${Date.now()}`,
               type: 'warning',
+              message: i18n.t('api.configRequiredActiveSet'),
+              messageKey: 'api.configRequiredActiveSet',
+              action:
+                event.payload.action === 'open_api_settings' ? 'open_api_settings' : undefined,
+            });
+          } else {
+            store.setGlobalNotice({
+              id: `notice-error-${Date.now()}`,
+              type: 'error',
               message: event.payload.message,
-              action: event.payload.action === 'open_api_settings' ? 'open_api_settings' : undefined,
             });
           }
           break;
@@ -228,7 +270,7 @@ export function useIPC() {
       cleanup?.();
     };
   }, []); // Empty deps - setup listener only once!
-  
+
   // Get actions for the rest of the hook
   const addSession = useAppStore((s) => s.addSession);
   const updateSession = useAppStore((s) => s.updateSession);
@@ -267,72 +309,69 @@ export function useIPC() {
       console.log('[useIPC] Starting session:', title);
 
       // Normalize input to ContentBlock array
-      const content: ContentBlock[] = typeof promptOrContent === 'string'
-        ? [{ type: 'text', text: promptOrContent }]
-        : promptOrContent;
+      const content: ContentBlock[] =
+        typeof promptOrContent === 'string'
+          ? [{ type: 'text', text: promptOrContent }]
+          : promptOrContent;
 
       // Extract text for legacy backend and session title (if needed)
-      const textContent = content.find(block => block.type === 'text');
+      const textContent = content.find((block) => block.type === 'text');
       const prompt = textContent && 'text' in textContent ? textContent.text : '';
 
       // Browser mode mock
       if (!isElectron) {
-        try {
-          const sessionId = `mock-session-${Date.now()}`;
-          const session: Session = {
-            id: sessionId,
-            title: title || 'New Session',
-            status: 'running',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            cwd: cwd || '',
-            mountedPaths: [],
-            allowedTools: [
-              'webfetch',
-              'websearch',
-              'read',
-              'write',
-              'edit',
-              'list_directory',
-              'glob',
-              'grep',
-            ],
-            memoryEnabled: false,
-          };
+        const sessionId = `mock-session-${Date.now()}`;
+        const session: Session = {
+          id: sessionId,
+          title: title || 'New Session',
+          status: 'running',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cwd: cwd || '',
+          mountedPaths: [],
+          allowedTools: [
+            'webfetch',
+            'websearch',
+            'read',
+            'write',
+            'edit',
+            'list_directory',
+            'glob',
+            'grep',
+          ],
+          memoryEnabled: false,
+        };
 
-          addSession(session);
-          useAppStore.getState().setActiveSession(sessionId);
+        addSession(session);
+        useAppStore.getState().setActiveSession(sessionId);
 
-          const userMessage: Message = {
-            id: `msg-user-${Date.now()}`,
-            sessionId,
-            role: 'user',
-            content,
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, userMessage);
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
+        const userMessage: Message = {
+          id: `msg-user-${Date.now()}`,
+          sessionId,
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, userMessage);
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
 
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          setLoading(false);
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        setLoading(false);
 
-          return session;
-        } catch (e) {
-          throw e;
-        }
+        return session;
       }
 
       // Electron mode
@@ -368,7 +407,13 @@ export function useIPC() {
         return session;
       } catch (e) {
         setLoading(false);
-        throw e;
+        useAppStore.getState().setGlobalNotice({
+          id: `notice-session-start-${Date.now()}`,
+          type: 'error',
+          message: e instanceof Error ? e.message : i18n.t('chat.startFailed'),
+          messageKey: e instanceof Error ? undefined : 'chat.startFailed',
+        });
+        return null;
       }
     },
     [invoke, addSession, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn]
@@ -381,17 +426,19 @@ export function useIPC() {
       console.log('[useIPC] Continuing session:', sessionId);
 
       // Normalize input to ContentBlock array
-      const content: ContentBlock[] = typeof promptOrContent === 'string'
-        ? [{ type: 'text', text: promptOrContent }]
-        : promptOrContent;
+      const content: ContentBlock[] =
+        typeof promptOrContent === 'string'
+          ? [{ type: 'text', text: promptOrContent }]
+          : promptOrContent;
 
       // Extract text for legacy backend (if needed)
-      const textContent = content.find(block => block.type === 'text');
+      const textContent = content.find((block) => block.type === 'text');
       const prompt = textContent && 'text' in textContent ? textContent.text : '';
 
       // Immediately add user message to UI (for both modes)
       const store = useAppStore.getState();
-      const isSessionRunning = store.sessions.find((session) => session.id === sessionId)?.status === 'running';
+      const isSessionRunning =
+        store.sessions.find((session) => session.id === sessionId)?.status === 'running';
       const hasActiveTurn = Boolean(store.activeTurnsBySession[sessionId]);
       const hasPending = (store.pendingTurnsBySession[sessionId]?.length ?? 0) > 0;
       const shouldQueue = isSessionRunning || hasActiveTurn || hasPending;
@@ -404,35 +451,31 @@ export function useIPC() {
         localStatus: shouldQueue ? 'queued' : undefined,
       };
       addMessage(sessionId, userMessage);
-      
+
       // Browser mode mock
       if (!isElectron) {
-        try {
-          updateSession(sessionId, { status: 'running' });
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
-          
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
-          
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          clearPendingTurns(sessionId);
-          setLoading(false);
-        } catch (e) {
-          throw e;
-        }
+        updateSession(sessionId, { status: 'running' });
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
+
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        clearPendingTurns(sessionId);
+        setLoading(false);
         return;
       }
-      
+
       // Electron mode - send to backend (user message already added above)
       // Immediately activate turn to show processing indicator while waiting for API
       if (!shouldQueue) {
@@ -450,7 +493,15 @@ export function useIPC() {
       });
       // Loading will be reset when we receive session.status event
     },
-    [send, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn]
+    [
+      send,
+      addMessage,
+      updateSession,
+      setLoading,
+      activateNextTurn,
+      clearActiveTurn,
+      clearPendingTurns,
+    ]
   );
 
   const stopSession = useCallback(
@@ -537,12 +588,18 @@ export function useIPC() {
     return invoke<string | null>({ type: 'workdir.get', payload: {} });
   }, [invoke]);
 
-  const changeWorkingDir = useCallback(async (sessionId?: string): Promise<{ success: boolean; path: string; error?: string }> => {
-    if (!isElectron) {
-      return { success: true, path: '/mock/working/dir' };
-    }
-    return invoke<{ success: boolean; path: string; error?: string }>({ type: 'workdir.select', payload: { sessionId } });
-  }, [invoke]);
+  const changeWorkingDir = useCallback(
+    async (sessionId?: string): Promise<{ success: boolean; path: string; error?: string }> => {
+      if (!isElectron) {
+        return { success: true, path: '/mock/working/dir' };
+      }
+      return invoke<{ success: boolean; path: string; error?: string }>({
+        type: 'workdir.select',
+        payload: { sessionId },
+      });
+    },
+    [invoke]
+  );
 
   const getMCPServers = useCallback(async () => {
     if (!isElectron) {

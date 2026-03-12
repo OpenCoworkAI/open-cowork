@@ -4,10 +4,15 @@ import type { AppConfig } from '../src/main/config/config-store';
 
 const mocks = vi.hoisted(() => ({
   probeWithClaudeSdk: vi.fn(),
+  testOllamaConnection: vi.fn(),
 }));
 
 vi.mock('../src/main/claude/claude-sdk-one-shot', () => ({
   probeWithClaudeSdk: mocks.probeWithClaudeSdk,
+}));
+
+vi.mock('../src/main/config/ollama-api', () => ({
+  testOllamaConnection: mocks.testOllamaConnection,
 }));
 
 import { runConfigApiTest } from '../src/main/config/config-test-routing';
@@ -36,6 +41,7 @@ function createConfig(): AppConfig {
 describe('runConfigApiTest', () => {
   beforeEach(() => {
     mocks.probeWithClaudeSdk.mockReset();
+    mocks.testOllamaConnection.mockReset();
   });
 
   it('routes config.test to Claude SDK probe', async () => {
@@ -53,6 +59,33 @@ describe('runConfigApiTest', () => {
 
     expect(result).toEqual(expected);
     expect(mocks.probeWithClaudeSdk).toHaveBeenCalledTimes(1);
+    expect(mocks.testOllamaConnection).not.toHaveBeenCalled();
+  });
+
+  it('routes ollama config.test to the dedicated ollama probe', async () => {
+    const expected: ApiTestResult = { ok: true, latencyMs: 9 };
+    mocks.testOllamaConnection.mockResolvedValue(expected);
+
+    const result = await runConfigApiTest(
+      {
+        provider: 'ollama',
+        apiKey: '',
+        baseUrl: 'http://localhost:11434',
+        model: 'qwen3.5:0.8b',
+      },
+      {
+        ...createConfig(),
+        provider: 'ollama',
+        apiKey: '',
+        baseUrl: 'http://localhost:11434',
+        model: 'qwen3.5:0.8b',
+        activeProfileKey: 'ollama',
+      }
+    );
+
+    expect(result).toEqual(expected);
+    expect(mocks.testOllamaConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.probeWithClaudeSdk).not.toHaveBeenCalled();
   });
 
   it('routes gemini config.test through Claude SDK probe', async () => {

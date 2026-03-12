@@ -34,17 +34,19 @@ export function GlobalNoticeToast({ notice, onDismiss, onAction }: Props) {
   }
 
   const tone = noticeToneClass[notice.type];
-  const actionLabel = notice.actionLabel
-    || (notice.action === 'open_api_settings' ? t('api.openSettingsAction') : '');
+  const message = notice.messageKey ? t(notice.messageKey, notice.messageValues) : notice.message;
+  const actionLabel =
+    notice.actionLabel ||
+    (notice.action === 'open_api_settings' ? t('api.openSettingsAction') : '');
   const noticeAction = notice.action;
 
   return (
     <div className="fixed top-4 right-4 left-4 sm:left-auto z-50">
-      <div className={`max-w-sm rounded-[1.4rem] border bg-background/92 backdrop-blur-md shadow-elevated ${tone.border}`}>
+      <div
+        className={`max-w-sm rounded-[1.4rem] border bg-background/92 backdrop-blur-md shadow-elevated ${tone.border}`}
+      >
         <div className="flex items-start gap-3 px-4 py-3">
-          <div className={`flex-1 text-sm leading-relaxed ${tone.text}`}>
-            {notice.message}
-          </div>
+          <div className={`flex-1 text-sm leading-relaxed ${tone.text}`}>{message}</div>
           <button
             type="button"
             onClick={onDismiss}

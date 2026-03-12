@@ -1,17 +1,24 @@
-import { useState, isValidElement, cloneElement, memo, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import remarkGfm from 'remark-gfm';
-import rehypeKatex from 'rehype-katex';
+import { Suspense, lazy, useState, isValidElement, cloneElement, memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import {
   splitTextByFileMentions,
   splitChildrenByFileMentions,
-  getFileLinkButtonClassName
+  getFileLinkButtonClassName,
 } from '../utils/file-link';
-import { normalizeLocalFileMarkdownLinks, resolveLocalFilePathFromHref } from '../utils/markdown-local-link';
+import {
+  normalizeLocalFileMarkdownLinks,
+  resolveLocalFilePathFromHref,
+} from '../utils/markdown-local-link';
 import { shouldUseScreenshotSummary } from '../utils/tool-result-summary';
-import type { Message, ContentBlock, ToolUseContent, ToolResultContent, QuestionItem, FileAttachmentContent } from '../types';
+import type {
+  Message,
+  ContentBlock,
+  ToolUseContent,
+  ToolResultContent,
+  QuestionItem,
+  FileAttachmentContent,
+} from '../types';
 import {
   ChevronDown,
   ChevronRight,
@@ -40,7 +47,12 @@ interface MessageCardProps {
   isStreaming?: boolean;
 }
 
+const MessageMarkdown = lazy(() =>
+  import('./MessageMarkdown').then((module) => ({ default: module.MessageMarkdown }))
+);
+
 export const MessageCard = memo(function MessageCard({ message, isStreaming }: MessageCardProps) {
+  const { t } = useTranslation();
   const isUser = message.role === 'user';
   const isQueued = message.localStatus === 'queued';
   const isCancelled = message.localStatus === 'cancelled';
@@ -58,7 +70,7 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
         const tu = b as ToolUseContent;
         // Find matching result
         const result = contentBlocks.find(
-          r => r.type === 'tool_result' && (r as ToolResultContent).toolUseId === tu.id
+          (r) => r.type === 'tool_result' && (r as ToolResultContent).toolUseId === tu.id
         );
         if (result) ids.add((result as ToolResultContent).toolUseId);
       }
@@ -69,8 +81,8 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
   // Extract text content for copying
   const getTextContent = () => {
     return contentBlocks
-      .filter(block => block.type === 'text')
-      .map(block => (block as { type: 'text'; text: string }).text)
+      .filter((block) => block.type === 'text')
+      .map((block) => (block as { type: 'text'; text: string }).text)
       .join('\n');
   };
 
@@ -88,40 +100,40 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
       {isUser ? (
         // User message - compact styling with smaller padding and radius
         <div className="flex items-start gap-2 justify-end group">
-        <div
-          className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
-            isQueued ? 'opacity-70 border-dashed' : ''
-          } ${isCancelled ? 'opacity-60' : ''}`}
-        >
-          {isQueued && (
-            <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
-              <Clock className="w-3 h-3" />
-              <span>排队中</span>
-            </div>
-          )}
-          {isCancelled && (
-            <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
-              <XCircle className="w-3 h-3" />
-              <span>已取消</span>
-            </div>
-          )}
-          {contentBlocks.length === 0 ? (
-            <span className="text-text-muted italic">Empty message</span>
-          ) : (
-            contentBlocks.map((block, index) => (
-              <ContentBlockView
-                key={index}
-                block={block}
-                isUser={isUser}
-                isStreaming={isStreaming}
-              />
-            ))
-          )}
+          <div
+            className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
+              isQueued ? 'opacity-70 border-dashed' : ''
+            } ${isCancelled ? 'opacity-60' : ''}`}
+          >
+            {isQueued && (
+              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
+                <Clock className="w-3 h-3" />
+                <span>{t('messageCard.queued')}</span>
+              </div>
+            )}
+            {isCancelled && (
+              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
+                <XCircle className="w-3 h-3" />
+                <span>{t('messageCard.cancelled')}</span>
+              </div>
+            )}
+            {contentBlocks.length === 0 ? (
+              <span className="text-text-muted italic">{t('messageCard.emptyMessage')}</span>
+            ) : (
+              contentBlocks.map((block, index) => (
+                <ContentBlockView
+                  key={index}
+                  block={block}
+                  isUser={isUser}
+                  isStreaming={isStreaming}
+                />
+              ))
+            )}
           </div>
           <button
             onClick={handleCopy}
             className="mt-1 w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-            title="复制消息"
+            title={t('messageCard.copyMessage')}
           >
             {copied ? (
               <Check className="w-3 h-3 text-success" />
@@ -135,7 +147,10 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
         <div className="space-y-1.5">
           {contentBlocks.map((block, index) => {
             // Skip tool_result blocks that are merged into their tool_use card
-            if (block.type === 'tool_result' && mergedResultIds.has((block as ToolResultContent).toolUseId)) {
+            if (
+              block.type === 'tool_result' &&
+              mergedResultIds.has((block as ToolResultContent).toolUseId)
+            ) {
               return null;
             }
             return (
@@ -169,11 +184,18 @@ function normalizeCitationMarkdownLinks(markdown: string): string {
   return markdown.replace(/~\[(.+?)\]\(([^)\s]+)\)~/g, '[$1]($2)');
 }
 
-const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: ContentBlockViewProps) {
+const ContentBlockView = memo(function ContentBlockView({
+  block,
+  isUser,
+  isStreaming,
+  allBlocks,
+  message,
+}: ContentBlockViewProps) {
+  const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const workingDir = useAppStore((s) => s.workingDir);
-  const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
+  const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
 
   const resolveFilePath = (value: string) => {
@@ -198,13 +220,16 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
         await window.electronAPI.showItemInFolder(resolvedPath, currentWorkingDir ?? undefined);
       }}
       className={getFileLinkButtonClassName()}
-      title="在文件夹中定位"
+      title={t('messageCard.revealInFolder')}
     >
       {value}
     </button>
   );
 
-  const renderFileMentionParts = (parts: ReturnType<typeof splitChildrenByFileMentions>, keyPrefix: string) =>
+  const renderFileMentionParts = (
+    parts: ReturnType<typeof splitChildrenByFileMentions>,
+    keyPrefix: string
+  ) =>
     parts.map((part, partIndex) => {
       const key = `${keyPrefix}-${partIndex}`;
       if (part.type === 'file') {
@@ -230,11 +255,11 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
       const textBlock = block as { type: 'text'; text: string };
       const text = textBlock.text || '';
       const normalizedText = normalizeCitationMarkdownLinks(normalizeLocalFileMarkdownLinks(text));
-      
+
       if (!text) {
-        return <span className="text-text-muted italic">(empty text)</span>;
+        return <span className="text-text-muted italic">{t('messageCard.emptyText')}</span>;
       }
-      
+
       // Simple text display for user messages, Markdown for assistant
       if (isUser) {
         return (
@@ -244,27 +269,39 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
           </p>
         );
       }
-      
+
       return (
-        <div className="prose-chat max-w-none text-text-primary">
-          <ReactMarkdown
-            remarkPlugins={[remarkMath, [remarkGfm, { singleTilde: false }]]}
-            rehypePlugins={[rehypeKatex]}
+        <Suspense
+          fallback={
+            <div className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words">
+              {text}
+            </div>
+          }
+        >
+          <MessageMarkdown
+            normalizedText={normalizedText}
+            isStreaming={isStreaming}
             components={{
-              a({ children, href }) {
+              a({ children, href }: { children?: React.ReactNode; href?: string }) {
                 const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);
                 if (localFilePath) {
                   return (
                     <button
                       type="button"
                       onClick={async () => {
-                        if (typeof window === 'undefined' || !window.electronAPI?.showItemInFolder) {
+                        if (
+                          typeof window === 'undefined' ||
+                          !window.electronAPI?.showItemInFolder
+                        ) {
                           return;
                         }
-                        await window.electronAPI.showItemInFolder(localFilePath, currentWorkingDir ?? undefined);
+                        await window.electronAPI.showItemInFolder(
+                          localFilePath,
+                          currentWorkingDir ?? undefined
+                        );
                       }}
                       className={getFileLinkButtonClassName()}
-                      title="在文件夹中定位"
+                      title={t('messageCard.revealInFolder')}
                     >
                       {children}
                     </button>
@@ -290,14 +327,21 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
                   </a>
                 );
               },
-              blockquote({ children }) {
+              blockquote({ children }: { children?: React.ReactNode }) {
                 return (
                   <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
                     {children}
                   </blockquote>
                 );
               },
-              code({ className, children, ...props }) {
+              code({
+                className,
+                children,
+                ...props
+              }: {
+                className?: string;
+                children?: React.ReactNode;
+              }) {
                 const match = /language-(\w+)/.exec(className || '');
                 const isInline = !match;
 
@@ -308,56 +352,47 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
                     return renderFileButton(parts[0].value);
                   }
                   return (
-                    <code className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm" {...props}>
+                    <code
+                      className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm"
+                      {...props}
+                    >
                       {children}
                     </code>
                   );
                 }
 
                 return (
-                  <CodeBlock language={match[1]}>
-                    {String(children).replace(/\n$/, '')}
-                  </CodeBlock>
+                  <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>
                 );
               },
-              p({ children }) {
-                return (
-                  <p className="text-left">
-                    {renderChildrenWithFileLinks(children, 'p')}
-                  </p>
-                );
+              p({ children }: { children?: React.ReactNode }) {
+                return <p className="text-left">{renderChildrenWithFileLinks(children, 'p')}</p>;
               },
-              li({ children }) {
-                return (
-                  <li className="text-left">
-                    {renderChildrenWithFileLinks(children, 'li')}
-                  </li>
-                );
+              li({ children }: { children?: React.ReactNode }) {
+                return <li className="text-left">{renderChildrenWithFileLinks(children, 'li')}</li>;
               },
-              table({ children }) {
+              table({ children }: { children?: React.ReactNode }) {
                 return (
                   <div className="overflow-x-auto my-3">
-                    <table className="min-w-full border-collapse">
-                      {children}
-                    </table>
+                    <table className="min-w-full border-collapse">{children}</table>
                   </div>
                 );
               },
-              th({ children }) {
+              th({ children }: { children?: React.ReactNode }) {
                 return (
                   <th className="border border-border px-3 py-2 text-left text-sm font-semibold text-text-primary bg-surface-muted">
                     {children}
                   </th>
                 );
               },
-              td({ children }) {
+              td({ children }: { children?: React.ReactNode }) {
                 return (
                   <td className="border border-border px-3 py-2 text-sm text-text-primary">
                     {children}
                   </td>
                 );
               },
-              input({ checked, ...props }) {
+              input({ checked, ...props }: { checked?: boolean }) {
                 return (
                   <input
                     type="checkbox"
@@ -368,33 +403,23 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
                   />
                 );
               },
-              strong({ children }) {
-                return (
-                  <strong>
-                    {renderChildrenWithFileLinks(children, 'strong')}
-                  </strong>
-                );
+              strong({ children }: { children?: React.ReactNode }) {
+                return <strong>{renderChildrenWithFileLinks(children, 'strong')}</strong>;
               },
-              em({ children }) {
-                return (
-                  <em>
-                    {renderChildrenWithFileLinks(children, 'em')}
-                  </em>
-                );
+              em({ children }: { children?: React.ReactNode }) {
+                return <em>{renderChildrenWithFileLinks(children, 'em')}</em>;
               },
             }}
-          >
-            {normalizedText}
-          </ReactMarkdown>
-          {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />
-          )}
-        </div>
+          />
+        </Suspense>
       );
     }
 
     case 'image': {
-      const imageBlock = block as { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+      const imageBlock = block as {
+        type: 'image';
+        source: { type: 'base64'; media_type: string; data: string };
+      };
       const { source } = imageBlock;
       const imageSrc = `data:${source.media_type};base64,${source.data}`;
 
@@ -402,7 +427,7 @@ const ContentBlockView = memo(function ContentBlockView({ block, isUser, isStrea
         <div className={`${isUser ? 'inline-block' : ''}`}>
           <img
             src={imageSrc}
-            alt="Pasted content"
+            alt={t('messageCard.pastedContentAlt')}
             className="w-full max-w-full rounded-lg border border-border"
             style={{ maxHeight: '600px', objectFit: 'contain' }}
           />
@@ -449,7 +474,15 @@ function getToolIcon(name: string) {
   return <Terminal className="w-3.5 h-3.5" />;
 }
 
-const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: { block: ToolUseContent; allBlocks?: ContentBlock[]; message?: Message }) {
+const ToolUseBlock = memo(function ToolUseBlock({
+  block,
+  allBlocks,
+  message,
+}: {
+  block: ToolUseContent;
+  allBlocks?: ContentBlock[];
+  message?: Message;
+}) {
   const traceStepsBySession = useAppStore((s) => s.traceStepsBySession);
   const messagesBySession = useAppStore((s) => s.messagesBySession);
   const activeTurnsBySession = useAppStore((s) => s.activeTurnsBySession);
@@ -467,7 +500,7 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
 
   // Find matching tool_result: first in same message, then across all session messages
   let toolResult = allBlocks?.find(
-    b => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
+    (b) => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
   ) as ToolResultContent | undefined;
 
   if (!toolResult && message?.sessionId) {
@@ -475,7 +508,7 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
     for (const msg of allMessages) {
       if (!Array.isArray(msg.content)) continue;
       const found = (msg.content as ContentBlock[]).find(
-        b => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
+        (b) => b.type === 'tool_result' && (b as ToolResultContent).toolUseId === block.id
       );
       if (found) {
         toolResult = found as ToolResultContent;
@@ -519,7 +552,7 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
   let duration: number | undefined;
   if (message?.sessionId) {
     const steps = traceStepsBySession[message.sessionId] || [];
-    const resultStep = steps.find(s => s.id === block.id && s.type === 'tool_result');
+    const resultStep = steps.find((s) => s.id === block.id && s.type === 'tool_result');
     duration = resultStep?.duration;
   }
 
@@ -539,9 +572,11 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-surface-hover/50 transition-colors"
       >
         {/* Status icon */}
-        <div className={`flex-shrink-0 ${
-          isError ? 'text-error' : isRunning ? 'text-accent' : 'text-text-muted'
-        }`}>
+        <div
+          className={`flex-shrink-0 ${
+            isError ? 'text-error' : isRunning ? 'text-accent' : 'text-text-muted'
+          }`}
+        >
           {isRunning ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : isError ? (
@@ -552,9 +587,7 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
         </div>
 
         {/* Tool icon */}
-        <div className="flex-shrink-0 text-text-muted">
-          {getToolIcon(block.name)}
-        </div>
+        <div className="flex-shrink-0 text-text-muted">{getToolIcon(block.name)}</div>
 
         {/* Label */}
         <span className="text-xs font-mono text-text-secondary truncate flex-1 min-w-0">
@@ -593,7 +626,9 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
         <div className="border-t border-border/50 animate-fade-in bg-background/35">
           {/* Input section */}
           <div className="px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">Input</div>
+            <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">
+              Input
+            </div>
             <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-all bg-surface-muted rounded-lg p-2.5 border border-border-subtle">
               {JSON.stringify(block.input, null, 2)}
             </pre>
@@ -605,23 +640,26 @@ const ToolUseBlock = memo(function ToolUseBlock({ block, allBlocks, message }: {
               <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">
                 Output
               </div>
-              <pre className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
-                isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
-              }`}>
+              <pre
+                className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
+                  isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
+                }`}
+              >
                 {toolResult.content}
               </pre>
 
               {/* Images */}
-              {hasImages && toolResult.images!.map((image, index) => (
-                <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
-                  <img
-                    src={`data:${image.mimeType};base64,${image.data}`}
-                    alt={`Output ${index + 1}`}
-                    className="w-full h-auto"
-                    style={{ maxHeight: '400px', objectFit: 'contain' }}
-                  />
-                </div>
-              ))}
+              {hasImages &&
+                toolResult.images!.map((image, index) => (
+                  <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
+                    <img
+                      src={`data:${image.mimeType};base64,${image.data}`}
+                      alt={`Output ${index + 1}`}
+                      className="w-full h-auto"
+                      style={{ maxHeight: '400px', objectFit: 'contain' }}
+                    />
+                  </div>
+                ))}
             </div>
           )}
         </div>
@@ -687,14 +725,15 @@ interface TodoItem {
 
 // TodoWrite block - renders a beautiful todo list
 const TodoWriteBlock = memo(function TodoWriteBlock({ block }: { block: ToolUseContent }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const todos: TodoItem[] = (block.input as any)?.todos || [];
 
   // Calculate progress
-  const completedCount = todos.filter(t => t.status === 'completed').length;
+  const completedCount = todos.filter((t) => t.status === 'completed').length;
   const totalCount = todos.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  const inProgressItem = todos.find(t => t.status === 'in_progress');
+  const inProgressItem = todos.find((t) => t.status === 'in_progress');
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -737,7 +776,9 @@ const TodoWriteBlock = memo(function TodoWriteBlock({ block }: { block: ToolUseC
           <ListTodo className="w-3.5 h-3.5 text-accent" />
         </div>
         <div className="flex-1 text-left">
-          <span className="font-medium text-sm text-text-primary">Task Progress</span>
+          <span className="font-medium text-sm text-text-primary">
+            {t('messageCard.taskProgress')}
+          </span>
           {inProgressItem && (
             <span className="text-xs text-text-muted ml-2">
               — {inProgressItem.activeForm || inProgressItem.content}
@@ -756,7 +797,7 @@ const TodoWriteBlock = memo(function TodoWriteBlock({ block }: { block: ToolUseC
 
       {/* Progress bar */}
       <div className="h-0.5 bg-surface-muted">
-        <div 
+        <div
           className="h-full bg-gradient-to-r from-accent to-accent-hover transition-all duration-500"
           style={{ width: `${progress}%` }}
         />
@@ -766,15 +807,13 @@ const TodoWriteBlock = memo(function TodoWriteBlock({ block }: { block: ToolUseC
       {expanded && (
         <div className="p-3 space-y-1">
           {todos.map((todo, index) => (
-            <div 
+            <div
               key={todo.id || index}
               className={`flex items-start gap-2.5 px-2 py-1.5 rounded-lg transition-colors ${
                 todo.status === 'in_progress' ? 'bg-accent/5' : ''
               }`}
             >
-              <div className="mt-0.5 flex-shrink-0">
-                {getStatusIcon(todo.status)}
-              </div>
+              <div className="mt-0.5 flex-shrink-0">{getStatusIcon(todo.status)}</div>
               <span className={`text-sm leading-relaxed ${getStatusStyle(todo.status)}`}>
                 {todo.content}
               </span>
@@ -788,6 +827,7 @@ const TodoWriteBlock = memo(function TodoWriteBlock({ block }: { block: ToolUseC
 
 // Inline AskUserQuestion component - read-only display for historical messages
 function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
+  const { t } = useTranslation();
   // Parse questions from input
   const questions: QuestionItem[] = (block.input as any)?.questions || [];
 
@@ -796,7 +836,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
   if (questions.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-surface p-4">
-        <span className="text-text-muted">No questions</span>
+        <span className="text-text-muted">{t('messageCard.noQuestions')}</span>
       </div>
     );
   }
@@ -809,7 +849,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
           <HelpCircle className="w-4 h-4 text-accent" />
         </div>
         <div>
-          <span className="font-medium text-sm text-text-primary">Question</span>
+          <span className="font-medium text-sm text-text-primary">{t('messageCard.question')}</span>
         </div>
       </div>
 
@@ -822,9 +862,7 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
                 {q.header}
               </span>
             )}
-            <p className="text-text-primary font-medium text-sm">
-              {q.question}
-            </p>
+            <p className="text-text-primary font-medium text-sm">{q.question}</p>
             {q.options && q.options.length > 0 && (
               <div className="space-y-1.5 mt-2">
                 {q.options.map((option, optIdx) => (
@@ -855,7 +893,15 @@ function AskUserQuestionBlock({ block }: { block: ToolUseContent }) {
 }
 
 // Fallback ToolResultBlock — only renders for truly orphan results (no matching tool_use anywhere)
-const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, message }: { block: ToolResultContent; allBlocks?: ContentBlock[]; message?: Message }) {
+const ToolResultBlock = memo(function ToolResultBlock({
+  block,
+  allBlocks,
+  message,
+}: {
+  block: ToolResultContent;
+  allBlocks?: ContentBlock[];
+  message?: Message;
+}) {
   const traceStepsBySession = useAppStore((s) => s.traceStepsBySession);
   const messagesBySession = useAppStore((s) => s.messagesBySession);
   const [expanded, setExpanded] = useState(false);
@@ -866,7 +912,7 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
     for (const msg of allMessages) {
       if (!Array.isArray(msg.content)) continue;
       const hasMatchingToolUse = (msg.content as ContentBlock[]).some(
-        b => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
+        (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
       );
       if (hasMatchingToolUse) return null;
     }
@@ -905,9 +951,11 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
   const hasImages = block.images && block.images.length > 0;
 
   return (
-    <div className={`rounded-2xl border overflow-hidden ${
-      block.isError ? 'border-error/25 bg-error/5' : 'border-border-subtle bg-background/40'
-    }`}>
+    <div
+      className={`rounded-2xl border overflow-hidden ${
+        block.isError ? 'border-error/25 bg-error/5' : 'border-border-subtle bg-background/40'
+      }`}
+    >
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover/50 transition-colors"
@@ -917,12 +965,16 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
         ) : (
           <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />
         )}
-        <span className={`text-xs font-mono flex-shrink-0 ${block.isError ? 'text-error' : 'text-text-muted'}`}>
+        <span
+          className={`text-xs font-mono flex-shrink-0 ${block.isError ? 'text-error' : 'text-text-muted'}`}
+        >
           {displayName}
         </span>
         <span className="text-[11px] text-text-muted truncate flex-1">{getSummary()}</span>
         {hasImages && (
-          <span className="text-[11px] text-text-muted flex-shrink-0">+{block.images!.length} img</span>
+          <span className="text-[11px] text-text-muted flex-shrink-0">
+            +{block.images!.length} img
+          </span>
         )}
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
@@ -933,9 +985,11 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
 
       {expanded && (
         <div className="border-t border-border/50 px-3 py-2 animate-fade-in">
-          <pre className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
-            block.isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
-          }`}>
+          <pre
+            className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
+              block.isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
+            }`}
+          >
             {block.content}
           </pre>
           {block.images && block.images.length > 0 && (
@@ -958,7 +1012,12 @@ const ToolResultBlock = memo(function ToolResultBlock({ block, allBlocks, messag
   );
 });
 // Thinking block — collapsible card (Claude style)
-const ThinkingBlock = memo(function ThinkingBlock({ block }: { block: { type: 'thinking'; thinking: string } }) {
+const ThinkingBlock = memo(function ThinkingBlock({
+  block,
+}: {
+  block: { type: 'thinking'; thinking: string };
+}) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const text = block.thinking || '';
   if (!text) return null;
@@ -973,7 +1032,9 @@ const ThinkingBlock = memo(function ThinkingBlock({ block }: { block: { type: 't
         className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover/50 transition-colors"
       >
         <Brain className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
-        <span className="text-xs font-medium text-text-muted flex-shrink-0">Thinking</span>
+        <span className="text-xs font-medium text-text-muted flex-shrink-0">
+          {t('messageCard.thinking')}
+        </span>
         {!expanded && (
           <span className="text-[11px] text-text-muted/60 truncate flex-1 min-w-0 italic">
             {preview}
@@ -997,7 +1058,13 @@ const ThinkingBlock = memo(function ThinkingBlock({ block }: { block: { type: 't
   );
 });
 
-const CodeBlock = memo(function CodeBlock({ language, children }: { language: string; children: string }) {
+const CodeBlock = memo(function CodeBlock({
+  language,
+  children,
+}: {
+  language: string;
+  children: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -1009,9 +1076,7 @@ const CodeBlock = memo(function CodeBlock({ language, children }: { language: st
   return (
     <div className="relative group my-3">
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <span className="text-xs text-text-muted px-2 py-1 rounded bg-surface">
-          {language}
-        </span>
+        <span className="text-xs text-text-muted px-2 py-1 rounded bg-surface">{language}</span>
         <button
           onClick={handleCopy}
           className="w-7 h-7 flex items-center justify-center rounded bg-surface hover:bg-surface-hover transition-colors"

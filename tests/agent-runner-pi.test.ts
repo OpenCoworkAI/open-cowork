@@ -33,9 +33,8 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     expect(agentRunnerContent).toContain("log('[ClaudeAgentRunner] Final mcpServers config:'");
   });
 
-  it('maps watchdog timeout to a user-friendly message', () => {
-    expect(agentRunnerContent).toContain('function toUserFacingErrorText');
-    expect(agentRunnerContent).toContain('模型响应超时：长时间未收到上游返回');
+  it('reuses the shared user-facing error helper', () => {
+    expect(agentRunnerContent).toContain("import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end'");
     expect(agentRunnerContent).toContain('const errorText = toUserFacingErrorText(toErrorText(error));');
   });
 

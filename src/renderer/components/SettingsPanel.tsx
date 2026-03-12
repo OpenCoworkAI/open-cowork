@@ -1,6 +1,37 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { X, Key, Plug, Settings, ChevronRight, AlertCircle, Eye, EyeOff, Plus, Trash2, Edit3, Save, Mail, Globe, Lock, Server, Cpu, Loader2, Power, PowerOff, CheckCircle, Check, ChevronDown, Package, Shield, Wifi, FolderOpen, RefreshCw, Clock3 } from 'lucide-react';
+import {
+  X,
+  Key,
+  Plug,
+  Settings,
+  ChevronRight,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  Edit3,
+  Save,
+  Mail,
+  Globe,
+  Lock,
+  Server,
+  Cpu,
+  Loader2,
+  Power,
+  PowerOff,
+  CheckCircle,
+  Check,
+  ChevronDown,
+  Package,
+  Shield,
+  Wifi,
+  FolderOpen,
+  RefreshCw,
+  Clock3,
+} from 'lucide-react';
 import { useWindowSize } from '../hooks/useWindowSize';
 import type {
   Skill,
@@ -17,7 +48,9 @@ import type {
 import { RemoteControlPanel } from './RemoteControlPanel';
 import { useApiConfigState } from '../hooks/useApiConfigState';
 import { ApiConfigSetManager } from './ApiConfigSetManager';
+import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
 import { useAppStore } from '../store';
+import { formatAppDateTime, joinAppList } from '../utils/i18n-format';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -82,10 +115,26 @@ interface MCPPreset {
 
 interface SettingsPanelProps {
   onClose: () => void;
-  initialTab?: 'api' | 'sandbox' | 'connectors' | 'skills' | 'schedule' | 'remote' | 'logs' | 'general';
+  initialTab?:
+    | 'api'
+    | 'sandbox'
+    | 'connectors'
+    | 'skills'
+    | 'schedule'
+    | 'remote'
+    | 'logs'
+    | 'general';
 }
 
-type TabId = 'api' | 'sandbox' | 'connectors' | 'skills' | 'schedule' | 'remote' | 'logs' | 'general';
+type TabId =
+  | 'api'
+  | 'sandbox'
+  | 'connectors'
+  | 'skills'
+  | 'schedule'
+  | 'remote'
+  | 'logs'
+  | 'general';
 
 const SERVICE_OPTIONS = [
   { value: 'gmail', label: 'Gmail' },
@@ -103,6 +152,11 @@ const SERVICE_OPTIONS = [
 ];
 
 type ScheduleFormMode = 'once' | 'daily' | 'weekly' | 'legacy-interval';
+type LocalizedBanner = { key?: string; text?: string };
+
+function renderLocalizedBannerMessage(banner: LocalizedBanner, t: TFunction): string {
+  return banner.key ? t(banner.key) : banner.text || '';
+}
 
 const SCHEDULE_TIME_SUGGESTIONS = [
   '06:00',
@@ -119,25 +173,38 @@ const SCHEDULE_TIME_SUGGESTIONS = [
   '22:30',
 ];
 
-const WEEKDAY_OPTIONS: Array<{ value: ScheduleWeekday; label: string }> = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 0, label: '周日' },
-];
+function getWeekdayOptions(t: TFunction): Array<{ value: ScheduleWeekday; label: string }> {
+  return [
+    { value: 1, label: t('schedule.weekdayMonday') },
+    { value: 2, label: t('schedule.weekdayTuesday') },
+    { value: 3, label: t('schedule.weekdayWednesday') },
+    { value: 4, label: t('schedule.weekdayThursday') },
+    { value: 5, label: t('schedule.weekdayFriday') },
+    { value: 6, label: t('schedule.weekdaySaturday') },
+    { value: 0, label: t('schedule.weekdaySunday') },
+  ];
+}
 
-const SCHEDULE_MODE_OPTIONS: Array<{ value: ScheduleFormMode; label: string }> = [
-  { value: 'once', label: '单次' },
-  { value: 'daily', label: '每天' },
-  { value: 'weekly', label: '每周' },
-];
+function getScheduleModeOptions(t: TFunction): Array<{ value: ScheduleFormMode; label: string }> {
+  return [
+    { value: 'once', label: t('schedule.modeOnce') },
+    { value: 'daily', label: t('schedule.modeDaily') },
+    { value: 'weekly', label: t('schedule.modeWeekly') },
+  ];
+}
 
 // ==================== Main Component ====================
 
-const VALID_TABS = new Set<TabId>(['api', 'sandbox', 'connectors', 'skills', 'schedule', 'remote', 'logs', 'general']);
+const VALID_TABS = new Set<TabId>([
+  'api',
+  'sandbox',
+  'connectors',
+  'skills',
+  'schedule',
+  'remote',
+  'logs',
+  'general',
+]);
 
 export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
@@ -147,7 +214,8 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // takes effect even before this component mounts.
   const storeTab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
-  const resolvedInitial = (storeTab && VALID_TABS.has(storeTab as TabId)) ? storeTab as TabId : initialTab;
+  const resolvedInitial =
+    storeTab && VALID_TABS.has(storeTab as TabId) ? (storeTab as TabId) : initialTab;
 
   const [activeTab, setActiveTab] = useState<TabId>(resolvedInitial);
   // Track which tabs have been viewed at least once (for lazy loading)
@@ -158,8 +226,10 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       const v = window.electronAPI?.getVersion?.();
       if (v instanceof Promise) v.then(setAppVersion);
       else if (v) setAppVersion(v);
-    } catch { /* ignore */ }
-  }, []);
+    } catch {
+      /* ignore */
+    }
+  }, [t]);
 
   // Consume the store signal and apply tab in one effect
   useEffect(() => {
@@ -172,95 +242,147 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // Mark tab as viewed when it becomes active
   useEffect(() => {
     if (!viewedTabs.has(activeTab)) {
-      setViewedTabs(prev => new Set([...prev, activeTab]));
+      setViewedTabs((prev) => new Set([...prev, activeTab]));
     }
   }, [activeTab, viewedTabs]);
 
   const tabs = [
-    { id: 'api' as TabId, label: t('settings.apiSettings'), icon: Settings, description: t('settings.apiSettingsDesc') },
-    { id: 'sandbox' as TabId, label: t('settings.sandbox'), icon: Shield, description: t('settings.sandboxDesc') },
-    { id: 'connectors' as TabId, label: t('settings.connectors'), icon: Plug, description: t('settings.connectorsDesc') },
-    { id: 'skills' as TabId, label: t('settings.skills'), icon: Package, description: t('settings.skillsDesc') },
-    { id: 'schedule' as TabId, label: t('settings.schedule'), icon: Clock3, description: t('settings.scheduleDesc') },
-    { id: 'remote' as TabId, label: t('settings.remote', '远程控制'), icon: Wifi, description: t('settings.remoteDesc', '通过飞书等平台远程使用') },
-    { id: 'logs' as TabId, label: t('settings.logs'), icon: AlertCircle, description: t('settings.logsDesc') },
-    { id: 'general' as TabId, label: t('settings.general'), icon: Globe, description: t('settings.generalDesc') },
+    {
+      id: 'api' as TabId,
+      label: t('settings.apiSettings'),
+      icon: Settings,
+      description: t('settings.apiSettingsDesc'),
+    },
+    {
+      id: 'sandbox' as TabId,
+      label: t('settings.sandbox'),
+      icon: Shield,
+      description: t('settings.sandboxDesc'),
+    },
+    {
+      id: 'connectors' as TabId,
+      label: t('settings.connectors'),
+      icon: Plug,
+      description: t('settings.connectorsDesc'),
+    },
+    {
+      id: 'skills' as TabId,
+      label: t('settings.skills'),
+      icon: Package,
+      description: t('settings.skillsDesc'),
+    },
+    {
+      id: 'schedule' as TabId,
+      label: t('settings.schedule'),
+      icon: Clock3,
+      description: t('settings.scheduleDesc'),
+    },
+    {
+      id: 'remote' as TabId,
+      label: t('settings.remote', '远程控制'),
+      icon: Wifi,
+      description: t('settings.remoteDesc', '通过飞书等平台远程使用'),
+    },
+    {
+      id: 'logs' as TabId,
+      label: t('settings.logs'),
+      icon: AlertCircle,
+      description: t('settings.logsDesc'),
+    },
+    {
+      id: 'general' as TabId,
+      label: t('settings.general'),
+      icon: Globe,
+      description: t('settings.generalDesc'),
+    },
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab);
 
   return (
-      <div className="flex h-full w-full overflow-hidden bg-background">
-        {/* Sidebar */}
-        <div className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}>
-          {!compactSidebar && (
-            <div className="px-4 pt-5 pb-4 border-b border-border-muted">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">{t('settings.title')}</p>
-              <h2 className="mt-1 text-[1.24rem] font-semibold tracking-[-0.03em] text-text-primary">Open Cowork</h2>
-              <p className="mt-1 text-[11px] leading-4 text-text-muted">
-                Configure your workspace, tools, and account behavior.
-              </p>
-            </div>
-          )}
-          <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                title={compactSidebar ? tab.label : undefined}
-                className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-2xl text-left transition-colors active:scale-[0.98] ${
-                  activeTab === tab.id
-                    ? 'bg-background text-text-primary border border-border-subtle shadow-soft'
-                    : 'hover:bg-background/70 text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
-                {!compactSidebar && (
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{tab.label}</p>
-                    <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">{tab.description}</p>
-                  </div>
-                )}
-                {!compactSidebar && activeTab === tab.id && <ChevronRight className="w-4 h-4 flex-shrink-0" />}
-              </button>
-            ))}
+    <div className="flex h-full w-full overflow-hidden bg-background">
+      {/* Sidebar */}
+      <div
+        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}
+      >
+        {!compactSidebar && (
+          <div className="px-4 pt-5 pb-4 border-b border-border-muted">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+              {t('settings.title')}
+            </p>
+            <h2 className="mt-1 text-[1.24rem] font-semibold tracking-[-0.03em] text-text-primary">
+              Open Cowork
+            </h2>
+            <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
           </div>
-          <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
+        )}
+        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
+          {tabs.map((tab) => (
             <button
-              onClick={onClose}
-              className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-xl bg-background/70 hover:bg-background transition-colors text-text-secondary text-sm`}
-              title={compactSidebar ? t('common.close') : undefined}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              title={compactSidebar ? tab.label : undefined}
+              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-2xl text-left transition-colors active:scale-[0.98] ${
+                activeTab === tab.id
+                  ? 'bg-background text-text-primary border border-border-subtle shadow-soft'
+                  : 'hover:bg-background/70 text-text-secondary hover:text-text-primary'
+              }`}
             >
-              {compactSidebar ? <X className="w-4 h-4 mx-auto" /> : t('common.close')}
+              <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
+              {!compactSidebar && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{tab.label}</p>
+                  <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
+                    {tab.description}
+                  </p>
+                </div>
+              )}
+              {!compactSidebar && activeTab === tab.id && (
+                <ChevronRight className="w-4 h-4 flex-shrink-0" />
+              )}
             </button>
-            {!compactSidebar && (
-              <p className="text-[10px] text-text-muted text-center mt-2 select-text">v{appVersion}</p>
+          ))}
+        </div>
+        <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
+          <button
+            onClick={onClose}
+            className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-xl bg-background/70 hover:bg-background transition-colors text-text-secondary text-sm`}
+            title={compactSidebar ? t('common.close') : undefined}
+          >
+            {compactSidebar ? <X className="w-4 h-4 mx-auto" /> : t('common.close')}
+          </button>
+          {!compactSidebar && (
+            <p className="text-[10px] text-text-muted text-center mt-2 select-text">
+              v{appVersion}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 bg-background/88 backdrop-blur-sm">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+              {t('settings.title')}
+            </p>
+            <h3 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
+              {activeTabMeta?.label}
+            </h3>
+            {activeTabMeta?.description && (
+              <p className="mt-1 text-sm text-text-muted max-w-[36rem]">
+                {activeTabMeta.description}
+              </p>
             )}
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
+          >
+            <X className="w-5 h-5 text-text-secondary" />
+          </button>
         </div>
-
-        {/* Content */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 bg-background/88 backdrop-blur-sm">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">{t('settings.title')}</p>
-              <h3 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
-                {activeTabMeta?.label}
-              </h3>
-              {activeTabMeta?.description && (
-                <p className="mt-1 text-sm text-text-muted max-w-[36rem]">
-                  {activeTabMeta.description}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
-            >
-              <X className="w-5 h-5 text-text-secondary" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 lg:px-8 lg:py-7">
-            <div className="max-w-[900px] w-full min-w-0 mx-auto space-y-5">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 lg:px-8 lg:py-7">
+          <div className="max-w-[900px] w-full min-w-0 mx-auto space-y-5">
             {activeTabMeta && (
               <div className="rounded-[1.75rem] border border-border-subtle bg-background/70 shadow-soft px-5 py-4 lg:px-6">
                 <div className="flex items-start gap-4">
@@ -268,7 +390,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
                     <activeTabMeta.icon className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">{t('settings.title')}</p>
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                      {t('settings.title')}
+                    </p>
                     <h4 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
                       {activeTabMeta.label}
                     </h4>
@@ -282,42 +406,42 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
             )}
             <div className="rounded-[2rem] border border-border-subtle bg-background/55 shadow-soft px-5 py-5 lg:px-8 lg:py-7">
-            <div className={activeTab === 'api' ? '' : 'hidden'}>
-              {viewedTabs.has('api') && (
-                <>
-                  <APISettingsTab />
-                  <div className="mt-8 pt-6 border-t border-border">
-                    <CredentialsTab />
-                  </div>
-                </>
-              )}
-            </div>
-            <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
-              {viewedTabs.has('sandbox') && <SandboxTab />}
-            </div>
-            <div className={activeTab === 'connectors' ? '' : 'hidden'}>
-              {viewedTabs.has('connectors') && <ConnectorsTab />}
-            </div>
-            <div className={activeTab === 'skills' ? '' : 'hidden'}>
-              {viewedTabs.has('skills') && <SkillsTab />}
-            </div>
-            <div className={activeTab === 'schedule' ? '' : 'hidden'}>
-              {viewedTabs.has('schedule') && <ScheduleTab />}
-            </div>
-            <div className={activeTab === 'remote' ? '' : 'hidden'}>
-              {viewedTabs.has('remote') && <RemoteControlPanel />}
-            </div>
-            <div className={activeTab === 'logs' ? '' : 'hidden'}>
-              {viewedTabs.has('logs') && <LogsTab />}
-            </div>
-            <div className={activeTab === 'general' ? '' : 'hidden'}>
-              {viewedTabs.has('general') && <GeneralTab />}
-            </div>
-            </div>
+              <div className={activeTab === 'api' ? '' : 'hidden'}>
+                {viewedTabs.has('api') && (
+                  <>
+                    <APISettingsTab />
+                    <div className="mt-8 pt-6 border-t border-border">
+                      <CredentialsTab />
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
+                {viewedTabs.has('sandbox') && <SandboxTab />}
+              </div>
+              <div className={activeTab === 'connectors' ? '' : 'hidden'}>
+                {viewedTabs.has('connectors') && <ConnectorsTab />}
+              </div>
+              <div className={activeTab === 'skills' ? '' : 'hidden'}>
+                {viewedTabs.has('skills') && <SkillsTab />}
+              </div>
+              <div className={activeTab === 'schedule' ? '' : 'hidden'}>
+                {viewedTabs.has('schedule') && <ScheduleTab />}
+              </div>
+              <div className={activeTab === 'remote' ? '' : 'hidden'}>
+                {viewedTabs.has('remote') && <RemoteControlPanel />}
+              </div>
+              <div className={activeTab === 'logs' ? '' : 'hidden'}>
+                {viewedTabs.has('logs') && <LogsTab />}
+              </div>
+              <div className={activeTab === 'general' ? '' : 'hidden'}>
+                {viewedTabs.has('general') && <GeneralTab />}
+              </div>
             </div>
           </div>
         </div>
       </div>
+    </div>
   );
 }
 
@@ -334,13 +458,9 @@ function SettingsContentSection({
     <section className="rounded-[1.6rem] border border-border-subtle bg-background/42 px-4 py-4 space-y-3">
       <div className="space-y-1">
         <h4 className="text-sm font-semibold text-text-primary">{title}</h4>
-        {description && (
-          <p className="text-xs leading-5 text-text-muted">{description}</p>
-        )}
+        {description && <p className="text-xs leading-5 text-text-muted">{description}</p>}
       </div>
-      <div className="space-y-3">
-        {children}
-      </div>
+      <div className="space-y-3">{children}</div>
     </section>
   );
 }
@@ -367,10 +487,17 @@ function APISettingsTab() {
     error,
     successMessage,
     isTesting,
+    isRefreshingModels,
     testResult,
+    friendlyTestDetails,
     useLiveTest,
     enableThinking,
+    isOllamaMode,
     requiresApiKey,
+    protocolGuidanceText,
+    protocolGuidanceTone,
+    baseUrlGuidanceText,
+    commonProviderSetups,
     configSets,
     activeConfigSetId,
     currentConfigSet,
@@ -386,6 +513,7 @@ function APISettingsTab() {
     toggleCustomModel,
     setUseLiveTest,
     setEnableThinking,
+    applyCommonProviderSetup,
     changeProvider,
     changeProtocol,
     requestConfigSetSwitch,
@@ -397,13 +525,14 @@ function APISettingsTab() {
     deleteConfigSet,
     handleSave,
     handleTest,
+    refreshModelOptions,
   } = useApiConfigState();
 
   if (isLoadingConfig) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-6 h-6 animate-spin text-accent" />
-        <span className="ml-2 text-text-secondary">Loading settings...</span>
+        <span className="ml-2 text-text-secondary">{t('common.loading')}</span>
       </div>
     );
   }
@@ -437,24 +566,24 @@ function APISettingsTab() {
           <Server className="w-4 h-4" />
           {t('api.provider')}
         </label>
-        <p className="text-xs leading-5 text-text-muted">
-          Choose the provider family and the broad protocol style for this workspace.
-        </p>
+        <p className="text-xs leading-5 text-text-muted">{t('api.providerDescription')}</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-          {(['openrouter', 'anthropic', 'openai', 'gemini', 'custom'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => changeProvider(p)}
-              disabled={isLoadingConfig}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors active:scale-95 ${
-                provider === p
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50'
-              }`}
-            >
-              {p === 'custom' ? t('api.moreModels') : (presets?.[p]?.name || p)}
-            </button>
-          ))}
+          {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => changeProvider(p)}
+                disabled={isLoadingConfig}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors active:scale-95 ${
+                  provider === p
+                    ? 'bg-accent text-white'
+                    : 'bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50'
+                }`}
+              >
+                {p === 'custom' ? t('api.moreModels') : presets?.[p]?.name || p}
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -464,14 +593,12 @@ function APISettingsTab() {
           <Key className="w-4 h-4" />
           {t('api.apiKey')}
         </label>
-        <p className="text-xs leading-5 text-text-muted">
-          Saved locally and scoped to the active configuration set.
-        </p>
+        <p className="text-xs leading-5 text-text-muted">{t('api.apiKeyDescription')}</p>
         <input
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder={currentPreset?.keyPlaceholder || 'Enter your API Key'}
+          placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
           className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
         />
         {currentPreset?.keyHint && (
@@ -487,11 +614,13 @@ function APISettingsTab() {
             {t('api.protocol')}
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {([
-              { id: 'anthropic', label: 'Anthropic' },
-              { id: 'openai', label: 'OpenAI' },
-              { id: 'gemini', label: 'Gemini' },
-            ] as const).map((mode) => (
+            {(
+              [
+                { id: 'anthropic', label: 'Anthropic' },
+                { id: 'openai', label: 'OpenAI' },
+                { id: 'gemini', label: 'Gemini' },
+              ] as const
+            ).map((mode) => (
               <button
                 key={mode.id}
                 onClick={() => changeProtocol(mode.id)}
@@ -506,11 +635,11 @@ function APISettingsTab() {
             ))}
           </div>
           <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
+          <GuidanceInlineHint text={protocolGuidanceText} tone={protocolGuidanceTone} />
         </div>
       )}
 
-      {/* Base URL - Only for custom provider */}
-      {provider === 'custom' && (
+      {(provider === 'custom' || provider === 'ollama') && (
         <div className="space-y-2 rounded-[1.5rem] border border-border-subtle bg-background/40 px-4 py-4">
           <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
             <Server className="w-4 h-4" />
@@ -521,21 +650,26 @@ function APISettingsTab() {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={
-              customProtocol === 'openai'
-                ? 'https://api.openai.com/v1'
-                : customProtocol === 'gemini'
-                  ? 'https://generativelanguage.googleapis.com'
-                : (currentPreset?.baseUrl || 'https://api.anthropic.com')
+              provider === 'ollama'
+                ? 'http://localhost:11434/v1'
+                : customProtocol === 'openai'
+                  ? 'https://api.openai.com/v1'
+                  : customProtocol === 'gemini'
+                    ? 'https://generativelanguage.googleapis.com'
+                    : currentPreset?.baseUrl || 'https://api.anthropic.com'
             }
             className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
           />
           <p className="text-xs text-text-muted">
-            {customProtocol === 'openai'
-              ? t('api.enterOpenAIUrl')
-              : customProtocol === 'gemini'
-                ? 'Enter a Gemini-compatible base URL'
-              : t('api.enterAnthropicUrl')}
+            {provider === 'ollama'
+              ? t('api.enterOllamaUrl')
+              : customProtocol === 'openai'
+                ? t('api.enterOpenAIUrl')
+                : customProtocol === 'gemini'
+                  ? t('api.enterGeminiUrl')
+                  : t('api.enterAnthropicUrl')}
           </p>
+          {provider === 'custom' && <GuidanceInlineHint text={baseUrlGuidanceText} />}
         </div>
       )}
 
@@ -546,18 +680,33 @@ function APISettingsTab() {
             <Cpu className="w-4 h-4" />
             {t('api.model')}
           </label>
-          <button
-            type="button"
-            onClick={toggleCustomModel}
-            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 ${
-              useCustomModel
-                ? 'bg-accent-muted text-accent'
-                : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-            }`}
-          >
-            <Edit3 className="w-3 h-3" />
-            {useCustomModel ? t('api.usePreset') : t('api.custom')}
-          </button>
+          <div className="flex items-center gap-2">
+            {isOllamaMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  void refreshModelOptions();
+                }}
+                disabled={isRefreshingModels}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshingModels ? 'animate-spin' : ''}`} />
+                {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleCustomModel}
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 ${
+                useCustomModel
+                  ? 'bg-accent-muted text-accent'
+                  : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+              }`}
+            >
+              <Edit3 className="w-3 h-3" />
+              {useCustomModel ? t('api.usePreset') : t('api.custom')}
+            </button>
+          </div>
         </div>
         {useCustomModel ? (
           <input
@@ -580,12 +729,15 @@ function APISettingsTab() {
             ))}
           </select>
         )}
-        {useCustomModel && (
-          <p className="text-xs text-text-muted">
-            {modelInputHint}
-          </p>
-        )}
+        {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
       </div>
+
+      {provider === 'custom' && (
+        <CommonProviderSetupsCard
+          setups={commonProviderSetups}
+          onApplySetup={applyCommonProviderSetup}
+        />
+      )}
 
       {/* Enable Thinking Mode */}
       <div className="space-y-2 rounded-[1.5rem] border border-border-subtle bg-background/40 px-4 py-4">
@@ -618,7 +770,9 @@ function APISettingsTab() {
         </div>
       )}
       {testResult && (
-        <div className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+        <div
+          className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}
+        >
           {testResult.ok ? (
             <CheckCircle className="w-4 h-4 flex-shrink-0" />
           ) : (
@@ -627,9 +781,14 @@ function APISettingsTab() {
           <div className="flex-1">
             <div>
               {testResult.ok
-                ? t('api.testSuccess', { ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--' })
+                ? t('api.testSuccess', {
+                    ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--',
+                  })
                 : t(`api.testError.${testResult.errorType || 'unknown'}`)}
             </div>
+            {!testResult.ok && friendlyTestDetails && (
+              <div className="mt-1 text-xs leading-5 text-text-primary">{friendlyTestDetails}</div>
+            )}
             {!testResult.ok && testResult.details && (
               <div className="mt-1 text-xs text-text-muted">{testResult.details}</div>
             )}
@@ -672,7 +831,9 @@ function APISettingsTab() {
             )}
           </button>
           <button
-            onClick={() => { void handleSave(); }}
+            onClick={() => {
+              void handleSave();
+            }}
             disabled={isSaving || (requiresApiKey && !apiKey.trim())}
             className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
           >
@@ -732,8 +893,8 @@ function SandboxTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isChecking, setIsChecking] = useState(false);
   const [isInstalling, setIsInstalling] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState<LocalizedBanner | null>(null);
+  const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   const platform = window.electronAPI?.platform || 'unknown';
@@ -755,18 +916,18 @@ function SandboxTab() {
         // Load both config and status in parallel
         const [cfg, s] = await Promise.all([
           window.electronAPI.config.get(),
-          window.electronAPI.sandbox.getStatus()
+          window.electronAPI.sandbox.getStatus(),
         ]);
-        
+
         if (cancelled) return;
-        
+
         setSandboxEnabled(cfg.sandboxEnabled !== false);
         setStatus(s);
-        setError('');
+        setError(null);
       } catch (err) {
         if (cancelled) return;
         console.error('Failed to initialize sandbox tab:', err);
-        setError(t('sandbox.failedToLoad'));
+        setError({ text: t('sandbox.failedToLoad') });
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -786,10 +947,10 @@ function SandboxTab() {
     try {
       const s = await window.electronAPI.sandbox.getStatus();
       setStatus(s);
-      setError('');
+      setError(null);
     } catch (err) {
       console.error('Failed to load sandbox status:', err);
-      setError(t('sandbox.failedToLoad'));
+      setError({ text: t('sandbox.failedToLoad') });
     }
   }
 
@@ -818,11 +979,11 @@ function SandboxTab() {
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
-    
+
     setIsChecking(true);
-    setError('');
-    setSuccess('');
-    
+    setError(null);
+    setSuccess(null);
+
     try {
       // Fresh check based on platform - this forces a re-check on the backend
       if (isWindows) {
@@ -830,15 +991,15 @@ function SandboxTab() {
       } else if (isMac) {
         await window.electronAPI.sandbox.checkLima();
       }
-      
+
       // Get full status after check
       const fullStatus = await window.electronAPI.sandbox.getStatus();
       setStatus(fullStatus);
-      
-      setSuccess(t('sandbox.statusRefreshed'));
-      setTimeout(() => setSuccess(''), 3000);
+
+      setSuccess({ text: t('sandbox.statusRefreshed') });
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.checkFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.checkFailed') });
     } finally {
       setIsChecking(false);
     }
@@ -847,8 +1008,8 @@ function SandboxTab() {
   async function handleInstallNode() {
     if (!status || isInstalling) return;
     setIsInstalling('node');
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
 
     try {
       let result = false;
@@ -859,17 +1020,17 @@ function SandboxTab() {
       }
 
       if (result) {
-        setSuccess(t('sandbox.nodeInstalled'));
+        setSuccess({ text: t('sandbox.nodeInstalled') });
         // Refresh status after a short delay to allow backend to update
         setTimeout(async () => {
           await loadStatus();
         }, 500);
       } else {
-        setError(t('sandbox.nodeInstallFailed'));
+        setError({ text: t('sandbox.nodeInstallFailed') });
       }
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.nodeInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.nodeInstallFailed') });
     } finally {
       setIsInstalling(null);
     }
@@ -878,8 +1039,8 @@ function SandboxTab() {
   async function handleInstallPython() {
     if (!status || isInstalling) return;
     setIsInstalling('python');
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
 
     try {
       let result = false;
@@ -890,16 +1051,16 @@ function SandboxTab() {
       }
 
       if (result) {
-        setSuccess(t('sandbox.pythonInstalled'));
+        setSuccess({ text: t('sandbox.pythonInstalled') });
         setTimeout(async () => {
           await loadStatus();
         }, 500);
       } else {
-        setError(t('sandbox.pythonInstallFailed'));
+        setError({ text: t('sandbox.pythonInstallFailed') });
       }
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.pythonInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.pythonInstallFailed') });
     } finally {
       setIsInstalling(null);
     }
@@ -908,22 +1069,22 @@ function SandboxTab() {
   async function handleRetrySetup() {
     if (isInstalling) return;
     setIsInstalling('setup');
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
 
     try {
       const result = await window.electronAPI.sandbox.retrySetup();
       if (result.success) {
-        setSuccess(t('sandbox.setupComplete'));
+        setSuccess({ text: t('sandbox.setupComplete') });
         setTimeout(async () => {
           await loadStatus();
         }, 500);
       } else {
-        setError(result.error || t('sandbox.setupFailed'));
+        setError({ text: result.error || t('sandbox.setupFailed') });
       }
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.setupFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.setupFailed') });
     } finally {
       setIsInstalling(null);
     }
@@ -932,22 +1093,22 @@ function SandboxTab() {
   async function handleStartLima() {
     if (isInstalling) return;
     setIsInstalling('start');
-    setError('');
-    setSuccess('');
-    
+    setError(null);
+    setSuccess(null);
+
     try {
       const result = await window.electronAPI.sandbox.startLimaInstance();
       if (result) {
-        setSuccess(t('sandbox.limaStarted'));
+        setSuccess({ text: t('sandbox.limaStarted') });
         setTimeout(async () => {
           await loadStatus();
         }, 500);
       } else {
-        setError(t('sandbox.limaStartFailed'));
+        setError({ text: t('sandbox.limaStartFailed') });
       }
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.limaStartFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.limaStartFailed') });
     } finally {
       setIsInstalling(null);
     }
@@ -956,22 +1117,22 @@ function SandboxTab() {
   async function handleStopLima() {
     if (isInstalling) return;
     setIsInstalling('stop');
-    setError('');
-    setSuccess('');
-    
+    setError(null);
+    setSuccess(null);
+
     try {
       const result = await window.electronAPI.sandbox.stopLimaInstance();
       if (result) {
-        setSuccess(t('sandbox.limaStopped'));
+        setSuccess({ text: t('sandbox.limaStopped') });
         setTimeout(async () => {
           await loadStatus();
         }, 500);
       } else {
-        setError(t('sandbox.limaStopFailed'));
+        setError({ text: t('sandbox.limaStopFailed') });
       }
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('sandbox.limaStopFailed'));
+      setError({ text: err instanceof Error ? err.message : t('sandbox.limaStopFailed') });
     } finally {
       setIsInstalling(null);
     }
@@ -987,27 +1148,30 @@ function SandboxTab() {
     );
   }
 
-  const sandboxAvailable = isWindows ? status?.wsl?.available : isMac ? status?.lima?.available : false;
-  const sandboxReady = isWindows 
+  const sandboxAvailable = isWindows
+    ? status?.wsl?.available
+    : isMac
+      ? status?.lima?.available
+      : false;
+  const sandboxReady = isWindows
     ? status?.wsl?.available && status?.wsl?.nodeAvailable
-    : isMac 
+    : isMac
       ? status?.lima?.available && status?.lima?.instanceRunning && status?.lima?.nodeAvailable
       : false;
 
   return (
     <div className="space-y-4">
-
       {/* Error/Success Messages */}
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {error}
+          {renderLocalizedBannerMessage(error, t)}
         </div>
       )}
       {success && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          {success}
+          {renderLocalizedBannerMessage(success, t)}
         </div>
       )}
 
@@ -1017,9 +1181,15 @@ function SandboxTab() {
           <Shield className="w-8 h-8" />
         </div>
         <div>
-          <h3 className="text-base font-semibold text-text-primary">{t('sandbox.enableSandbox')}</h3>
+          <h3 className="text-base font-semibold text-text-primary">
+            {t('sandbox.enableSandbox')}
+          </h3>
           <p className="text-sm text-text-muted mt-1">
-            {isWindows ? t('sandbox.wslDesc') : isMac ? t('sandbox.limaDesc') : t('sandbox.nativeDesc')}
+            {isWindows
+              ? t('sandbox.wslDesc')
+              : isMac
+                ? t('sandbox.limaDesc')
+                : t('sandbox.nativeDesc')}
           </p>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-warning/10 text-warning text-xs font-medium">
@@ -1035,7 +1205,9 @@ function SandboxTab() {
       {false && sandboxEnabled && (
         <div className="p-4 rounded-xl bg-surface border border-border space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-text-primary">{t('sandbox.environmentStatus')}</h3>
+            <h3 className="text-sm font-medium text-text-primary">
+              {t('sandbox.environmentStatus')}
+            </h3>
             <button
               onClick={handleCheckStatus}
               disabled={isChecking || isInstalling !== null}
@@ -1061,7 +1233,11 @@ function SandboxTab() {
             <div className="p-3 rounded-lg bg-surface-muted">
               <div className="text-xs text-text-muted mb-1">{t('sandbox.mode')}</div>
               <div className="text-sm font-medium text-text-primary">
-                {status?.mode === 'wsl' ? 'WSL2' : status?.mode === 'lima' ? 'Lima VM' : t('sandbox.native')}
+                {status?.mode === 'wsl'
+                  ? 'WSL2'
+                  : status?.mode === 'lima'
+                    ? 'Lima VM'
+                    : t('sandbox.native')}
               </div>
             </div>
           </div>
@@ -1073,39 +1249,43 @@ function SandboxTab() {
                 WSL2 {t('sandbox.status')}
               </div>
               <div className="space-y-2">
-                <StatusItem 
-                  label={t('sandbox.wslAvailable')} 
-                  available={status?.wsl?.available || false} 
+                <StatusItem
+                  label={t('sandbox.wslAvailable')}
+                  available={status?.wsl?.available || false}
                   detail={status?.wsl?.distro}
                 />
-                <StatusItem 
-                  label="Node.js" 
+                <StatusItem
+                  label="Node.js"
                   available={status?.wsl?.nodeAvailable || false}
                   detail={status?.wsl?.version}
-                  action={!status?.wsl?.nodeAvailable && status?.wsl?.available ? {
-                    label: t('common.install'),
-                    onClick: handleInstallNode,
-                    loading: isInstalling === 'node'
-                  } : undefined}
+                  action={
+                    !status?.wsl?.nodeAvailable && status?.wsl?.available
+                      ? {
+                          label: t('common.install'),
+                          onClick: handleInstallNode,
+                          loading: isInstalling === 'node',
+                        }
+                      : undefined
+                  }
                 />
-                <StatusItem 
-                  label="Python" 
+                <StatusItem
+                  label="Python"
                   available={status?.wsl?.pythonAvailable || false}
                   detail={status?.wsl?.pythonVersion}
                   optional
-                  action={!status?.wsl?.pythonAvailable && status?.wsl?.available ? {
-                    label: t('common.install'),
-                    onClick: handleInstallPython,
-                    loading: isInstalling === 'python'
-                  } : undefined}
+                  action={
+                    !status?.wsl?.pythonAvailable && status?.wsl?.available
+                      ? {
+                          label: t('common.install'),
+                          onClick: handleInstallPython,
+                          loading: isInstalling === 'python',
+                        }
+                      : undefined
+                  }
                 />
-                <StatusItem 
-                  label="pip" 
-                  available={status?.wsl?.pipAvailable || false}
-                  optional
-                />
+                <StatusItem label="pip" available={status?.wsl?.pipAvailable || false} optional />
               </div>
-              
+
               {!status?.wsl?.available && (
                 <div className="mt-3 p-3 rounded-lg bg-warning/10 text-warning text-xs">
                   <p className="font-medium mb-1">{t('sandbox.wslNotInstalled')}</p>
@@ -1125,49 +1305,63 @@ function SandboxTab() {
                 Lima VM {t('sandbox.status')}
               </div>
               <div className="space-y-2">
-                <StatusItem 
-                  label={t('sandbox.limaAvailable')} 
+                <StatusItem
+                  label={t('sandbox.limaAvailable')}
                   available={status?.lima?.available || false}
                 />
-                <StatusItem 
-                  label={t('sandbox.vmCreated')} 
+                <StatusItem
+                  label={t('sandbox.vmCreated')}
                   available={status?.lima?.instanceExists || false}
                   detail={status?.lima?.instanceName}
                 />
-                <StatusItem 
-                  label={t('sandbox.vmRunning')} 
+                <StatusItem
+                  label={t('sandbox.vmRunning')}
                   available={status?.lima?.instanceRunning || false}
-                  action={status?.lima?.instanceExists && !status?.lima?.instanceRunning ? {
-                    label: t('sandbox.start'),
-                    onClick: handleStartLima,
-                    loading: isInstalling === 'start'
-                  } : status?.lima?.instanceRunning ? {
-                    label: t('sandbox.stop'),
-                    onClick: handleStopLima,
-                    loading: isInstalling === 'stop',
-                    variant: 'secondary'
-                  } : undefined}
+                  action={
+                    status?.lima?.instanceExists && !status?.lima?.instanceRunning
+                      ? {
+                          label: t('sandbox.start'),
+                          onClick: handleStartLima,
+                          loading: isInstalling === 'start',
+                        }
+                      : status?.lima?.instanceRunning
+                        ? {
+                            label: t('sandbox.stop'),
+                            onClick: handleStopLima,
+                            loading: isInstalling === 'stop',
+                            variant: 'secondary',
+                          }
+                        : undefined
+                  }
                 />
-                <StatusItem 
-                  label="Node.js" 
+                <StatusItem
+                  label="Node.js"
                   available={status?.lima?.nodeAvailable || false}
                   detail={status?.lima?.version}
-                  action={!status?.lima?.nodeAvailable && status?.lima?.instanceRunning ? {
-                    label: t('common.install'),
-                    onClick: handleInstallNode,
-                    loading: isInstalling === 'node'
-                  } : undefined}
+                  action={
+                    !status?.lima?.nodeAvailable && status?.lima?.instanceRunning
+                      ? {
+                          label: t('common.install'),
+                          onClick: handleInstallNode,
+                          loading: isInstalling === 'node',
+                        }
+                      : undefined
+                  }
                 />
-                <StatusItem 
-                  label="Python" 
+                <StatusItem
+                  label="Python"
                   available={status?.lima?.pythonAvailable || false}
                   detail={status?.lima?.pythonVersion}
                   optional
-                  action={!status?.lima?.pythonAvailable && status?.lima?.instanceRunning ? {
-                    label: t('common.install'),
-                    onClick: handleInstallPython,
-                    loading: isInstalling === 'python'
-                  } : undefined}
+                  action={
+                    !status?.lima?.pythonAvailable && status?.lima?.instanceRunning
+                      ? {
+                          label: t('common.install'),
+                          onClick: handleInstallPython,
+                          loading: isInstalling === 'python',
+                        }
+                      : undefined
+                  }
                 />
               </div>
 
@@ -1218,20 +1412,20 @@ function SandboxTab() {
   );
 }
 
-function StatusItem({ 
-  label, 
-  available, 
-  detail, 
+function StatusItem({
+  label,
+  available,
+  detail,
   optional,
-  action 
-}: { 
-  label: string; 
-  available: boolean; 
+  action,
+}: {
+  label: string;
+  available: boolean;
   detail?: string;
   optional?: boolean;
-  action?: { 
-    label: string; 
-    onClick: () => void; 
+  action?: {
+    label: string;
+    onClick: () => void;
     loading?: boolean;
     variant?: 'primary' | 'secondary';
   };
@@ -1240,13 +1434,15 @@ function StatusItem({
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-background">
       <div className="flex items-center gap-2">
-        <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-          available 
-            ? 'bg-success/10 text-success' 
-            : optional 
-              ? 'bg-surface-muted text-text-muted'
-              : 'bg-error/10 text-error'
-        }`}>
+        <div
+          className={`w-5 h-5 rounded-full flex items-center justify-center ${
+            available
+              ? 'bg-success/10 text-success'
+              : optional
+                ? 'bg-surface-muted text-text-muted'
+                : 'bg-error/10 text-error'
+          }`}
+        >
           {available ? (
             <CheckCircle className="w-3.5 h-3.5" />
           ) : (
@@ -1254,9 +1450,7 @@ function StatusItem({
           )}
         </div>
         <span className="text-sm text-text-primary">{label}</span>
-        {detail && (
-          <span className="text-xs text-text-muted">({detail})</span>
-        )}
+        {detail && <span className="text-xs text-text-muted">({detail})</span>}
         {optional && !available && (
           <span className="text-xs text-text-muted">({t('common.optional')})</span>
         )}
@@ -1341,16 +1535,19 @@ function CredentialsTab() {
 
   function getTypeIcon(type: string) {
     switch (type) {
-      case 'email': return <Mail className="w-4 h-4" />;
-      case 'website': return <Globe className="w-4 h-4" />;
-      case 'api': return <Key className="w-4 h-4" />;
-      default: return <Lock className="w-4 h-4" />;
+      case 'email':
+        return <Mail className="w-4 h-4" />;
+      case 'website':
+        return <Globe className="w-4 h-4" />;
+      case 'api':
+        return <Key className="w-4 h-4" />;
+      default:
+        return <Lock className="w-4 h-4" />;
     }
   }
 
   return (
     <div className="space-y-4">
-
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4" />
@@ -1364,7 +1561,10 @@ function CredentialsTab() {
           <CredentialForm
             credential={editingCredential || undefined}
             onSave={handleSave}
-            onCancel={() => { setShowForm(false); setEditingCredential(null); }}
+            onCancel={() => {
+              setShowForm(false);
+              setEditingCredential(null);
+            }}
             isLoading={isLoading}
           />
         </div>
@@ -1384,15 +1584,23 @@ function CredentialsTab() {
             </div>
           ) : (
             credentials.map((cred) => (
-              <div key={cred.id} className="rounded-[1.5rem] border border-border-subtle bg-background/40 p-4">
+              <div
+                key={cred.id}
+                className="rounded-[1.5rem] border border-border-subtle bg-background/40 p-4"
+              >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      cred.type === 'email' ? 'bg-accent/10 text-accent' :
-                      cred.type === 'website' ? 'bg-success/10 text-success' :
-                      cred.type === 'api' ? 'bg-mcp/10 text-mcp' :
-                      'bg-surface-muted text-text-muted'
-                    }`}>
+                    <div
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        cred.type === 'email'
+                          ? 'bg-accent/10 text-accent'
+                          : cred.type === 'website'
+                            ? 'bg-success/10 text-success'
+                            : cred.type === 'api'
+                              ? 'bg-mcp/10 text-mcp'
+                              : 'bg-surface-muted text-text-muted'
+                      }`}
+                    >
                       {getTypeIcon(cred.type)}
                     </div>
                     <div>
@@ -1400,17 +1608,19 @@ function CredentialsTab() {
                       <p className="text-sm text-text-secondary">{cred.username}</p>
                       {cred.service && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded bg-surface-muted text-text-muted">
-                          {SERVICE_OPTIONS.find(s => s.value === cred.service)?.label || cred.service}
+                          {SERVICE_OPTIONS.find((s) => s.value === cred.service)?.label ||
+                            cred.service}
                         </span>
                       )}
-                      {cred.url && (
-                        <p className="text-xs text-text-muted mt-1">{cred.url}</p>
-                      )}
+                      {cred.url && <p className="text-xs text-text-muted mt-1">{cred.url}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => { setEditingCredential(cred); setShowForm(true); }}
+                      onClick={() => {
+                        setEditingCredential(cred);
+                        setShowForm(true);
+                      }}
                       disabled={isLoading}
                       className="p-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
                       title={t('common.edit')}
@@ -1447,7 +1657,12 @@ function CredentialsTab() {
   );
 }
 
-function CredentialForm({ credential, onSave, onCancel, isLoading }: {
+function CredentialForm({
+  credential,
+  onSave,
+  onCancel,
+  isLoading,
+}: {
   credential?: UserCredential;
   onSave: (c: CredentialDraft) => void;
   onCancel: () => void;
@@ -1486,59 +1701,72 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-[1.4rem] border border-border-subtle bg-background/55 p-4 space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-[1.4rem] border border-border-subtle bg-background/55 p-4 space-y-4"
+    >
       <h3 className="font-medium text-text-primary">
         {credential ? t('credentials.editCredential') : t('credentials.addNewCredential')}
       </h3>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.name')} *</label>
+          <label className="block text-sm font-medium text-text-primary mb-2">
+            {t('credentials.name')} *
+          </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Work Gmail"
+            placeholder={t('credentials.namePlaceholder')}
             className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.type')}</label>
+          <label className="block text-sm font-medium text-text-primary mb-2">
+            {t('credentials.type')}
+          </label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as UserCredential['type'])}
             className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
           >
-            <option value="email">Email</option>
-            <option value="website">Website</option>
-            <option value="api">API Key</option>
-            <option value="other">Other</option>
+            <option value="email">{t('credentials.typeEmail')}</option>
+            <option value="website">{t('credentials.typeWebsite')}</option>
+            <option value="api">{t('credentials.typeApi')}</option>
+            <option value="other">{t('credentials.typeOther')}</option>
           </select>
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.service')}</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">
+          {t('credentials.service')}
+        </label>
         <select
           value={service}
           onChange={(e) => setService(e.target.value)}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
         >
           <option value="">{t('credentials.selectService')}</option>
-          {SERVICE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          {SERVICE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
           ))}
         </select>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.username')} *</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">
+          {t('credentials.username')} *
+        </label>
         <input
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="your.email@example.com"
+          placeholder={t('credentials.usernamePlaceholder')}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
           required
         />
@@ -1553,7 +1781,7 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={credential ? '••••••••' : 'Enter password'}
+            placeholder={credential ? '••••••••' : t('credentials.passwordPlaceholder')}
             className="w-full px-4 py-2 pr-10 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
             required={!credential}
           />
@@ -1568,22 +1796,26 @@ function CredentialForm({ credential, onSave, onCancel, isLoading }: {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.loginUrl')}</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">
+          {t('credentials.loginUrl')}
+        </label>
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://mail.google.com"
+          placeholder={t('credentials.loginUrlPlaceholder')}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">{t('credentials.notes')}</label>
+        <label className="block text-sm font-medium text-text-primary mb-2">
+          {t('credentials.notes')}
+        </label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Any additional notes..."
+          placeholder={t('credentials.notesPlaceholder')}
           rows={2}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
         />
@@ -1624,13 +1856,16 @@ function ConnectorsTab() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [presets, setPresets] = useState<Record<string, MCPPreset>>({});
   const [showPresets, setShowPresets] = useState(true);
-  const [configuringPreset, setConfiguringPreset] = useState<{ key: string; preset: MCPPreset } | null>(null);
+  const [configuringPreset, setConfiguringPreset] = useState<{
+    key: string;
+    preset: MCPPreset;
+  } | null>(null);
   const [presetEnvValues, setPresetEnvValues] = useState<Record<string, string>>({});
 
   // Auto-refresh
   const loadPresets = useCallback(async () => {
     try {
-      const loaded = await window.electronAPI.mcp.getPresets() as Record<string, MCPPreset>;
+      const loaded = (await window.electronAPI.mcp.getPresets()) as Record<string, MCPPreset>;
       setPresets(loaded || {});
     } catch (err) {
       console.error('Failed to load presets:', err);
@@ -1639,18 +1874,18 @@ function ConnectorsTab() {
 
   const loadServers = useCallback(async () => {
     try {
-      const loaded = await window.electronAPI.mcp.getServers() as MCPServerConfig[];
+      const loaded = (await window.electronAPI.mcp.getServers()) as MCPServerConfig[];
       setServers(loaded || []);
       setError('');
     } catch (err) {
       console.error('Failed to load servers:', err);
-      setError('Failed to load servers');
+      setError(t('mcp.loadServersFailed'));
     }
-  }, []);
+  }, [t]);
 
   const loadStatuses = useCallback(async () => {
     try {
-      const loaded = await window.electronAPI.mcp.getServerStatus() as MCPServerStatus[];
+      const loaded = (await window.electronAPI.mcp.getServerStatus()) as MCPServerStatus[];
       setStatuses(loaded || []);
     } catch (err) {
       console.error('Failed to load statuses:', err);
@@ -1659,7 +1894,7 @@ function ConnectorsTab() {
 
   const loadTools = useCallback(async () => {
     try {
-      const loaded = await window.electronAPI.mcp.getTools() as MCPToolInfo[];
+      const loaded = (await window.electronAPI.mcp.getTools()) as MCPToolInfo[];
       setTools(loaded || []);
     } catch (err) {
       console.error('Failed to load tools:', err);
@@ -1686,9 +1921,9 @@ function ConnectorsTab() {
     const preset = presets[presetKey];
     if (!preset) return;
 
-    const existing = servers.find(s => s.name === preset.name && s.command === preset.command);
+    const existing = servers.find((s) => s.name === preset.name && s.command === preset.command);
     if (existing) {
-      setError(`Server "${preset.name}" is already configured`);
+      setError(t('mcp.presetAlreadyConfigured', { name: preset.name }));
       return;
     }
 
@@ -1708,7 +1943,11 @@ function ConnectorsTab() {
     await addPresetServer(presetKey, preset, {});
   }
 
-  async function addPresetServer(presetKey: string, preset: MCPPreset, envOverrides: Record<string, string>) {
+  async function addPresetServer(
+    presetKey: string,
+    preset: MCPPreset,
+    envOverrides: Record<string, string>
+  ) {
     const serverConfig: MCPServerConfig = {
       id: `mcp-${presetKey}-${Date.now()}`,
       name: preset.name,
@@ -1738,20 +1977,20 @@ function ConnectorsTab() {
       setEditingServer(null);
       setShowAddForm(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save server');
+      setError(err instanceof Error ? err.message : t('mcp.saveServerFailed'));
     } finally {
       setIsLoading(false);
     }
   }
 
   async function handleDeleteServer(serverId: string) {
-    if (!confirm(t('common.delete') + ' this connector?')) return;
+    if (!confirm(t('mcp.deleteConnectorConfirm'))) return;
     setIsLoading(true);
     try {
       await window.electronAPI.mcp.deleteServer(serverId);
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete server');
+      setError(err instanceof Error ? err.message : t('mcp.deleteServerFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -1762,16 +2001,15 @@ function ConnectorsTab() {
   }
 
   function getServerStatus(serverId: string) {
-    return statuses.find(s => s.id === serverId);
+    return statuses.find((s) => s.id === serverId);
   }
 
   function getServerTools(serverId: string) {
-    return tools.filter(t => t.serverId === serverId);
+    return tools.filter((t) => t.serverId === serverId);
   }
 
   return (
     <div className="space-y-4">
-
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4" />
@@ -1784,7 +2022,10 @@ function ConnectorsTab() {
         <ServerForm
           server={editingServer || undefined}
           onSave={handleSaveServer}
-          onCancel={() => { setShowAddForm(false); setEditingServer(null); }}
+          onCancel={() => {
+            setShowAddForm(false);
+            setEditingServer(null);
+          }}
           isLoading={isLoading}
         />
       )}
@@ -1802,7 +2043,7 @@ function ConnectorsTab() {
             servers.map((server) => {
               const status = getServerStatus(server.id);
               const serverTools = getServerTools(server.id);
-              
+
               return (
                 <ServerCard
                   key={server.id}
@@ -1850,7 +2091,9 @@ function ConnectorsTab() {
                 <input
                   type="password"
                   value={presetEnvValues[envKey] || ''}
-                  onChange={(e) => setPresetEnvValues(prev => ({ ...prev, [envKey]: e.target.value }))}
+                  onChange={(e) =>
+                    setPresetEnvValues((prev) => ({ ...prev, [envKey]: e.target.value }))
+                  }
                   placeholder={`Enter ${envKey}`}
                   className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
@@ -1868,8 +2111,15 @@ function ConnectorsTab() {
               {t('common.cancel')}
             </button>
             <button
-              onClick={() => addPresetServer(configuringPreset.key, configuringPreset.preset, presetEnvValues)}
-              disabled={isLoading || configuringPreset.preset.requiresEnv?.some((key: string) => !presetEnvValues[key]?.trim())}
+              onClick={() =>
+                addPresetServer(configuringPreset.key, configuringPreset.preset, presetEnvValues)
+              }
+              disabled={
+                isLoading ||
+                configuringPreset.preset.requiresEnv?.some(
+                  (key: string) => !presetEnvValues[key]?.trim()
+                )
+              }
               className="px-4 py-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
               {t('common.add')}
@@ -1881,20 +2131,24 @@ function ConnectorsTab() {
       {/* Preset Servers */}
       {!showAddForm && !editingServer && !configuringPreset && Object.keys(presets).length > 0 && (
         <div className="space-y-3">
-            <button
-              onClick={() => setShowPresets(!showPresets)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-muted hover:bg-surface transition-colors"
-            >
-              <h3 className="text-sm font-medium text-text-primary">{t('mcp.quickAddPresets')}</h3>
-              <div className="flex items-center gap-1.5 text-text-muted">
-                <span className="text-xs">{showPresets ? t('mcp.hide') : t('mcp.show')}</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
-              </div>
-            </button>
+          <button
+            onClick={() => setShowPresets(!showPresets)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-muted hover:bg-surface transition-colors"
+          >
+            <h3 className="text-sm font-medium text-text-primary">{t('mcp.quickAddPresets')}</h3>
+            <div className="flex items-center gap-1.5 text-text-muted">
+              <span className="text-xs">{showPresets ? t('mcp.hide') : t('mcp.show')}</span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${showPresets ? 'rotate-180' : ''}`}
+              />
+            </div>
+          </button>
           {showPresets && (
             <div className="grid grid-cols-1 gap-2">
               {Object.entries(presets).map(([key, preset]) => {
-                const isAdded = servers.some(s => s.name === preset.name && s.command === preset.command);
+                const isAdded = servers.some(
+                  (s) => s.name === preset.name && s.command === preset.command
+                );
                 const requiresConfig = preset.requiresEnv && preset.requiresEnv.length > 0;
                 return (
                   <div
@@ -1915,10 +2169,9 @@ function ConnectorsTab() {
                         )}
                       </div>
                       <div className="text-xs text-text-muted mt-0.5 truncate">
-                        {preset.type === 'stdio' 
+                        {preset.type === 'stdio'
                           ? `${preset.command} ${preset.args?.join(' ') || ''}`
-                          : preset.url || 'Remote server'
-                        }
+                          : preset.url || 'Remote server'}
                       </div>
                     </div>
                     {isAdded ? (
@@ -1992,7 +2245,9 @@ function ServerCard({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-success' : 'bg-text-muted'}`} />
+              <div
+                className={`w-3 h-3 rounded-full ${isConnected ? 'bg-success' : 'bg-text-muted'}`}
+              />
               <h3 className="font-medium text-text-primary">{server.name}</h3>
               <span className="px-2 py-0.5 text-xs rounded bg-surface-muted text-text-muted">
                 {server.type.toUpperCase()}
@@ -2000,28 +2255,34 @@ function ServerCard({
             </div>
             <div className="text-sm text-text-muted space-y-1 ml-6 min-w-0">
               {server.type === 'stdio' && (
-                <div className="font-mono text-xs truncate" title={`${server.command} ${server.args?.join(' ') || ''}`}>
+                <div
+                  className="font-mono text-xs truncate"
+                  title={`${server.command} ${server.args?.join(' ') || ''}`}
+                >
                   {server.command} {server.args?.join(' ') || ''}
                 </div>
               )}
               {server.type === 'sse' && (
-                <div className="font-mono text-xs truncate" title={server.url}>{server.url}</div>
+                <div className="font-mono text-xs truncate" title={server.url}>
+                  {server.url}
+                </div>
               )}
               {/* Chrome hint */}
               {server.name.toLowerCase().includes('chrome') && (
-                <div className={`text-xs px-2 py-1.5 rounded-lg ${
-                  isConnected 
-                    ? 'bg-success/10 text-success' 
-                    : server.enabled
-                      ? 'bg-warning/10 text-warning'
-                      : 'bg-accent/10 text-accent'
-                }`}>
-                  {isConnected 
-                    ? `✓ ${t('mcp.connected')} to Chrome debug port (9222)` 
+                <div
+                  className={`text-xs px-2 py-1.5 rounded-lg ${
+                    isConnected
+                      ? 'bg-success/10 text-success'
+                      : server.enabled
+                        ? 'bg-warning/10 text-warning'
+                        : 'bg-accent/10 text-accent'
+                  }`}
+                >
+                  {isConnected
+                    ? `✓ ${t('mcp.connected')} to Chrome debug port (9222)`
                     : server.enabled
                       ? `⏳ ${t('mcp.connecting')}`
-                      : `💡 ${t('mcp.chromeHint')}`
-                  }
+                      : `💡 ${t('mcp.chromeHint')}`}
                 </div>
               )}
               <div className="flex items-center gap-4 mt-2">
@@ -2031,7 +2292,11 @@ function ServerCard({
                 >
                   <Plug className="w-3 h-3" />
                   <span>{t('mcp.toolsAvailable', { count: toolCount })}</span>
-                  {showTools ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  {showTools ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
                 </button>
                 {isConnected && (
                   <span className="flex items-center gap-1 text-success">
@@ -2040,11 +2305,14 @@ function ServerCard({
                   </span>
                 )}
               </div>
-              
+
               {/* Tools List */}
               {showTools && tools.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-surface-muted border border-border">
-                  <div className="text-xs font-medium text-text-primary mb-2">{t('mcp.toolsAvailable', { count: tools.length }).split(' ').slice(1).join(' ')}:</div>
+                  <div className="text-xs font-medium text-text-primary mb-2">
+                    {t('mcp.toolsAvailable', { count: tools.length }).split(' ').slice(1).join(' ')}
+                    :
+                  </div>
                   <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
                     {tools.map((tool, idx) => {
                       // Extract only the part after the last double underscore
@@ -2056,9 +2324,13 @@ function ServerCard({
                           className="px-2 py-1.5 rounded bg-background border border-border text-xs text-text-secondary"
                           title={tool.description || tool.name}
                         >
-                          <div className="font-mono text-accent break-words whitespace-normal">{displayName}</div>
+                          <div className="font-mono text-accent break-words whitespace-normal">
+                            {displayName}
+                          </div>
                           {tool.description && (
-                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">{tool.description}</div>
+                            <div className="text-text-muted mt-0.5 break-words whitespace-normal">
+                              {tool.description}
+                            </div>
                           )}
                         </div>
                       );
@@ -2082,7 +2354,9 @@ function ServerCard({
                   ? 'bg-success/10 text-success hover:bg-success/20'
                   : 'bg-surface-muted text-text-muted hover:bg-surface-active'
               }`}
-              title={server.enabled ? t('common.disable') || 'Disable' : t('common.enable') || 'Enable'}
+              title={
+                server.enabled ? t('common.disable') || 'Disable' : t('common.enable') || 'Enable'
+              }
             >
               {server.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
             </button>
@@ -2132,7 +2406,7 @@ function ServerForm({
   const [showEnvSection, setShowEnvSection] = useState(Object.keys(server?.env || {}).length > 0);
 
   function handleEnvChange(key: string, value: string) {
-    setEnvVars(prev => ({ ...prev, [key]: value }));
+    setEnvVars((prev) => ({ ...prev, [key]: value }));
   }
 
   const [isAddingEnvVar, setIsAddingEnvVar] = useState(false);
@@ -2146,7 +2420,7 @@ function ServerForm({
 
   const handleSaveNewEnvVar = () => {
     if (newEnvKey.trim()) {
-      setEnvVars(prev => ({ ...prev, [newEnvKey.trim()]: newEnvValue.trim() }));
+      setEnvVars((prev) => ({ ...prev, [newEnvKey.trim()]: newEnvValue.trim() }));
       setNewEnvKey('');
       setNewEnvValue('');
       setIsAddingEnvVar(false);
@@ -2160,7 +2434,7 @@ function ServerForm({
   };
 
   function handleRemoveEnvVar(key: string) {
-    setEnvVars(prev => {
+    setEnvVars((prev) => {
       const newVars = { ...prev };
       delete newVars[key];
       return newVars;
@@ -2169,7 +2443,7 @@ function ServerForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
+
     const config: MCPServerConfig = {
       id: server?.id || `mcp-${Date.now()}`,
       name: name.trim(),
@@ -2179,7 +2453,7 @@ function ServerForm({
 
     if (type === 'stdio') {
       if (!command.trim()) {
-        alert(t('mcp.command') + ' is required');
+        alert(t('mcp.commandRequired'));
         return;
       }
       config.command = command.trim();
@@ -2190,7 +2464,7 @@ function ServerForm({
       }
     } else {
       if (!url.trim()) {
-        alert(t('mcp.url') + ' is required');
+        alert(t('mcp.urlRequired'));
         return;
       }
       config.url = url.trim();
@@ -2200,7 +2474,10 @@ function ServerForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-4 space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-xl border border-border bg-surface p-4 space-y-4"
+    >
       <h3 className="font-medium text-text-primary">
         {server ? t('mcp.editConnector') : t('mcp.addConnectorTitle')}
       </h3>
@@ -2211,7 +2488,7 @@ function ServerForm({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Chrome MCP Server"
+          placeholder={t('mcp.namePlaceholder')}
           className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30"
           required
         />
@@ -2229,7 +2506,7 @@ function ServerForm({
                 : 'bg-surface-muted text-text-secondary hover:bg-surface-active'
             }`}
           >
-            STDIO (Local)
+            {t('mcp.typeStdioLocal')}
           </button>
           <button
             type="button"
@@ -2240,7 +2517,7 @@ function ServerForm({
                 : 'bg-surface-muted text-text-secondary hover:bg-surface-active'
             }`}
           >
-            SSE (Remote)
+            {t('mcp.typeSseRemote')}
           </button>
         </div>
       </div>
@@ -2248,32 +2525,38 @@ function ServerForm({
       {type === 'stdio' ? (
         <>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.command')}</label>
+            <label className="block text-sm font-medium text-text-primary mb-2">
+              {t('mcp.command')}
+            </label>
             <input
               type="text"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder="npx"
+              placeholder={t('mcp.commandPlaceholder')}
               className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">{t('mcp.arguments')}</label>
+            <label className="block text-sm font-medium text-text-primary mb-2">
+              {t('mcp.arguments')}
+            </label>
             <input
               type="text"
               value={args}
               onChange={(e) => setArgs(e.target.value)}
-              placeholder="-y chrome-devtools-mcp@latest --browser-url http://localhost:9222"
+              placeholder={t('mcp.argumentsPlaceholder')}
               className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
             />
             <p className="text-xs text-text-muted mt-1">{t('mcp.spaceSeparated')}</p>
           </div>
-          
+
           {/* Environment Variables Section */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-text-primary">{t('credentials.envVars')}</label>
+              <label className="text-sm font-medium text-text-primary">
+                {t('credentials.envVars')}
+              </label>
               <button
                 type="button"
                 onClick={() => setShowEnvSection(!showEnvSection)}
@@ -2286,28 +2569,33 @@ function ServerForm({
               <div className="space-y-2 p-3 rounded-lg bg-surface-muted border border-border">
                 {Object.entries(envVars).map(([key, value]) => (
                   <div key={key} className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-text-secondary w-32 truncate" title={key}>
+                    <span
+                      className="text-xs font-mono text-text-secondary w-32 truncate"
+                      title={key}
+                    >
                       {key}
                     </span>
                     <input
                       type="password"
                       value={value}
                       onChange={(e) => handleEnvChange(key, e.target.value)}
-                      placeholder={`Enter ${key}`}
+                      placeholder={`${t('mcp.envValuePlaceholder')}: ${key}`}
                       className="flex-1 px-3 py-1.5 rounded bg-background border border-border text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveEnvVar(key)}
                       className="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
-                      title="Remove"
+                      title={t('mcp.removeVar')}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
                 {Object.keys(envVars).length === 0 && !isAddingEnvVar && (
-                  <p className="text-xs text-text-muted text-center py-2">{t('credentials.noEnvVars')}</p>
+                  <p className="text-xs text-text-muted text-center py-2">
+                    {t('credentials.noEnvVars')}
+                  </p>
                 )}
                 {isAddingEnvVar && (
                   <div className="space-y-2 p-2 rounded bg-background border border-accent/30">
@@ -2323,7 +2611,7 @@ function ServerForm({
                       type="password"
                       value={newEnvValue}
                       onChange={(e) => setNewEnvValue(e.target.value)}
-                      placeholder="输入值"
+                      placeholder={t('mcp.envValuePlaceholder')}
                       className="w-full px-3 py-1.5 rounded bg-surface border border-border text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
                     />
                     <div className="flex gap-2">
@@ -2346,20 +2634,18 @@ function ServerForm({
                   </div>
                 )}
                 {!isAddingEnvVar && (
-                <button
-                  type="button"
-                  onClick={handleAddEnvVar}
-                  className="w-full mt-2 py-1.5 px-3 rounded border border-dashed border-border hover:border-accent hover:bg-accent/5 text-xs text-text-secondary hover:text-accent transition-colors flex items-center justify-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {t('credentials.envVars')}
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleAddEnvVar}
+                    className="w-full mt-2 py-1.5 px-3 rounded border border-dashed border-border hover:border-accent hover:bg-accent/5 text-xs text-text-secondary hover:text-accent transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {t('credentials.envVars')}
+                  </button>
                 )}
               </div>
             )}
-            <p className="text-xs text-text-muted">
-              {t('credentials.usedForTokens')}
-            </p>
+            <p className="text-xs text-text-muted">{t('credentials.usedForTokens')}</p>
           </div>
         </>
       ) : (
@@ -2417,7 +2703,6 @@ function ServerForm({
   );
 }
 
-
 // ==================== Skills Tab ====================
 
 function SkillsTab() {
@@ -2427,14 +2712,16 @@ function SkillsTab() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [storagePath, setStoragePath] = useState('');
   const [plugins, setPlugins] = useState<PluginCatalogItemV2[]>([]);
-  const [installedPluginsByKey, setInstalledPluginsByKey] = useState<Record<string, InstalledPlugin>>({});
+  const [installedPluginsByKey, setInstalledPluginsByKey] = useState<
+    Record<string, InstalledPlugin>
+  >({});
   const [isLoading, setIsLoading] = useState(false);
   const [isPluginLoading, setIsPluginLoading] = useState(false);
   const [isPluginModalOpen, setIsPluginModalOpen] = useState(false);
   const [pluginActionKey, setPluginActionKey] = useState<string | null>(null);
   const [pluginToastMessage, setPluginToastMessage] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState<LocalizedBanner | null>(null);
+  const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const pluginToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const componentOrder: PluginComponentKind[] = ['skills', 'commands', 'agents', 'hooks', 'mcp'];
 
@@ -2480,15 +2767,15 @@ function SkillsTab() {
       return;
     }
     if (skillsStorageChangeEvent.reason === 'fallback') {
-      setError(t('skills.storagePathFallback'));
+      setError({ text: t('skills.storagePathFallback') });
       return;
     }
     if (skillsStorageChangeEvent.reason === 'watcher_error') {
-      setError(
-        t('skills.storageWatcherError', {
+      setError({
+        text: t('skills.storageWatcherError', {
           message: skillsStorageChangeEvent.message || '',
-        })
-      );
+        }),
+      });
     }
   }, [skillsStorageChangeEvent, t]);
 
@@ -2503,24 +2790,27 @@ function SkillsTab() {
     }, 5000);
   }
 
-  const loadSkills = useCallback(async (silent = false) => {
-    try {
-      const [loaded, nextStoragePath] = await Promise.all([
-        window.electronAPI.skills.getAll(),
-        window.electronAPI.skills.getStoragePath(),
-      ]);
-      setSkills(loaded || []);
-      setStoragePath(nextStoragePath || '');
-      if (!silent) {
-        setError('');
+  const loadSkills = useCallback(
+    async (silent = false) => {
+      try {
+        const [loaded, nextStoragePath] = await Promise.all([
+          window.electronAPI.skills.getAll(),
+          window.electronAPI.skills.getStoragePath(),
+        ]);
+        setSkills(loaded || []);
+        setStoragePath(nextStoragePath || '');
+        if (!silent) {
+          setError(null);
+        }
+      } catch (err) {
+        console.error('Failed to load skills:', err);
+        if (!silent) {
+          setError({ text: t('skills.failedToLoad') });
+        }
       }
-    } catch (err) {
-      console.error('Failed to load skills:', err);
-      if (!silent) {
-        setError(t('skills.failedToLoad'));
-      }
-    }
-  }, [t]);
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (isElectron) {
@@ -2579,9 +2869,9 @@ function SkillsTab() {
         }
       }
       setInstalledPluginsByKey(nextInstalledByKey);
-      setError('');
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.pluginInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.pluginInstallFailed') });
     } finally {
       setIsPluginLoading(false);
     }
@@ -2594,25 +2884,28 @@ function SkillsTab() {
 
   async function handleInstall() {
     try {
-      const folderPath = await window.electronAPI.invoke<string | null>({ type: 'folder.select', payload: {} });
+      const folderPath = await window.electronAPI.invoke<string | null>({
+        type: 'folder.select',
+        payload: {},
+      });
       if (!folderPath) return;
 
       setIsLoading(true);
       const validation = await window.electronAPI.skills.validate(folderPath);
 
       if (!validation.valid) {
-        setError(`Invalid skill folder: ${validation.errors.join(', ')}`);
+        setError({ text: `Invalid skill folder: ${validation.errors.join(', ')}` });
         return;
       }
 
       const result = await window.electronAPI.skills.install(folderPath);
       if (result.success) {
         await loadSkills();
-        setError('');
-        setSuccess('');
+        setError(null);
+        setSuccess(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.failedToInstall'));
+      setError({ text: err instanceof Error ? err.message : t('skills.failedToInstall') });
     } finally {
       setIsLoading(false);
     }
@@ -2620,7 +2913,10 @@ function SkillsTab() {
 
   async function handleSelectStoragePath() {
     try {
-      const folderPath = await window.electronAPI.invoke<string | null>({ type: 'folder.select', payload: {} });
+      const folderPath = await window.electronAPI.invoke<string | null>({
+        type: 'folder.select',
+        payload: {},
+      });
       if (!folderPath) return;
 
       setIsLoading(true);
@@ -2628,17 +2924,19 @@ function SkillsTab() {
       if (result.success) {
         setStoragePath(result.path);
         await loadSkills(true);
-        setError('');
-        setSuccess(
-          t('skills.storagePathUpdated', {
+        setError(null);
+        setSuccess({
+          text: t('skills.storagePathUpdated', {
             migrated: result.migratedCount,
             skipped: result.skippedCount,
-          })
-        );
-        setTimeout(() => setSuccess(''), 5000);
+          }),
+        });
+        setTimeout(() => setSuccess(null), 5000);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.storagePathUpdateFailed'));
+      setError({
+        text: err instanceof Error ? err.message : t('skills.storagePathUpdateFailed'),
+      });
     } finally {
       setIsLoading(false);
     }
@@ -2649,13 +2947,13 @@ function SkillsTab() {
     try {
       const result = await window.electronAPI.skills.openStoragePath();
       if (!result.success) {
-        setError(result.error || t('skills.storagePathOpenFailed'));
+        setError({ text: result.error || t('skills.storagePathOpenFailed') });
         return;
       }
       setStoragePath(result.path);
-      setError('');
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.storagePathOpenFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.storagePathOpenFailed') });
     } finally {
       setIsLoading(false);
     }
@@ -2665,9 +2963,9 @@ function SkillsTab() {
     setIsLoading(true);
     try {
       await loadSkills(true);
-      setError('');
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.failedToLoad'));
+      setError({ text: err instanceof Error ? err.message : t('skills.failedToLoad') });
     } finally {
       setIsLoading(false);
     }
@@ -2681,7 +2979,7 @@ function SkillsTab() {
       await window.electronAPI.skills.delete(skillId);
       await loadSkills();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.failedToDelete'));
+      setError({ text: err instanceof Error ? err.message : t('skills.failedToDelete') });
     } finally {
       setIsLoading(false);
     }
@@ -2693,7 +2991,7 @@ function SkillsTab() {
       await window.electronAPI.skills.setEnabled(skill.id, !skill.enabled);
       await loadSkills();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.failedToToggle'));
+      setError({ text: err instanceof Error ? err.message : t('skills.failedToToggle') });
     } finally {
       setIsLoading(false);
     }
@@ -2702,18 +3000,18 @@ function SkillsTab() {
   async function handleInstallPlugin(plugin: PluginCatalogItemV2) {
     const installTarget = plugin.pluginId ?? plugin.name;
     setPluginActionKey(`install:${installTarget}`);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       const result = await window.electronAPI.plugins.install(installTarget);
       await loadSkills();
       await loadPlugins();
       const message = t('skills.pluginInstallSuccess', { name: result.plugin.name });
-      setSuccess(message);
+      setSuccess({ text: message });
       showPluginInstallToast(message);
-      setTimeout(() => setSuccess(''), 4000);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.pluginInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.pluginInstallFailed') });
     } finally {
       setPluginActionKey(null);
     }
@@ -2721,12 +3019,12 @@ function SkillsTab() {
 
   async function handleSetPluginEnabled(plugin: InstalledPlugin, enabled: boolean) {
     setPluginActionKey(`enabled:${plugin.pluginId}`);
-    setError('');
+    setError(null);
     try {
       await window.electronAPI.plugins.setEnabled(plugin.pluginId, enabled);
       await loadPlugins();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.pluginInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.pluginInstallFailed') });
     } finally {
       setPluginActionKey(null);
     }
@@ -2738,12 +3036,12 @@ function SkillsTab() {
     enabled: boolean
   ) {
     setPluginActionKey(`component:${plugin.pluginId}:${component}`);
-    setError('');
+    setError(null);
     try {
       await window.electronAPI.plugins.setComponentEnabled(plugin.pluginId, component, enabled);
       await loadPlugins();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.pluginInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.pluginInstallFailed') });
     } finally {
       setPluginActionKey(null);
     }
@@ -2755,34 +3053,33 @@ function SkillsTab() {
     }
 
     setPluginActionKey(`uninstall:${plugin.pluginId}`);
-    setError('');
+    setError(null);
     try {
       await window.electronAPI.plugins.uninstall(plugin.pluginId);
       await loadPlugins();
       showPluginInstallToast(t('skills.pluginUninstalled', { name: plugin.name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('skills.pluginInstallFailed'));
+      setError({ text: err instanceof Error ? err.message : t('skills.pluginInstallFailed') });
     } finally {
       setPluginActionKey(null);
     }
   }
 
-  const builtinSkills = skills.filter(s => s.type === 'builtin');
-  const customSkills = skills.filter(s => s.type !== 'builtin');
+  const builtinSkills = skills.filter((s) => s.type === 'builtin');
+  const customSkills = skills.filter((s) => s.type !== 'builtin');
 
   return (
     <div className="space-y-4">
-
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4" />
-          {error}
+          {error.key ? t(error.key) : error.text}
         </div>
       )}
       {success && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
           <CheckCircle className="w-4 h-4" />
-          {success}
+          {success.key ? t(success.key) : success.text}
         </div>
       )}
 
@@ -2826,7 +3123,7 @@ function SkillsTab() {
         title={t('skills.builtinSkills')}
         description={t('skills.builtinSkillsDesc')}
       >
-        {builtinSkills.map(skill => (
+        {builtinSkills.map((skill) => (
           <SkillCard
             key={skill.id}
             skill={skill}
@@ -2849,7 +3146,7 @@ function SkillsTab() {
             <p className="text-sm mt-1">{t('skills.installSkillsDesc')}</p>
           </div>
         ) : (
-          customSkills.map(skill => (
+          customSkills.map((skill) => (
             <SkillCard
               key={skill.id}
               skill={skill}
@@ -2865,31 +3162,37 @@ function SkillsTab() {
         title={t('skills.pluginsTitle')}
         description={t('skills.pluginsDesc')}
       >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <button
-          onClick={handleBrowsePlugins}
-          disabled={isLoading || isPluginLoading}
-          className="w-full py-3 px-4 rounded-[1.4rem] border border-border-subtle hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
-        >
-          {isPluginLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Package className="w-5 h-5" />}
-          {t('skills.browsePlugins')}
-        </button>
-        <button
-          onClick={handleInstall}
-          disabled={isLoading}
-          className="w-full py-3 px-4 rounded-[1.4rem] border-2 border-dashed border-border-subtle hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
-        >
-          <Plus className="w-5 h-5" />
-          {t('skills.installSkillFromFolder')}
-        </button>
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <button
+            onClick={handleBrowsePlugins}
+            disabled={isLoading || isPluginLoading}
+            className="w-full py-3 px-4 rounded-[1.4rem] border border-border-subtle hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
+          >
+            {isPluginLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Package className="w-5 h-5" />
+            )}
+            {t('skills.browsePlugins')}
+          </button>
+          <button
+            onClick={handleInstall}
+            disabled={isLoading}
+            className="w-full py-3 px-4 rounded-[1.4rem] border-2 border-dashed border-border-subtle hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
+          >
+            <Plus className="w-5 h-5" />
+            {t('skills.installSkillFromFolder')}
+          </button>
+        </div>
       </SettingsContentSection>
 
       {isPluginModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-3xl max-h-[80vh] overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h3 className="text-lg font-semibold text-text-primary">{t('skills.pluginListTitle')}</h3>
+              <h3 className="text-lg font-semibold text-text-primary">
+                {t('skills.pluginListTitle')}
+              </h3>
               <button
                 onClick={() => setIsPluginModalOpen(false)}
                 className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
@@ -2907,7 +3210,10 @@ function SkillsTab() {
                 <div className="py-8 text-center text-text-muted">{t('skills.noPluginsFound')}</div>
               ) : (
                 plugins.map((plugin) => (
-                  <div key={plugin.pluginId || plugin.name} className="rounded-xl border border-border bg-surface-hover p-4">
+                  <div
+                    key={plugin.pluginId || plugin.name}
+                    className="rounded-xl border border-border bg-surface-hover p-4"
+                  >
                     {(() => {
                       const installedPlugin = getCatalogLookupKeys(plugin)
                         .map((key) => installedPluginsByKey[key])
@@ -2922,125 +3228,159 @@ function SkillsTab() {
                       const isInstallable = plugin.installable;
                       return (
                         <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium text-text-primary truncate">{plugin.name}</h4>
-                          {plugin.version && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-surface text-text-muted">
-                              v{plugin.version}
-                            </span>
-                          )}
-                        </div>
-                        {plugin.description && (
-                          <p className="text-sm text-text-muted line-clamp-2">{plugin.description}</p>
-                        )}
-                        {hasKnownComponents ? (
-                          <p className="text-xs text-text-muted mt-2">
-                            {t('skills.pluginComponents', {
-                              skills: plugin.componentCounts.skills,
-                              commands: plugin.componentCounts.commands,
-                              agents: plugin.componentCounts.agents,
-                              hooks: plugin.componentCounts.hooks,
-                              mcp: plugin.componentCounts.mcp,
-                            })}
-                          </p>
-                        ) : (
-                          isMarketplaceCatalog && !installedPlugin && (
-                            <p className="text-xs text-text-muted mt-2">
-                              {t('skills.pluginComponentsAvailableAfterInstall')}
-                            </p>
-                          )
-                        )}
-                        {hasKnownComponents && plugin.componentCounts.hooks > 0 && !installedPlugin && (
-                          <p className="text-xs text-warning mt-1">
-                            {t('skills.pluginComponentHooksDisabledByDefault')}
-                          </p>
-                        )}
-                        {hasKnownComponents && plugin.componentCounts.mcp > 0 && !installedPlugin && (
-                          <p className="text-xs text-warning mt-1">
-                            {t('skills.pluginComponentMcpDisabledByDefault')}
-                          </p>
-                        )}
-                        {!isInstallable && !isMarketplaceCatalog && (
-                          <p className="text-xs text-error mt-1">{t('skills.pluginNoComponents')}</p>
-                        )}
-                      </div>
-                      {installedPlugin ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-success/10 text-success text-sm">
-                          <CheckCircle className="w-4 h-4" />
-                          {t('skills.pluginInstalled')}
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleInstallPlugin(plugin)}
-                          disabled={!isInstallable || pluginActionKey !== null}
-                          className="px-3 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                        >
-                          {isInstalling ? (
-                          <span className="inline-flex items-center gap-1">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            {t('common.install')}
-                          </span>
-                        ) : (
-                          t('skills.pluginInstall')
-                        )}
-                        </button>
-                      )}
-                    </div>
-                    {installedPlugin && (
-                      <div className="mt-3 pt-3 border-t border-border space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs text-text-muted">
-                            {installedPlugin.enabled ? t('skills.pluginAppliedInRuntime') : t('skills.pluginDisabled')}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleSetPluginEnabled(installedPlugin, !installedPlugin.enabled)}
-                              disabled={pluginActionKey !== null}
-                              className={`px-3 py-1.5 rounded-md text-xs ${
-                                installedPlugin.enabled
-                                  ? 'bg-warning/10 text-warning hover:bg-warning/20'
-                                  : 'bg-success/10 text-success hover:bg-success/20'
-                              } disabled:opacity-50`}
-                            >
-                              {installedPlugin.enabled ? t('skills.pluginDisable') : t('skills.pluginEnable')}
-                            </button>
-                            <button
-                              onClick={() => handleUninstallPlugin(installedPlugin)}
-                              disabled={pluginActionKey !== null}
-                              className="px-3 py-1.5 rounded-md text-xs bg-error/10 text-error hover:bg-error/20 disabled:opacity-50"
-                            >
-                              {t('skills.pluginManageUninstall')}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          {componentEntries.map((component) => {
-                            const enabled = installedPlugin.componentsEnabled[component];
-                            return (
-                              <div key={`${installedPlugin.pluginId}:${component}`} className="flex items-center justify-between gap-2">
-                                <div className="text-xs text-text-secondary">
-                                  <span className="font-medium">{component}</span>
-                                  <span className="text-text-muted"> ({plugin.componentCounts[component]})</span>
-                                </div>
-                                <button
-                                  onClick={() => handleSetComponentEnabled(installedPlugin, component, !enabled)}
-                                  disabled={pluginActionKey !== null}
-                                  className={`px-2 py-1 rounded text-xs ${
-                                    enabled
-                                      ? 'bg-success/10 text-success hover:bg-success/20'
-                                      : 'bg-surface text-text-muted hover:bg-surface-active'
-                                  } disabled:opacity-50`}
-                                >
-                                  {enabled ? t('skills.pluginDisable') : t('skills.pluginEnable')}
-                                </button>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-medium text-text-primary truncate">
+                                  {plugin.name}
+                                </h4>
+                                {plugin.version && (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-surface text-text-muted">
+                                    v{plugin.version}
+                                  </span>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                              {plugin.description && (
+                                <p className="text-sm text-text-muted line-clamp-2">
+                                  {plugin.description}
+                                </p>
+                              )}
+                              {hasKnownComponents ? (
+                                <p className="text-xs text-text-muted mt-2">
+                                  {t('skills.pluginComponents', {
+                                    skills: plugin.componentCounts.skills,
+                                    commands: plugin.componentCounts.commands,
+                                    agents: plugin.componentCounts.agents,
+                                    hooks: plugin.componentCounts.hooks,
+                                    mcp: plugin.componentCounts.mcp,
+                                  })}
+                                </p>
+                              ) : (
+                                isMarketplaceCatalog &&
+                                !installedPlugin && (
+                                  <p className="text-xs text-text-muted mt-2">
+                                    {t('skills.pluginComponentsAvailableAfterInstall')}
+                                  </p>
+                                )
+                              )}
+                              {hasKnownComponents &&
+                                plugin.componentCounts.hooks > 0 &&
+                                !installedPlugin && (
+                                  <p className="text-xs text-warning mt-1">
+                                    {t('skills.pluginComponentHooksDisabledByDefault')}
+                                  </p>
+                                )}
+                              {hasKnownComponents &&
+                                plugin.componentCounts.mcp > 0 &&
+                                !installedPlugin && (
+                                  <p className="text-xs text-warning mt-1">
+                                    {t('skills.pluginComponentMcpDisabledByDefault')}
+                                  </p>
+                                )}
+                              {!isInstallable && !isMarketplaceCatalog && (
+                                <p className="text-xs text-error mt-1">
+                                  {t('skills.pluginNoComponents')}
+                                </p>
+                              )}
+                            </div>
+                            {installedPlugin ? (
+                              <span className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-success/10 text-success text-sm">
+                                <CheckCircle className="w-4 h-4" />
+                                {t('skills.pluginInstalled')}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleInstallPlugin(plugin)}
+                                disabled={!isInstallable || pluginActionKey !== null}
+                                className="px-3 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                              >
+                                {isInstalling ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {t('common.install')}
+                                  </span>
+                                ) : (
+                                  t('skills.pluginInstall')
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          {installedPlugin && (
+                            <div className="mt-3 pt-3 border-t border-border space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs text-text-muted">
+                                  {installedPlugin.enabled
+                                    ? t('skills.pluginAppliedInRuntime')
+                                    : t('skills.pluginDisabled')}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() =>
+                                      handleSetPluginEnabled(
+                                        installedPlugin,
+                                        !installedPlugin.enabled
+                                      )
+                                    }
+                                    disabled={pluginActionKey !== null}
+                                    className={`px-3 py-1.5 rounded-md text-xs ${
+                                      installedPlugin.enabled
+                                        ? 'bg-warning/10 text-warning hover:bg-warning/20'
+                                        : 'bg-success/10 text-success hover:bg-success/20'
+                                    } disabled:opacity-50`}
+                                  >
+                                    {installedPlugin.enabled
+                                      ? t('skills.pluginDisable')
+                                      : t('skills.pluginEnable')}
+                                  </button>
+                                  <button
+                                    onClick={() => handleUninstallPlugin(installedPlugin)}
+                                    disabled={pluginActionKey !== null}
+                                    className="px-3 py-1.5 rounded-md text-xs bg-error/10 text-error hover:bg-error/20 disabled:opacity-50"
+                                  >
+                                    {t('skills.pluginManageUninstall')}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                {componentEntries.map((component) => {
+                                  const enabled = installedPlugin.componentsEnabled[component];
+                                  return (
+                                    <div
+                                      key={`${installedPlugin.pluginId}:${component}`}
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <div className="text-xs text-text-secondary">
+                                        <span className="font-medium">{component}</span>
+                                        <span className="text-text-muted">
+                                          {' '}
+                                          ({plugin.componentCounts[component]})
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={() =>
+                                          handleSetComponentEnabled(
+                                            installedPlugin,
+                                            component,
+                                            !enabled
+                                          )
+                                        }
+                                        disabled={pluginActionKey !== null}
+                                        className={`px-2 py-1 rounded text-xs ${
+                                          enabled
+                                            ? 'bg-success/10 text-success hover:bg-success/20'
+                                            : 'bg-surface text-text-muted hover:bg-surface-active'
+                                        } disabled:opacity-50`}
+                                      >
+                                        {enabled
+                                          ? t('skills.pluginDisable')
+                                          : t('skills.pluginEnable')}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </>
                       );
                     })()}
@@ -3064,12 +3404,18 @@ function SkillsTab() {
   );
 }
 
-function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
+function SkillCard({
+  skill,
+  onToggleEnabled,
+  onDelete,
+  isLoading,
+}: {
   skill: Skill;
   onToggleEnabled: () => void;
   onDelete: (() => void) | null;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const isBuiltin = skill.type === 'builtin';
 
   return (
@@ -3077,15 +3423,19 @@ function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
-            <div className={`w-3 h-3 rounded-full ${skill.enabled ? 'bg-success' : 'bg-text-muted'}`} />
+            <div
+              className={`w-3 h-3 rounded-full ${skill.enabled ? 'bg-success' : 'bg-text-muted'}`}
+            />
             <h3 className="font-medium text-text-primary">{skill.name}</h3>
-            <span className={`px-2 py-0.5 text-xs rounded ${
-              isBuiltin
-                ? 'bg-accent/10 text-accent'
-                : skill.type === 'mcp'
-                  ? 'bg-mcp/10 text-mcp'
-                  : 'bg-success/10 text-success'
-            }`}>
+            <span
+              className={`px-2 py-0.5 text-xs rounded ${
+                isBuiltin
+                  ? 'bg-accent/10 text-accent'
+                  : skill.type === 'mcp'
+                    ? 'bg-mcp/10 text-mcp'
+                    : 'bg-success/10 text-success'
+              }`}
+            >
               {skill.type.toUpperCase()}
             </span>
           </div>
@@ -3102,7 +3452,7 @@ function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
                 ? 'bg-success/10 text-success hover:bg-success/20'
                 : 'bg-surface-muted text-text-muted hover:bg-surface-active'
             }`}
-            title={skill.enabled ? 'Disable' : 'Enable'}
+            title={skill.enabled ? t('common.disable') : t('common.enable')}
           >
             {skill.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
           </button>
@@ -3111,7 +3461,7 @@ function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
               onClick={onDelete}
               disabled={isLoading}
               className="p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
-              title="Delete"
+              title={t('common.delete')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -3123,12 +3473,13 @@ function SkillCard({ skill, onToggleEnabled, onDelete, isLoading }: {
 }
 
 function ScheduleTab() {
+  const { t } = useTranslation();
   const workingDir = useAppStore((state) => state.workingDir);
   const sessions = useAppStore((state) => state.sessions);
   const [tasks, setTasks] = useState<ScheduleTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState<LocalizedBanner | null>(null);
+  const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTaskSnapshot, setEditingTaskSnapshot] = useState<ScheduleTask | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -3140,20 +3491,28 @@ function ScheduleTab() {
   const [enabled, setEnabled] = useState(true);
   const [repeatEvery, setRepeatEvery] = useState(1);
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
+  const weekdayOptions = getWeekdayOptions(t);
+  const scheduleModeOptions = getScheduleModeOptions(t);
   const promptChangedWhileEditing = Boolean(
     editingTaskSnapshot && prompt.trim() !== editingTaskSnapshot.prompt.trim()
   );
   const scheduleConfig = buildScheduleConfigFromForm(scheduleMode, selectedTimes, selectedWeekdays);
-  const schedulePreview = buildSchedulePreview(scheduleMode, runAt, scheduleConfig);
-  const selectedWeekdayLabels = selectedWeekdays
-    .map((weekday) => WEEKDAY_OPTIONS.find((option) => option.value === weekday)?.label ?? '未知')
-    .join(', ');
-  const selectedTimeLabels = selectedTimes.join(', ');
+  const schedulePreview = buildSchedulePreview(scheduleMode, runAt, scheduleConfig, t);
+  const selectedWeekdayLabels = joinAppList(
+    selectedWeekdays
+      .map(
+        (weekday) =>
+          weekdayOptions.find((option) => option.value === weekday)?.label ??
+          t('schedule.unknownWeekday')
+      )
+      .filter(Boolean)
+  );
+  const selectedTimeLabels = joinAppList(selectedTimes);
   const previewTitle = editingId
-    ? (promptChangedWhileEditing
-      ? '保存后将基于 Prompt 自动生成 [定时任务] 标题'
-      : (editingTaskSnapshot?.title || '保存后将自动生成 [定时任务] 标题'))
-    : '保存后将自动生成：[定时任务] + 模型摘要';
+    ? promptChangedWhileEditing
+      ? t('schedule.autoTitleEditingChanged')
+      : editingTaskSnapshot?.title || t('schedule.autoTitleEditingUnchanged')
+    : t('schedule.autoTitleCreating');
 
   useEffect(() => {
     const defaultRunAt = Date.now() + 5 * 60 * 1000;
@@ -3166,10 +3525,31 @@ function ScheduleTab() {
     }
   }, [workingDir, cwd]);
 
+  const loadTasks = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!isElectron) return;
+    const silent = options.silent === true;
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
+    try {
+      const rows = await window.electronAPI.schedule.list();
+      setTasks(rows);
+    } catch (err) {
+      if (!silent) {
+        setError(err instanceof Error ? { text: err.message } : { key: 'schedule.loadFailed' });
+      }
+    } finally {
+      if (!silent) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!isElectron) return;
     void loadTasks();
-  }, []);
+  }, [loadTasks]);
 
   useEffect(() => {
     if (!isElectron) return;
@@ -3177,47 +3557,30 @@ function ScheduleTab() {
       void loadTasks({ silent: true });
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
-
-  async function loadTasks(options: { silent?: boolean } = {}) {
-    if (!isElectron) return;
-    const silent = options.silent === true;
-    if (!silent) {
-      setIsLoading(true);
-      setError('');
-    }
-    try {
-      const rows = await window.electronAPI.schedule.list();
-      setTasks(rows);
-    } catch (err) {
-      if (!silent) {
-        setError(err instanceof Error ? err.message : '加载定时任务失败');
-      }
-    } finally {
-      if (!silent) {
-        setIsLoading(false);
-      }
-    }
-  }
+  }, [loadTasks]);
 
   async function submitTask() {
     if (!isElectron) return;
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) {
-      setError('请输入要执行的 Prompt');
+      setError({ key: 'schedule.promptRequired' });
       return;
     }
     if (scheduleMode === 'daily' && (!scheduleConfig || scheduleConfig.times.length === 0)) {
-      setError('请至少选择一个每日执行时段');
+      setError({ key: 'schedule.dailyTimesRequired' });
       return;
     }
     if (scheduleMode === 'weekly') {
-      if (!scheduleConfig || scheduleConfig.kind !== 'weekly' || scheduleConfig.times.length === 0) {
-        setError('请至少选择一个每周执行时段');
+      if (
+        !scheduleConfig ||
+        scheduleConfig.kind !== 'weekly' ||
+        scheduleConfig.times.length === 0
+      ) {
+        setError({ key: 'schedule.weeklyTimesRequired' });
         return;
       }
       if (scheduleConfig.weekdays.length === 0) {
-        setError('请至少选择一个执行星期');
+        setError({ key: 'schedule.weekdayRequired' });
         return;
       }
     }
@@ -3226,12 +3589,14 @@ function ScheduleTab() {
       ? new Date(runAt).getTime()
       : computeNextScheduledRun(scheduleConfig, Date.now());
     if (runAtValue === null || !Number.isFinite(runAtValue)) {
-      setError(usesDateTimeInput ? '请输入有效的执行时间' : '当前规则无法计算下一次执行时间');
+      setError({
+        key: usesDateTimeInput ? 'schedule.invalidTime' : 'schedule.nextRunCalculationFailed',
+      });
       return;
     }
     setIsLoading(true);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       if (editingId) {
         const originalRunAtInput = editingTaskSnapshot
@@ -3248,18 +3613,15 @@ function ScheduleTab() {
         const originalScheduleSignature = editingTaskSnapshot
           ? buildScheduleSignatureFromTask(editingTaskSnapshot)
           : null;
-        const shouldRegenerateTitle = (
-          !editingTaskSnapshot ||
-          trimmedPrompt !== editingTaskSnapshot.prompt.trim()
-        );
-        const shouldResetScheduleTime = (
+        const shouldRegenerateTitle =
+          !editingTaskSnapshot || trimmedPrompt !== editingTaskSnapshot.prompt.trim();
+        const shouldResetScheduleTime =
           !editingTaskSnapshot ||
           nextScheduleSignature !== originalScheduleSignature ||
           runAt !== originalRunAtInput ||
-          (enabled && editingTaskSnapshot.nextRunAt === null)
-        );
+          (enabled && editingTaskSnapshot.nextRunAt === null);
         if (shouldResetScheduleTime && runAtValue <= Date.now()) {
-          setError('执行时间必须晚于当前时间；如需立刻执行请使用“立即执行”');
+          setError({ key: 'schedule.futureTimeRequired' });
           return;
         }
         const payload: ScheduleUpdateInput = {
@@ -3278,12 +3640,12 @@ function ScheduleTab() {
         }
         const updated = await window.electronAPI.schedule.update(editingId, payload);
         if (!updated) {
-          throw new Error('任务不存在或已被删除');
+          throw new Error(t('schedule.taskMissing'));
         }
-        setSuccess('定时任务已更新');
+        setSuccess({ key: 'schedule.updated' });
       } else {
         if (runAtValue <= Date.now()) {
-          setError('执行时间必须晚于当前时间；如需立刻执行请使用“立即执行”');
+          setError({ key: 'schedule.futureTimeRequired' });
           return;
         }
         const payload: ScheduleCreateInput = {
@@ -3297,12 +3659,12 @@ function ScheduleTab() {
           repeatUnit: scheduleMode === 'legacy-interval' ? repeatUnit : null,
         };
         await window.electronAPI.schedule.create(payload);
-        setSuccess('定时任务已创建');
+        setSuccess({ key: 'schedule.created' });
       }
       clearForm();
       await loadTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存定时任务失败');
+      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.saveFailed' });
     } finally {
       setIsLoading(false);
     }
@@ -3311,17 +3673,17 @@ function ScheduleTab() {
   async function toggleTask(task: ScheduleTask) {
     if (!isElectron) return;
     setIsLoading(true);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       const updated = await window.electronAPI.schedule.toggle(task.id, !task.enabled);
       if (!updated) {
-        throw new Error('任务不存在或已被删除');
+        throw new Error(t('schedule.taskMissing'));
       }
-      setSuccess(updated.enabled ? '任务已启用' : '任务已停用（不会中断已在执行中的会话）');
+      setSuccess({ key: updated.enabled ? 'schedule.taskEnabled' : 'schedule.taskDisabled' });
       await loadTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '切换状态失败');
+      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.toggleFailed' });
       setIsLoading(false);
     }
   }
@@ -3329,17 +3691,17 @@ function ScheduleTab() {
   async function runNow(task: ScheduleTask) {
     if (!isElectron) return;
     setIsLoading(true);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       const updated = await window.electronAPI.schedule.runNow(task.id);
       if (!updated) {
-        throw new Error('任务不存在或已被删除');
+        throw new Error(t('schedule.taskMissing'));
       }
-      setSuccess('已触发立即执行');
+      setSuccess({ key: 'schedule.runNowSuccess' });
       await loadTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '立即执行失败');
+      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.runNowFailed' });
       setIsLoading(false);
     }
   }
@@ -3348,26 +3710,26 @@ function ScheduleTab() {
     if (!isElectron) return;
     const sessionId = task.lastRunSessionId;
     if (!sessionId) {
-      setError('该任务暂无可停止的执行会话');
+      setError({ key: 'schedule.noSessionToStop' });
       return;
     }
     const targetSession = sessions.find((session) => session.id === sessionId);
     if (!targetSession || targetSession.status !== 'running') {
-      setError('该任务当前没有正在执行的会话');
+      setError({ key: 'schedule.sessionNotRunning' });
       return;
     }
 
     setIsLoading(true);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       window.electronAPI.send({
         type: 'session.stop',
         payload: { sessionId },
       });
-      setSuccess('已发送停止指令');
+      setSuccess({ key: 'schedule.stopSent' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '停止执行失败');
+      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.stopFailed' });
       setIsLoading(false);
       return;
     }
@@ -3378,19 +3740,19 @@ function ScheduleTab() {
 
   async function deleteTask(task: ScheduleTask) {
     if (!isElectron) return;
-    if (!window.confirm(`确认删除任务「${task.title}」？`)) return;
+    if (!window.confirm(t('schedule.deleteConfirm', { title: task.title }))) return;
     setIsLoading(true);
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     try {
       await window.electronAPI.schedule.delete(task.id);
       if (editingId === task.id) {
         clearForm();
       }
-      setSuccess('定时任务已删除');
+      setSuccess({ key: 'schedule.deleted' });
       await loadTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败');
+      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.deleteFailed' });
       setIsLoading(false);
     }
   }
@@ -3409,8 +3771,8 @@ function ScheduleTab() {
     );
     setRepeatEvery(task.repeatEvery ?? 1);
     setRepeatUnit(task.repeatUnit ?? 'day');
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
   }
 
   function clearForm() {
@@ -3433,51 +3795,51 @@ function ScheduleTab() {
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {error}
+          {renderLocalizedBannerMessage(error, t)}
         </div>
       )}
       {success && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          {success}
+          {renderLocalizedBannerMessage(success, t)}
         </div>
       )}
 
       <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
         <h4 className="text-sm font-medium text-text-primary">
-          {editingId ? '编辑定时任务' : '新建定时任务'}
+          {editingId ? t('schedule.editTitle') : t('schedule.createTitle')}
         </h4>
         <div className="rounded-lg border border-border bg-background px-3 py-2">
-          <div className="text-xs text-text-muted mb-1">自动标题（用于会话区分）</div>
+          <div className="text-xs text-text-muted mb-1">{t('schedule.autoTitleLabel')}</div>
           <div className="text-sm text-text-primary break-all">{previewTitle}</div>
           {editingId && (
             <div className="text-xs text-text-muted mt-2">
               {promptChangedWhileEditing
-                ? '检测到 Prompt 已修改，保存后会重新生成标题。'
-                : '未修改 Prompt 时将保留现有标题。'}
+                ? t('schedule.autoTitleChangedHint')
+                : t('schedule.autoTitleUnchangedHint')}
             </div>
           )}
         </div>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="到点后自动执行的 Prompt"
+          placeholder={t('schedule.promptPlaceholder')}
           rows={3}
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
         />
         <input
           value={cwd}
           onChange={(e) => setCwd(e.target.value)}
-          placeholder="执行目录（默认当前工作目录）"
+          placeholder={t('schedule.cwdPlaceholder')}
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
         />
         <div className="rounded-lg border border-border bg-background p-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-medium text-text-primary">执行时间</div>
-              <div className="text-xs text-text-muted">
-                新任务优先使用多时段模式，旧版间隔任务仍可兼容编辑
+              <div className="text-sm font-medium text-text-primary">
+                {t('schedule.executionTime')}
               </div>
+              <div className="text-xs text-text-muted">{t('schedule.executionTimeHint')}</div>
             </div>
             <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-text-secondary">
               <input
@@ -3485,33 +3847,37 @@ function ScheduleTab() {
                 checked={enabled}
                 onChange={(e) => setEnabled(e.target.checked)}
               />
-              启用
+              {t('schedule.enabled')}
             </label>
           </div>
-          <div className={`grid gap-2 ${scheduleMode === 'weekly' ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          <div
+            className={`grid gap-2 ${scheduleMode === 'weekly' ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}
+          >
             <ScheduleSelectMenu
-              label="执行模式"
-              options={SCHEDULE_MODE_OPTIONS}
+              label={t('schedule.mode')}
+              options={scheduleModeOptions}
               value={scheduleMode}
               onChange={(value) => setScheduleMode(value as ScheduleFormMode)}
             />
             {scheduleMode === 'weekly' && (
               <ScheduleSelectMenu
-                label="执行星期"
-                options={WEEKDAY_OPTIONS}
+                label={t('schedule.weekday')}
+                options={weekdayOptions}
                 values={selectedWeekdays}
-                placeholder="选择星期"
+                placeholder={t('schedule.weekdayPlaceholder')}
                 summary={selectedWeekdayLabels}
                 onToggle={(value) => {
-                  setSelectedWeekdays((current) => toggleWeekdayValue(current, value as ScheduleWeekday));
+                  setSelectedWeekdays((current) =>
+                    toggleWeekdayValue(current, value as ScheduleWeekday)
+                  );
                 }}
               />
             )}
             {(scheduleMode === 'daily' || scheduleMode === 'weekly') && (
               <TimeMultiSelectMenu
-                label="执行时段"
+                label={t('schedule.times')}
                 values={selectedTimes}
-                placeholder="选择时间"
+                placeholder={t('schedule.timePlaceholder')}
                 summary={selectedTimeLabels}
                 onAdd={(value) => setSelectedTimes((current) => toggleTimeValue(current, value))}
                 onRemove={(value) => setSelectedTimes((current) => toggleTimeValue(current, value))}
@@ -3520,13 +3886,15 @@ function ScheduleTab() {
           </div>
           {scheduleMode === 'legacy-interval' && (
             <div className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">
-              当前任务来自旧版“固定间隔”规则，保存时会继续保留该模式。
+              {t('schedule.legacyIntervalNotice')}
             </div>
           )}
           {(scheduleMode === 'once' || scheduleMode === 'legacy-interval') && (
             <div className="space-y-2">
               <div className="text-xs text-text-muted">
-                {scheduleMode === 'once' ? '选择单次执行时间' : '选择旧版间隔任务的起始时间'}
+                {scheduleMode === 'once'
+                  ? t('schedule.onceTimeLabel')
+                  : t('schedule.legacyStartTimeLabel')}
               </div>
               <input
                 type="datetime-local"
@@ -3550,17 +3918,17 @@ function ScheduleTab() {
                 onChange={(e) => setRepeatUnit(e.target.value as ScheduleRepeatUnit)}
                 className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm"
               >
-                <option value="minute">分钟</option>
-                <option value="hour">小时</option>
-                <option value="day">天</option>
+                <option value="minute">{t('schedule.repeatUnitMinute')}</option>
+                <option value="hour">{t('schedule.repeatUnitHour')}</option>
+                <option value="day">{t('schedule.repeatUnitDay')}</option>
               </select>
             </div>
           )}
           {scheduleMode === 'daily' && (
-            <div className="text-xs text-text-muted">每天在这些时段自动执行</div>
+            <div className="text-xs text-text-muted">{t('schedule.dailyHint')}</div>
           )}
           {scheduleMode === 'weekly' && (
-            <div className="text-xs text-text-muted">每周在选中的星期与时段自动执行</div>
+            <div className="text-xs text-text-muted">{t('schedule.weeklyHint')}</div>
           )}
           <div className="text-xs text-text-muted">{schedulePreview}</div>
         </div>
@@ -3570,7 +3938,7 @@ function ScheduleTab() {
             disabled={isLoading}
             className="px-3 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-50"
           >
-            {editingId ? '保存修改' : '创建任务'}
+            {editingId ? t('schedule.saveChanges') : t('schedule.createTask')}
           </button>
           {editingId && (
             <button
@@ -3578,107 +3946,125 @@ function ScheduleTab() {
               disabled={isLoading}
               className="px-3 py-2 rounded-lg bg-surface-hover text-text-secondary text-sm disabled:opacity-50"
             >
-              取消编辑
+              {t('schedule.cancelEdit')}
             </button>
           )}
         </div>
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs text-text-muted">
-          说明：停用仅阻止后续自动触发，已开始执行的会话需在会话列表中手动停止。
-        </div>
+        <div className="text-xs text-text-muted">{t('schedule.listHint')}</div>
         {tasks.length === 0 ? (
           <div className="text-sm text-text-muted text-center py-6 border border-dashed border-border rounded-xl">
-            暂无定时任务
+            {t('schedule.empty')}
           </div>
         ) : (
           tasks.map((task) => (
             <div key={task.id} className="rounded-xl border border-border bg-surface p-3 space-y-2">
               {(() => {
                 const lastRunSession = task.lastRunSessionId
-                  ? sessions.find((session) => session.id === task.lastRunSessionId) ?? null
+                  ? (sessions.find((session) => session.id === task.lastRunSessionId) ?? null)
                   : null;
                 const isTaskRunning = lastRunSession?.status === 'running';
                 const lastRunStatusLabel = lastRunSession
-                  ? (isTaskRunning ? '运行中' : '已结束')
-                  : (task.lastRunSessionId ? '未知' : '无');
+                  ? isTaskRunning
+                    ? t('schedule.statusRunning')
+                    : t('schedule.statusFinished')
+                  : task.lastRunSessionId
+                    ? t('schedule.statusUnknown')
+                    : t('schedule.statusNone');
                 return (
                   <>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-medium text-sm text-text-primary truncate">{task.title}</div>
-                  <div className="text-xs text-text-muted truncate">{task.prompt}</div>
-                </div>
-                <span className={`text-xs px-2 py-1 rounded ${task.enabled ? 'bg-success/10 text-success' : 'bg-surface-hover text-text-muted'}`}>
-                  {task.enabled ? '已启用' : '已停用'}
-                </span>
-              </div>
-              <div className="text-xs text-text-muted">
-                下次执行：{task.nextRunAt === null ? '无' : formatTime(task.nextRunAt)}
-              </div>
-              <div className="text-xs text-text-muted">
-                执行策略：{formatScheduleRule(task)}
-              </div>
-              <div className="text-xs text-text-muted">
-                上次执行：{task.lastRunAt === null ? '尚未执行' : formatTime(task.lastRunAt)}
-              </div>
-              {task.lastRunSessionId && (
-                <div className="text-xs text-text-muted break-all">
-                  最近会话：{task.lastRunSessionId}
-                </div>
-              )}
-              <div className="text-xs text-text-muted">
-                会话状态：{lastRunStatusLabel}
-              </div>
-              <div className="text-xs text-text-muted truncate" title={task.cwd}>
-                目录：{task.cwd}
-              </div>
-              {task.lastError && (
-                <div className="text-xs text-error break-all">最近错误：{task.lastError}</div>
-              )}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => toggleTask(task)}
-                  disabled={isLoading}
-                  className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
-                >
-                  {task.enabled ? '停用' : '启用'}
-                </button>
-                <button
-                  onClick={() => runNow(task)}
-                  disabled={isLoading}
-                  className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
-                >
-                  立即执行
-                </button>
-                <button
-                  onClick={() => stopTaskRun(task)}
-                  disabled={isLoading || !isTaskRunning}
-                  title={isTaskRunning ? '停止该任务最近一次执行会话' : '该任务当前没有正在执行的会话'}
-                  className={`px-2 py-1 rounded text-xs disabled:opacity-50 ${
-                    isTaskRunning
-                      ? 'bg-warning/10 text-warning'
-                      : 'bg-surface-hover text-text-muted'
-                  }`}
-                >
-                  停止执行
-                </button>
-                <button
-                  onClick={() => editTask(task)}
-                  disabled={isLoading}
-                  className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
-                >
-                  编辑
-                </button>
-                <button
-                  onClick={() => deleteTask(task)}
-                  disabled={isLoading}
-                  className="px-2 py-1 rounded bg-error/10 text-xs text-error disabled:opacity-50"
-                >
-                  删除
-                </button>
-              </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm text-text-primary truncate">
+                          {task.title}
+                        </div>
+                        <div className="text-xs text-text-muted truncate">{task.prompt}</div>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-1 rounded ${task.enabled ? 'bg-success/10 text-success' : 'bg-surface-hover text-text-muted'}`}
+                      >
+                        {task.enabled ? t('schedule.taskEnabled') : t('schedule.taskDisabled')}
+                      </span>
+                    </div>
+                    <div className="text-xs text-text-muted">
+                      {task.nextRunAt === null
+                        ? t('schedule.nextRunNone')
+                        : t('schedule.nextRun', { value: formatTime(task.nextRunAt) })}
+                    </div>
+                    <div className="text-xs text-text-muted">
+                      {t('schedule.strategy', {
+                        value: formatScheduleRule(task, t, weekdayOptions),
+                      })}
+                    </div>
+                    <div className="text-xs text-text-muted">
+                      {task.lastRunAt === null
+                        ? t('schedule.lastRunNever')
+                        : t('schedule.lastRun', { value: formatTime(task.lastRunAt) })}
+                    </div>
+                    {task.lastRunSessionId && (
+                      <div className="text-xs text-text-muted break-all">
+                        {t('schedule.recentSession', { value: task.lastRunSessionId })}
+                      </div>
+                    )}
+                    <div className="text-xs text-text-muted">
+                      {t('schedule.sessionStatus', { value: lastRunStatusLabel })}
+                    </div>
+                    <div className="text-xs text-text-muted truncate" title={task.cwd}>
+                      {t('schedule.cwd', { value: task.cwd })}
+                    </div>
+                    {task.lastError && (
+                      <div className="text-xs text-error break-all">
+                        {t('schedule.lastError', { value: task.lastError })}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => toggleTask(task)}
+                        disabled={isLoading}
+                        className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
+                      >
+                        {task.enabled ? t('schedule.disable') : t('schedule.enable')}
+                      </button>
+                      <button
+                        onClick={() => runNow(task)}
+                        disabled={isLoading}
+                        className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
+                      >
+                        {t('schedule.runNow')}
+                      </button>
+                      <button
+                        onClick={() => stopTaskRun(task)}
+                        disabled={isLoading || !isTaskRunning}
+                        title={
+                          isTaskRunning
+                            ? t('schedule.stopRunTitleActive')
+                            : t('schedule.stopRunTitleIdle')
+                        }
+                        className={`px-2 py-1 rounded text-xs disabled:opacity-50 ${
+                          isTaskRunning
+                            ? 'bg-warning/10 text-warning'
+                            : 'bg-surface-hover text-text-muted'
+                        }`}
+                      >
+                        {t('schedule.stopExecution')}
+                      </button>
+                      <button
+                        onClick={() => editTask(task)}
+                        disabled={isLoading}
+                        className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
+                      >
+                        {t('schedule.edit')}
+                      </button>
+                      <button
+                        onClick={() => deleteTask(task)}
+                        disabled={isLoading}
+                        className="px-2 py-1 rounded bg-error/10 text-xs text-error disabled:opacity-50"
+                      >
+                        {t('schedule.delete')}
+                      </button>
+                    </div>
                   </>
                 );
               })()}
@@ -3702,29 +4088,38 @@ function toLocalDateTimeInput(timestamp: number): string {
 }
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString();
+  return formatAppDateTime(timestamp);
 }
 
-function formatScheduleRule(task: ScheduleTask): string {
+function formatScheduleRule(
+  task: ScheduleTask,
+  t: TFunction,
+  weekdayOptions: Array<{ value: ScheduleWeekday; label: string }>
+): string {
   if (task.scheduleConfig?.kind === 'daily') {
-    return `每天 ${task.scheduleConfig.times.join('、')}`;
+    return t('schedule.ruleDaily', { times: joinAppList(task.scheduleConfig.times) });
   }
   if (task.scheduleConfig?.kind === 'weekly') {
-    const weekdays = task.scheduleConfig.weekdays
-      .map((weekday) => WEEKDAY_OPTIONS.find((option) => option.value === weekday)?.label ?? '未知')
-      .join('、');
-    return `每周 ${weekdays} · ${task.scheduleConfig.times.join('、')}`;
+    const weekdays = task.scheduleConfig.weekdays.map(
+      (weekday) =>
+        weekdayOptions.find((option) => option.value === weekday)?.label ??
+        t('schedule.unknownWeekday')
+    );
+    return t('schedule.ruleWeekly', {
+      weekdays: joinAppList(weekdays),
+      times: joinAppList(task.scheduleConfig.times),
+    });
   }
   if (!task.repeatEvery || !task.repeatUnit) {
-    return '一次性';
+    return t('schedule.ruleOnce');
   }
   if (task.repeatUnit === 'minute') {
-    return `每 ${task.repeatEvery} 分钟`;
+    return t('schedule.repeatEveryMinute', { count: task.repeatEvery });
   }
   if (task.repeatUnit === 'hour') {
-    return `每 ${task.repeatEvery} 小时`;
+    return t('schedule.repeatEveryHour', { count: task.repeatEvery });
   }
-  return `每 ${task.repeatEvery} 天`;
+  return t('schedule.repeatEveryDay', { count: task.repeatEvery });
 }
 
 function ScheduleSelectMenu(props: {
@@ -3737,12 +4132,13 @@ function ScheduleSelectMenu(props: {
   onChange?: (value: string | number) => void;
   onToggle?: (value: string | number) => void;
 }) {
+  const { t } = useTranslation();
   const {
     label,
     options,
     value,
     values = [],
-    placeholder = '请选择',
+    placeholder = t('schedule.timePlaceholder'),
     summary,
     onChange,
     onToggle,
@@ -3750,15 +4146,17 @@ function ScheduleSelectMenu(props: {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isMulti = typeof onToggle === 'function';
-  const buttonText = summary || (
-    isMulti
-      ? (values.length > 0
-        ? values
-          .map((item) => options.find((option) => option.value === item)?.label ?? String(item))
-          .join(', ')
-        : placeholder)
-      : (options.find((option) => option.value === value)?.label ?? placeholder)
-  );
+  const buttonText =
+    summary ||
+    (isMulti
+      ? values.length > 0
+        ? joinAppList(
+            values
+              .map((item) => options.find((option) => option.value === item)?.label ?? String(item))
+              .filter(Boolean)
+          )
+        : placeholder
+      : (options.find((option) => option.value === value)?.label ?? placeholder));
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -3784,14 +4182,14 @@ function ScheduleSelectMenu(props: {
         }`}
       >
         <span className="truncate">{buttonText}</span>
-        <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
       {open && (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-elevated">
           {options.map((option) => {
-            const selected = isMulti
-              ? values.includes(option.value)
-              : option.value === value;
+            const selected = isMulti ? values.includes(option.value) : option.value === value;
             return (
               <button
                 key={String(option.value)}
@@ -3829,10 +4227,11 @@ function TimeMultiSelectMenu(props: {
   onAdd: (value: string) => void;
   onRemove: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const {
     label,
     values,
-    placeholder = '选择时间',
+    placeholder = t('schedule.timePlaceholder'),
     summary,
     onAdd,
     onRemove,
@@ -3841,7 +4240,7 @@ function TimeMultiSelectMenu(props: {
   const [openUpward, setOpenUpward] = useState(false);
   const [draftTime, setDraftTime] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const buttonText = summary || (values.length > 0 ? values.join(', ') : placeholder);
+  const buttonText = summary || (values.length > 0 ? joinAppList(values) : placeholder);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -3900,21 +4299,29 @@ function TimeMultiSelectMenu(props: {
         }`}
       >
         <span className="truncate">{buttonText}</span>
-        <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
       {open && (
-        <div className={`absolute right-0 z-20 w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border/80 bg-surface p-3 shadow-[0_24px_60px_rgba(0,0,0,0.14)] ${
-          openUpward ? 'bottom-[calc(100%+8px)]' : 'top-[calc(100%+8px)]'
-        }`}>
+        <div
+          className={`absolute right-0 z-20 w-[min(22rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border/80 bg-surface p-3 shadow-[0_24px_60px_rgba(0,0,0,0.14)] ${
+            openUpward ? 'bottom-[calc(100%+8px)]' : 'top-[calc(100%+8px)]'
+          }`}
+        >
           <div className="space-y-3">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium text-text-primary">编辑时段</div>
-                  <div className="text-xs text-text-muted">支持输入任意 `HH:mm`</div>
+                  <div className="text-sm font-medium text-text-primary">
+                    {t('schedule.pickerEditTimes')}
+                  </div>
+                  <div className="text-xs text-text-muted">{t('schedule.pickerAnyHHmm')}</div>
                 </div>
                 {values.length > 0 && (
-                  <div className="text-xs text-text-muted">{values.length} 个已选</div>
+                  <div className="text-xs text-text-muted">
+                    {t('schedule.pickerSelectedCount', { count: values.length })}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -3932,12 +4339,12 @@ function TimeMultiSelectMenu(props: {
                   className="inline-flex min-w-[92px] flex-shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
                 >
                   <Plus className="h-4 w-4" />
-                  添加
+                  {t('schedule.pickerAdd')}
                 </button>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-xs text-text-muted">已选时段</div>
+              <div className="text-xs text-text-muted">{t('schedule.pickerSelectedTimes')}</div>
               {values.length > 0 ? (
                 <div className="flex flex-wrap gap-2 rounded-xl bg-background/60 p-2">
                   {values.map((time) => (
@@ -3954,12 +4361,12 @@ function TimeMultiSelectMenu(props: {
                 </div>
               ) : (
                 <div className="rounded-xl bg-background/60 px-3 py-2 text-xs text-text-muted">
-                  还没有选择时段
+                  {t('schedule.pickerNone')}
                 </div>
               )}
             </div>
             <div className="space-y-2">
-              <div className="text-xs text-text-muted">常用建议</div>
+              <div className="text-xs text-text-muted">{t('schedule.pickerSuggestions')}</div>
               <div className="flex flex-wrap gap-2">
                 {SCHEDULE_TIME_SUGGESTIONS.map((time) => {
                   const selected = values.includes(time);
@@ -4063,18 +4470,19 @@ function buildScheduleSignatureFromForm(
 function buildSchedulePreview(
   mode: ScheduleFormMode,
   runAt: string,
-  scheduleConfig: ScheduleConfig | null
+  scheduleConfig: ScheduleConfig | null,
+  t: TFunction
 ): string {
   if (mode === 'once' || mode === 'legacy-interval') {
     const timestamp = new Date(runAt).getTime();
     return Number.isFinite(timestamp)
-      ? `下次预计执行：${formatTime(timestamp)}`
-      : '请选择有效的执行时间';
+      ? t('schedule.previewNextRun', { value: formatTime(timestamp) })
+      : t('schedule.previewSelectValidTime');
   }
   const nextRunAt = computeNextScheduledRun(scheduleConfig, Date.now());
   return nextRunAt === null
-    ? '请至少选择一个有效时段'
-    : `系统将自动找到下一档执行时间：${formatTime(nextRunAt)}`;
+    ? t('schedule.previewSelectAtLeastOne')
+    : t('schedule.previewAutoFind', { value: formatTime(nextRunAt) });
 }
 
 function computeNextScheduledRun(
@@ -4084,9 +4492,8 @@ function computeNextScheduledRun(
   if (!scheduleConfig || scheduleConfig.times.length === 0) {
     return null;
   }
-  const allowedWeekdays = scheduleConfig.kind === 'weekly'
-    ? new Set(scheduleConfig.weekdays)
-    : null;
+  const allowedWeekdays =
+    scheduleConfig.kind === 'weekly' ? new Set(scheduleConfig.weekdays) : null;
   const nowDate = new Date(now);
 
   for (let dayOffset = 0; dayOffset <= 14; dayOffset += 1) {
@@ -4159,7 +4566,9 @@ function GeneralTab() {
       const v = window.electronAPI?.getVersion?.();
       if (v instanceof Promise) v.then(setAppVer);
       else if (v) setAppVer(v);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const languages = [
@@ -4228,7 +4637,9 @@ function GeneralTab() {
 
 function LogsTab() {
   const { t } = useTranslation();
-  const [logFiles, setLogFiles] = useState<Array<{ name: string; path: string; size: number; mtime: Date }>>([]);
+  const [logFiles, setLogFiles] = useState<
+    Array<{ name: string; path: string; size: number; mtime: Date }>
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -4355,14 +4766,13 @@ function LogsTab() {
   }
 
   function formatDate(date: Date): string {
-    return new Date(date).toLocaleString();
+    return formatAppDateTime(date);
   }
 
   const totalSize = logFiles.reduce((sum, file) => sum + file.size, 0);
 
   return (
     <div className="space-y-4">
-
       {/* Error/Success Messages */}
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
@@ -4403,25 +4813,22 @@ function LogsTab() {
       {/* Stats */}
       <SettingsContentSection
         title={t('logs.logFiles')}
-        description="Current log inventory and storage footprint."
+        description={t('logs.inventoryDescription')}
       >
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-[1.5rem] bg-background/40 border border-border-subtle">
-          <div className="text-2xl font-bold text-text-primary">{logFiles.length}</div>
-          <div className="text-sm text-text-muted">{t('logs.logFiles')}</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 rounded-[1.5rem] bg-background/40 border border-border-subtle">
+            <div className="text-2xl font-bold text-text-primary">{logFiles.length}</div>
+            <div className="text-sm text-text-muted">{t('logs.logFiles')}</div>
+          </div>
+          <div className="p-4 rounded-[1.5rem] bg-background/40 border border-border-subtle">
+            <div className="text-2xl font-bold text-text-primary">{formatFileSize(totalSize)}</div>
+            <div className="text-sm text-text-muted">{t('logs.totalSize')}</div>
+          </div>
         </div>
-        <div className="p-4 rounded-[1.5rem] bg-background/40 border border-border-subtle">
-          <div className="text-2xl font-bold text-text-primary">{formatFileSize(totalSize)}</div>
-          <div className="text-sm text-text-muted">{t('logs.totalSize')}</div>
-        </div>
-      </div>
       </SettingsContentSection>
 
       {/* Log Files List */}
-      <SettingsContentSection
-        title={t('logs.logFiles')}
-        description="Recent application logs available for export or inspection."
-      >
+      <SettingsContentSection title={t('logs.logFiles')} description={t('logs.recentDescription')}>
         {logFiles.length === 0 ? (
           <div className="text-center py-8 text-text-muted">
             <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-50" />
@@ -4430,7 +4837,10 @@ function LogsTab() {
         ) : (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {logFiles.map((file) => (
-              <div key={file.path} className="p-3 rounded-xl bg-background/45 border border-border-subtle">
+              <div
+                key={file.path}
+                className="p-3 rounded-xl bg-background/45 border border-border-subtle"
+              >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-sm text-text-primary truncate">{file.name}</div>
@@ -4449,50 +4859,50 @@ function LogsTab() {
       {logsDirectory && (
         <SettingsContentSection
           title={t('logs.logsDirectory')}
-          description="Current on-disk location for application logs."
+          description={t('logs.directoryDescription')}
         >
-        <div className="p-3 rounded-xl bg-background/45 border border-border-subtle">
-          <div className="text-xs text-text-muted mb-1">{t('logs.logsDirectory')}</div>
-          <div className="font-mono text-xs text-text-secondary break-all">{logsDirectory}</div>
-        </div>
+          <div className="p-3 rounded-xl bg-background/45 border border-border-subtle">
+            <div className="text-xs text-text-muted mb-1">{t('logs.logsDirectory')}</div>
+            <div className="font-mono text-xs text-text-secondary break-all">{logsDirectory}</div>
+          </div>
         </SettingsContentSection>
       )}
 
       {/* Action Buttons */}
       <SettingsContentSection
         title={t('logs.actionsTitle')}
-        description="Export, reveal, or clear log files."
+        description={t('logs.actionsDescription')}
       >
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          onClick={handleExport}
-          disabled={isLoading || logFiles.length === 0}
-          className="py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
-        >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          <span className="text-sm">{t('logs.exportZip')}</span>
-        </button>
-        <button
-          onClick={handleOpen}
-          disabled={isLoading}
-          className="py-3 px-4 rounded-[1.4rem] bg-background/45 border border-border-subtle text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
-        >
-          <Globe className="w-4 h-4" />
-          <span className="text-sm">{t('logs.openFolder')}</span>
-        </button>
-        <button
-          onClick={handleClear}
-          disabled={isLoading || logFiles.length === 0}
-          className="py-3 px-4 rounded-xl bg-error/10 text-error font-medium hover:bg-error/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
-        >
-          <Trash2 className="w-4 h-4" />
-          <span className="text-sm">{t('logs.clearAll')}</span>
-        </button>
-      </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            onClick={handleExport}
+            disabled={isLoading || logFiles.length === 0}
+            className="py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span className="text-sm">{t('logs.exportZip')}</span>
+          </button>
+          <button
+            onClick={handleOpen}
+            disabled={isLoading}
+            className="py-3 px-4 rounded-[1.4rem] bg-background/45 border border-border-subtle text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <Globe className="w-4 h-4" />
+            <span className="text-sm">{t('logs.openFolder')}</span>
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={isLoading || logFiles.length === 0}
+            className="py-3 px-4 rounded-xl bg-error/10 text-error font-medium hover:bg-error/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="text-sm">{t('logs.clearAll')}</span>
+          </button>
+        </div>
       </SettingsContentSection>
 
       {/* Help Text */}

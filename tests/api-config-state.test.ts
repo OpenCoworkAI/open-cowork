@@ -13,6 +13,7 @@ import {
 describe('api config state helpers', () => {
   it('maps provider/protocol to profile key and back', () => {
     expect(profileKeyFromProvider('openrouter')).toBe('openrouter');
+    expect(profileKeyFromProvider('ollama')).toBe('ollama');
     expect(profileKeyFromProvider('custom', 'openai')).toBe('custom:openai');
     expect(profileKeyFromProvider('custom', 'gemini')).toBe('custom:gemini');
     expect(profileKeyToProvider('custom:anthropic')).toEqual({
@@ -23,6 +24,62 @@ describe('api config state helpers', () => {
       provider: 'gemini',
       customProtocol: 'gemini',
     });
+    expect(profileKeyToProvider('ollama')).toEqual({
+      provider: 'ollama',
+      customProtocol: 'openai',
+    });
+  });
+
+  it('conservatively upgrades legacy localhost ollama config into the ollama profile', () => {
+    const config = {
+      provider: 'custom',
+      customProtocol: 'openai',
+      activeProfileKey: 'custom:openai',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/v1',
+      model: 'qwen3.5:0.8b',
+      profiles: {
+        'custom:openai': {
+          apiKey: '',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3.5:0.8b',
+        },
+      },
+      isConfigured: true,
+    } as AppConfig;
+
+    const snapshot = buildApiConfigSnapshot(config, FALLBACK_PROVIDER_PRESETS);
+    expect(snapshot.activeProfileKey).toBe('ollama');
+    expect(snapshot.profiles.ollama.baseUrl).toBe('http://localhost:11434/v1');
+    expect(snapshot.profiles.ollama.model).toBe('qwen3.5:0.8b');
+  });
+
+  it('keeps remote custom openai configs generic instead of auto-migrating them to ollama', () => {
+    const config = {
+      provider: 'custom',
+      customProtocol: 'openai',
+      activeProfileKey: 'custom:openai',
+      apiKey: '',
+      baseUrl: 'https://relay.example.internal/v1',
+      model: 'qwen3.5:0.8b',
+      profiles: {
+        'custom:openai': {
+          apiKey: '',
+          baseUrl: 'https://relay.example.internal/v1',
+          model: 'qwen3.5:0.8b',
+        },
+      },
+      isConfigured: true,
+    } as AppConfig;
+
+    const snapshot = buildApiConfigSnapshot(config, FALLBACK_PROVIDER_PRESETS);
+    expect(snapshot.activeProfileKey).toBe('custom:openai');
+  });
+
+  it('exposes ollama presets and guidance', () => {
+    expect(FALLBACK_PROVIDER_PRESETS.ollama.baseUrl).toBe('http://localhost:11434/v1');
+    expect(FALLBACK_PROVIDER_PRESETS.ollama.keyHint).toContain('Ollama');
+    expect(getModelInputGuidance('ollama').placeholder).toContain('qwen');
   });
 
   it('loads existing profile values without overwriting them with defaults', () => {
@@ -156,14 +213,14 @@ describe('api config state helpers', () => {
     expect(FALLBACK_PROVIDER_PRESETS.openai.models.map((item) => item.id)).not.toContain('gpt-5.2');
     expect(FALLBACK_PROVIDER_PRESETS.anthropic.models.map((item) => item.id)).toContain('claude-sonnet-4-6');
     expect(FALLBACK_PROVIDER_PRESETS.gemini.models.map((item) => item.id)).toContain('gemini-3.1-pro-preview');
-    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('kimi-thinking-preview');
+    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('kimi-k2-thinking');
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('glm-5');
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('MiniMax-M2.5');
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('grok-code-fast-1');
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('mistral-large-latest');
 
     expect(getModelInputGuidance('custom', 'openai').placeholder).toContain('deepseek-chat');
-    expect(getModelInputGuidance('custom', 'openai').placeholder).toContain('kimi-thinking-preview');
-    expect(getModelInputGuidance('custom', 'openai').hint).toContain('exact model ID');
+    expect(getModelInputGuidance('custom', 'openai').placeholder).not.toContain('kimi');
+    expect(getModelInputGuidance('custom', 'openai').hint).toContain('selected protocol or endpoint');
   });
 });

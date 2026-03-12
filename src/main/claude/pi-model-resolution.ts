@@ -1,4 +1,4 @@
-import { getModel, type Model } from '@mariozechner/pi-ai';
+import { getModel, type Api, type Model } from '@mariozechner/pi-ai';
 
 const COMMON_FALLBACK_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 const INVALID_REGISTRY_PROVIDERS = new Set(['', 'custom']);
@@ -41,7 +41,7 @@ export function buildSyntheticPiModel(
   protocol: string,
   baseUrl?: string,
   apiOverride?: string,
-): Model<unknown> {
+): Model<Api> {
   const api = apiOverride || inferPiApi(protocol);
   return {
     id: modelId,
@@ -50,11 +50,11 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: false,
-    input: ['text', 'image'] as unknown as Model<unknown>['input'],
+    input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,
     maxTokens: 16384,
-  } as Model<unknown>;
+  } as Model<Api>;
 }
 
 export function resolvePiModelString(input: PiModelStringInput): string {
@@ -128,9 +128,9 @@ export function buildPiModelLookupCandidates(
 }
 
 export function applyPiModelRuntimeOverrides(
-  model: Model<unknown>,
+  model: Model<Api>,
   options: PiModelLookupOptions = {},
-): Model<unknown> {
+): Model<Api> {
   let nextModel = model;
   const isCustomProvider = options.rawProvider === 'custom' || options.configProvider === 'custom';
   const modelHasBaseUrl = Boolean(nextModel.baseUrl);
@@ -150,9 +150,9 @@ export function applyPiModelRuntimeOverrides(
 export function resolvePiRegistryModel(
   modelString: string,
   options: PiModelLookupOptions = {},
-): Model<unknown> | undefined {
+): Model<Api> | undefined {
   for (const candidate of buildPiModelLookupCandidates(modelString, options)) {
-    const model = getModel(candidate.provider as PiRegistryProvider, candidate.model);
+    const model = (getModel as any)(candidate.provider as PiRegistryProvider, candidate.model) as Model<Api> | undefined;
     if (model) {
       return applyPiModelRuntimeOverrides(model, options);
     }

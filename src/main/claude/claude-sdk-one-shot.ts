@@ -20,6 +20,7 @@ function resolveCustomProtocol(provider: AppConfig['provider'], customProtocol?:
     }
     return 'anthropic';
   }
+  if (provider === 'ollama') return 'openai';
   if (provider === 'openai') return 'openai';
   if (provider === 'gemini') return 'gemini';
   return 'anthropic';

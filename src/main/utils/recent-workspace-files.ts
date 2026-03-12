@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
 
 export interface RecentWorkspaceFile {
@@ -47,7 +48,7 @@ export async function listRecentWorkspaceFiles(
       continue;
     }
 
-    let entries: fs.Dirent[] = [];
+    let entries: Dirent[] = [];
     try {
       entries = await fs.readdir(currentDir, { withFileTypes: true });
     } catch {

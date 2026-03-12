@@ -4,7 +4,9 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SandboxSetupProgress, SandboxSetupPhase } from '../types';
+import { getSandboxSetupDisplayText } from '../utils/sandbox-i18n';
 
 interface Props {
   progress: SandboxSetupProgress | null;
@@ -26,6 +28,7 @@ const phaseConfig: Record<SandboxSetupPhase, { icon: string }> = {
 };
 
 export function SandboxSetupDialog({ progress, onComplete }: Props) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -78,9 +81,10 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
   const isComplete = progress.phase === 'ready' || progress.phase === 'skipped';
   const isError = progress.phase === 'error';
   const isMac = window.electronAPI?.platform === 'darwin';
+  const displayText = getSandboxSetupDisplayText(t, progress);
 
   return (
-    <div 
+    <div
       className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500 ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
     >
       <div className="bg-background border border-border-subtle rounded-[2rem] shadow-elevated max-w-md w-full mx-4 overflow-hidden">
@@ -89,12 +93,8 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           <div className="flex items-center gap-3">
             <div className="text-3xl animate-pulse">{config.icon}</div>
             <div>
-              <h2 className="text-lg font-semibold text-text-primary">
-                Setting Up Sandbox
-              </h2>
-              <p className="text-sm text-text-secondary">
-                First run requires configuring secure execution environment
-              </p>
+              <h2 className="text-lg font-semibold text-text-primary">{t('sandbox.setupTitle')}</h2>
+              <p className="text-sm text-text-secondary">{t('sandbox.setupSubtitle')}</p>
             </div>
           </div>
         </div>
@@ -103,25 +103,23 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
         <div className="px-6 py-5">
           {/* Status Message */}
           <div className="flex items-start gap-3 mb-4">
-            <div className={`text-xl ${
-              isComplete ? 'text-success' :
-              isError ? 'text-error' :
-              'text-accent'
-            }`}>
+            <div
+              className={`text-xl ${
+                isComplete ? 'text-success' : isError ? 'text-error' : 'text-accent'
+              }`}
+            >
               {config.icon}
             </div>
             <div className="flex-1">
-              <p className={`font-medium ${
-                isComplete ? 'text-success' :
-                isError ? 'text-error' :
-                'text-accent'
-              }`}>
-                {progress.message}
+              <p
+                className={`font-medium ${
+                  isComplete ? 'text-success' : isError ? 'text-error' : 'text-accent'
+                }`}
+              >
+                {displayText.message}
               </p>
-              {progress.detail && (
-                <p className="text-sm text-text-muted mt-1">
-                  {progress.detail}
-                </p>
+              {displayText.detail && (
+                <p className="text-sm text-text-muted mt-1">{displayText.detail}</p>
               )}
             </div>
           </div>
@@ -130,17 +128,15 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           {progress.progress !== undefined && !isError && (
             <div className="mt-4">
               <div className="h-2 bg-surface-muted rounded-full overflow-hidden">
-                <div 
+                <div
                   className={`h-full transition-all duration-500 ease-out rounded-full ${
-                    isComplete 
-                      ? 'bg-success' 
-                      : 'bg-accent'
+                    isComplete ? 'bg-success' : 'bg-accent'
                   }`}
                   style={{ width: `${progress.progress}%` }}
                 />
               </div>
               <div className="flex justify-between mt-2 text-xs text-text-muted">
-                <span>Progress</span>
+                <span>{t('sandbox.progressLabel')}</span>
                 <span>{progress.progress}%</span>
               </div>
             </div>
@@ -149,12 +145,8 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           {/* Error Display */}
           {isError && progress.error && (
             <div className="mt-4 p-3 bg-error/10 border border-error/30 rounded-xl">
-              <p className="text-sm text-error">
-                {progress.error}
-              </p>
-              <p className="text-xs text-text-muted mt-2">
-                Continuing with native execution mode
-              </p>
+              <p className="text-sm text-error">{progress.error}</p>
+              <p className="text-xs text-text-muted mt-2">{t('sandbox.continuingNative')}</p>
             </div>
           )}
 
@@ -167,7 +159,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
                   disabled={isRetrying}
                   className="w-full py-2.5 px-4 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isRetrying ? 'Restarting Lima...' : 'Try Restarting Lima'}
+                  {isRetrying ? t('sandbox.retryingLima') : t('sandbox.retryLima')}
                 </button>
               )}
               <button
@@ -178,7 +170,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
                     : 'bg-accent hover:bg-accent/90 text-white'
                 }`}
               >
-                Continue with Native Mode
+                {t('sandbox.continueNative')}
               </button>
             </div>
           )}
@@ -187,9 +179,9 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           {isComplete && (
             <div className="mt-4 p-3 bg-success/10 border border-green-500/30 rounded-xl">
               <p className="text-sm text-success">
-                {progress.phase === 'ready' 
-                  ? 'Sandbox configured. Code can now be executed safely.' 
-                  : 'Using native system environment for command execution.'}
+                {progress.phase === 'ready'
+                  ? t('sandbox.configuredSuccess')
+                  : t('sandbox.nativeFallbackSuccess')}
               </p>
             </div>
           )}
@@ -199,12 +191,16 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
         <div className="px-6 py-4 bg-background-secondary/70 border-t border-border-muted">
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
-              {window.electronAPI?.platform === 'win32' ? 'WSL2 Sandbox' : window.electronAPI?.platform === 'darwin' ? 'Lima Sandbox' : 'Native Mode'}
+              {window.electronAPI?.platform === 'win32'
+                ? t('sandbox.footerWsl')
+                : window.electronAPI?.platform === 'darwin'
+                  ? t('sandbox.footerLima')
+                  : t('sandbox.footerNative')}
             </span>
             {!isComplete && !isError && (
               <span className="flex items-center gap-2">
                 <span className="inline-block w-2 h-2 bg-accent rounded-full animate-pulse" />
-                Configuring...
+                {t('sandbox.configuring')}
               </span>
             )}
           </div>

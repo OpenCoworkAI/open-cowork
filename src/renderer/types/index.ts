@@ -408,13 +408,14 @@ export interface ExecutionContext {
 }
 
 // App Config types
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini';
+export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
   | 'openai'
   | 'gemini'
+  | 'ollama'
   | 'custom:anthropic'
   | 'custom:openai'
   | 'custom:gemini';
@@ -476,6 +477,12 @@ export interface ProviderPresets {
   custom: ProviderPreset;
   openai: ProviderPreset;
   gemini: ProviderPreset;
+  ollama: ProviderPreset;
+}
+
+export interface ProviderModelInfo {
+  id: string;
+  name: string;
 }
 
 export interface ApiTestInput {

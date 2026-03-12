@@ -1,9 +1,21 @@
 import { useEffect } from 'react';
-import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3, Plug } from 'lucide-react';
+import {
+  X,
+  Key,
+  Server,
+  Cpu,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  Edit3,
+  Plug,
+  RefreshCw,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AppConfig, ApiTestResult } from '../types';
 import { useApiConfigState } from '../hooks/useApiConfigState';
 import { ApiConfigSetManager } from './ApiConfigSetManager';
+import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -13,15 +25,25 @@ interface ConfigModalProps {
   isFirstRun?: boolean;
 }
 
-const PROVIDER_LABELS: Record<'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'custom', string> = {
+const PROVIDER_LABELS: Record<
+  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'custom',
+  string
+> = {
   openrouter: 'OpenRouter',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   gemini: 'Gemini',
+  ollama: 'Ollama',
   custom: 'Custom',
 };
 
-export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun }: ConfigModalProps) {
+export function ConfigModal({
+  isOpen,
+  onClose,
+  onSave,
+  initialConfig,
+  isFirstRun,
+}: ConfigModalProps) {
   const { t } = useTranslation();
   const {
     provider,
@@ -39,11 +61,19 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     isSaving,
     error,
     successMessage,
+    lastSaveCompletedAt,
     isTesting,
+    isRefreshingModels,
     testResult,
+    friendlyTestDetails,
     useLiveTest,
+    isOllamaMode,
     requiresApiKey,
     showsCompatibilityProbeHint,
+    protocolGuidanceText,
+    protocolGuidanceTone,
+    baseUrlGuidanceText,
+    commonProviderSetups,
     configSets,
     activeConfigSetId,
     currentConfigSet,
@@ -58,6 +88,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     setCustomModel,
     toggleCustomModel,
     setUseLiveTest,
+    applyCommonProviderSetup,
     changeProvider,
     changeProtocol,
     requestConfigSetSwitch,
@@ -69,6 +100,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
     deleteConfigSet,
     handleSave,
     handleTest,
+    refreshModelOptions,
   } = useApiConfigState({
     enabled: isOpen,
     initialConfig,
@@ -76,14 +108,14 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
   });
 
   useEffect(() => {
-    if (!successMessage || successMessage !== t('common.saved')) {
+    if (!lastSaveCompletedAt) {
       return;
     }
     const timer = setTimeout(() => {
       onClose();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [onClose, successMessage, t]);
+  }, [lastSaveCompletedAt, onClose]);
 
   if (!isOpen) return null;
 
@@ -174,33 +206,37 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <Server className="w-4 h-4" />
               {t('api.provider')}
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'gemini', 'custom'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => changeProvider(p)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    provider === p
-                      ? 'bg-accent text-white'
-                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                  }`}
-                >
-                  {presets?.[p]?.name || PROVIDER_LABELS[p] || p}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
+                (p) => (
+                  <button
+                    key={p}
+                    onClick={() => changeProvider(p)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      provider === p
+                        ? 'bg-accent text-white'
+                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                    }`}
+                  >
+                    {presets?.[p]?.name ||
+                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
+                      p}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
           {/* API Key */}
           <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+            <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
               <Key className="w-4 h-4" />
               {t('api.apiKey')}
             </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
               placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
               className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
             />
@@ -217,11 +253,13 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 {t('api.protocol')}
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {([
-                  { id: 'anthropic', label: 'Anthropic' },
-                  { id: 'openai', label: 'OpenAI' },
-                  { id: 'gemini', label: 'Gemini' },
-                ] as const).map((mode) => (
+                {(
+                  [
+                    { id: 'anthropic', label: 'Anthropic' },
+                    { id: 'openai', label: 'OpenAI' },
+                    { id: 'gemini', label: 'Gemini' },
+                  ] as const
+                ).map((mode) => (
                   <button
                     key={mode.id}
                     onClick={() => changeProtocol(mode.id)}
@@ -236,11 +274,12 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 ))}
               </div>
               <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
+              <GuidanceInlineHint text={protocolGuidanceText} tone={protocolGuidanceTone} />
             </div>
           )}
 
           {/* Base URL - Editable for custom provider */}
-          {provider === 'custom' && (
+          {(provider === 'custom' || provider === 'ollama') && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
                 <Server className="w-4 h-4" />
@@ -251,21 +290,26 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder={
-                  customProtocol === 'openai'
-                    ? 'https://api.openai.com/v1'
-                    : customProtocol === 'gemini'
-                      ? 'https://generativelanguage.googleapis.com'
-                    : (currentPreset?.baseUrl || 'https://api.anthropic.com')
+                  provider === 'ollama'
+                    ? 'http://localhost:11434/v1'
+                    : customProtocol === 'openai'
+                      ? 'https://api.openai.com/v1'
+                      : customProtocol === 'gemini'
+                        ? 'https://generativelanguage.googleapis.com'
+                        : currentPreset?.baseUrl || 'https://api.anthropic.com'
                 }
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
               <p className="text-xs text-text-muted">
-                {customProtocol === 'openai'
-                  ? t('api.enterOpenAIUrl')
-                  : customProtocol === 'gemini'
-                    ? 'Enter a Gemini-compatible base URL'
-                  : t('api.enterAnthropicUrl')}
+                {provider === 'ollama'
+                  ? t('api.enterOllamaUrl')
+                  : customProtocol === 'openai'
+                    ? t('api.enterOpenAIUrl')
+                    : customProtocol === 'gemini'
+                      ? t('api.enterGeminiUrl')
+                      : t('api.enterAnthropicUrl')}
               </p>
+              {provider === 'custom' && <GuidanceInlineHint text={baseUrlGuidanceText} />}
             </div>
           )}
 
@@ -276,18 +320,33 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 <Cpu className="w-4 h-4" />
                 {t('api.model')}
               </label>
-              <button
-                type="button"
-                onClick={toggleCustomModel}
-                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
-                  useCustomModel
-                    ? 'bg-accent-muted text-accent'
-                    : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                }`}
-              >
-                <Edit3 className="w-3 h-3" />
-                {useCustomModel ? t('api.usePreset') : t('api.custom')}
-              </button>
+              <div className="flex items-center gap-2">
+                {isOllamaMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void refreshModelOptions();
+                    }}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50"
+                    disabled={isRefreshingModels}
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRefreshingModels ? 'animate-spin' : ''}`} />
+                    {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={toggleCustomModel}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+                    useCustomModel
+                      ? 'bg-accent-muted text-accent'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  {useCustomModel ? t('api.usePreset') : t('api.custom')}
+                </button>
+              </div>
             </div>
             {useCustomModel ? (
               <input
@@ -316,12 +375,15 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 )}
               </select>
             )}
-            {useCustomModel && (
-              <p className="text-xs text-text-muted">
-                {modelInputHint}
-              </p>
-            )}
+            {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
           </div>
+
+          {provider === 'custom' && (
+            <CommonProviderSetupsCard
+              setups={commonProviderSetups}
+              onApplySetup={applyCommonProviderSetup}
+            />
+          )}
 
           {/* Error Message */}
           {error && (
@@ -332,7 +394,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           )}
 
           {testResult && (
-            <div className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+            <div
+              className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}
+            >
               {testResult.ok ? (
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
               ) : (
@@ -341,9 +405,16 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <div className="flex-1">
                 <div>
                   {testResult.ok
-                    ? t('api.testSuccess', { ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--' })
+                    ? t('api.testSuccess', {
+                        ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--',
+                      })
                     : testErrorMessage(testResult)}
                 </div>
+                {!testResult.ok && friendlyTestDetails && (
+                  <div className="mt-1 text-xs leading-5 text-text-primary">
+                    {friendlyTestDetails}
+                  </div>
+                )}
                 {!testResult.ok && testResult.details && (
                   <div className="mt-1 text-xs text-text-muted">{testResult.details}</div>
                 )}
@@ -371,9 +442,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             <label htmlFor="api-live-test-modal" className="space-y-0.5">
               <div className="text-text-primary">{t('api.liveTest')}</div>
               <div>{t('api.liveTestHint')}</div>
-              {showsCompatibilityProbeHint && (
-                <div>{t('api.liveTestCompatibilityHint')}</div>
-              )}
+              {showsCompatibilityProbeHint && <div>{t('api.liveTestCompatibilityHint')}</div>}
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -395,7 +464,9 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               )}
             </button>
             <button
-              onClick={() => { void handleSave(); }}
+              onClick={() => {
+                void handleSave();
+              }}
               disabled={isSaving || (requiresApiKey && !apiKey.trim())}
               className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
