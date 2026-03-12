@@ -18,6 +18,21 @@ export function shouldGenerateTitle(input: TitleDecisionInput): boolean {
   return input.currentTitle === defaultTitle || input.currentTitle === 'New Session';
 }
 
+export function normalizeGeneratedTitle(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const firstLine = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return null;
+  const normalized = firstLine.replace(/^["'`]+|["'`]+$/g, '').trim();
+  if (!normalized) return null;
+  if (normalized.toLowerCase() === '(no content)' || normalized.toLowerCase() === '(empty content)') {
+    return null;
+  }
+  return normalized.slice(0, 120);
+}
+
 export function buildTitlePrompt(prompt: string): string {
   return [
     '请根据用户请求生成一个简短的对话标题：',

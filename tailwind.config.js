@@ -22,43 +22,48 @@ module.exports = {
         border: {
           DEFAULT: 'var(--color-border)',
           muted: 'var(--color-border-muted)',
+          subtle: 'var(--color-border-subtle)',
         },
         accent: {
           DEFAULT: 'var(--color-accent)',
-          light: '#fb923c',
           hover: 'var(--color-accent-hover)',
           muted: 'var(--color-accent-muted)',
+        },
+        mcp: {
+          DEFAULT: 'var(--color-mcp)',
         },
         text: {
           primary: 'var(--color-text-primary)',
           secondary: 'var(--color-text-secondary)',
           muted: 'var(--color-text-muted)',
         },
-        success: '#22c55e',
-        warning: '#eab308',
-        error: '#ef4444',
+        success: '#6b9b76',
+        warning: '#c9952a',
+        error: '#c9584f',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['SF Mono', 'Menlo', 'monospace'],
+        sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'monospace'],
       },
       boxShadow: {
-        'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
-        'card': '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03)',
-        'elevated': '0 4px 12px rgba(0, 0, 0, 0.08)',
+        'soft': 'var(--shadow-soft)',
+        'card': 'var(--shadow-card)',
+        'elevated': 'var(--shadow-elevated)',
       },
       borderRadius: {
-        'xl': '12px',
-        '2xl': '16px',
-        '3xl': '20px',
+        'lg': '8px',
+        'xl': '10px',
+        '2xl': '14px',
+        '3xl': '16px',
       },
       backgroundImage: {
         'grid-pattern': `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4d2cc' fill-opacity='0.4'%3E%3Cpath d='M0 0h1v40H0V0zm39 0h1v40h-1V0z'/%3E%3Cpath d='M0 0h40v1H0V0zm0 39h40v1H0v-1z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
-        'slide-up': 'slideUp 0.3s ease-out',
+        'slide-up': 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         'spin-slow': 'spin 2s linear infinite',
+        'expand': 'expand 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       },
       keyframes: {
         fadeIn: {
@@ -68,6 +73,10 @@ module.exports = {
         slideUp: {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        expand: {
+          '0%': { opacity: '0', maxHeight: '0' },
+          '100%': { opacity: '1', maxHeight: '500px' },
         },
       },
     },

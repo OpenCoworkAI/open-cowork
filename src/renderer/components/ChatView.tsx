@@ -23,15 +23,13 @@ type AttachedFile = {
 
 export function ChatView() {
   const { t } = useTranslation();
-  const {
-    activeSessionId,
-    sessions,
-    messagesBySession,
-    partialMessagesBySession,
-    activeTurnsBySession,
-    pendingTurnsBySession,
-    appConfig,
-  } = useAppStore();
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const sessions = useAppStore((s) => s.sessions);
+  const messagesBySession = useAppStore((s) => s.messagesBySession);
+  const partialMessagesBySession = useAppStore((s) => s.partialMessagesBySession);
+  const activeTurnsBySession = useAppStore((s) => s.activeTurnsBySession);
+  const pendingTurnsBySession = useAppStore((s) => s.pendingTurnsBySession);
+  const appConfig = useAppStore((s) => s.appConfig);
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,7 +60,8 @@ export function ChatView() {
   const activeTurn = activeSessionId ? activeTurnsBySession[activeSessionId] : null;
   const hasActiveTurn = Boolean(activeTurn);
   const pendingCount = pendingTurns.length;
-  const canStop = hasActiveTurn || pendingCount > 0;
+  const isSessionRunning = activeSession?.status === 'running';
+  const canStop = isSessionRunning || hasActiveTurn || pendingCount > 0;
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
@@ -188,7 +187,7 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [displayedMessages]); // Re-create observer when messages change to ensure we're observing the right element
+  }, [displayedMessages.length]); // Re-create observer when message count changes
 
   // Cleanup scroll timeouts on unmount
   useEffect(() => {
@@ -281,8 +280,8 @@ export function ChatView() {
         }
 
         // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
+        const scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
+        const quality = 0.9;
 
         const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
           canvas.width = Math.floor(img.width * currentScale);
@@ -559,14 +558,16 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background">
       {/* Header */}
       <div
         ref={headerRef}
-        className="relative h-14 border-b border-border grid grid-cols-[1fr_auto_1fr] items-center px-6 bg-surface/80 backdrop-blur-sm"
+        className="relative h-12 border-b border-border-muted grid grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8 bg-background/88 backdrop-blur-md"
       >
-        <div />
-        <h2 ref={titleRef} className="font-medium text-text-primary text-center truncate max-w-lg">
+        <div className="text-[11px] font-medium tracking-[0.08em] uppercase text-text-muted">
+          Open Cowork
+        </div>
+        <h2 ref={titleRef} className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]">
           {activeSession.title}
         </h2>
         {activeConnectors.length > 0 && (
@@ -576,16 +577,16 @@ export function ChatView() {
               aria-hidden="true"
               className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
             >
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-purple-500/20">
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-mcp/20">
                 <Plug className="w-3.5 h-3.5" />
                 <span className="text-xs font-medium whitespace-nowrap">
                   {t('chat.connectorCount', { count: activeConnectors.length })}
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 justify-self-end">
-              <Plug className="w-3.5 h-3.5 text-purple-500" />
-              <span className="text-xs text-purple-500 font-medium">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
+              <Plug className="w-3.5 h-3.5 text-mcp" />
+              <span className="text-xs text-mcp font-medium">
                 {showConnectorLabel ? (
                   t('chat.connectorCount', { count: activeConnectors.length })
                 ) : (
@@ -599,10 +600,13 @@ export function ChatView() {
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div ref={messagesContainerRef} className="w-full max-w-[1180px] mx-auto py-6 px-4 lg:px-6 space-y-4">
+        <div ref={messagesContainerRef} className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5">
           {displayedMessages.length === 0 ? (
-            <div className="text-center py-12 text-text-muted">
-              <p>{t('chat.startConversation')}</p>
+            <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted/80">
+                Open Cowork
+              </p>
+              <p className="text-base text-text-secondary">{t('chat.startConversation')}</p>
             </div>
           ) : (
             displayedMessages.map((message) => {
@@ -617,7 +621,7 @@ export function ChatView() {
           
           {/* Processing indicator - show when we have an active turn but no partial message yet */}
           {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
+            <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-background/80 border border-border-subtle max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
               <span className="text-sm text-text-secondary">
                 {t('chat.processing')}
@@ -630,8 +634,8 @@ export function ChatView() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-border bg-surface/80 backdrop-blur-sm">
-        <div className="px-4 py-4">
+      <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
+        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
@@ -641,7 +645,7 @@ export function ChatView() {
           >
             {/* Image previews */}
             {pastedImages.length > 0 && (
-              <div className="grid grid-cols-5 gap-2 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
                 {pastedImages.map((img, index) => (
                   <div key={index} className="relative group">
                     <img
@@ -685,15 +689,14 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3 rounded-3xl bg-surface transition-colors ${
+              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
-              style={{ border: '1px solid rgba(255, 255, 255, 0.1)' }}
             >
               <button
                 type="button"
                 onClick={handleFileSelect}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                 title={t('welcome.attachFiles')}
               >
                 <Plus className="w-5 h-5" />
@@ -723,12 +726,12 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-1.5"
+                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
               />
 
               <div className="flex items-center gap-2">
                 {/* Model display */}
-                <span className="px-2 py-1 text-xs text-text-muted">
+                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
                   {appConfig?.model || 'No model'}
                 </span>
 
@@ -736,7 +739,8 @@ export function ChatView() {
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    title={t('chat.stop')}
                   >
                     <Square className="w-4 h-4" />
                   </button>
@@ -744,14 +748,15 @@ export function ChatView() {
                   <button
                     type="submit"
                   disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                    title={t('chat.send')}
                   >
                     <Send className="w-4 h-4" />
                   </button>
               </div>
             </div>
 
-            <p className="text-xs text-text-muted text-center mt-2">
+            <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
               Open Cowork is AI-powered and may make mistakes. Please double-check responses.
             </p>
           </form>

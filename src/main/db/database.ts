@@ -36,6 +36,14 @@ export interface DatabaseInstance {
     getBySessionId: (sessionId: string) => TraceStepRow[];
     deleteBySessionId: (sessionId: string) => void;
   };
+
+  scheduledTasks: {
+    create: (task: ScheduledTaskRow) => void;
+    update: (id: string, updates: Partial<ScheduledTaskRow>) => void;
+    get: (id: string) => ScheduledTaskRow | undefined;
+    getAll: () => ScheduledTaskRow[];
+    delete: (id: string) => void;
+  };
   
   // For compatibility with old interface
   prepare: (sql: string) => Database.Statement;
@@ -48,11 +56,13 @@ export interface SessionRow {
   id: string;
   title: string;
   claude_session_id: string | null;
+  openai_thread_id: string | null;
   status: string;
   cwd: string | null;
   mounted_paths: string; // JSON string
   allowed_tools: string; // JSON string
   memory_enabled: number;
+  model: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -79,6 +89,24 @@ export interface TraceStepRow {
   is_error: number | null;
   timestamp: number;
   duration: number | null;
+}
+
+export interface ScheduledTaskRow {
+  id: string;
+  title: string;
+  prompt: string;
+  cwd: string;
+  run_at: number;
+  next_run_at: number | null;
+  schedule_config: string | null;
+  repeat_every: number | null;
+  repeat_unit: string | null;
+  enabled: number;
+  last_run_at: number | null;
+  last_run_session_id: string | null;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 let db: DatabaseInstance | null = null;
@@ -112,6 +140,7 @@ function initializeSchema(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       claude_session_id TEXT,
+      openai_thread_id TEXT,
       status TEXT NOT NULL DEFAULT 'idle',
       cwd TEXT,
       mounted_paths TEXT NOT NULL DEFAULT '[]',
@@ -121,6 +150,9 @@ function initializeSchema(database: Database.Database): void {
       updated_at INTEGER NOT NULL
     )
   `);
+
+  ensureColumn(database, 'sessions', 'openai_thread_id', 'openai_thread_id TEXT');
+  ensureColumn(database, 'sessions', 'model', 'model TEXT');
   
   // Create messages table
   database.exec(`
@@ -199,8 +231,48 @@ function initializeSchema(database: Database.Database): void {
       created_at INTEGER NOT NULL
     )
   `);
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      run_at INTEGER NOT NULL,
+      next_run_at INTEGER,
+      schedule_config TEXT,
+      repeat_every INTEGER,
+      repeat_unit TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_run_at INTEGER,
+      last_run_session_id TEXT,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  ensureColumn(database, 'scheduled_tasks', 'schedule_config', 'schedule_config TEXT');
+
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
+    ON scheduled_tasks(enabled, next_run_at)
+  `);
   
   log('[Database] Schema initialized');
+}
+
+function ensureColumn(
+  database: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const exists = rows.some((row) => row.name === column);
+  if (exists) {
+    return;
+  }
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 }
 
 /**
@@ -222,9 +294,9 @@ export function initDatabase(): DatabaseInstance {
   
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
-    INSERT OR REPLACE INTO sessions 
-    (id, title, claude_session_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO sessions
+    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   
   // Note: Dynamic update queries are built in sessions.update() for flexibility
@@ -275,6 +347,25 @@ export function initDatabase(): DatabaseInstance {
   const deleteTraceStepsBySessionStmt = rawDb.prepare(`
     DELETE FROM trace_steps WHERE session_id = ?
   `);
+
+  const insertScheduledTask = rawDb.prepare(`
+    INSERT OR REPLACE INTO scheduled_tasks (
+      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getScheduledTaskStmt = rawDb.prepare(`
+    SELECT * FROM scheduled_tasks WHERE id = ?
+  `);
+
+  const getAllScheduledTasksStmt = rawDb.prepare(`
+    SELECT * FROM scheduled_tasks ORDER BY created_at ASC
+  `);
+
+  const deleteScheduledTaskStmt = rawDb.prepare(`
+    DELETE FROM scheduled_tasks WHERE id = ?
+  `);
   
   db = {
     raw: rawDb,
@@ -285,11 +376,13 @@ export function initDatabase(): DatabaseInstance {
           session.id,
           session.title,
           session.claude_session_id,
+          session.openai_thread_id,
           session.status,
           session.cwd,
           session.mounted_paths,
           session.allowed_tools,
           session.memory_enabled,
+          session.model,
           session.created_at,
           session.updated_at
         );
@@ -399,6 +492,61 @@ export function initDatabase(): DatabaseInstance {
 
       deleteBySessionId: (sessionId: string) => {
         deleteTraceStepsBySessionStmt.run(sessionId);
+      },
+    },
+
+    scheduledTasks: {
+      create: (task: ScheduledTaskRow) => {
+        insertScheduledTask.run(
+          task.id,
+          task.title,
+          task.prompt,
+          task.cwd,
+          task.run_at,
+          task.next_run_at,
+          task.schedule_config,
+          task.repeat_every,
+          task.repeat_unit,
+          task.enabled,
+          task.last_run_at,
+          task.last_run_session_id,
+          task.last_error,
+          task.created_at,
+          task.updated_at
+        );
+      },
+
+      update: (id: string, updates: Partial<ScheduledTaskRow>) => {
+        const setClauses: string[] = [];
+        const values: unknown[] = [];
+
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            setClauses.push(`${key} = ?`);
+            values.push(value);
+          }
+        }
+
+        if (setClauses.length === 0) return;
+
+        setClauses.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+
+        const sql = `UPDATE scheduled_tasks SET ${setClauses.join(', ')} WHERE id = ?`;
+        rawDb.prepare(sql).run(...values);
+      },
+
+      get: (id: string): ScheduledTaskRow | undefined => {
+        return getScheduledTaskStmt.get(id) as ScheduledTaskRow | undefined;
+      },
+
+      getAll: (): ScheduledTaskRow[] => {
+        return getAllScheduledTasksStmt.all() as ScheduledTaskRow[];
+      },
+
+      delete: (id: string) => {
+        deleteScheduledTaskStmt.run(id);
       },
     },
     

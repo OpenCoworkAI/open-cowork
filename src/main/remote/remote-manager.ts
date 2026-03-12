@@ -504,7 +504,7 @@ export class RemoteManager extends EventEmitter {
         'mcp__Chrome__evaluate_script', 'mcp__Chrome__get_network_request',
         'mcp__Chrome__list_network_requests', 'mcp__Chrome__list_console_messages',
         // Task tools
-        'Task', 'TodoWrite',
+        'Task',
       ];
       
       if (safeTools.includes(toolName)) {

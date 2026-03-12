@@ -1,86 +1,61 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PluginCatalogService } from '../src/main/skills/plugin-catalog-service';
 
-function createJsonResponse(payload: unknown, status = 200): Response {
+const CLAUDE_PLUGINS_URL = 'https://claude.com/plugins';
+
+function createHtmlResponse(html: string, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => payload,
-    text: async () => JSON.stringify(payload),
+    text: async () => html,
   } as Response;
 }
 
 describe('PluginCatalogService', () => {
-  it('lists plugins with full component counts', async () => {
+  it('extracts install commands and tolerates partial detail-page failures', async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes('/contents/plugins?ref=main')) {
-        return createJsonResponse([
-          { name: 'frontend-design', type: 'dir', path: 'plugins/frontend-design' },
-          { name: 'hookify', type: 'dir', path: 'plugins/hookify' },
-        ]);
+      if (url === CLAUDE_PLUGINS_URL) {
+        return createHtmlResponse(`
+          <a href='https://claude.com/plugins/frontend-design/'>Frontend Design</a>
+          <a href="/plugins/productivity">Productivity</a>
+          <a href="/plugins/context7">Context7</a>
+          <a href="/plugins/broken-plugin">Broken Plugin</a>
+          <a href="/plugins/context7">Context7 Duplicate</a>
+        `);
       }
 
-      if (url.includes('/frontend-design/.claude-plugin/plugin.json?ref=main')) {
-        return createJsonResponse({
-          name: 'frontend-design',
-          description: 'Frontend design skill',
-          version: '1.0.0',
-          author: { name: 'Anthropic' },
-        });
-      }
-      if (url.includes('/hookify/.claude-plugin/plugin.json?ref=main')) {
-        return createJsonResponse({
-          name: 'hookify',
-          description: 'Hook tooling',
-          version: '0.1.0',
-          author: { name: 'Anthropic' },
-        });
+      if (url === `${CLAUDE_PLUGINS_URL}/frontend-design`) {
+        return createHtmlResponse(`
+          <title>Frontend Design – Claude Plugin | Anthropic</title>
+          <meta name="description" content="Craft production-grade frontends." />
+          <div class="u-text-style-caption">Made by</div>
+          <a href="https://anthropic.com"><div>Anthropic</div></a>
+          <div data-copy="claude plugin install frontend-design@claude-plugins-official"></div>
+        `);
       }
 
-      if (url.includes('/frontend-design/skills?ref=main')) {
-        return createJsonResponse([{ name: 'frontend-design', type: 'dir' }]);
-      }
-      if (url.includes('/frontend-design/skills/frontend-design/SKILL.md?ref=main')) {
-        return createJsonResponse({ name: 'SKILL.md', type: 'file' });
-      }
-      if (url.includes('/frontend-design/commands?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/frontend-design/agents?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/frontend-design/hooks/hooks.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/frontend-design/.mcp.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
+      if (url === `${CLAUDE_PLUGINS_URL}/context7`) {
+        return createHtmlResponse(`
+          <title>Context7 – Claude Plugin | Anthropic</title>
+          <meta name="description" content="Use up-to-date documentation context." />
+          <div class="u-text-style-caption">Made by</div>
+          <a href="https://upstash.com"><div>Upstash</div></a>
+          <p>Run this in terminal: claude plugin install context7@claude-plugins-official</p>
+        `);
       }
 
-      if (url.includes('/hookify/skills?ref=main')) {
-        return createJsonResponse([{ name: 'writing-rules', type: 'dir' }]);
-      }
-      if (url.includes('/hookify/skills/writing-rules/SKILL.md?ref=main')) {
-        return createJsonResponse({ name: 'SKILL.md', type: 'file' });
-      }
-      if (url.includes('/hookify/commands?ref=main')) {
-        return createJsonResponse([
-          { name: 'configure.md', type: 'file', path: 'plugins/hookify/commands/configure.md' },
-          { name: 'help.md', type: 'file', path: 'plugins/hookify/commands/help.md' },
-        ]);
-      }
-      if (url.includes('/hookify/agents?ref=main')) {
-        return createJsonResponse([
-          { name: 'conversation-analyzer.md', type: 'file', path: 'plugins/hookify/agents/conversation-analyzer.md' },
-        ]);
-      }
-      if (url.includes('/hookify/hooks/hooks.json?ref=main')) {
-        return createJsonResponse({ name: 'hooks.json', type: 'file' });
-      }
-      if (url.includes('/hookify/.mcp.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
+      if (url === `${CLAUDE_PLUGINS_URL}/productivity`) {
+        return createHtmlResponse(`
+          <title>Productivity Plugins | Anthropic</title>
+          <meta name="description" content="Category page." />
+        `);
       }
 
-      return createJsonResponse({ message: 'Not Found' }, 404);
+      if (url === `${CLAUDE_PLUGINS_URL}/broken-plugin`) {
+        return createHtmlResponse('upstream exploded', 500);
+      }
+
+      return createHtmlResponse('Not Found', 404);
     });
 
     const service = new PluginCatalogService(fetchMock as typeof fetch);
@@ -88,91 +63,59 @@ describe('PluginCatalogService', () => {
 
     expect(plugins).toEqual([
       {
-        name: 'frontend-design',
-        description: 'Frontend design skill',
-        version: '1.0.0',
-        authorName: 'Anthropic',
+        name: 'Context7',
+        description: 'Use up-to-date documentation context.',
+        version: undefined,
+        authorName: 'Upstash',
         installable: true,
-        hasManifest: true,
+        hasManifest: false,
         componentCounts: {
-          skills: 1,
+          skills: 0,
           commands: 0,
           agents: 0,
           hooks: 0,
           mcp: 0,
         },
-        skillCount: 1,
-        hasSkills: true,
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'context7@claude-plugins-official',
+        installCommand: 'claude plugin install context7@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/context7',
+        catalogSource: 'claude-marketplace',
       },
       {
-        name: 'hookify',
-        description: 'Hook tooling',
-        version: '0.1.0',
+        name: 'Frontend Design',
+        description: 'Craft production-grade frontends.',
+        version: undefined,
         authorName: 'Anthropic',
         installable: true,
-        hasManifest: true,
+        hasManifest: false,
         componentCounts: {
-          skills: 1,
-          commands: 2,
-          agents: 1,
-          hooks: 1,
+          skills: 0,
+          commands: 0,
+          agents: 0,
+          hooks: 0,
           mcp: 0,
         },
-        skillCount: 1,
-        hasSkills: true,
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'frontend-design@claude-plugins-official',
+        installCommand: 'claude plugin install frontend-design@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/frontend-design',
+        catalogSource: 'claude-marketplace',
       },
     ]);
   });
 
-  it('filters installable plugins by any component (not only skills)', async () => {
+  it('supports installableOnly with marketplace entries', async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes('/contents/plugins?ref=main')) {
-        return createJsonResponse([
-          { name: 'code-review', type: 'dir', path: 'plugins/code-review' },
-          { name: 'empty-plugin', type: 'dir', path: 'plugins/empty-plugin' },
-        ]);
+      if (url === CLAUDE_PLUGINS_URL) {
+        return createHtmlResponse('<a href="/plugins/code-review">Code Review</a>');
       }
-
-      if (url.includes('/code-review/.claude-plugin/plugin.json?ref=main')) {
-        return createJsonResponse({ name: 'code-review', description: 'PR review workflow', version: '1.0.0' });
+      if (url === `${CLAUDE_PLUGINS_URL}/code-review`) {
+        return createHtmlResponse('<div data-copy="claude plugin install code-review@claude-plugins-official"></div>');
       }
-      if (url.includes('/empty-plugin/.claude-plugin/plugin.json?ref=main')) {
-        return createJsonResponse({ name: 'empty-plugin', description: 'No components', version: '1.0.0' });
-      }
-
-      if (url.includes('/code-review/skills?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/code-review/commands?ref=main')) {
-        return createJsonResponse([{ name: 'code-review.md', type: 'file', path: 'plugins/code-review/commands/code-review.md' }]);
-      }
-      if (url.includes('/code-review/agents?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/code-review/hooks/hooks.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/code-review/.mcp.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-
-      if (url.includes('/empty-plugin/skills?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/empty-plugin/commands?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/empty-plugin/agents?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/empty-plugin/hooks/hooks.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-      if (url.includes('/empty-plugin/.mcp.json?ref=main')) {
-        return createJsonResponse({ message: 'Not Found' }, 404);
-      }
-
-      return createJsonResponse({ message: 'Not Found' }, 404);
+      return createHtmlResponse('Not Found', 404);
     });
 
     const service = new PluginCatalogService(fetchMock as typeof fetch);
@@ -183,105 +126,28 @@ describe('PluginCatalogService', () => {
       expect.objectContaining({
         name: 'code-review',
         installable: true,
-        componentCounts: expect.objectContaining({ commands: 1 }),
-        hasSkills: false,
+        pluginId: 'code-review@claude-plugins-official',
+        catalogSource: 'claude-marketplace',
       })
     );
   });
 
-  it('surfaces readable error when catalog fetch fails', async () => {
-    const fetchMock = vi.fn(async () => {
-      throw new Error('network down');
-    });
+  it('surfaces readable error when marketplace fetch fails', async () => {
+    const fetchMock = vi.fn(async () => createHtmlResponse('upstream down', 503));
     const service = new PluginCatalogService(fetchMock as typeof fetch);
 
     await expect(service.listAnthropicPlugins()).rejects.toThrow('Failed to fetch plugin catalog');
   });
 
-  it('falls back to jsDelivr when GitHub API is rate-limited', async () => {
+  it('surfaces readable error when all detail pages fail', async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes('api.github.com/repos/anthropics/claude-code/contents/plugins?ref=main')) {
-        return createJsonResponse({ message: 'API rate limit exceeded' }, 403);
+      if (url === CLAUDE_PLUGINS_URL) {
+        return createHtmlResponse('<a href="/plugins/context7">Context7</a>');
       }
-
-      if (url === 'https://data.jsdelivr.com/v1/package/gh/anthropics/claude-code@main') {
-        return createJsonResponse({
-          files: [
-            {
-              type: 'directory',
-              name: 'plugins',
-              files: [
-                {
-                  type: 'directory',
-                  name: 'hookify',
-                  files: [
-                    {
-                      type: 'directory',
-                      name: '.claude-plugin',
-                      files: [{ type: 'file', name: 'plugin.json' }],
-                    },
-                    {
-                      type: 'directory',
-                      name: 'skills',
-                      files: [
-                        {
-                          type: 'directory',
-                          name: 'writing-rules',
-                          files: [{ type: 'file', name: 'SKILL.md' }],
-                        },
-                      ],
-                    },
-                    {
-                      type: 'directory',
-                      name: 'commands',
-                      files: [{ type: 'file', name: 'help.md' }],
-                    },
-                    {
-                      type: 'directory',
-                      name: 'hooks',
-                      files: [{ type: 'file', name: 'hooks.json' }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        });
-      }
-
-      if (url === 'https://cdn.jsdelivr.net/gh/anthropics/claude-code@main/plugins/hookify/.claude-plugin/plugin.json') {
-        return createJsonResponse({
-          name: 'hookify',
-          description: 'Hook tooling',
-          version: '0.1.0',
-          author: { name: 'Anthropic' },
-        });
-      }
-
-      return createJsonResponse({ message: 'Not Found' }, 404);
+      return createHtmlResponse('plugin detail unavailable', 503);
     });
 
     const service = new PluginCatalogService(fetchMock as typeof fetch);
-    const plugins = await service.listAnthropicPlugins();
-
-    expect(plugins).toEqual([
-      {
-        name: 'hookify',
-        description: 'Hook tooling',
-        version: '0.1.0',
-        authorName: 'Anthropic',
-        installable: true,
-        hasManifest: true,
-        componentCounts: {
-          skills: 1,
-          commands: 1,
-          agents: 0,
-          hooks: 1,
-          mcp: 0,
-        },
-        skillCount: 1,
-        hasSkills: true,
-      },
-    ]);
+    await expect(service.listAnthropicPlugins()).rejects.toThrow('All plugin detail requests failed');
   });
 });

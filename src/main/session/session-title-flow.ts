@@ -1,4 +1,9 @@
-import { buildTitlePrompt, getDefaultTitleFromPrompt, shouldGenerateTitle } from './session-title-utils';
+import {
+  buildTitlePrompt,
+  getDefaultTitleFromPrompt,
+  normalizeGeneratedTitle,
+  shouldGenerateTitle,
+} from './session-title-utils';
 
 type TitleFlowDeps = {
   sessionId: string;
@@ -10,16 +15,15 @@ type TitleFlowDeps = {
   updateTitle: (title: string) => Promise<void> | void;
   getLatestTitle: () => string | null;
   markAttempt: () => void;
+  shouldAbort?: () => boolean;
   log: (message: string, ...args: unknown[]) => void;
 };
 
-function normalizeTitle(value: string | null): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
 export async function maybeGenerateSessionTitle(deps: TitleFlowDeps): Promise<void> {
+  if (deps.shouldAbort?.()) {
+    deps.log('[SessionTitle] Skip: title flow aborted before start', deps.sessionId);
+    return;
+  }
   const shouldGenerate = shouldGenerateTitle({
     userMessageCount: deps.userMessageCount,
     currentTitle: deps.currentTitle,
@@ -40,15 +44,19 @@ export async function maybeGenerateSessionTitle(deps: TitleFlowDeps): Promise<vo
     return;
   }
 
-  deps.markAttempt();
   deps.log('[SessionTitle] Generating title...', deps.sessionId);
 
   const titlePrompt = buildTitlePrompt(deps.prompt);
   let generatedTitle: string | null = null;
   try {
-    generatedTitle = normalizeTitle(await deps.generateTitle(titlePrompt));
+    generatedTitle = normalizeGeneratedTitle(await deps.generateTitle(titlePrompt));
   } catch (error) {
     deps.log('[SessionTitle] Generation failed', deps.sessionId, error);
+    return;
+  }
+
+  if (deps.shouldAbort?.()) {
+    deps.log('[SessionTitle] Skip: title flow aborted after generation', deps.sessionId);
     return;
   }
 
@@ -65,5 +73,6 @@ export async function maybeGenerateSessionTitle(deps: TitleFlowDeps): Promise<vo
   }
 
   await deps.updateTitle(generatedTitle);
+  deps.markAttempt();
   deps.log('[SessionTitle] Title updated', deps.sessionId, generatedTitle);
 }

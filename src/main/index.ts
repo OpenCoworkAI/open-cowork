@@ -1,14 +1,15 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
-import { join, resolve } from 'path';
+import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import { config } from 'dotenv';
 import { initDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
-import { configStore, PROVIDER_PRESETS, type AppConfig } from './config/config-store';
-import { testApiConnection } from './config/api-tester';
+import { configStore, getPiAiModelPresets, type AppConfig, type CreateConfigSetPayload } from './config/config-store';
+import { runConfigApiTest } from './config/config-test-routing';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { credentialsStore, type UserCredential } from './credentials/credentials-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
@@ -21,6 +22,17 @@ import type { ClientEvent, ServerEvent, ApiTestInput, ApiTestResult } from '../r
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
 import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
+import { startNavServer, stopNavServer } from './nav-server';
+import {
+  ScheduledTaskManager,
+  type ScheduledTaskCreateInput,
+  type ScheduledTaskUpdateInput,
+} from './schedule/scheduled-task-manager';
+import { createScheduledTaskStore } from './schedule/scheduled-task-store';
+import {
+  buildScheduledTaskFallbackTitle,
+  buildScheduledTaskTitle,
+} from '../shared/schedule/task-title';
 import {
   log,
   logWarn,
@@ -32,6 +44,7 @@ import {
   setDevLogsEnabled,
   isDevLogsEnabled,
 } from './utils/logger';
+import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
@@ -59,6 +72,81 @@ let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
+let scheduledTaskManager: ScheduledTaskManager | null = null;
+
+async function resolveScheduledTaskTitle(
+  prompt: string,
+  cwd?: string,
+  fallbackTitle?: string
+): Promise<string> {
+  const normalizedPrompt = prompt.trim();
+  const fallback = fallbackTitle
+    ? buildScheduledTaskTitle(fallbackTitle)
+    : buildScheduledTaskFallbackTitle(normalizedPrompt);
+  if (!sessionManager) {
+    return fallback;
+  }
+  try {
+    return await sessionManager.generateScheduledTaskTitle(normalizedPrompt, cwd);
+  } catch (error) {
+    logWarn('[Schedule] Failed to generate title via session title flow, using fallback', error);
+    return fallback;
+  }
+}
+
+async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { method: 'GET' });
+      if (response.ok) {
+        if (attempt > 1) {
+          log(`[App] Dev server ready after ${attempt} attempt(s): ${url}`);
+        }
+        return true;
+      }
+    } catch {
+      // Ignore and retry until timeout
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  logWarn(`[App] Dev server did not become ready within timeout: ${url}`);
+  return false;
+}
+
+// Single-instance lock: skip in dev mode so vite-plugin-electron can restart freely
+// without the old process blocking the new one during async cleanup.
+const isDev = !!process.env.VITE_DEV_SERVER_URL;
+const hasSingleInstanceLock = isDev || app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  logWarn('[App] Another instance is already running, quitting this instance');
+  app.quit();
+} else if (!isDev) {
+  app.on('second-instance', () => {
+    const existingWindow = mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow
+      : BrowserWindow.getAllWindows().find((window) => !window.isDestroyed());
+
+    if (!existingWindow) {
+      log('[App] No existing window found, creating new one');
+      createWindow();
+      return;
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      mainWindow = existingWindow;
+    }
+    if (existingWindow.isMinimized()) {
+      existingWindow.restore();
+    }
+    existingWindow.show();
+    existingWindow.focus();
+    log('[App] Blocked second instance and focused existing window');
+  });
+}
 
 function createWindow() {
   // Theme colors (warm cream theme)
@@ -127,7 +215,44 @@ function createWindow() {
     }
   };
 
+  const decodePathSafely = (value: string) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const extractLocalPathFromAppUrl = (url: string): string | null => {
+    try {
+      const parsed = new URL(url);
+      if (!allowedOrigins.has(parsed.origin)) {
+        return null;
+      }
+      const pathname = decodePathSafely(parsed.pathname || '');
+      if (!pathname) {
+        return null;
+      }
+
+      if (/^\/[A-Za-z]:\//.test(pathname)) {
+        return pathname.slice(1);
+      }
+      if (/^\/(?:Users|home|opt|tmp|var)\//.test(pathname)) {
+        return pathname;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    const localPath = extractLocalPathFromAppUrl(url);
+    if (localPath) {
+      shell.showItemInFolder(localPath);
+      return { action: 'deny' };
+    }
     if (isExternalUrl(url)) {
       void shell.openExternal(url);
       return { action: 'deny' };
@@ -136,6 +261,12 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    const localPath = extractLocalPathFromAppUrl(url);
+    if (localPath) {
+      event.preventDefault();
+      shell.showItemInFolder(localPath);
+      return;
+    }
     if (isExternalUrl(url)) {
       event.preventDefault();
       void shell.openExternal(url);
@@ -144,7 +275,17 @@ function createWindow() {
 
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+    void (async () => {
+      await waitForDevServer(devServerUrl, 40, 500);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      try {
+        await mainWindow.loadURL(devServerUrl);
+      } catch (error) {
+        logError('[App] Failed to load dev server URL:', error);
+      }
+    })();
     // mainWindow.webContents.openDevTools(); // Commented out - open manually with Cmd+Option+I if needed
   } else {
     mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
@@ -162,7 +303,7 @@ function createWindow() {
       type: 'config.status',
       payload: { 
         isConfigured,
-        config: isConfigured ? configStore.getAll() : null,
+        config: configStore.getAll(),
       },
     });
 
@@ -333,24 +474,7 @@ function sendToRenderer(event: ServerEvent) {
         });
       }
     }
-    
-    // 拦截 question.request
-    if (event.type === 'question.request' && payload.questionId && payload.questions) {
-      log('[Remote] Intercepting question for remote session:', sessionId);
-      remoteManager.handleQuestionRequest(
-        sessionId,
-        payload.questionId,
-        payload.questions
-      ).then((answer) => {
-        if (answer !== null && sessionManager) {
-          sessionManager.handleQuestionResponse(payload.questionId!, answer);
-        }
-      }).catch((err) => {
-        logError('[Remote] Failed to handle question request:', err);
-      });
-      return; // 不发送到本地 UI
-    }
-    
+
     // 拦截 permission.request
     if (event.type === 'permission.request' && payload.toolUseId && payload.toolName) {
       log('[Remote] Intercepting permission for remote session:', sessionId);
@@ -396,6 +520,7 @@ app.whenReady().then(async () => {
   log('=== Open Cowork Starting ===');
   log('Config file:', configStore.getPath());
   log('Is configured:', configStore.isConfigured());
+  log('[Runtime] Using pi-coding-agent SDK for all providers');
   log('Developer logs:', enableDevLogs ? 'Enabled' : 'Disabled');
   log('Environment Variables:');
   log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
@@ -417,12 +542,56 @@ app.whenReady().then(async () => {
   // Initialize database
   const db = initDatabase();
 
+  // Show window early — heavy backend init proceeds in parallel below
+  createWindow();
+  startNavServer(() => mainWindow);
+
   // Initialize skills manager
-  skillsManager = new SkillsManager(db);
+  skillsManager = new SkillsManager(db, {
+    getConfiguredGlobalSkillsPath: () => configStore.get('globalSkillsPath') || '',
+    setConfiguredGlobalSkillsPath: (nextPath: string) => {
+      configStore.update({ globalSkillsPath: nextPath });
+    },
+    watchStorage: true,
+  });
+  skillsManager.onStorageChanged((event) => {
+    sendToRenderer({
+      type: 'skills.storageChanged',
+      payload: event,
+    });
+  });
   pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
 
   // Initialize session manager
   sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
+  // pi-ai handles model routing natively — no proxy warmup needed
+
+  const scheduledTaskStore = createScheduledTaskStore(db);
+  scheduledTaskManager = new ScheduledTaskManager({
+    store: scheduledTaskStore,
+    executeTask: async (task) => {
+      if (!sessionManager) {
+        throw new Error('Session manager not initialized');
+      }
+      const fallbackTitle = buildScheduledTaskFallbackTitle(task.prompt);
+      const needsRegeneratedTitle = !task.title?.trim() || task.title === fallbackTitle;
+      const title = needsRegeneratedTitle
+        ? await resolveScheduledTaskTitle(task.prompt, task.cwd, task.title)
+        : buildScheduledTaskTitle(task.title);
+      if (title !== task.title) {
+        scheduledTaskManager?.update(task.id, { title });
+      }
+      const started = await sessionManager.startSession(title, task.prompt, task.cwd);
+      // 定时任务创建的新会话需要主动同步到前端会话列表
+      sendToRenderer({
+        type: 'session.update',
+        payload: { sessionId: started.id, updates: started },
+      });
+      return { sessionId: started.id };
+    },
+    now: () => Date.now(),
+  });
+  scheduledTaskManager.start();
 
   // 初始化远程管理器
   remoteManager.setRendererCallback(sendToRenderer);
@@ -449,10 +618,9 @@ app.whenReady().then(async () => {
     });
   }
 
-  createWindow();
-
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    const hasVisibleWindow = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed());
+    if (!hasVisibleWindow) {
       createWindow();
     }
   });
@@ -471,6 +639,8 @@ async function cleanupSandboxResources(): Promise<void> {
     return;
   }
   isCleaningUp = true;
+
+  scheduledTaskManager?.stop();
 
   // 停止远程控制
   try {
@@ -504,21 +674,40 @@ async function cleanupSandboxResources(): Promise<void> {
   } catch (error) {
     logError('[App] Error shutting down sandbox:', error);
   }
+
+  // pi-ai doesn't need proxy shutdown
 }
 
 // Handle app quit - window-all-closed (primary for Windows/Linux)
 app.on('window-all-closed', async () => {
-  await cleanupSandboxResources();
-
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' || process.env.VITE_DEV_SERVER_URL) {
+    // On Windows/Linux, closing all windows means quit.
+    // On macOS dev mode, also quit — so vite-plugin-electron can restart cleanly
+    // without the old process holding the single-instance lock.
+    skillsManager?.stopStorageMonitoring();
+    await cleanupSandboxResources();
     app.quit();
   }
+  // On macOS production, keep app alive — cleanup happens in before-quit
 });
+
+// Handle SIGTERM/SIGINT (e.g. pkill) — route through app.quit() for clean shutdown
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(sig, () => app.quit());
+}
 
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
 app.on('before-quit', async (event) => {
   if (!isCleaningUp) {
+    // In dev mode, exit quickly — no need for async sandbox cleanup
+    if (process.env.VITE_DEV_SERVER_URL) {
+      stopNavServer();
+      closeLogFile();
+      return;
+    }
     event.preventDefault();
+    stopNavServer();
+    skillsManager?.stopStorageMonitoring();
     await cleanupSandboxResources();
     closeLogFile(); // Close log file before quitting
     app.quit();
@@ -554,13 +743,168 @@ ipcMain.handle('shell.openExternal', async (_event, url: string) => {
   return shell.openExternal(url);
 });
 
-ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string) => {
+ipcMain.handle('shell.showItemInFolder', async (_event, filePath: string, cwd?: string) => {
   if (!filePath) {
     return false;
   }
 
-  return shell.showItemInFolder(filePath);
+  const decodePathSafely = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const trimInput = filePath.trim();
+  if (!trimInput) {
+    return false;
+  }
+
+  let normalizedPath = decodePathSafely(trimInput);
+
+  if (normalizedPath.startsWith('file://')) {
+    try {
+      const url = new URL(normalizedPath);
+      normalizedPath = decodePathSafely(url.pathname || '');
+      if (/^\/[A-Za-z]:\//.test(normalizedPath)) {
+        normalizedPath = normalizedPath.slice(1);
+      }
+    } catch {
+      normalizedPath = decodePathSafely(normalizedPath.replace(/^file:\/\//i, ''));
+    }
+  }
+
+  const baseDir = cwd && isAbsolute(cwd) ? cwd : (getWorkingDir() || app.getPath('home'));
+  if (!isAbsolute(normalizedPath) && !/^[A-Za-z]:[\\/]/.test(normalizedPath)) {
+    normalizedPath = resolve(baseDir, normalizedPath);
+  }
+
+  if (normalizedPath.startsWith('/workspace/')) {
+    normalizedPath = resolve(baseDir, normalizedPath.slice('/workspace/'.length));
+  }
+
+  normalizedPath = resolve(normalizedPath);
+  log('[shell.showItemInFolder] request:', { filePath, cwd, resolved: normalizedPath });
+
+  const findFileByName = (fileName: string, roots: string[]): string | null => {
+    if (!fileName) {
+      return null;
+    }
+
+    const visited = new Set<string>();
+    const queue = roots
+      .map((root) => resolve(root))
+      .filter((root) => !!root && fs.existsSync(root) && fs.statSync(root).isDirectory());
+
+    let scannedDirs = 0;
+    const MAX_DIRS = 2000;
+
+    while (queue.length > 0 && scannedDirs < MAX_DIRS) {
+      const dir = queue.shift()!;
+      if (visited.has(dir)) {
+        continue;
+      }
+      visited.add(dir);
+      scannedDirs += 1;
+
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isFile() && entry.name === fileName) {
+          return fullPath;
+        }
+        if (entry.isDirectory()) {
+          queue.push(fullPath);
+        }
+      }
+    }
+
+    return null;
+  };
+
+  try {
+    if (fs.existsSync(normalizedPath)) {
+      const stat = fs.statSync(normalizedPath);
+      if (stat.isDirectory()) {
+        const openDirResult = await shell.openPath(normalizedPath);
+        if (openDirResult) {
+          logWarn('[shell.showItemInFolder] openPath returned warning:', openDirResult);
+        }
+      } else {
+        if (process.platform === 'darwin') {
+          try {
+            execFileSync('open', ['-R', normalizedPath]);
+          } catch (error) {
+            logWarn('[shell.showItemInFolder] open -R failed, fallback to shell.showItemInFolder:', error);
+            shell.showItemInFolder(normalizedPath);
+          }
+        } else {
+          shell.showItemInFolder(normalizedPath);
+        }
+      }
+      return true;
+    }
+
+    const fileName = basename(normalizedPath);
+    const defaultWorkingDir = getWorkingDir() || '';
+    const discoveredPath = findFileByName(fileName, [
+      cwd || '',
+      defaultWorkingDir,
+      join(app.getPath('userData'), 'default_working_dir'),
+    ]);
+
+    if (discoveredPath) {
+      logWarn('[shell.showItemInFolder] resolved path not found, discovered by filename:', {
+        requested: normalizedPath,
+        discoveredPath,
+      });
+      if (process.platform === 'darwin') {
+        try {
+          execFileSync('open', ['-R', discoveredPath]);
+        } catch (error) {
+          logWarn('[shell.showItemInFolder] open -R discovered file failed, fallback to shell.showItemInFolder:', error);
+          shell.showItemInFolder(discoveredPath);
+        }
+      } else {
+        shell.showItemInFolder(discoveredPath);
+      }
+      return true;
+    }
+
+    const parentDir = dirname(normalizedPath);
+    if (parentDir && fs.existsSync(parentDir)) {
+      logWarn('[shell.showItemInFolder] file not found, opening parent directory:', parentDir);
+      const openParentResult = await shell.openPath(parentDir);
+      if (openParentResult) {
+        logWarn('[shell.showItemInFolder] openPath parent returned warning:', openParentResult);
+      }
+      return true;
+    }
+
+    logWarn('[shell.showItemInFolder] path and parent directory do not exist:', normalizedPath);
+    return false;
+  } catch (error) {
+    logError('[shell.showItemInFolder] failed:', error);
+    return false;
+  }
 });
+
+ipcMain.handle(
+  'artifacts.listRecentFiles',
+  async (_event, cwd: string, sinceMs: number, limit: number = 50) => {
+    if (!cwd || !isAbsolute(cwd)) {
+      return [];
+    }
+    return listRecentWorkspaceFiles(cwd, sinceMs, limit);
+  }
+);
 
 ipcMain.handle('dialog.selectFiles', async () => {
   const result = await dialog.showOpenDialog({
@@ -581,19 +925,12 @@ ipcMain.handle('config.get', () => {
 });
 
 ipcMain.handle('config.getPresets', () => {
-  return PROVIDER_PRESETS;
+  return getPiAiModelPresets();
 });
 
-ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
-  log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
-
-  // Update config
-  configStore.update(newConfig);
-
-  // Mark as configured if we have an API key
-  if (newConfig.apiKey) {
-    configStore.set('isConfigured', true);
-  }
+const syncConfigAfterMutation = async () => {
+  // Mark as configured if any config set has usable credentials
+  configStore.set('isConfigured', configStore.hasAnyUsableCredentials());
 
   // Apply to environment
   configStore.applyToEnv();
@@ -601,6 +938,9 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
   // Reload config in session manager (safer than recreating it)
   if (sessionManager) {
     sessionManager.reloadConfig();
+    // MCP fingerprint check will skip reinit if servers haven't changed
+    await sessionManager.reloadMCP().catch((err) => logError('[Config] MCP reload failed:', err));
+    await sessionManager.reloadSandbox().catch((err) => logError('[Config] Sandbox reload failed:', err));
     log('[Config] Session manager config reloaded');
   }
 
@@ -611,11 +951,48 @@ ipcMain.handle('config.save', (_event, newConfig: Partial<AppConfig>) => {
     type: 'config.status',
     payload: {
       isConfigured,
-      config: isConfigured ? updatedConfig : null,
+      config: updatedConfig,
     },
   });
   log('[Config] Notified renderer of config update, isConfigured:', isConfigured);
+  return updatedConfig;
+};
 
+ipcMain.handle('config.save', async (_event, newConfig: Partial<AppConfig>) => {
+  log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
+
+  // Update config
+  configStore.update(newConfig);
+  const updatedConfig = await syncConfigAfterMutation();
+
+  return { success: true, config: updatedConfig };
+});
+
+ipcMain.handle('config.createSet', async (_event, payload: CreateConfigSetPayload) => {
+  log('[Config] Creating config set:', payload);
+  configStore.createSet(payload);
+  const updatedConfig = await syncConfigAfterMutation();
+  return { success: true, config: updatedConfig };
+});
+
+ipcMain.handle('config.renameSet', async (_event, payload: { id: string; name: string }) => {
+  log('[Config] Renaming config set:', payload);
+  configStore.renameSet(payload);
+  const updatedConfig = await syncConfigAfterMutation();
+  return { success: true, config: updatedConfig };
+});
+
+ipcMain.handle('config.deleteSet', async (_event, payload: { id: string }) => {
+  log('[Config] Deleting config set:', payload);
+  configStore.deleteSet(payload);
+  const updatedConfig = await syncConfigAfterMutation();
+  return { success: true, config: updatedConfig };
+});
+
+ipcMain.handle('config.switchSet', async (_event, payload: { id: string }) => {
+  log('[Config] Switching config set:', payload);
+  configStore.switchSet(payload);
+  const updatedConfig = await syncConfigAfterMutation();
   return { success: true, config: updatedConfig };
 });
 
@@ -625,7 +1002,7 @@ ipcMain.handle('config.isConfigured', () => {
 
 ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<ApiTestResult> => {
   try {
-    return await testApiConnection(payload);
+    return await runConfigApiTest(payload, configStore.getAll());
   } catch (error) {
     logError('[Config] API test failed:', error);
     return {
@@ -646,6 +1023,14 @@ ipcMain.handle('onboarding.setWorkEnvironment', (_event, env: 'real-machine' | '
   configStore.set('workEnvironmentVersion', 2);
   log('[Onboarding] Work environment set to:', env);
   return { success: true };
+});
+
+ipcMain.handle('auth.getStatus', () => {
+  return [];
+});
+
+ipcMain.handle('auth.importToken', () => {
+  return null;
 });
 
 // MCP Server IPC handlers
@@ -863,6 +1248,41 @@ ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
     return { valid: false, errors: ['Validation failed'] };
   }
 });
+
+ipcMain.handle('skills.getStoragePath', async () => {
+  if (!skillsManager) {
+    throw new Error('SkillsManager not initialized');
+  }
+  return skillsManager.getGlobalSkillsPath();
+});
+
+ipcMain.handle('skills.setStoragePath', async (_event, targetPath: string, migrate = true) => {
+  if (!skillsManager) {
+    throw new Error('SkillsManager not initialized');
+  }
+  const result = await skillsManager.setGlobalSkillsPath(targetPath, migrate !== false);
+  sendToRenderer({
+    type: 'config.status',
+    payload: {
+      isConfigured: configStore.isConfigured(),
+      config: configStore.getAll(),
+    },
+  });
+  return { success: true, ...result };
+});
+
+ipcMain.handle('skills.openStoragePath', async () => {
+  if (!skillsManager) {
+    throw new Error('SkillsManager not initialized');
+  }
+  const storagePath = skillsManager.getGlobalSkillsPath();
+  const openResult = await shell.openPath(storagePath);
+  if (openResult) {
+    return { success: false, path: storagePath, error: openResult };
+  }
+  return { success: true, path: storagePath };
+});
+
 
 ipcMain.handle('plugins.listCatalog', async (_event, options?: { installableOnly?: boolean }) => {
   try {
@@ -1442,6 +1862,70 @@ ipcMain.handle('remote.restart', async () => {
   }
 });
 
+ipcMain.handle('schedule.list', () => {
+  if (!scheduledTaskManager) return [];
+  return scheduledTaskManager.list();
+});
+
+ipcMain.handle('schedule.create', async (_event, payload: ScheduledTaskCreateInput) => {
+  if (!scheduledTaskManager) {
+    throw new Error('Scheduled task manager not initialized');
+  }
+  const normalizedPrompt = payload.prompt.trim();
+  const title = await resolveScheduledTaskTitle(normalizedPrompt, payload.cwd, payload.title);
+  return scheduledTaskManager.create({
+    ...payload,
+    prompt: normalizedPrompt,
+    title,
+  });
+});
+
+ipcMain.handle('schedule.update', async (_event, id: string, updates: ScheduledTaskUpdateInput) => {
+  if (!scheduledTaskManager) {
+    throw new Error('Scheduled task manager not initialized');
+  }
+  const existing = scheduledTaskManager.get(id);
+  if (!existing) return null;
+  const normalizedPrompt = updates.prompt === undefined ? existing.prompt : updates.prompt.trim();
+  const normalizedUpdates: ScheduledTaskUpdateInput = {
+    ...updates,
+    prompt: normalizedPrompt,
+  };
+
+  if (updates.prompt !== undefined) {
+    normalizedUpdates.title = await resolveScheduledTaskTitle(
+      normalizedPrompt,
+      updates.cwd ?? existing.cwd,
+      updates.title ?? existing.title
+    );
+  } else if (updates.title !== undefined) {
+    normalizedUpdates.title = buildScheduledTaskTitle(updates.title);
+  }
+
+  return scheduledTaskManager.update(id, normalizedUpdates);
+});
+
+ipcMain.handle('schedule.delete', (_event, id: string) => {
+  if (!scheduledTaskManager) {
+    throw new Error('Scheduled task manager not initialized');
+  }
+  return { success: scheduledTaskManager.delete(id) };
+});
+
+ipcMain.handle('schedule.toggle', (_event, id: string, enabled: boolean) => {
+  if (!scheduledTaskManager) {
+    throw new Error('Scheduled task manager not initialized');
+  }
+  return scheduledTaskManager.toggle(id, enabled);
+});
+
+ipcMain.handle('schedule.runNow', async (_event, id: string) => {
+  if (!scheduledTaskManager) {
+    throw new Error('Scheduled task manager not initialized');
+  }
+  return scheduledTaskManager.runNow(id);
+});
+
 ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: any[]) => {
   try {
     if (level === 'warn') {
@@ -1512,14 +1996,14 @@ ipcMain.handle('sandbox.retrySetup', async () => {
 
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   // Check if configured before starting sessions
-  if (event.type === 'session.start' && !configStore.isConfigured()) {
+  if (event.type === 'session.start' && !configStore.hasUsableCredentialsForActiveSet()) {
     sendToRenderer({
       type: 'error',
-      payload: { message: '请先配置 API Key' },
-    });
-    sendToRenderer({
-      type: 'config.status',
-      payload: { isConfigured: false, config: null },
+      payload: {
+        message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
+        code: 'CONFIG_REQUIRED_ACTIVE_SET',
+        action: 'open_api_settings',
+      },
     });
     return null;
   }
@@ -1551,10 +2035,11 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     case 'session.delete':
       return sessionManager.deleteSession(event.payload.sessionId);
 
-    case 'session.list':
+    case 'session.list': {
       const sessions = sessionManager.listSessions();
       sendToRenderer({ type: 'session.list', payload: { sessions } });
       return sessions;
+    }
 
     case 'session.getMessages':
       return sessionManager.getMessages(event.payload.sessionId);
@@ -1568,13 +2053,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         event.payload.result
       );
 
-    case 'question.response':
-      return sessionManager.handleQuestionResponse(
-        event.payload.questionId,
-        event.payload.answer
-      );
-
-    case 'folder.select':
+    case 'folder.select': {
       const folderResult = await dialog.showOpenDialog(mainWindow!, {
         properties: ['openDirectory'],
       });
@@ -1586,6 +2065,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         return folderResult.filePaths[0];
       }
       return null;
+    }
 
     case 'workdir.get':
       return getWorkingDir();
@@ -1593,7 +2073,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     case 'workdir.set':
       return setWorkingDir(event.payload.path, event.payload.sessionId);
 
-    case 'workdir.select':
+    case 'workdir.select': {
       const workdirResult = await dialog.showOpenDialog(mainWindow!, {
         properties: ['openDirectory'],
         title: 'Select Working Directory',
@@ -1604,6 +2084,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         return setWorkingDir(selectedPath, event.payload.sessionId);
       }
       return { success: false, path: '', error: 'User cancelled' };
+    }
 
     case 'settings.update':
       // TODO: Implement settings update

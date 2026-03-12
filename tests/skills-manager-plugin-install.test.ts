@@ -33,6 +33,7 @@ function createDbMock(): DatabaseInstance {
     sessions: {} as any,
     messages: {} as any,
     traceSteps: {} as any,
+    scheduledTasks: {} as any,
     prepare: vi.fn(() => statement as any),
     exec: vi.fn(),
     pragma: vi.fn(),

@@ -3,6 +3,7 @@ import type {
   ClientEvent,
   ServerEvent,
   AppConfig,
+  CreateSetPayload,
   ProviderPresets,
   Skill,
   ApiTestInput,
@@ -14,6 +15,9 @@ import type {
   PluginInstallResultV2,
   PluginToggleResult,
   PluginComponentKind,
+  ScheduleTask,
+  ScheduleCreateInput,
+  ScheduleUpdateInput,
 } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
@@ -73,10 +77,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Open links in default browser
   openExternal: (url: string) => ipcRenderer.invoke('shell.openExternal', url),
-  showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell.showItemInFolder', filePath),
+  showItemInFolder: (filePath: string, cwd?: string) => ipcRenderer.invoke('shell.showItemInFolder', filePath, cwd),
 
   // Select files using native dialog
   selectFiles: (): Promise<string[]> => ipcRenderer.invoke('dialog.selectFiles'),
+
+  artifacts: {
+    listRecentFiles: (
+      cwd: string,
+      sinceMs: number,
+      limit = 50
+    ): Promise<Array<{ path: string; modifiedAt: number; size: number }>> =>
+      ipcRenderer.invoke('artifacts.listRecentFiles', cwd, sinceMs, limit),
+  },
 
   // Config methods
   config: {
@@ -84,6 +97,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPresets: (): Promise<ProviderPresets> => ipcRenderer.invoke('config.getPresets'),
     save: (config: Partial<AppConfig>): Promise<{ success: boolean; config: AppConfig }> => 
       ipcRenderer.invoke('config.save', config),
+    createSet: (payload: CreateSetPayload): Promise<{ success: boolean; config: AppConfig }> =>
+      ipcRenderer.invoke('config.createSet', payload),
+    renameSet: (payload: { id: string; name: string }): Promise<{ success: boolean; config: AppConfig }> =>
+      ipcRenderer.invoke('config.renameSet', payload),
+    deleteSet: (payload: { id: string }): Promise<{ success: boolean; config: AppConfig }> =>
+      ipcRenderer.invoke('config.deleteSet', payload),
+    switchSet: (payload: { id: string }): Promise<{ success: boolean; config: AppConfig }> =>
+      ipcRenderer.invoke('config.switchSet', payload),
     isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
     test: (config: ApiTestInput): Promise<ApiTestResult> =>
       ipcRenderer.invoke('config.test', config),
@@ -95,6 +116,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('onboarding.getWorkEnvironment'),
     setWorkEnvironment: (env: 'real-machine' | 'vm'): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('onboarding.setWorkEnvironment', env),
+  },
+
+  auth: {
+    getStatus: (): Promise<Array<Record<string, unknown>>> => ipcRenderer.invoke('auth.getStatus'),
+    importToken: (provider: string): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('auth.importToken', provider),
   },
 
   // Window control methods
@@ -139,6 +165,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('skills.setEnabled', skillId, enabled),
     validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('skills.validate', skillPath),
+    getStoragePath: (): Promise<string> =>
+      ipcRenderer.invoke('skills.getStoragePath'),
+    setStoragePath: (
+      targetPath: string,
+      migrate = true
+    ): Promise<{ success: boolean; path: string; migratedCount: number; skippedCount: number; error?: string }> =>
+      ipcRenderer.invoke('skills.setStoragePath', targetPath, migrate),
+    openStoragePath: (): Promise<{ success: boolean; path: string; error?: string }> =>
+      ipcRenderer.invoke('skills.openStoragePath'),
     listPlugins: (installableOnly = false): Promise<PluginCatalogItem[]> =>
       ipcRenderer.invoke('skills.listPlugins', installableOnly),
     installPlugin: (pluginName: string): Promise<PluginInstallResult> =>
@@ -293,6 +328,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.restart'),
   },
+
+  schedule: {
+    list: (): Promise<ScheduleTask[]> => ipcRenderer.invoke('schedule.list'),
+    create: (payload: ScheduleCreateInput): Promise<ScheduleTask> =>
+      ipcRenderer.invoke('schedule.create', payload),
+    update: (id: string, updates: ScheduleUpdateInput): Promise<ScheduleTask | null> =>
+      ipcRenderer.invoke('schedule.update', id, updates),
+    delete: (id: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('schedule.delete', id),
+    toggle: (id: string, enabled: boolean): Promise<ScheduleTask | null> =>
+      ipcRenderer.invoke('schedule.toggle', id, enabled),
+    runNow: (id: string): Promise<ScheduleTask | null> =>
+      ipcRenderer.invoke('schedule.runNow', id),
+  },
 });
 
 // Type declaration for the renderer process
@@ -305,18 +354,33 @@ declare global {
       platform: NodeJS.Platform;
       getVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;
-      showItemInFolder: (filePath: string) => Promise<boolean>;
+      showItemInFolder: (filePath: string, cwd?: string) => Promise<boolean>;
       selectFiles: () => Promise<string[]>;
+      artifacts: {
+        listRecentFiles: (
+          cwd: string,
+          sinceMs: number,
+          limit?: number
+        ) => Promise<Array<{ path: string; modifiedAt: number; size: number }>>;
+      };
       config: {
         get: () => Promise<AppConfig>;
         getPresets: () => Promise<ProviderPresets>;
         save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
+        createSet: (payload: CreateSetPayload) => Promise<{ success: boolean; config: AppConfig }>;
+        renameSet: (payload: { id: string; name: string }) => Promise<{ success: boolean; config: AppConfig }>;
+        deleteSet: (payload: { id: string }) => Promise<{ success: boolean; config: AppConfig }>;
+        switchSet: (payload: { id: string }) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
       };
       onboarding: {
         getWorkEnvironment: () => Promise<'real-machine' | 'vm' | null>;
         setWorkEnvironment: (env: 'real-machine' | 'vm') => Promise<{ success: boolean }>;
+      };
+      auth: {
+        getStatus: () => Promise<Array<Record<string, unknown>>>;
+        importToken: (provider: string) => Promise<Record<string, unknown> | null>;
       };
       window: {
         minimize: () => void;
@@ -347,6 +411,12 @@ declare global {
         delete: (skillId: string) => Promise<{ success: boolean }>;
         setEnabled: (skillId: string, enabled: boolean) => Promise<{ success: boolean }>;
         validate: (skillPath: string) => Promise<{ valid: boolean; errors: string[] }>;
+        getStoragePath: () => Promise<string>;
+        setStoragePath: (
+          targetPath: string,
+          migrate?: boolean
+        ) => Promise<{ success: boolean; path: string; migratedCount: number; skippedCount: number; error?: string }>;
+        openStoragePath: () => Promise<{ success: boolean; path: string; error?: string }>;
         listPlugins: (installableOnly?: boolean) => Promise<PluginCatalogItem[]>;
         installPlugin: (pluginName: string) => Promise<PluginInstallResult>;
       };
@@ -462,6 +532,14 @@ declare global {
         }>;
         getWebhookUrl: () => Promise<string | null>;
         restart: () => Promise<{ success: boolean; error?: string }>;
+      };
+      schedule: {
+        list: () => Promise<ScheduleTask[]>;
+        create: (payload: ScheduleCreateInput) => Promise<ScheduleTask>;
+        update: (id: string, updates: ScheduleUpdateInput) => Promise<ScheduleTask | null>;
+        delete: (id: string) => Promise<{ success: boolean }>;
+        toggle: (id: string, enabled: boolean) => Promise<ScheduleTask | null>;
+        runNow: (id: string) => Promise<ScheduleTask | null>;
       };
     };
   }

@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
 import type { ClientEvent, ServerEvent, PermissionResult, Session, Message, TraceStep, ContentBlock } from '../types';
+import i18n from '../i18n/config';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -23,7 +24,57 @@ export function useIPC() {
     }
     
     console.log('[useIPC] Setting up IPC listener (once)');
-    
+
+    // --- RAF batching for high-frequency events ---
+    const pendingPartials: Record<string, string[]> = {};
+    let partialRafId: number | null = null;
+
+    const flushPartials = () => {
+      partialRafId = null;
+      const store = storeRef.current;
+      for (const sessionId in pendingPartials) {
+        const chunks = pendingPartials[sessionId];
+        if (chunks.length > 0) {
+          store.setPartialMessage(sessionId, chunks.join(''));
+          pendingPartials[sessionId] = [];
+        }
+      }
+    };
+
+    const bufferPartial = (sessionId: string, delta: string) => {
+      if (!pendingPartials[sessionId]) pendingPartials[sessionId] = [];
+      pendingPartials[sessionId].push(delta);
+      if (partialRafId === null) {
+        partialRafId = requestAnimationFrame(flushPartials);
+      }
+    };
+
+    type TraceAction =
+      | { kind: 'add'; sessionId: string; step: TraceStep }
+      | { kind: 'update'; sessionId: string; stepId: string; updates: Partial<TraceStep> };
+    let pendingTraces: TraceAction[] = [];
+    let traceRafId: number | null = null;
+
+    const flushTraces = () => {
+      traceRafId = null;
+      const store = storeRef.current;
+      for (const action of pendingTraces) {
+        if (action.kind === 'add') {
+          store.addTraceStep(action.sessionId, action.step);
+        } else {
+          store.updateTraceStep(action.sessionId, action.stepId, action.updates);
+        }
+      }
+      pendingTraces = [];
+    };
+
+    const bufferTrace = (action: TraceAction) => {
+      pendingTraces.push(action);
+      if (traceRafId === null) {
+        traceRafId = requestAnimationFrame(flushTraces);
+      }
+    };
+
     const cleanup = window.electronAPI.on((event: ServerEvent) => {
       const store = storeRef.current;
       console.log('[useIPC] Received event:', event.type);
@@ -55,7 +106,7 @@ export function useIPC() {
           break;
 
         case 'stream.partial':
-          store.setPartialMessage(event.payload.sessionId, event.payload.delta);
+          bufferPartial(event.payload.sessionId, event.payload.delta);
           break;
 
         case 'trace.step': {
@@ -73,7 +124,7 @@ export function useIPC() {
               store.updateActiveTurnStep(event.payload.sessionId, event.payload.step.id);
             }
           }
-          store.addTraceStep(event.payload.sessionId, event.payload.step);
+          bufferTrace({ kind: 'add', sessionId: event.payload.sessionId, step: event.payload.step });
           break;
         }
 
@@ -84,8 +135,10 @@ export function useIPC() {
           ) {
             store.clearActiveTurn(event.payload.sessionId, event.payload.stepId);
           }
-          store.updateTraceStep(event.payload.sessionId, event.payload.stepId, event.payload.updates);
+          bufferTrace({ kind: 'update', sessionId: event.payload.sessionId, stepId: event.payload.stepId, updates: event.payload.updates });
           if (event.payload.updates.status && event.payload.updates.status !== 'running') {
+            // Flush pending traces so the store reflects any trace.step adds from this frame
+            flushTraces();
             const steps = useAppStore.getState().traceStepsBySession[event.payload.sessionId] || [];
             const step = steps.find((item) => item.id === event.payload.stepId);
             if (step?.type === 'thinking') {
@@ -100,16 +153,15 @@ export function useIPC() {
           store.setPendingPermission(event.payload);
           break;
 
-        case 'question.request':
-          console.log('[useIPC] question.request received:', event.payload);
-          store.setPendingQuestion(event.payload);
-          break;
-
         case 'config.status':
           console.log('[useIPC] config.status received:', event.payload.isConfigured);
+          const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
           store.setIsConfigured(event.payload.isConfigured);
           store.setAppConfig(event.payload.config);
-          if (!event.payload.isConfigured) {
+          if (isInitialConfigStatus) {
+            store.markInitialConfigStatusSeen();
+          }
+          if (isInitialConfigStatus && !event.payload.isConfigured) {
             store.setShowConfigModal(true);
           }
           break;
@@ -124,14 +176,43 @@ export function useIPC() {
           store.setSandboxSyncStatus(event.payload);
           break;
 
+        case 'skills.storageChanged':
+          console.log('[useIPC] skills.storageChanged received:', event.payload.path, event.payload.reason);
+          store.setSkillsStorageChangeEvent(event.payload);
+          store.setSkillsStorageChangedAt(Date.now());
+          break;
+
         case 'workdir.changed':
           console.log('[useIPC] workdir.changed received:', event.payload.path);
           store.setWorkingDir(event.payload.path || null);
           break;
 
+        case 'proxy.warmup':
+          if (event.payload.status === 'warming') {
+            store.setGlobalNotice({
+              id: 'proxy-warmup',
+              type: 'info',
+              message: i18n.t('api.proxyWarming'),
+            });
+          } else {
+            const current = useAppStore.getState().globalNotice;
+            if (current?.id === 'proxy-warmup') {
+              store.clearGlobalNotice();
+            }
+          }
+          break;
+
         case 'error':
           console.error('[useIPC] Server error:', event.payload.message);
           store.setLoading(false);
+          if (event.payload.code === 'CONFIG_REQUIRED_ACTIVE_SET') {
+            store.setGlobalNotice({
+              id: `notice-config-required-${Date.now()}`,
+              type: 'warning',
+              message: event.payload.message,
+              action: event.payload.action === 'open_api_settings' ? 'open_api_settings' : undefined,
+            });
+          }
           break;
 
         default:
@@ -142,23 +223,22 @@ export function useIPC() {
     // Cleanup on unmount only
     return () => {
       console.log('[useIPC] Cleaning up IPC listener');
+      if (partialRafId !== null) cancelAnimationFrame(partialRafId);
+      if (traceRafId !== null) cancelAnimationFrame(traceRafId);
       cleanup?.();
     };
   }, []); // Empty deps - setup listener only once!
   
   // Get actions for the rest of the hook
-  const {
-    addSession,
-    updateSession,
-    addMessage,
-    setLoading,
-    setPendingPermission,
-    setPendingQuestion,
-    clearActiveTurn,
-    activateNextTurn,
-    clearPendingTurns,
-    cancelQueuedMessages,
-  } = useAppStore();
+  const addSession = useAppStore((s) => s.addSession);
+  const updateSession = useAppStore((s) => s.updateSession);
+  const addMessage = useAppStore((s) => s.addMessage);
+  const setLoading = useAppStore((s) => s.setLoading);
+  const setPendingPermission = useAppStore((s) => s.setPendingPermission);
+  const clearActiveTurn = useAppStore((s) => s.clearActiveTurn);
+  const activateNextTurn = useAppStore((s) => s.activateNextTurn);
+  const clearPendingTurns = useAppStore((s) => s.clearPendingTurns);
+  const cancelQueuedMessages = useAppStore((s) => s.cancelQueuedMessages);
 
   // Send event to main process
   const send = useCallback((event: ClientEvent) => {
@@ -208,9 +288,6 @@ export function useIPC() {
             cwd: cwd || '',
             mountedPaths: [],
             allowedTools: [
-              'askuserquestion',
-              'todowrite',
-              'todoread',
               'webfetch',
               'websearch',
               'read',
@@ -446,18 +523,6 @@ export function useIPC() {
     [send, setPendingPermission]
   );
 
-  const respondToQuestion = useCallback(
-    (questionId: string, answer: string) => {
-      console.log('[useIPC] Responding to question:', questionId, 'with:', answer);
-      send({
-        type: 'question.response',
-        payload: { questionId, answer },
-      });
-      setPendingQuestion(null);
-    },
-    [send, setPendingQuestion]
-  );
-
   const selectFolder = useCallback(async (): Promise<string | null> => {
     if (!isElectron) {
       return '/mock/folder/path';
@@ -498,7 +563,6 @@ export function useIPC() {
     getSessionMessages,
     getSessionTraceSteps,
     respondToPermission,
-    respondToQuestion,
     selectFolder,
     getWorkingDir,
     changeWorkingDir,

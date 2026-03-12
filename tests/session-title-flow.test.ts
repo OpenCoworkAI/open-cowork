@@ -12,6 +12,7 @@ describe('session title flow', () => {
     const harness = createTitleFlowHarness({ generatedTitle: null });
     await harness.runFirstMessage('帮我做一个PPT');
     expect(harness.updatedTitle).toBe(null);
+    expect(harness.hasAttempted).toBe(false);
   });
 
   it('does not override manual title changes', async () => {
@@ -21,5 +22,6 @@ describe('session title flow', () => {
     });
     await harness.runFirstMessage('帮我做一个PPT');
     expect(harness.updatedTitle).toBe(null);
+    expect(harness.hasAttempted).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ Extract the html2pptx library next to your script before proceeding:
 
 ```bash
 # Extract the library to a html2pptx subdirectory
-mkdir -p html2pptx && tar -xzf skills/public/pptx/html2pptx.tgz -C html2pptx
+mkdir -p html2pptx && tar -xzf html2pptx.tgz -C html2pptx
 ```
 
 This creates a `html2pptx/` directory with the library files and CLI binaries. Then use `require("./html2pptx")` in your script.
@@ -657,7 +657,7 @@ These libraries have been globally installed and are available to use:
 
 **Common errors:**
 
-- **LIBRARY NOT EXTRACTED**: Extract the tarball first with `mkdir -p html2pptx && tar -xzf skills/public/pptx/html2pptx.tgz -C html2pptx`
+- **LIBRARY NOT EXTRACTED**: Extract the tarball first with `mkdir -p html2pptx && tar -xzf html2pptx.tgz -C html2pptx`
   - ✅ Correct: `require("./html2pptx")`
   - ❌ Wrong: `require("@ant/html2pptx")` - Use relative path, not package name
 - DO NOT call `pptx.addSlide()` directly, `html2pptx` creates a slide for you

@@ -40,6 +40,22 @@ describe('splitTextByFileMentions', () => {
     ]);
   });
 
+  it('detects bare Chinese filename after descriptive paragraph', () => {
+    const input = [
+      '已创建 Word 文档，内容为“北京未来一个月天气介绍”（含趋势、气温体感、降水风力、生活建议等）：',
+      '',
+      '北京未来一个月天气介绍.docx',
+    ].join('\n');
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([
+      {
+        type: 'text',
+        value: '已创建 Word 文档，内容为“北京未来一个月天气介绍”（含趋势、气温体感、降水风力、生活建议等）：\n\n',
+      },
+      { type: 'file', value: '北京未来一个月天气介绍.docx' },
+    ]);
+  });
+
   it('ignores urls', () => {
     const input = '查看 https://example.com/demo.txt';
     const parts = splitTextByFileMentions(input);

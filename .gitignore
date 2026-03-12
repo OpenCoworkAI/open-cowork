@@ -21,6 +21,9 @@ resources/node/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+**/__pycache__/
+*.pyc
 
 # Environment
 .env
@@ -60,3 +63,9 @@ dist*
 resources/node
 resources/tools
 resources/python
+docs/plans/
+docs/bench/
+/docs/ui-review/
+/.mcp.json
+/eng.traineddata
+/jpn.traineddata

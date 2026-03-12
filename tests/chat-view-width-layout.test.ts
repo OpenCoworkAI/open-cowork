@@ -8,10 +8,10 @@ function readChatView() {
 }
 
 describe('chat view width layout', () => {
-  it('uses a wider responsive messages container', () => {
+  it('uses a centered responsive messages container', () => {
     const source = readChatView();
-    expect(source).toContain('max-w-[1180px]');
-    expect(source).toContain('lg:px-6');
+    expect(source).toContain('max-w-[920px]');
+    expect(source).toContain('lg:px-8');
   });
 
   it('observes message container via ref instead of hard-coded class selector', () => {

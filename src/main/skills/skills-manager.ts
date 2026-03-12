@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import chokidar, { type FSWatcher } from 'chokidar';
 import type { Skill, PluginInstallResult } from '../../renderer/types';
 import type { DatabaseInstance } from '../db/database';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 
 interface McpServerConfig {
   command: string;
@@ -25,6 +26,25 @@ interface PluginManifest {
   version?: string;
 }
 
+interface SkillsManagerOptions {
+  getConfiguredGlobalSkillsPath?: () => string | undefined;
+  setConfiguredGlobalSkillsPath?: (nextPath: string) => void;
+  watchStorage?: boolean;
+}
+
+export interface SkillsStorageChangeEvent {
+  path: string;
+  reason: 'updated' | 'path_changed' | 'fallback' | 'watcher_error';
+  message?: string;
+}
+
+export interface SetGlobalSkillsPathResult {
+  path: string;
+  migratedCount: number;
+  skippedCount: number;
+}
+
+
 /**
  * SkillsManager - Manages skill loading and MCP server lifecycle
  * 
@@ -37,10 +57,23 @@ export class SkillsManager {
   private db: DatabaseInstance;
   private loadedSkills: Map<string, Skill> = new Map();
   private runningServers: Map<string, { process: any; skill: Skill }> = new Map();
+  private getConfiguredGlobalSkillsPathFn?: () => string | undefined;
+  private setConfiguredGlobalSkillsPathFn?: (nextPath: string) => void;
+  private watchStorageEnabled: boolean;
+  private storageWatcher: FSWatcher | null = null;
+  private storagePollingTimer: NodeJS.Timeout | null = null;
+  private lastStorageSignature = '';
+  private storageCallbacks = new Set<(event: SkillsStorageChangeEvent) => void>();
 
-  constructor(db: DatabaseInstance) {
+  constructor(db: DatabaseInstance, options: SkillsManagerOptions = {}) {
     this.db = db;
+    this.getConfiguredGlobalSkillsPathFn = options.getConfiguredGlobalSkillsPath;
+    this.setConfiguredGlobalSkillsPathFn = options.setConfiguredGlobalSkillsPath;
+    this.watchStorageEnabled = options.watchStorage === true;
     this.loadBuiltinSkills();
+    if (this.watchStorageEnabled) {
+      this.startStorageWatcher();
+    }
   }
 
   /**
@@ -110,8 +143,155 @@ export class SkillsManager {
     return '';
   }
 
-  private getGlobalSkillsPath(): string {
+  private getDefaultGlobalSkillsPath(): string {
     return path.join(app.getPath('userData'), 'claude', 'skills');
+  }
+
+  getGlobalSkillsPath(): string {
+    const fallbackPath = this.getDefaultGlobalSkillsPath();
+    const configuredPath = (this.getConfiguredGlobalSkillsPathFn?.() || '').trim();
+    const preferredPath = configuredPath ? path.resolve(configuredPath) : fallbackPath;
+
+    try {
+      if (!fs.existsSync(preferredPath)) {
+        fs.mkdirSync(preferredPath, { recursive: true });
+      }
+      if (!fs.statSync(preferredPath).isDirectory()) {
+        throw new Error('Configured path is not a directory');
+      }
+      return preferredPath;
+    } catch (error) {
+      if (preferredPath !== fallbackPath) {
+        logWarn(`[Skills] Configured skills path is unavailable, fallback to default: ${preferredPath}`);
+        this.setConfiguredGlobalSkillsPathFn?.('');
+        this.emitStorageEvent({
+          path: fallbackPath,
+          reason: 'fallback',
+          message: 'Configured skills directory is unavailable, fallback to default directory.',
+        });
+      }
+      if (!fs.existsSync(fallbackPath)) {
+        fs.mkdirSync(fallbackPath, { recursive: true });
+      }
+      return fallbackPath;
+    }
+  }
+
+  onStorageChanged(callback: (event: SkillsStorageChangeEvent) => void): () => void {
+    this.storageCallbacks.add(callback);
+    return () => {
+      this.storageCallbacks.delete(callback);
+    };
+  }
+
+  private emitStorageEvent(event: SkillsStorageChangeEvent): void {
+    for (const callback of this.storageCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        logError('[Skills] Storage change callback failed:', error);
+      }
+    }
+  }
+
+  private clearSkillsBySource(source: 'project' | 'global'): void {
+    const prefix = `${source}-`;
+    for (const key of Array.from(this.loadedSkills.keys())) {
+      if (key.startsWith(prefix)) {
+        this.loadedSkills.delete(key);
+      }
+    }
+  }
+
+  private computeStorageSignature(storagePath: string): string {
+    try {
+      if (!fs.existsSync(storagePath) || !fs.statSync(storagePath).isDirectory()) {
+        return '';
+      }
+      const entries = fs.readdirSync(storagePath, { withFileTypes: true });
+      const parts = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => {
+          const skillMdPath = path.join(storagePath, entry.name, 'SKILL.md');
+          if (!fs.existsSync(skillMdPath)) {
+            return null;
+          }
+          const stat = fs.statSync(skillMdPath);
+          return `${entry.name}:${stat.mtimeMs}`;
+        })
+        .filter((value): value is string => Boolean(value))
+        .sort();
+      return parts.join('|');
+    } catch {
+      return '';
+    }
+  }
+
+  private stopStorageWatcher(): void {
+    if (this.storageWatcher) {
+      this.storageWatcher.close().catch((error) => {
+        logError('[Skills] Failed to close storage watcher:', error);
+      });
+      this.storageWatcher = null;
+    }
+    if (this.storagePollingTimer) {
+      clearInterval(this.storagePollingTimer);
+      this.storagePollingTimer = null;
+    }
+  }
+
+  private startStoragePolling(storagePath: string): void {
+    if (this.storagePollingTimer) {
+      return;
+    }
+    this.storagePollingTimer = setInterval(() => {
+      const nextSignature = this.computeStorageSignature(storagePath);
+      if (nextSignature !== this.lastStorageSignature) {
+        this.lastStorageSignature = nextSignature;
+        this.emitStorageEvent({ path: storagePath, reason: 'updated' });
+      }
+    }, 3000);
+  }
+
+  private startStorageWatcher(): void {
+    this.stopStorageWatcher();
+    const storagePath = this.getGlobalSkillsPath();
+    this.lastStorageSignature = this.computeStorageSignature(storagePath);
+
+    try {
+      this.storageWatcher = chokidar.watch(storagePath, {
+        ignoreInitial: true,
+        depth: 3,
+        awaitWriteFinish: {
+          stabilityThreshold: 200,
+          pollInterval: 100,
+        },
+      });
+      this.storageWatcher.on('all', () => {
+        const nextSignature = this.computeStorageSignature(storagePath);
+        if (nextSignature !== this.lastStorageSignature) {
+          this.lastStorageSignature = nextSignature;
+          this.emitStorageEvent({ path: storagePath, reason: 'updated' });
+        }
+      });
+      this.storageWatcher.on('error', (error) => {
+        logError('[Skills] Storage watcher failed:', error);
+        this.emitStorageEvent({
+          path: storagePath,
+          reason: 'watcher_error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        this.startStoragePolling(storagePath);
+      });
+    } catch (error) {
+      logError('[Skills] Failed to start storage watcher:', error);
+      this.emitStorageEvent({
+        path: storagePath,
+        reason: 'watcher_error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      this.startStoragePolling(storagePath);
+    }
   }
 
   private getUserSkillsPath(): string {
@@ -151,6 +331,7 @@ export class SkillsManager {
    */
   async loadProjectSkills(projectPath: string): Promise<Skill[]> {
     const skills: Skill[] = [];
+    this.clearSkillsBySource('project');
     
     // Check for .skills/ or skills/ directory
     const skillsDirs = [
@@ -172,8 +353,8 @@ export class SkillsManager {
    * Load global skills from user config directory
    */
   async loadGlobalSkills(): Promise<Skill[]> {
-    // Use app-specific skills directory to avoid conflicts with user settings
     const globalSkillsPath = this.getGlobalSkillsPath();
+    this.clearSkillsBySource('global');
 
     if (!fs.existsSync(globalSkillsPath)) {
       fs.mkdirSync(globalSkillsPath, { recursive: true });
@@ -182,6 +363,51 @@ export class SkillsManager {
     await this.importUserSkills(globalSkillsPath);
 
     return this.loadSkillsFromDirectory(globalSkillsPath, 'global');
+  }
+
+  async setGlobalSkillsPath(newPath: string, migrate = true): Promise<SetGlobalSkillsPathResult> {
+    const trimmed = newPath.trim();
+    if (!trimmed) {
+      throw new Error('Skills directory path cannot be empty');
+    }
+
+    const sourcePath = this.getGlobalSkillsPath();
+    const targetPath = path.resolve(trimmed);
+
+    if (fs.existsSync(targetPath) && !fs.statSync(targetPath).isDirectory()) {
+      throw new Error('Target path is not a directory');
+    }
+    if (!fs.existsSync(targetPath)) {
+      fs.mkdirSync(targetPath, { recursive: true });
+    }
+
+    let migratedCount = 0;
+    let skippedCount = 0;
+    if (migrate && sourcePath !== targetPath && fs.existsSync(sourcePath)) {
+      const entries = fs.readdirSync(sourcePath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        const sourceEntryPath = path.join(sourcePath, entry.name);
+        const targetEntryPath = path.join(targetPath, entry.name);
+        if (fs.existsSync(targetEntryPath)) {
+          skippedCount += 1;
+          continue;
+        }
+        await this.copyDirectory(sourceEntryPath, targetEntryPath);
+        migratedCount += 1;
+      }
+    }
+
+    this.setConfiguredGlobalSkillsPathFn?.(targetPath);
+    if (this.watchStorageEnabled) {
+      this.startStorageWatcher();
+    }
+    await this.loadGlobalSkills();
+    this.emitStorageEvent({ path: targetPath, reason: 'path_changed' });
+
+    return { path: targetPath, migratedCount, skippedCount };
   }
 
   /**
@@ -338,6 +564,10 @@ export class SkillsManager {
     for (const skillId of this.runningServers.keys()) {
       await this.stopMcpServer(skillId);
     }
+  }
+
+  stopStorageMonitoring(): void {
+    this.stopStorageWatcher();
   }
 
   /**

@@ -2,6 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron';
 import { resolve } from 'path';
+import { builtinModules } from 'module';
+
+// Node built-in modules must be external for Electron main process
+const nodeBuiltins = builtinModules.flatMap(m => [m, `node:${m}`]);
 
 export default defineConfig({
   plugins: [
@@ -17,11 +21,16 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             rollupOptions: {
               external: [
+                ...nodeBuiltins,
                 'better-sqlite3',
-                'ws',
                 'bufferutil',
                 'utf-8-validate',
+                'electron',
               ],
+              output: {
+                // Ensure consistent interop for CJS/ESM
+                interop: 'auto',
+              },
             },
           },
         },

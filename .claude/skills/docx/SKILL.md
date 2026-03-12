@@ -25,7 +25,7 @@ A .docx file is a ZIP archive containing XML files.
 pandoc --track-changes=all document.docx -o output.md
 
 # Raw XML access
-python scripts/unpack.py document.docx unpacked/
+python3 scripts/unpack.py document.docx unpacked/
 ```
 
 ### Converting to Images
@@ -262,7 +262,7 @@ sections: [{
 
 ### Step 1: Unpack
 ```bash
-python scripts/unpack.py document.docx unpacked/
+python3 scripts/unpack.py document.docx unpacked/
 ```
 Extracts XML, pretty-prints, merges adjacent runs, and converts smart quotes to XML entities (`&#x201C;` etc.) so they survive editing. Use `--merge-runs false` to skip run merging.
 
@@ -288,14 +288,14 @@ Edit files in `unpacked/word/`. See XML Reference below for patterns.
 
 **Adding comments:** Use `comment.py` to handle boilerplate across multiple XML files (text must be pre-escaped XML):
 ```bash
-python scripts/comment.py unpacked/ 0 "Comment text with &amp; and &#x2019;"
-python scripts/comment.py unpacked/ 1 "Reply text" --parent 0  # reply to comment 0
+python3 scripts/comment.py unpacked/ 0 "Comment text with &amp; and &#x2019;"
+python3 scripts/comment.py unpacked/ 1 "Reply text" --parent 0  # reply to comment 0
 ```
 Then add markers to document.xml (see Comments in XML Reference).
 
 ### Step 3: Pack
 ```bash
-python scripts/pack.py unpacked/ output.docx --original document.docx
+python3 scripts/pack.py unpacked/ output.docx --original document.docx
 ```
 Validates with auto-repair, condenses XML, and creates DOCX. Use `--validate false` to skip.
 

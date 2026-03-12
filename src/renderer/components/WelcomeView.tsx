@@ -9,7 +9,6 @@ import {
   FolderOpen,
   ArrowRight,
   Mail,
-  Chrome,
   X,
   Paperclip,
   BookOpen,
@@ -23,6 +22,8 @@ type AttachedFile = {
   type: string;
   inlineDataBase64?: string;
 };
+
+const welcomeLogoSrc = new URL('../../../resources/logo.png', import.meta.url).href;
 
 export function WelcomeView() {
   const { t } = useTranslation();
@@ -116,8 +117,8 @@ export function WelcomeView() {
         }
 
         // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
+        const scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
+        const quality = 0.9;
 
         const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
           canvas.width = Math.floor(img.width * currentScale);
@@ -388,30 +389,50 @@ export function WelcomeView() {
   ];
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-6 animate-fade-in">
+    <div className="flex-1 flex flex-col items-center justify-center px-5 py-10 md:px-8 md:py-14">
+      <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
+        <div className="space-y-4 text-center">
+          <div className="flex items-center justify-center gap-4">
+            <img
+              src={welcomeLogoSrc}
+              alt="Open Cowork logo"
+              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+            />
+            <div className="text-left">
+              <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
+                Open Cowork
+              </h1>
+            </div>
+          </div>
+          <p className="heading-serif text-[1.15rem] md:text-[1.45rem] font-medium tracking-[-0.02em] text-text-secondary text-center">
+            {t('welcome.title')}
+          </p>
+        </div>
+
         {/* Quick Action Tags */}
-        <div className="flex flex-wrap gap-2 justify-center">
+        <div className="flex flex-wrap gap-2 justify-center px-3">
           {quickTags.map((tag) => (
             <button
               key={tag.id}
               onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`tag ${selectedTag === tag.id ? 'tag-active' : ''} ${
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                selectedTag === tag.id
+                  ? 'border-accent/30 bg-accent-muted text-accent'
+                  : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              } ${
                 ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
               }`}
             >
               <tag.icon className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
               <span>{tag.label}</span>
               {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                  <Chrome className="w-3 h-3" />
-                  <span>{t('welcome.chromeRequired')}</span>
+                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
+                  {t('welcome.chromeRequired')}
                 </span>
               )}
               {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800/10 text-gray-700 border border-gray-800/20">
-                  <span className="text-sm">📝</span>
-                  <span>{t('welcome.notionRequired')}</span>
+                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
+                  {t('welcome.notionRequired')}
                 </span>
               )}
             </button>
@@ -424,13 +445,13 @@ export function WelcomeView() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`card p-4 space-y-4 transition-colors ${
+          className={`rounded-[1.9rem] border border-border-muted bg-background/85 shadow-soft px-5 py-5 space-y-4 transition-colors ${
             isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
           }`}
         >
           {/* Image previews */}
           {pastedImages.length > 0 && (
-            <div className="grid grid-cols-5 gap-2 pb-2 border-b border-border w-full">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 pb-2 border-b border-border w-full">
               {pastedImages.map((img, index) => (
                 <div key={index} className="relative group">
                   <img
@@ -488,7 +509,7 @@ export function WelcomeView() {
               isComposingRef.current = false;
             }}
             onPaste={handlePaste}
-            placeholder={t('welcome.title')}
+            placeholder={t('welcome.placeholder')}
             rows={1}
             style={{ minHeight: '72px', maxHeight: '200px' }}
             className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
@@ -505,7 +526,7 @@ export function WelcomeView() {
           />
 
           {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center justify-between pt-3 border-t border-border-muted">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -536,7 +557,7 @@ export function WelcomeView() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn btn-primary px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary px-5 py-2.5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
               <ArrowRight className="w-4 h-4" />
