@@ -12,6 +12,10 @@ let logStream: fs.WriteStream | null = null;
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_LOG_FILES = 5; // Keep last 5 log files
 let logFileSequence = 0;
+const MAX_LOG_STRING_LENGTH = 4000;
+const MAX_LOG_OBJECT_DEPTH = 4;
+const MAX_LOG_OBJECT_KEYS = 40;
+const MAX_LOG_ARRAY_ITEMS = 20;
 
 // Developer logs enabled flag (can be toggled by user)
 let devLogsEnabled = true;
@@ -52,13 +56,17 @@ function initLogFile(): void {
     // Create logs directory in userData
     const userDataPath = resolveUserDataPath();
     const logsDir = path.join(userDataPath, 'logs');
-    
+
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
     }
 
     // Create log file with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').split('Z')[0];
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .replace('T', '_')
+      .split('Z')[0];
     logFileSequence += 1;
     logFilePath = path.join(logsDir, `app-${timestamp}-${logFileSequence}.log`);
 
@@ -94,16 +102,19 @@ App Version: ${resolveAppVersion()}
  */
 function cleanupOldLogs(logsDir: string): void {
   try {
-    const files = fs.readdirSync(logsDir)
-      .filter(f => f.startsWith('app-') && f.endsWith('.log'))
+    const files = fs
+      .readdirSync(logsDir)
+      .filter((f) => f.startsWith('app-') && f.endsWith('.log'))
       .flatMap((f) => {
         const filePath = path.join(logsDir, f);
         try {
-          return [{
-            name: f,
-            path: filePath,
-            mtime: fs.statSync(filePath).mtime.getTime(),
-          }];
+          return [
+            {
+              name: f,
+              path: filePath,
+              mtime: fs.statSync(filePath).mtime.getTime(),
+            },
+          ];
         } catch (err) {
           const errno = err as NodeJS.ErrnoException;
           if (errno.code === 'ENOENT') {
@@ -150,10 +161,10 @@ function rotateLogIfNeeded(): void {
     const stats = fs.statSync(logFilePath);
     if (stats.size > MAX_LOG_SIZE) {
       safeConsoleLog(`[Logger] Log file size (${stats.size}) exceeds limit, rotating...`);
-      
+
       // Close current stream
       logStream.end();
-      
+
       // Reset and reinitialize
       logFilePath = null;
       logStream = null;
@@ -172,45 +183,117 @@ function rotateLogIfNeeded(): void {
   }
 }
 
-function serializeLogArg(arg: unknown, seen = new Set<unknown>()): string {
-  if (arg instanceof Error) {
-    if (seen.has(arg)) {
+function truncateLogText(value: string, maxLength = MAX_LOG_STRING_LENGTH): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}… [truncated ${value.length - maxLength} chars]`;
+}
+
+function normalizeLogValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
+  if (value instanceof Error) {
+    if (seen.has(value)) {
       return '[Circular Error]';
     }
-    seen.add(arg);
-    const err = arg as Error & { cause?: unknown };
-    const lines: string[] = [];
-    lines.push(`${err.name}: ${err.message}`);
-    if (err.stack) {
-      lines.push(err.stack);
-    }
-    if (err.cause !== undefined) {
-      lines.push(`Cause: ${serializeLogArg(err.cause, seen)}`);
-    }
-
+    seen.add(value);
+    const err = value as Error & { cause?: unknown };
     const extraEntries = Object.entries(err as unknown as Record<string, unknown>).filter(
       ([key]) => !['name', 'message', 'stack', 'cause'].includes(key)
     );
-    if (extraEntries.length > 0) {
-      const extras = Object.fromEntries(extraEntries);
-      lines.push(`Meta: ${serializeLogArg(extras, seen)}`);
-    }
-    return lines.join('\n');
+    return {
+      name: err.name,
+      message: truncateLogText(err.message || ''),
+      stack: err.stack ? truncateLogText(err.stack, MAX_LOG_STRING_LENGTH * 2) : undefined,
+      cause: err.cause !== undefined ? normalizeLogValue(err.cause, seen, depth + 1) : undefined,
+      meta:
+        extraEntries.length > 0
+          ? normalizeLogValue(Object.fromEntries(extraEntries), seen, depth + 1)
+          : undefined,
+    };
   }
 
-  if (typeof arg === 'object' && arg !== null) {
-    if (seen.has(arg)) {
+  if (typeof value === 'string') {
+    return truncateLogText(value);
+  }
+
+  if (
+    value === null ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'undefined'
+  ) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    return `${value}n`;
+  }
+
+  if (typeof value === 'symbol') {
+    return value.toString();
+  }
+
+  if (typeof value === 'function') {
+    return `[Function ${value.name || 'anonymous'}]`;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return `[Buffer ${value.length} bytes]`;
+  }
+
+  if (depth >= MAX_LOG_OBJECT_DEPTH) {
+    return '[Max Depth Reached]';
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_LOG_ARRAY_ITEMS)
+      .map((item) => normalizeLogValue(item, seen, depth + 1))
+      .concat(
+        value.length > MAX_LOG_ARRAY_ITEMS
+          ? [`[+${value.length - MAX_LOG_ARRAY_ITEMS} more items]`]
+          : []
+      );
+  }
+
+  if (typeof value === 'object') {
+    if (seen.has(value)) {
       return '[Circular Object]';
     }
-    seen.add(arg);
-    try {
-      return JSON.stringify(arg, null, 2);
-    } catch {
-      return String(arg);
+    seen.add(value);
+
+    const entries = Object.entries(value as Record<string, unknown>);
+    const limitedEntries = entries
+      .slice(0, MAX_LOG_OBJECT_KEYS)
+      .map(([key, item]) => [key, normalizeLogValue(item, seen, depth + 1)]);
+
+    if (entries.length > MAX_LOG_OBJECT_KEYS) {
+      limitedEntries.push([
+        '__truncated__',
+        `[+${entries.length - MAX_LOG_OBJECT_KEYS} more keys]`,
+      ]);
     }
+
+    return Object.fromEntries(limitedEntries);
   }
 
-  return String(arg);
+  return String(value);
+}
+
+function serializeLogArg(arg: unknown): string {
+  const normalized = normalizeLogValue(arg);
+  if (typeof normalized === 'string') {
+    return normalized;
+  }
+  try {
+    return JSON.stringify(normalized, null, 2);
+  } catch {
+    return String(normalized);
+  }
 }
 
 /**
@@ -234,7 +317,8 @@ function writeToFile(level: string, ...args: unknown[]): void {
       logStream.write(`[${timestamp}] [${level}] ${message}\n`);
 
       // Check if rotation is needed (every 100 log entries)
-      if (Math.random() < 0.01) { // 1% chance to check
+      if (Math.random() < 0.01) {
+        // 1% chance to check
         rotateLogIfNeeded();
       }
     } catch (error) {
@@ -291,9 +375,10 @@ export function getAllLogFiles(): Array<{ name: string; path: string; size: numb
       return [];
     }
 
-    return fs.readdirSync(logsDir)
-      .filter(f => f.startsWith('app-') && f.endsWith('.log'))
-      .map(f => {
+    return fs
+      .readdirSync(logsDir)
+      .filter((f) => f.startsWith('app-') && f.endsWith('.log'))
+      .map((f) => {
         const filePath = path.join(logsDir, f);
         const stats = fs.statSync(filePath);
         return {
@@ -316,7 +401,7 @@ export function getAllLogFiles(): Array<{ name: string; path: string; size: numb
 export function setDevLogsEnabled(enabled: boolean): void {
   devLogsEnabled = enabled;
   safeConsoleLog(`[Logger] Developer logs ${enabled ? 'enabled' : 'disabled'}`);
-  
+
   // If disabling, close the log file
   if (!enabled && logStream) {
     try {
@@ -355,17 +440,14 @@ export function closeLogFile(): void {
 
 function isBrokenPipeError(error: unknown): boolean {
   return Boolean(
-    error
-    && typeof error === 'object'
-    && 'code' in error
-    && (error as NodeJS.ErrnoException).code === 'EPIPE'
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'EPIPE'
   );
 }
 
-function safeConsoleCall(
-  method: (...args: unknown[]) => void,
-  ...args: unknown[]
-): void {
+function safeConsoleCall(method: (...args: unknown[]) => void, ...args: unknown[]): void {
   try {
     method(...args);
   } catch (error) {

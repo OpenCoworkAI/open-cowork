@@ -4898,7 +4898,7 @@ function LogsTab({ isActive }: { isActive: boolean }) {
         <div className="grid grid-cols-3 gap-2">
           <button
             onClick={handleExport}
-            disabled={isLoading || logFiles.length === 0}
+            disabled={isLoading}
             className="py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
           >
             {isLoading ? (
