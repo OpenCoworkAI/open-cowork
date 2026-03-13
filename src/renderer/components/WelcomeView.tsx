@@ -387,9 +387,26 @@ export function WelcomeView() {
     },
   ];
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="max-w-2xl w-full space-y-6 animate-fade-in">
+        {/* Warm Greeting */}
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-semibold text-text-primary">
+            {getGreeting()} — {t('welcome.greeting').toLowerCase()}
+          </h1>
+          <p className="text-sm text-text-secondary max-w-md mx-auto">
+            {t('welcome.subtitle')}
+          </p>
+        </div>
+
         {/* Quick Action Tags */}
         <div className="flex flex-wrap gap-2 justify-center">
           {quickTags.map((tag) => (

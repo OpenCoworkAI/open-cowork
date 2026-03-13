@@ -100,7 +100,7 @@ export function Sidebar() {
   const handleDeleteAllSessions = () => {
     if (sessions.length === 0) return;
     
-    const confirmed = window.confirm(`确定要删除所有 ${sessions.length} 个对话吗？此操作无法撤销。`);
+    const confirmed = window.confirm(t('sidebar.deleteAllConfirm', { count: sessions.length }));
     if (confirmed) {
       // Delete all sessions
       sessions.forEach(session => {
