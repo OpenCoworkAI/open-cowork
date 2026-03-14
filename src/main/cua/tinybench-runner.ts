@@ -10,6 +10,7 @@
  */
 import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -36,6 +37,7 @@ import type { RunResult, TaskSpec, ToolCallRecord } from './types';
 import OpenAI from 'openai';
 
 const execAsync = promisify(exec);
+const IS_WINDOWS = os.platform() === 'win32';
 
 // ---------------------------------------------------------------------------
 // MCP Sampling: message format conversion
@@ -72,23 +74,43 @@ export function convertMcpMessagesToResponsesInput(
   });
 }
 
-const GUI_SYSTEM_PROMPT = `You are a GUI automation agent. You operate a real desktop computer through tools.
+const GUI_SYSTEM_PROMPT = `You are a GUI automation agent controlling a real ${IS_WINDOWS ? 'Windows' : 'macOS'} desktop through tools.
+
+## Coordinate System
+- All coordinates are **absolute logical pixels** (not normalized, not physical).
+- The screenshot resolution matches the display logical resolution.
+- (0, 0) is the top-left corner of the primary display.
+- Click the **CENTER** of the target UI element.
 
 ## Workflow
-1. First, take a screenshot with screenshot_for_display to see the current screen state.
-2. Analyze the screenshot to identify UI elements you need to interact with.
-3. Execute actions using click, type_text, key_press, scroll, or drag tools.
-4. Take another screenshot to verify your action worked.
-5. Repeat until the task is complete.
-6. When done, clearly state the result.
+1. Take a screenshot with screenshot_for_display to observe the current screen.
+2. Identify the UI element you need to interact with.
+3. Execute exactly **ONE action** per turn (click, type_text, key_press, or scroll).
+4. The action result includes an updated screenshot — examine it immediately.
+5. If the task is complete, clearly state the final result and stop.
 
-## Important Rules
-- ALWAYS take a screenshot before and after actions to verify state.
-- Use absolute coordinates from the screenshot. The screenshot resolution matches the display.
-- For click targets, aim for the CENTER of the UI element.
-- Wait briefly after actions that trigger animations or loading (use the wait tool).
-- If an action fails, try an alternative approach.
-- Be concise in your responses — focus on completing the task.`;
+## Action Discipline
+- Execute **ONE action per turn**. Never chain multiple actions without checking results.
+- Prefer **keyboard shortcuts** over mouse clicks when possible (e.g., Cmd+V to paste, Enter to confirm, Escape to cancel, Cmd+Q to quit). Shortcuts are faster and more reliable.
+- For Calculator: use key_press with digit keys ("0"-"9"), operator keys ("+", "-", "*", "/"), and "=" or Enter. This is far more reliable than clicking buttons.${IS_WINDOWS ? '\n- On Windows, use Ctrl instead of Cmd for keyboard shortcuts (e.g., Ctrl+C, Ctrl+V).' : ''}
+- After typing or clicking, examine the screenshot feedback before proceeding.
+
+## Error Recovery
+- **NEVER repeat the exact same action more than twice.** If it didn't work twice, try a different approach.
+- If a click doesn't hit the intended target, try adjusting coordinates by ±10-20 pixels.
+- If an app becomes unresponsive, try Cmd+W to close the window and restart.
+- If you see an unexpected dialog or popup, dismiss it first (Escape or click the close button).
+
+## Stuck Detection
+- If you notice you're making no progress after 3 actions, STOP and reassess.
+- Ask yourself: "Am I interacting with the right element? Is the app in the expected state?"
+- Try a completely different approach rather than repeating failed actions.
+- If truly stuck, report what you see and what you've tried, then stop.
+
+## Completion
+- When the task result is visible on screen, report it immediately and stop.
+- Do NOT take extra screenshots after you already see the answer.
+- Be concise — state the result in one sentence.`;
 
 function resolveGuiOperateServerPath(): string {
   const explicit = process.env.GUI_OPERATE_SERVER_PATH?.trim();
@@ -127,10 +149,20 @@ const MUTATING_TOOLS = new Set([
 export async function checkActiveAppAllowed(
   allowedApps: string[]
 ): Promise<{ allowed: boolean; activeApp: string }> {
-  const { stdout } = await execAsync(
-    `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`
-  );
-  const activeApp = stdout.trim();
+  let activeApp: string;
+  if (IS_WINDOWS) {
+    // PowerShell: get foreground window process name
+    const { stdout } = await execAsync(
+      `powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -eq (Add-Type -MemberDefinition '[DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow();' -Name Win32 -Namespace Temp -PassThru)::GetForegroundWindow()}).ProcessName"`,
+      { shell: 'cmd.exe' }
+    );
+    activeApp = stdout.trim();
+  } else {
+    const { stdout } = await execAsync(
+      `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`
+    );
+    activeApp = stdout.trim();
+  }
   const allowed = allowedApps.some((app) =>
     activeApp.toLowerCase().includes(app.toLowerCase())
   );
@@ -217,12 +249,60 @@ async function connectGuiOperate(
   return { client, transport, tools };
 }
 
+// Only bridge these 6 essential tools — reduces model confusion and action space
+const CORE_TOOLS = new Set([
+  'click',
+  'type_text',
+  'key_press',
+  'scroll',
+  'screenshot_for_display',
+  'wait',
+]);
+
+// Stuck detection: ring buffer of recent tool calls
+export interface RecentCall {
+  tool: string;
+  x?: number;
+  y?: number;
+  timestamp: number;
+}
+
+const STUCK_BUFFER_SIZE = 5;
+const STUCK_WARN_THRESHOLD = 3;
+const STUCK_ERROR_THRESHOLD = 5;
+const STUCK_COORD_TOLERANCE = 20; // pixels
+
+export function detectStuck(recentCalls: RecentCall[]): 'ok' | 'warn' | 'error' {
+  if (recentCalls.length < STUCK_WARN_THRESHOLD) return 'ok';
+
+  // Check last N calls for same tool + similar coordinates
+  const checkCount = Math.min(recentCalls.length, STUCK_ERROR_THRESHOLD);
+  const tail = recentCalls.slice(-checkCount);
+  const first = tail[0];
+
+  let consecutiveSame = 0;
+  for (const call of tail) {
+    if (call.tool !== first.tool) break;
+    if (first.x !== undefined && call.x !== undefined) {
+      if (Math.abs(call.x - first.x) > STUCK_COORD_TOLERANCE) break;
+      if (first.y !== undefined && call.y !== undefined && Math.abs(call.y - first.y) > STUCK_COORD_TOLERANCE) break;
+    }
+    consecutiveSame++;
+  }
+
+  if (consecutiveSame >= STUCK_ERROR_THRESHOLD) return 'error';
+  if (consecutiveSame >= STUCK_WARN_THRESHOLD) return 'warn';
+  return 'ok';
+}
+
 function bridgeToolsForPiSdk(
   client: Client,
   mcpTools: McpToolInfo[],
   allowedApps?: string[]
 ): ToolDefinition[] {
-  return mcpTools.map((tool) => {
+  const recentCalls: RecentCall[] = [];
+
+  return mcpTools.filter((tool) => CORE_TOOLS.has(tool.name)).map((tool) => {
     const parameters = Type.Unsafe<Record<string, unknown>>(
       tool.inputSchema as TSchema
     );
@@ -238,31 +318,61 @@ function bridgeToolsForPiSdk(
         _onUpdate: unknown,
         _ctx: unknown
       ) {
+        // Stuck detection: track and check recent calls
+        const callEntry: RecentCall = {
+          tool: tool.name,
+          x: typeof params.x === 'number' ? params.x : undefined,
+          y: typeof params.y === 'number' ? params.y : undefined,
+          timestamp: Date.now(),
+        };
+        recentCalls.push(callEntry);
+        if (recentCalls.length > STUCK_BUFFER_SIZE) recentCalls.shift();
+
+        const stuckLevel = detectStuck(recentCalls);
+        if (stuckLevel === 'error') {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: 'STUCK DETECTED: You have repeated the same action 5 times with no progress. You MUST try a completely different approach. Consider using keyboard shortcuts, different coordinates, or reassessing the screen state.',
+            }],
+            details: undefined as unknown,
+          };
+        }
+
         // Safety zone check: block mutating tools if active app not in whitelist
         if (allowedApps?.length && MUTATING_TOOLS.has(tool.name)) {
           const { allowed, activeApp } = await checkActiveAppAllowed(allowedApps);
           if (!allowed) {
-            // Auto-focus the allowed app and retry once
+            // Auto-focus the allowed app and retry with progressive backoff
             console.warn(
               `[TinyBench] Focus lost: "${activeApp}" is active, expected [${allowedApps.join(', ')}]. Auto-refocusing...`
             );
-            await focusAllowedApp(allowedApps);
-            const retry = await checkActiveAppAllowed(allowedApps);
-            if (!retry.allowed) {
+            let refocused = false;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              await focusAllowedApp(allowedApps);
+              await new Promise((r) => setTimeout(r, attempt * 1000));
+              const retry = await checkActiveAppAllowed(allowedApps);
+              if (retry.allowed) {
+                console.log(`[TinyBench] Refocused to "${retry.activeApp}" on attempt ${attempt} — proceeding with ${tool.name}`);
+                refocused = true;
+                break;
+              }
+            }
+            if (!refocused) {
+              const retry = await checkActiveAppAllowed(allowedApps);
               console.warn(
-                `[TinyBench] BLOCKED after refocus: "${retry.activeApp}" still active, not in [${allowedApps.join(', ')}]`
+                `[TinyBench] BLOCKED after 3 refocus attempts: "${retry.activeApp}" still active`
               );
               return {
                 content: [
                   {
                     type: 'text' as const,
-                    text: `Action blocked: active application "${retry.activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Auto-refocus to "${allowedApps[0]}" was attempted but failed.`,
+                    text: `Action blocked: active application "${retry.activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Auto-refocus to "${allowedApps[0]}" failed after 3 attempts.`,
                   },
                 ],
                 details: undefined as unknown,
               };
             }
-            console.log(`[TinyBench] Refocused to "${retry.activeApp}" — proceeding with ${tool.name}`);
           }
         }
 
@@ -279,17 +389,35 @@ function bridgeToolsForPiSdk(
           isError?: boolean;
         };
 
-        const textParts: string[] = [];
+        // Build response — properly pass through image content as base64 data URLs
+        const contentParts: Array<{ type: 'text'; text: string }> = [];
         if (result?.content) {
           for (const part of result.content) {
-            if (part.type === 'text') textParts.push(part.text || '');
-            else if (part.type === 'image')
-              textParts.push('[image data returned]');
-            else textParts.push(JSON.stringify(part));
+            if (part.type === 'text') {
+              contentParts.push({ type: 'text' as const, text: part.text || '' });
+            } else if (part.type === 'image' && part.data) {
+              // Convert MCP image block to inline base64 data URL that Pi SDK can render
+              const mimeType = part.mimeType || 'image/png';
+              contentParts.push({
+                type: 'text' as const,
+                text: `![screenshot](data:${mimeType};base64,${part.data})`,
+              });
+            } else {
+              contentParts.push({ type: 'text' as const, text: JSON.stringify(part) });
+            }
           }
         }
+
+        // Inject stuck warning if approaching threshold
+        if (stuckLevel === 'warn') {
+          contentParts.push({
+            type: 'text' as const,
+            text: '\n⚠️ WARNING: You seem stuck — you have repeated a similar action 3 times. Try a different approach or use keyboard shortcuts instead.',
+          });
+        }
+
         return {
-          content: [{ type: 'text' as const, text: textParts.join('\n') }],
+          content: contentParts.length > 0 ? contentParts : [{ type: 'text' as const, text: 'OK' }],
           details: undefined as unknown,
         };
       },
@@ -332,26 +460,69 @@ function resolveModel(
   return { piModel: piModel!, modelString };
 }
 
-async function runSetup(command: string | undefined): Promise<void> {
+async function runSetup(command: string | undefined, allowedApps?: string[]): Promise<void> {
   if (!command) return;
-  await execAsync(command, { shell: '/bin/zsh' });
-  await new Promise((r) => setTimeout(r, 1500));
+  const shell = IS_WINDOWS ? 'cmd.exe' : '/bin/zsh';
+  await execAsync(command, { shell });
+
+  // Poll for the app window to be ready (up to 5s) instead of fixed sleep
+  if (allowedApps?.length) {
+    const appName = allowedApps[0];
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try {
+        let windowCount = 0;
+        if (IS_WINDOWS) {
+          const { stdout } = await execAsync(
+            `powershell -NoProfile -Command "(Get-Process '${appName}' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }).Count"`,
+            { shell: 'cmd.exe' }
+          );
+          windowCount = parseInt(stdout.trim(), 10) || 0;
+        } else {
+          const { stdout } = await execAsync(
+            `osascript -e 'tell application "System Events" to count windows of process "${appName}"'`
+          );
+          windowCount = parseInt(stdout.trim(), 10);
+        }
+        if (windowCount > 0) {
+          console.log(`[TinyBench] Setup verified: "${appName}" has ${windowCount} window(s)`);
+          return;
+        }
+      } catch {
+        // Process not found yet — keep polling
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    console.warn(`[TinyBench] Setup timeout: "${appName}" window not detected after 5s, proceeding anyway`);
+  } else {
+    // No specific app to check — fallback to a short delay
+    await new Promise((r) => setTimeout(r, 1500));
+  }
 }
 
 export async function focusAllowedApp(allowedApps?: string[]): Promise<void> {
   if (!allowedApps?.length) return;
   const appName = allowedApps[0];
-  await execAsync(
-    `osascript -e 'tell application "${appName}" to activate'`
-  );
-  // Wait for window activation animation
-  await new Promise((r) => setTimeout(r, 1000));
+  if (IS_WINDOWS) {
+    // PowerShell: bring window to front
+    await execAsync(
+      `powershell -NoProfile -Command "$p = Get-Process '${appName}' -ErrorAction SilentlyContinue | Select-Object -First 1; if($p) { [void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); [Microsoft.VisualBasic.Interaction]::AppActivate($p.Id) }"`,
+      { shell: 'cmd.exe' }
+    );
+  } else {
+    await execAsync(
+      `osascript -e 'tell application "${appName}" to activate'`
+    );
+  }
+  // Wait for window activation animation (3s for reliability)
+  await new Promise((r) => setTimeout(r, 3000));
 }
 
 async function runTeardown(command: string | undefined): Promise<void> {
   if (!command) return;
   try {
-    await execAsync(command, { shell: '/bin/zsh' });
+    const shell = IS_WINDOWS ? 'cmd.exe' : '/bin/zsh';
+    await execAsync(command, { shell });
   } catch {
     // best-effort
   }
@@ -386,7 +557,7 @@ export async function runTask(
 
   try {
     // Setup
-    await runSetup(spec.setupCommand);
+    await runSetup(spec.setupCommand, spec.allowedApps);
     await focusAllowedApp(spec.allowedApps);
 
     // Bridge MCP tools for Pi SDK

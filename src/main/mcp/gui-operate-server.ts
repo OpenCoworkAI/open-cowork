@@ -5197,22 +5197,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'click',
-        description: 'Perform a mouse click at specified coordinates. Supports single click, double click, right click, and triple click. Coordinates are display-local logical coordinates by default. You can also pass normalized coordinates (0-1000) via coordinate_type.',
+        description: 'Perform a mouse click at specified coordinates. Supports single click, double click, right click, and triple click. Coordinates are absolute logical pixels by default.',
         inputSchema: {
           type: 'object',
           properties: {
             coordinate_type: {
               type: 'string',
               enum: ['auto', 'absolute', 'normalized'],
-              description: 'Coordinate interpretation. "absolute" = display-local logical coordinates. "normalized" = 0-1000 relative coordinates. "auto" (default) uses absolute, but converts from normalized if values are out of bounds.',
+              description: 'Coordinate interpretation. "absolute" (default) = display-local logical pixel coordinates. "normalized" = 0-1000 relative coordinates. "auto" uses absolute, but converts from normalized if values are out of bounds.',
             },
             x: {
               type: 'number',
-              description: 'X coordinate (interpretation depends on coordinate_type)',
+              description: 'X coordinate in absolute logical pixels',
             },
             y: {
               type: 'number',
-              description: 'Y coordinate (interpretation depends on coordinate_type)',
+              description: 'Y coordinate in absolute logical pixels',
             },
             display_index: {
               type: 'number',
@@ -5280,22 +5280,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'scroll',
-        description: 'Perform a scroll operation at the specified position. Coordinates are display-local logical coordinates by default. You can also pass normalized coordinates (0-1000) via coordinate_type.',
+        description: 'Perform a scroll operation at the specified position. Coordinates are absolute logical pixels by default.',
         inputSchema: {
           type: 'object',
           properties: {
             coordinate_type: {
               type: 'string',
               enum: ['auto', 'absolute', 'normalized'],
-              description: 'Coordinate interpretation. "absolute" = display-local logical coordinates. "normalized" = 0-1000 relative coordinates. "auto" (default) uses absolute, but converts from normalized if values are out of bounds.',
+              description: 'Coordinate interpretation. "absolute" (default) = display-local logical pixel coordinates. "normalized" = 0-1000 relative coordinates. "auto" uses absolute, but converts from normalized if values are out of bounds.',
             },
             x: {
               type: 'number',
-              description: 'X coordinate to scroll at (interpretation depends on coordinate_type)',
+              description: 'X coordinate in absolute logical pixels to scroll at',
             },
             y: {
               type: 'number',
-              description: 'Y coordinate to scroll at (interpretation depends on coordinate_type)',
+              description: 'Y coordinate in absolute logical pixels to scroll at',
             },
             display_index: {
               type: 'number',
@@ -5316,30 +5316,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'drag',
-        description: 'Perform a drag operation from one point to another. By default coordinates are normalized (0-1000) relative to the target display (top-left origin).',
+        description: 'Perform a drag operation from one point to another. Coordinates are absolute logical pixels by default.',
         inputSchema: {
           type: 'object',
           properties: {
             coordinate_type: {
               type: 'string',
               enum: ['auto', 'absolute', 'normalized'],
-              description: 'Coordinate interpretation. "normalized" (default) means 0-1000 relative coords on the display. "absolute" means display-local logical pixel coords. "auto" uses absolute, but converts from normalized if values are out of bounds.',
+              description: 'Coordinate interpretation. "absolute" (default) = display-local logical pixel coordinates. "normalized" = 0-1000 relative coordinates. "auto" uses absolute, but converts from normalized if values are out of bounds.',
             },
             from_x: {
               type: 'number',
-              description: 'Starting X coordinate (normalized 0-1000 by default)',
+              description: 'Starting X coordinate in absolute logical pixels',
             },
             from_y: {
               type: 'number',
-              description: 'Starting Y coordinate (normalized 0-1000 by default)',
+              description: 'Starting Y coordinate in absolute logical pixels',
             },
             to_x: {
               type: 'number',
-              description: 'Ending X coordinate (normalized 0-1000 by default)',
+              description: 'Ending X coordinate in absolute logical pixels',
             },
             to_y: {
               type: 'number',
-              description: 'Ending Y coordinate (normalized 0-1000 by default)',
+              description: 'Ending Y coordinate in absolute logical pixels',
             },
             display_index: {
               type: 'number',
@@ -5470,6 +5470,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'observe',
+        description: 'Take a screenshot and return it along with structured metadata about the current desktop state. Combines screenshot + display info + mouse position + active app in one call. Use this as the primary way to observe the screen state.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            display_index: {
+              type: 'number',
+              description: 'Display index to capture. Default: 0 (main display)',
+            },
+            region: {
+              type: 'object',
+              description: 'Capture a specific region (optional)',
+              properties: {
+                x: { type: 'number', description: 'X coordinate of region' },
+                y: { type: 'number', description: 'Y coordinate of region' },
+                width: { type: 'number', description: 'Width of region' },
+                height: { type: 'number', description: 'Height of region' },
+              },
+              required: ['x', 'y', 'width', 'height'],
+            },
+          },
+          required: [],
+        },
+      },
+      {
         name: 'gui_locate_element',
         description: 'Locate a GUI element on screen using AI vision. Returns the coordinates and confidence level for the element. You may need to re-call this function if you find previously found positions are not accurate (indicated by unsuccessful following operations).',
         inputSchema: {
@@ -5559,6 +5584,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+// Helper: wrap a mutating tool result with auto-screenshot feedback
+async function withAutoScreenshot(
+  textResult: string,
+  displayIndex?: number,
+): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+  // Wait briefly for UI to respond
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Invalidate screenshot cache so we get a fresh capture
+  lastScreenshotCache = null;
+
+  try {
+    const screenshotResult = await takeScreenshotForDisplay(displayIndex ?? 0, undefined, 'auto_feedback', true);
+    return {
+      content: [
+        { type: 'text', text: textResult },
+        ...(screenshotResult.content?.filter(c => c.type === 'image') || []),
+      ],
+    };
+  } catch {
+    // Screenshot failed — return text only
+    return { content: [{ type: 'text', text: textResult }] };
+  }
+}
+
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -5568,6 +5618,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       `[CallTool] name=${name}, args=${JSON.stringify(args ?? {})}`,
       'Tool Call'
     );
+
+    // B4: Auto init_app on first mutating tool call
+    const mutatingTools = new Set(['click', 'type_text', 'key_press', 'scroll', 'drag', 'move_mouse']);
+    if (mutatingTools.has(name) && !currentAppName) {
+      try {
+        let detectedApp = 'unknown';
+        if (PLATFORM === 'win32') {
+          const { stdout } = await execAsync(
+            `powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Sort-Object -Property CPU -Descending | Select-Object -First 1).ProcessName"`,
+          );
+          detectedApp = stdout.trim() || 'unknown';
+        } else {
+          const { stdout } = await execAsync(
+            `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`
+          );
+          detectedApp = stdout.trim() || 'unknown';
+        }
+        if (detectedApp && detectedApp !== 'unknown') {
+          writeMCPLog(`[Auto-Init] Auto-initializing app context for "${detectedApp}" on first mutating tool call`, 'Auto-Init');
+          await initApp(detectedApp);
+        }
+      } catch (err: any) {
+        writeMCPLog(`[Auto-Init] Failed to auto-detect active app: ${err.message}`, 'Auto-Init Warning');
+      }
+    }
 
     let result: string;
     
@@ -5579,7 +5654,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'click': {
-        const { x, y, display_index = 0, click_type = 'single', modifiers = [], coordinate_type = 'auto' } = args as {
+        const { x, y, display_index = 0, click_type = 'single', modifiers = [], coordinate_type = 'absolute' } = args as {
           x: number;
           y: number;
           display_index?: number;
@@ -5589,9 +5664,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         const resolved = await resolveClickCoordinates(x, y, display_index, coordinate_type);
         result = await performClick(resolved.x, resolved.y, display_index, click_type, modifiers);
-        break;
+        return await withAutoScreenshot(result, display_index);
       }
-      
+
       case 'type_text': {
         const { text, press_enter = false, input_method = 'auto', preserve_clipboard = true } = args as {
           text: string;
@@ -5600,20 +5675,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           preserve_clipboard?: boolean;
         };
         result = await performType(text, press_enter, input_method, preserve_clipboard);
-        break;
+        return await withAutoScreenshot(result);
       }
-      
+
       case 'key_press': {
         const { key, modifiers = [] } = args as {
           key: string;
           modifiers?: string[];
         };
         result = await performKeyPress(key, modifiers);
-        break;
+        return await withAutoScreenshot(result);
       }
-      
+
       case 'scroll': {
-        const { x, y, display_index = 0, direction, amount = 3, coordinate_type = 'auto' } = args as {
+        const { x, y, display_index = 0, direction, amount = 3, coordinate_type = 'absolute' } = args as {
           x: number;
           y: number;
           display_index?: number;
@@ -5623,11 +5698,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         const resolved = await resolveClickCoordinates(x, y, display_index, coordinate_type);
         result = await performScroll(resolved.x, resolved.y, display_index, direction, amount);
-        break;
+        return await withAutoScreenshot(result, display_index);
       }
       
       case 'drag': {
-        const { from_x, from_y, to_x, to_y, display_index = 0, coordinate_type = 'normalized' } = args as {
+        const { from_x, from_y, to_x, to_y, display_index = 0, coordinate_type = 'absolute' } = args as {
           from_x: number;
           from_y: number;
           to_x: number;
@@ -5672,7 +5747,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'move_mouse': {
-        const { x, y, display_index = 0, coordinate_type = 'auto' } = args as {
+        const { x, y, display_index = 0, coordinate_type = 'absolute' } = args as {
           x: number;
           y: number;
           display_index?: number;
@@ -5691,7 +5766,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await performWait(duration, reason);
         break;
       }
-      
+
+      case 'observe': {
+        const { display_index, region } = args as {
+          display_index?: number;
+          region?: { x: number; y: number; width: number; height: number };
+        };
+        // Take screenshot (reuse takeScreenshotForDisplay logic)
+        const screenshotResult = await takeScreenshotForDisplay(display_index, region, 'observe', false);
+
+        // Gather metadata
+        const observeConfig = await getDisplayConfiguration();
+        const observeDisplay = observeConfig.displays.find(d => d.index === (display_index ?? 0)) || observeConfig.displays[0];
+        let mousePos = { x: 0, y: 0, displayIndex: 0 };
+        try { mousePos = await getMousePosition(); } catch { /* best effort */ }
+
+        let activeAppName = 'unknown';
+        let windowTitle = 'unknown';
+        try {
+          if (PLATFORM === 'win32') {
+            const { stdout } = await execAsync(
+              `powershell -NoProfile -Command "(Get-Process | Where-Object {$_.MainWindowHandle -eq (Add-Type -MemberDefinition '[DllImport(\\\"user32.dll\\\")] public static extern IntPtr GetForegroundWindow();' -Name Win32Observe -Namespace TempObserve -PassThru)::GetForegroundWindow()}) | Select-Object -First 1 | ForEach-Object { $_.ProcessName + '|' + $_.MainWindowTitle }"`,
+            );
+            const parts = stdout.trim().split('|');
+            activeAppName = parts[0] || 'unknown';
+            windowTitle = parts[1] || 'unknown';
+          } else {
+            const { stdout: appOut } = await execAsync(
+              `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`
+            );
+            activeAppName = appOut.trim();
+            try {
+              const { stdout: titleOut } = await execAsync(
+                `osascript -e 'tell application "System Events" to get name of front window of first process whose frontmost is true'`
+              );
+              windowTitle = titleOut.trim();
+            } catch { /* some apps have no window title */ }
+          }
+        } catch { /* best effort */ }
+
+        const observeMetadata = {
+          active_app: activeAppName,
+          window_title: windowTitle,
+          display_width: observeDisplay.width,
+          display_height: observeDisplay.height,
+          scale_factor: observeDisplay.scaleFactor,
+          mouse_x: mousePos.x,
+          mouse_y: mousePos.y,
+          timestamp: new Date().toISOString(),
+        };
+
+        // Prepend metadata to the screenshot result content
+        const observeContent = [
+          { type: 'text' as const, text: JSON.stringify(observeMetadata, null, 2) },
+          ...(screenshotResult.content || []),
+        ];
+        return { content: observeContent };
+      }
+
       case 'gui_plan_action': {
         const { task_description, display_index } = args as {
           task_description: string;

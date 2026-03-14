@@ -29,7 +29,7 @@ function setFrontmostApp(appName: string) {
 }
 
 // Import after mocks
-import { checkActiveAppAllowed, focusAllowedApp } from '../src/main/cua/tinybench-runner';
+import { checkActiveAppAllowed, focusAllowedApp, detectStuck, type RecentCall } from '../src/main/cua/tinybench-runner';
 
 describe('checkActiveAppAllowed', () => {
   beforeEach(() => {
@@ -106,5 +106,63 @@ describe('focusAllowedApp', () => {
   it('does nothing when allowedApps is empty', async () => {
     await focusAllowedApp([]);
     expect(mockedExec).not.toHaveBeenCalled();
+  });
+});
+
+describe('detectStuck', () => {
+  function makeCall(tool: string, x?: number, y?: number): RecentCall {
+    return { tool, x, y, timestamp: Date.now() };
+  }
+
+  it('returns ok when buffer is too small', () => {
+    const calls = [makeCall('click', 100, 200), makeCall('click', 100, 200)];
+    expect(detectStuck(calls)).toBe('ok');
+  });
+
+  it('returns warn after 3 identical calls', () => {
+    const calls = [
+      makeCall('click', 100, 200),
+      makeCall('click', 105, 195),
+      makeCall('click', 100, 200),
+    ];
+    expect(detectStuck(calls)).toBe('warn');
+  });
+
+  it('returns error after 5 identical calls', () => {
+    const calls = [
+      makeCall('click', 100, 200),
+      makeCall('click', 110, 210),
+      makeCall('click', 105, 195),
+      makeCall('click', 100, 200),
+      makeCall('click', 108, 205),
+    ];
+    expect(detectStuck(calls)).toBe('error');
+  });
+
+  it('returns ok when tools differ', () => {
+    const calls = [
+      makeCall('click', 100, 200),
+      makeCall('key_press'),
+      makeCall('click', 100, 200),
+    ];
+    expect(detectStuck(calls)).toBe('ok');
+  });
+
+  it('returns ok when coordinates differ significantly', () => {
+    const calls = [
+      makeCall('click', 100, 200),
+      makeCall('click', 500, 600),
+      makeCall('click', 100, 200),
+    ];
+    expect(detectStuck(calls)).toBe('ok');
+  });
+
+  it('handles calls without coordinates (e.g. key_press)', () => {
+    const calls = [
+      makeCall('key_press'),
+      makeCall('key_press'),
+      makeCall('key_press'),
+    ];
+    expect(detectStuck(calls)).toBe('warn');
   });
 });
