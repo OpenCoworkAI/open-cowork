@@ -19,6 +19,10 @@ describe('tinybench-tasks', () => {
       expect(listTasks()).toContain('calc-add-2-3');
     });
 
+    it('includes finder-new-folder', () => {
+      expect(listTasks()).toContain('finder-new-folder');
+    });
+
     it('returns sorted task ids', () => {
       const tasks = listTasks();
       const sorted = [...tasks].sort();
@@ -41,6 +45,11 @@ describe('tinybench-tasks', () => {
       const ids = resolveSuiteTaskIds('smoke');
       expect(ids.length).toBeGreaterThan(0);
       expect(ids).toContain('calc-add-2-3');
+    });
+
+    it('full suite includes finder-new-folder', () => {
+      const ids = resolveSuiteTaskIds('full');
+      expect(ids).toContain('finder-new-folder');
     });
 
     it('throws on unknown suite', () => {
@@ -85,9 +94,46 @@ describe('tinybench-tasks', () => {
       expect(spec.teardownCommand).toContain('Calculator');
     });
 
+    it('resolves finder-new-folder with filesystem_check mode', () => {
+      const spec = resolveTask(DEFAULT_OPTIONS, 'finder-new-folder');
+      expect(spec.id).toBe('finder-new-folder');
+      expect(spec.verificationMode).toBe('filesystem_check');
+      expect(spec.expectedPath).toBe('/tmp/tinybench-test-folder');
+      expect(spec.setupCommand).toBeTruthy();
+      expect(spec.teardownCommand).toBeTruthy();
+    });
+
     it('uses custom outDir when provided', () => {
       const spec = resolveTask({ ...DEFAULT_OPTIONS, outDir: '/tmp/custom-bench' }, 'calc-add-2-3');
       expect(spec.outputDir).toContain('/tmp/custom-bench');
+    });
+  });
+
+  describe('allowedApps', () => {
+    it('every task has allowedApps defined', () => {
+      for (const taskId of listTasks()) {
+        const spec = resolveTask(DEFAULT_OPTIONS, taskId);
+        expect(spec.allowedApps, `task "${taskId}" missing allowedApps`).toBeDefined();
+        expect(spec.allowedApps!.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('resolveTask passes allowedApps through to TaskSpec', () => {
+      const spec = resolveTask(DEFAULT_OPTIONS, 'calc-add-2-3');
+      expect(spec.allowedApps).toEqual(['Calculator']);
+    });
+
+    it('each task has correct allowedApps', () => {
+      const expected: Record<string, string[]> = {
+        'calc-add-2-3': ['Calculator'],
+        'calc-chain-12-34': ['Calculator'],
+        'textedit-hello': ['TextEdit'],
+        'finder-new-folder': ['Finder'],
+      };
+      for (const [taskId, apps] of Object.entries(expected)) {
+        const spec = resolveTask(DEFAULT_OPTIONS, taskId);
+        expect(spec.allowedApps).toEqual(apps);
+      }
     });
   });
 });

@@ -2,7 +2,7 @@
  * TinyBench — lightweight GUI automation benchmark types.
  */
 
-export type VerificationMode = 'text_assert' | 'llm_judge' | 'manual_review';
+export type VerificationMode = 'text_assert' | 'llm_judge' | 'manual_review' | 'filesystem_check';
 
 export interface TaskSpec {
   id: string;
@@ -14,7 +14,9 @@ export interface TaskSpec {
   timeoutMs: number;
   verificationMode: VerificationMode;
   expected?: string;
+  expectedPath?: string;
   evaluationGoal?: string;
+  allowedApps?: string[];
   outputDir: string;
 }
 

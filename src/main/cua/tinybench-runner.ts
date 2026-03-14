@@ -72,6 +72,30 @@ function resolveGuiOperateServerPath(): string {
   );
 }
 
+// --- GUI safety zone: allowed-app check ---
+
+const MUTATING_TOOLS = new Set([
+  'click',
+  'type_text',
+  'key_press',
+  'scroll',
+  'drag',
+  'move_mouse',
+]);
+
+export async function checkActiveAppAllowed(
+  allowedApps: string[]
+): Promise<{ allowed: boolean; activeApp: string }> {
+  const { stdout } = await execAsync(
+    `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`
+  );
+  const activeApp = stdout.trim();
+  const allowed = allowedApps.some((app) =>
+    activeApp.toLowerCase().includes(app.toLowerCase())
+  );
+  return { allowed, activeApp };
+}
+
 interface McpToolInfo {
   name: string;
   description?: string;
@@ -115,7 +139,8 @@ async function connectGuiOperate(): Promise<{
 
 function bridgeToolsForPiSdk(
   client: Client,
-  mcpTools: McpToolInfo[]
+  mcpTools: McpToolInfo[],
+  allowedApps?: string[]
 ): ToolDefinition[] {
   return mcpTools.map((tool) => {
     const parameters = Type.Unsafe<Record<string, unknown>>(
@@ -133,6 +158,25 @@ function bridgeToolsForPiSdk(
         _onUpdate: unknown,
         _ctx: unknown
       ) {
+        // Safety zone check: block mutating tools if active app not in whitelist
+        if (allowedApps?.length && MUTATING_TOOLS.has(tool.name)) {
+          const { allowed, activeApp } = await checkActiveAppAllowed(allowedApps);
+          if (!allowed) {
+            console.warn(
+              `[TinyBench] BLOCKED: "${tool.name}" — active app "${activeApp}" not in allowedApps [${allowedApps.join(', ')}]`
+            );
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Action blocked: active application "${activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Please switch to an allowed application first.`,
+                },
+              ],
+              details: undefined as unknown,
+            };
+          }
+        }
+
         const result = (await client.callTool({
           name: tool.name,
           arguments: params,
@@ -234,7 +278,7 @@ export async function runTask(
     await runSetup(spec.setupCommand);
 
     // Bridge MCP tools for Pi SDK
-    const customTools = bridgeToolsForPiSdk(client, tools);
+    const customTools = bridgeToolsForPiSdk(client, tools, spec.allowedApps);
     console.log(
       `[TinyBench] ${customTools.length} GUI tools bridged:`,
       customTools.map((t) => t.name).join(', ')
@@ -290,7 +334,14 @@ export async function runTask(
           }
         }
       } else if (event.type === 'message_end') {
-        const msg = event.message as { content?: Array<{ type: string; text?: string; name?: string }> };
+        const msg = event.message as { content?: Array<{ type: string; text?: string; name?: string }>; usage?: Record<string, number> };
+        // Accumulate token usage from each message
+        const usage = (msg as any)?.usage;
+        if (usage) {
+          tokens.input += usage.input ?? 0;
+          tokens.output += usage.output ?? 0;
+          tokens.total += usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0);
+        }
         if (msg?.content) {
           for (const block of msg.content) {
             if (block.type === 'text' && block.text) {
@@ -310,7 +361,14 @@ export async function runTask(
           }
         }
       } else if (event.type === 'turn_end') {
-        const msg = event.message as { content?: Array<{ type: string; text?: string }> };
+        const msg = event.message as { content?: Array<{ type: string; text?: string }>; usage?: Record<string, number> };
+        // Also accumulate from turn_end in case message_end didn't carry usage
+        const usage = (msg as any)?.usage;
+        if (usage) {
+          tokens.input += usage.input ?? 0;
+          tokens.output += usage.output ?? 0;
+          tokens.total += usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0);
+        }
         if (msg?.content) {
           for (const block of msg.content) {
             if (block.type === 'text' && block.text) {

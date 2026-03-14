@@ -20,7 +20,9 @@ interface TaskTemplate {
   timeoutMs?: number;
   verificationMode: VerificationMode;
   expected?: string;
+  expectedPath?: string;
   evaluationGoal?: string;
+  allowedApps?: string[];
 }
 
 const TASKS: Record<string, TaskTemplate> = {
@@ -33,6 +35,7 @@ const TASKS: Record<string, TaskTemplate> = {
     verificationMode: 'text_assert',
     expected: '5',
     evaluationGoal: 'Calculator displays 5.',
+    allowedApps: ['Calculator'],
   },
   'calc-chain-12-34': {
     id: 'calc-chain-12-34',
@@ -43,6 +46,7 @@ const TASKS: Record<string, TaskTemplate> = {
     verificationMode: 'text_assert',
     expected: '46',
     evaluationGoal: 'Calculator displays 46.',
+    allowedApps: ['Calculator'],
   },
   'textedit-hello': {
     id: 'textedit-hello',
@@ -53,13 +57,25 @@ const TASKS: Record<string, TaskTemplate> = {
     verificationMode: 'llm_judge',
     evaluationGoal:
       'A TextEdit document should contain the text "hello from tinybench".',
+    allowedApps: ['TextEdit'],
+  },
+  'finder-new-folder': {
+    id: 'finder-new-folder',
+    prompt:
+      'Open Finder at /tmp, create a new folder named "tinybench-test-folder" using the Finder GUI (File > New Folder or Shift+Cmd+N), then say "done".',
+    setupCommand: 'rm -rf /tmp/tinybench-test-folder && open -a Finder /tmp',
+    teardownCommand: 'rm -rf /tmp/tinybench-test-folder',
+    verificationMode: 'filesystem_check',
+    expectedPath: '/tmp/tinybench-test-folder',
+    evaluationGoal: 'A folder /tmp/tinybench-test-folder should exist.',
+    allowedApps: ['Finder'],
   },
 };
 
 const SUITES: Record<string, string[]> = {
   smoke: ['calc-add-2-3'],
   basic: ['calc-add-2-3', 'calc-chain-12-34'],
-  full: ['calc-add-2-3', 'calc-chain-12-34', 'textedit-hello'],
+  full: ['calc-add-2-3', 'calc-chain-12-34', 'textedit-hello', 'finder-new-folder'],
 };
 
 export function listTasks(): string[] {
