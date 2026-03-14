@@ -611,10 +611,17 @@ export class SessionManager {
       }
     }
 
+    // Clean up pending permissions for this session
+    for (const [toolUseId, resolver] of this.pendingPermissions.entries()) {
+      // Resolve pending permissions with 'deny' to unblock any waiters
+      resolver('deny');
+      this.pendingPermissions.delete(toolUseId);
+    }
+
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
-    
+
     log('[SessionManager] Session deleted:', sessionId);
   }
 

@@ -38,6 +38,7 @@ interface MessageCardProps {
 }
 
 export function MessageCard({ message, isStreaming }: MessageCardProps) {
+  const { t } = useTranslation();
   const isUser = message.role === 'user';
   const isQueued = message.localStatus === 'queued';
   const isCancelled = message.localStatus === 'cancelled';
@@ -77,13 +78,13 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
           {isQueued && (
             <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
               <Clock className="w-3 h-3" />
-              <span>排队中</span>
+              <span>{t('messageCard.queued')}</span>
             </div>
           )}
           {isCancelled && (
             <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
               <XCircle className="w-3 h-3" />
-              <span>已取消</span>
+              <span>{t('messageCard.cancelled')}</span>
             </div>
           )}
           {contentBlocks.length === 0 ? (
@@ -102,7 +103,7 @@ export function MessageCard({ message, isStreaming }: MessageCardProps) {
           <button
             onClick={handleCopy}
             className="mt-1 w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-            title="复制消息"
+            title={t('messageCard.copyMessage')}
           >
             {copied ? (
               <Check className="w-3 h-3 text-success" />
@@ -163,7 +164,7 @@ function ContentBlockView({ block, isUser, isStreaming, allBlocks, message }: Co
         }
       }}
       className={getFileLinkButtonClassName()}
-      title="在文件夹中定位"
+      title={t('messageCard.locateInFolder')}
     >
       {value}
     </button>

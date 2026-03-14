@@ -199,7 +199,12 @@ function initializeSchema(database: Database.Database): void {
       created_at INTEGER NOT NULL
     )
   `);
-  
+
+  // Create FTS5 virtual table for memory search
+  database.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content)
+  `);
+
   log('[Database] Schema initialized');
 }
 

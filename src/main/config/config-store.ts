@@ -65,7 +65,7 @@ export const PROVIDER_PRESETS = {
       { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
-    keyHint: '从 openrouter.ai/keys 获取',
+    keyHint: 'Get from openrouter.ai/keys',
   },
   anthropic: {
     name: 'Anthropic',
@@ -76,7 +76,7 @@ export const PROVIDER_PRESETS = {
       { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' },
     ],
     keyPlaceholder: 'sk-ant-...',
-    keyHint: '从 console.anthropic.com 获取',
+    keyHint: 'Get from console.anthropic.com',
   },
   openai: {
     name: 'OpenAI',
@@ -87,10 +87,10 @@ export const PROVIDER_PRESETS = {
       { id: 'gpt-5.2-mini', name: 'gpt-5.2-mini' },
     ],
     keyPlaceholder: 'sk-...',
-    keyHint: '从 platform.openai.com 获取',
+    keyHint: 'Get from platform.openai.com',
   },
   custom: {
-    name: '更多模型',
+    name: 'More Models',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     models: [
       { id: 'glm-4.7', name: 'GLM-4.7' },
@@ -98,7 +98,7 @@ export const PROVIDER_PRESETS = {
       { id: 'glm-4-air', name: 'GLM-4-Air' },
     ],
     keyPlaceholder: 'sk-xxx',
-    keyHint: '输入你的 API Key',
+    keyHint: 'Enter your API Key',
   },
 };
 

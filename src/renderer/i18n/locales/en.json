@@ -266,6 +266,7 @@
     "expandToView": "Expand to view tasks",
     "noTasks": "No tasks yet",
     "deleteAll": "Delete all conversations",
+    "deleteAllConfirm": "Are you sure you want to delete all {{count}} conversations? This action cannot be undone.",
     "localTasks": "These tasks run locally and aren't synced across devices.",
     "apiConfigured": "API Configured",
     "apiNotConfigured": "API Not Configured",
@@ -304,7 +305,11 @@
     "output": "Output:"
   },
   "messageCard": {
-    "request": "Request"
+    "request": "Request",
+    "queued": "Queued",
+    "cancelled": "Cancelled",
+    "copyMessage": "Copy message",
+    "locateInFolder": "Show in folder"
   },
   "permission": {
     "permissionRequired": "Permission Required",

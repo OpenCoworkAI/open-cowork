@@ -266,6 +266,7 @@
     "expandToView": "展开查看任务",
     "noTasks": "暂无任务",
     "deleteAll": "删除所有对话",
+    "deleteAllConfirm": "确定要删除所有 {{count}} 个对话吗？此操作无法撤销。",
     "localTasks": "这些任务在本地运行，不会在设备间同步。",
     "apiConfigured": "API 已配置",
     "apiNotConfigured": "API 未配置",
@@ -303,7 +304,11 @@
     "output": "输出："
   },
   "messageCard": {
-    "request": "请求"
+    "request": "请求",
+    "queued": "排队中",
+    "cancelled": "已取消",
+    "copyMessage": "复制消息",
+    "locateInFolder": "在文件夹中定位"
   },
   "permission": {
     "permissionRequired": "需要权限",
