@@ -3,7 +3,10 @@
  * 消息路由器：将远程消息路由到 Agent，将 Agent 响应路由回 Channel
  */
 
+import path from 'node:path';
 import { log, logError } from '../utils/logger';
+import { isUncPath, isWindowsDrivePath } from '../../shared/local-file-path';
+import { resolvePathAgainstWorkspace } from '../../shared/workspace-path';
 import type {
   RemoteMessage,
   RemoteResponse,
@@ -26,6 +29,7 @@ type AgentCallback = (
   onMessage: (message: Message) => void,
   onPartial: (delta: string) => void,
 ) => Promise<void>;
+type WorkingDirectoryValidator = (cwd: string) => Promise<string | null> | string | null;
 
 /**
  * Message queue item
@@ -48,6 +52,7 @@ export class MessageRouter {
   // Callbacks
   private responseCallback?: ResponseCallback;
   private agentCallback?: AgentCallback;
+  private workingDirectoryValidator?: WorkingDirectoryValidator;
   
   // Accumulated response text per session (for streaming)
   private responseBuffers: Map<string, string> = new Map();
@@ -80,6 +85,10 @@ export class MessageRouter {
    */
   setAgentCallback(callback: AgentCallback): void {
     this.agentCallback = callback;
+  }
+
+  setWorkingDirectoryValidator(validator: WorkingDirectoryValidator): void {
+    this.workingDirectoryValidator = validator;
   }
   
   /**
@@ -139,6 +148,37 @@ export class MessageRouter {
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
     };
+  }
+
+  private ensureSessionMapping(
+    message: RemoteMessage,
+    sessionKey: string,
+    sessionId: string
+  ): RemoteSessionMapping {
+    const existing = this.sessionMappings.get(sessionKey);
+    if (existing) {
+      return existing;
+    }
+
+    const created = {
+      ...this.createSessionMapping(message, sessionKey),
+      sessionId,
+    };
+    this.sessionMappings.set(sessionKey, created);
+    return created;
+  }
+
+  private resolveWorkingDirectory(
+    cwd: string | undefined,
+    currentWorkingDirectory?: string
+  ): string | undefined {
+    if (!cwd) {
+      return undefined;
+    }
+    if (!currentWorkingDirectory && !path.isAbsolute(cwd) && !isWindowsDrivePath(cwd) && !isUncPath(cwd)) {
+      return undefined;
+    }
+    return resolvePathAgainstWorkspace(cwd, currentWorkingDirectory);
   }
   
   /**
@@ -217,31 +257,43 @@ export class MessageRouter {
     // Get session mapping to update/get working directory
     const sessionKey = this.getSessionKey(message);
     const mapping = this.sessionMappings.get(sessionKey);
+    const baseWorkingDirectory = mapping?.workingDirectory || this.defaultWorkingDirectory;
+    const resolvedCwd = this.resolveWorkingDirectory(cwd, baseWorkingDirectory);
+
+    if (cwd && !resolvedCwd) {
+      await this.sendErrorResponse(
+        message,
+        new Error('Relative working directory requires an existing base directory')
+      );
+      return;
+    }
+
+    if (resolvedCwd && this.workingDirectoryValidator) {
+      const validationError = await this.workingDirectoryValidator(resolvedCwd);
+      if (validationError) {
+        await this.sendErrorResponse(message, new Error(validationError));
+        return;
+      }
+    }
     
     // Handle !cd command (change directory without executing prompt)
-    if (!prompt && cwd) {
-      if (mapping) {
-        mapping.workingDirectory = cwd;
-        log('[MessageRouter] Updated session working directory:', cwd);
-      }
+    if (!prompt && resolvedCwd) {
+      const ensuredMapping = this.ensureSessionMapping(message, sessionKey, sessionId);
+      ensuredMapping.workingDirectory = resolvedCwd;
+      log('[MessageRouter] Updated session working directory:', resolvedCwd);
       // Send confirmation
-      await this.sendCwdChangeResponse(message, cwd);
+      await this.sendCwdChangeResponse(message, resolvedCwd);
       return;
     }
     
     // Determine working directory for this message
     // Priority: 1. [cwd:] prefix in message, 2. session's current cwd, 3. default cwd
-    let workingDirectory = cwd;
+    let workingDirectory = resolvedCwd;
     if (!workingDirectory && mapping?.workingDirectory) {
       workingDirectory = mapping.workingDirectory;
     }
     if (!workingDirectory) {
       workingDirectory = this.defaultWorkingDirectory;
-    }
-    
-    // Update session's working directory if specified in message
-    if (cwd && mapping) {
-      mapping.workingDirectory = cwd;
     }
     
     log('[MessageRouter] Using working directory:', workingDirectory || '(default)');
@@ -267,6 +319,11 @@ export class MessageRouter {
           this.handlePartialResponse(sessionId, message, delta);
         },
       );
+
+      if (resolvedCwd) {
+        const ensuredMapping = this.ensureSessionMapping(message, sessionKey, sessionId);
+        ensuredMapping.workingDirectory = resolvedCwd;
+      }
       
       // Send final accumulated response
       await this.sendFinalResponse(sessionId, message);

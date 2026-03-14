@@ -15,13 +15,13 @@ interface TracePanelProps {
 }
 
 export function TracePanel({ sessionId }: TracePanelProps) {
-  const { traceStepsBySession } = useAppStore();
+  const traceStepsBySession = useAppStore((s) => s.traceStepsBySession);
   const steps = traceStepsBySession[sessionId] || [];
 
   return (
-    <div className="w-80 border-l border-border bg-background-secondary flex flex-col">
+    <div className="w-[18.5rem] border-l border-border-muted bg-background-secondary/88 flex flex-col">
       {/* Header */}
-      <div className="h-14 border-b border-border flex items-center px-4">
+      <div className="h-14 border-b border-border-muted flex items-center px-4 bg-background/75">
         <h3 className="font-semibold text-text-primary">Execution Trace</h3>
       </div>
 
@@ -80,33 +80,33 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
       case 'pending':
         return <Clock className="w-3.5 h-3.5 text-text-muted" />;
       case 'running':
-        return <Loader2 className="w-3.5 h-3.5 text-accent-cyan animate-spin" />;
+        return <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />;
       case 'completed':
-        return <CheckCircle2 className="w-3.5 h-3.5 text-accent-green" />;
+        return <CheckCircle2 className="w-3.5 h-3.5 text-success" />;
       case 'error':
-        return <XCircle className="w-3.5 h-3.5 text-accent-red" />;
+        return <XCircle className="w-3.5 h-3.5 text-error" />;
     }
   };
 
   const getTypeColor = () => {
     switch (step.type) {
       case 'thinking':
-        return 'text-accent-yellow bg-accent-yellow/10';
+        return 'text-warning bg-warning/10';
       case 'text':
-        return 'text-accent-cyan bg-accent-cyan/10';
+        return 'text-accent bg-accent/10';
       case 'tool_call':
-        return 'text-accent-orange bg-accent-orange/10';
+        return 'text-accent bg-accent/10';
       case 'tool_result':
         return step.isError
-          ? 'text-accent-red bg-accent-red/10'
-          : 'text-accent-green bg-accent-green/10';
+          ? 'text-error bg-error/10'
+          : 'text-success bg-success/10';
     }
   };
 
   return (
     <div
-      className={`card p-3 animate-slide-up ${
-        step.status === 'running' ? 'border-accent-cyan/30' : ''
+      className={`rounded-2xl border border-border-subtle bg-background/55 p-3 animate-slide-up ${
+        step.status === 'running' ? 'border-accent/30' : ''
       }`}
       style={{ animationDelay: `${index * 50}ms` }}
     >
@@ -127,7 +127,7 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
 
           {/* Tool name */}
           {step.toolName && (
-            <div className="text-xs text-accent-orange font-mono mt-1">
+            <div className="text-xs text-accent font-mono mt-1">
               {step.toolName}
             </div>
           )}
@@ -142,8 +142,8 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
 
           {/* Duration */}
           {step.duration !== undefined && (
-            <div className="text-xs text-text-muted mt-1">
-              {step.duration}ms
+            <div className="text-xs text-text-muted mt-1 tabular-nums">
+              {step.duration < 1000 ? `${step.duration}ms` : `${(step.duration / 1000).toFixed(1)}s`}
             </div>
           )}
         </div>
@@ -155,7 +155,7 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
           <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary">
             View input
           </summary>
-          <pre className="text-xs bg-background rounded p-2 mt-1 overflow-x-auto">
+          <pre className="text-xs bg-surface-muted rounded-lg p-2 mt-1 overflow-x-auto font-mono border border-border-subtle">
             {JSON.stringify(step.toolInput, null, 2).slice(0, 200)}
           </pre>
         </details>
@@ -167,7 +167,7 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
           <summary className="text-xs text-text-muted cursor-pointer hover:text-text-secondary">
             View output
           </summary>
-          <pre className="text-xs bg-background rounded p-2 mt-1 overflow-x-auto whitespace-pre-wrap">
+          <pre className="text-xs bg-surface-muted rounded-lg p-2 mt-1 overflow-x-auto whitespace-pre-wrap font-mono border border-border-subtle">
             {step.toolOutput.slice(0, 300)}
             {step.toolOutput.length > 300 && '...'}
           </pre>
@@ -176,4 +176,3 @@ function TraceStepCard({ step, index }: TraceStepCardProps) {
     </div>
   );
 }
-

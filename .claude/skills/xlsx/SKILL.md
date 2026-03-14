@@ -133,7 +133,7 @@ This applies to ALL calculations - totals, percentages, ratios, differences, etc
 4. **Save**: Write to file
 5. **Recalculate formulas (MANDATORY IF USING FORMULAS)**: Use the recalc.py script
    ```bash
-   python recalc.py output.xlsx
+   python3 recalc.py output.xlsx
    ```
 6. **Verify and fix any errors**: 
    - The script returns JSON with error details
@@ -206,12 +206,12 @@ wb.save('modified.xlsx')
 Excel files created or modified by openpyxl contain formulas as strings but not calculated values. Use the provided `recalc.py` script to recalculate formulas:
 
 ```bash
-python recalc.py <excel_file> [timeout_seconds]
+python3 recalc.py <excel_file> [timeout_seconds]
 ```
 
 Example:
 ```bash
-python recalc.py output.xlsx 30
+python3 recalc.py output.xlsx 30
 ```
 
 The script:

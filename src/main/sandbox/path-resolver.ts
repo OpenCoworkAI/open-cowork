@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { MountedPath } from '../../renderer/types';
 import { logWarn, logError } from '../utils/logger';
+import { isPathWithinRoot } from '../tools/path-containment';
 
 /**
  * PathResolver - Core security component for sandboxed file system access
@@ -52,7 +53,7 @@ export class PathResolver {
       const normalizedMount = this.normalizePath(mount.virtual);
       if (!normalizedMount) continue;
 
-      if (normalizedVirtual.startsWith(normalizedMount)) {
+      if (isPathWithinRoot(normalizedVirtual, normalizedMount)) {
         // Calculate relative path from mount point
         const relativePath = normalizedVirtual.slice(normalizedMount.length);
         
@@ -87,7 +88,7 @@ export class PathResolver {
     for (const mount of mounts) {
       const normalizedMount = path.normalize(mount.real);
       
-      if (normalizedReal.startsWith(normalizedMount)) {
+      if (isPathWithinRoot(normalizedReal, normalizedMount)) {
         const relativePath = normalizedReal.slice(normalizedMount.length);
         return path.posix.join(mount.virtual, relativePath.replace(/\\/g, '/'));
       }
@@ -106,7 +107,7 @@ export class PathResolver {
       const normalizedMount = path.normalize(mountRoot);
 
       // 2. Check if normalized path is within mount root
-      if (!normalized.startsWith(normalizedMount)) {
+      if (!isPathWithinRoot(normalized, normalizedMount)) {
         logWarn(`Path escape attempt: ${resolvedPath} is outside ${mountRoot}`);
         return false;
       }
@@ -114,7 +115,7 @@ export class PathResolver {
       // 3. Check for symlink escapes (if path exists)
       if (fs.existsSync(normalized)) {
         const realPath = fs.realpathSync(normalized);
-        if (!realPath.startsWith(normalizedMount)) {
+        if (!isPathWithinRoot(realPath, normalizedMount)) {
           logWarn(`Symlink escape attempt: ${normalized} -> ${realPath}`);
           return false;
         }
@@ -140,7 +141,8 @@ export class PathResolver {
     const normalized = path.posix.normalize(virtualPath);
 
     // Check for path traversal attempts
-    if (normalized.includes('..')) {
+    const segments = normalized.split('/').filter(Boolean);
+    if (segments.includes('..')) {
       logWarn(`Path traversal attempt detected: ${virtualPath}`);
       return null;
     }
@@ -195,4 +197,3 @@ export class PathResolver {
     return this.sessionMounts.get(sessionId) || [];
   }
 }
-

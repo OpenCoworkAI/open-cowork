@@ -1,7 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Key, Server, Cpu, CheckCircle, AlertCircle, Loader2, Edit3, Plug } from 'lucide-react';
+import { useEffect } from 'react';
+import {
+  X,
+  Key,
+  Server,
+  Cpu,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  Edit3,
+  Plug,
+  RefreshCw,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { AppConfig, ProviderPresets, ApiTestResult } from '../types';
+import type { AppConfig, ApiTestResult } from '../types';
+import { useApiConfigState } from '../hooks/useApiConfigState';
+import { ApiConfigSetManager } from './ApiConfigSetManager';
+import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -11,275 +25,101 @@ interface ConfigModalProps {
   isFirstRun?: boolean;
 }
 
-// Check if running in Electron
-const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
-
-const FALLBACK_PRESETS: ProviderPresets = {
-  openrouter: {
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api',
-    models: [
-      { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
-      { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
-      { id: 'moonshotai/kimi-k2-0905', name: 'Kimi K2' },
-      { id: 'z-ai/glm-4.7', name: 'GLM-4.7' },
-    ],
-    keyPlaceholder: 'sk-or-v1-...',
-    keyHint: 'Get from openrouter.ai/keys',
-  },
-  anthropic: {
-    name: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    models: [
-      { id: 'claude-sonnet-4-5', name: 'claude-sonnet-4-5' },
-      { id: 'claude-opus-4-5', name: 'claude-opus-4-5' },
-      { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' },
-    ],
-    keyPlaceholder: 'sk-ant-...',
-    keyHint: 'Get from console.anthropic.com',
-  },
-  openai: {
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    models: [
-      { id: 'gpt-5.2', name: 'gpt-5.2' },
-      { id: 'gpt-5.2-codex', name: 'gpt-5.2-codex' },
-      { id: 'gpt-5.2-mini', name: 'gpt-5.2-mini' },
-    ],
-    keyPlaceholder: 'sk-...',
-    keyHint: 'Get from platform.openai.com',
-  },
-  custom: {
-    name: 'More Models',
-    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
-    models: [
-      { id: 'glm-4.7', name: 'GLM-4.7' },
-      { id: 'glm-4-plus', name: 'GLM-4-Plus' },
-      { id: 'glm-4-air', name: 'GLM-4-Air' },
-    ],
-    keyPlaceholder: 'sk-xxx',
-    keyHint: 'Enter your API Key',
-  },
-};
-
-const PROVIDER_LABELS: Record<'openrouter' | 'anthropic' | 'openai' | 'custom', string> = {
+const PROVIDER_LABELS: Record<
+  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'custom',
+  string
+> = {
   openrouter: 'OpenRouter',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  gemini: 'Gemini',
+  ollama: 'Ollama',
   custom: 'Custom',
 };
 
-export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun }: ConfigModalProps) {
+export function ConfigModal({
+  isOpen,
+  onClose,
+  onSave,
+  initialConfig,
+  isFirstRun,
+}: ConfigModalProps) {
   const { t } = useTranslation();
-  const [provider, setProvider] = useState<'openrouter' | 'anthropic' | 'custom' | 'openai'>('openrouter');
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [customProtocol, setCustomProtocol] = useState<'anthropic' | 'openai'>('anthropic');
-  const [model, setModel] = useState('');
-  const [openaiMode, setOpenaiMode] = useState<'responses' | 'chat'>('responses');
-  const [customModel, setCustomModel] = useState('');
-  const [useCustomModel, setUseCustomModel] = useState(false);
-  const [presets, setPresets] = useState<ProviderPresets | null>(
-    isElectron ? null : FALLBACK_PRESETS
-  );
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<ApiTestResult | null>(null);
-  const [useLiveTest, setUseLiveTest] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const skipPresetApplyRef = useRef(false);
-  const previousProviderRef = useRef(provider);
-
-  // Load presets and initial config
-  useEffect(() => {
-    if (!isOpen) return;
-    setIsInitialLoad(true);
-    if (isElectron) {
-      loadPresets();
-    } else {
-      setPresets(FALLBACK_PRESETS);
-    }
-  }, [isOpen]);
-
-  // Apply initial config
-  useEffect(() => {
-    if (initialConfig && presets) {
-      skipPresetApplyRef.current = true;
-      setProvider(initialConfig.provider);
-      setApiKey(initialConfig.apiKey || '');
-      setBaseUrl(initialConfig.baseUrl || '');
-      setCustomProtocol(initialConfig.customProtocol || 'anthropic');
-      setOpenaiMode('responses');
-
-      // Check if model is in preset list or custom
-      const preset = presets?.[initialConfig.provider];
-      const isPresetModel = preset?.models.some(m => m.id === initialConfig.model);
-
-      if (isPresetModel) {
-        setModel(initialConfig.model || '');
-        setUseCustomModel(false);
-      } else if (initialConfig.model) {
-        // Model is not in preset list, use custom model input
-        setUseCustomModel(true);
-        setCustomModel(initialConfig.model);
-      }
-
-      // Mark initial load as complete
-      setIsInitialLoad(false);
-    }
-  }, [initialConfig, presets]);
-
-  useEffect(() => {
-    if (!presets || !isInitialLoad || initialConfig) return;
-    const preset = presets[provider];
-    if (preset) {
-      setBaseUrl(preset.baseUrl);
-      setUseCustomModel(false);
-      setModel(preset.models[0]?.id || '');
-    }
-    setIsInitialLoad(false);
-  }, [presets, isInitialLoad, initialConfig, provider]);
-
-  // Update baseUrl and model when provider changes (but not on initial load)
-  useEffect(() => {
-    if (presets && !isInitialLoad) {
-      if (skipPresetApplyRef.current) {
-        skipPresetApplyRef.current = false;
-        return;
-      }
-      const preset = presets[provider];
-      if (preset) {
-        if (provider === 'custom') {
-          if (previousProviderRef.current !== 'custom') {
-            setBaseUrl(preset.baseUrl);
-          }
-        } else {
-          setBaseUrl(preset.baseUrl);
-        }
-        // Reset to preset model when switching providers
-        setUseCustomModel(false);
-        setModel(preset.models[0]?.id || '');
-      }
-    }
-    previousProviderRef.current = provider;
-  }, [provider, presets, isInitialLoad]);
+  const {
+    provider,
+    customProtocol,
+    apiKey,
+    baseUrl,
+    model,
+    customModel,
+    useCustomModel,
+    modelInputPlaceholder,
+    modelInputHint,
+    presets,
+    currentPreset,
+    modelOptions,
+    isSaving,
+    error,
+    successMessage,
+    lastSaveCompletedAt,
+    isTesting,
+    isRefreshingModels,
+    testResult,
+    friendlyTestDetails,
+    useLiveTest,
+    supportsLiveRequestTest,
+    isOllamaMode,
+    requiresApiKey,
+    showsCompatibilityProbeHint,
+    protocolGuidanceText,
+    protocolGuidanceTone,
+    baseUrlGuidanceText,
+    commonProviderSetups,
+    configSets,
+    activeConfigSetId,
+    currentConfigSet,
+    pendingConfigSetAction,
+    pendingConfigSet,
+    hasUnsavedChanges,
+    isMutatingConfigSet,
+    canDeleteCurrentConfigSet,
+    setApiKey,
+    setBaseUrl,
+    setModel,
+    setCustomModel,
+    toggleCustomModel,
+    setUseLiveTest,
+    applyCommonProviderSetup,
+    changeProvider,
+    changeProtocol,
+    requestConfigSetSwitch,
+    requestCreateBlankConfigSet,
+    cancelPendingConfigSetAction,
+    saveAndContinuePendingConfigSetAction,
+    discardAndContinuePendingConfigSetAction,
+    renameConfigSet,
+    deleteConfigSet,
+    handleSave,
+    handleTest,
+    refreshModelOptions,
+  } = useApiConfigState({
+    enabled: isOpen,
+    initialConfig,
+    onSave,
+  });
 
   useEffect(() => {
-    if (provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')) {
-      setOpenaiMode('responses');
-    }
-  }, [provider, customProtocol]);
-
-  useEffect(() => {
-    setTestResult(null);
-  }, [provider, apiKey, baseUrl, customProtocol, model, customModel, useCustomModel]);
-
-  async function loadPresets() {
-    try {
-      const loadedPresets = await window.electronAPI.config.getPresets();
-      setPresets(loadedPresets);
-    } catch (err) {
-      console.error('Failed to load presets:', err);
-      setPresets(FALLBACK_PRESETS);
-    }
-  }
-
-  async function handleTest() {
-    if (!apiKey.trim()) {
-      setError(t('api.testError.missing_key'));
+    if (!lastSaveCompletedAt) {
       return;
     }
-
-    const finalModel = useCustomModel ? customModel.trim() : model;
-    if (!finalModel) {
-      setError(t('api.selectModelRequired'));
-      return;
-    }
-
-    setError('');
-    setIsTesting(true);
-    setTestResult(null);
-
-    try {
-      const presetBaseUrl = presets?.[provider]?.baseUrl;
-      const resolvedBaseUrl = provider === 'custom'
-        ? baseUrl.trim()
-        : (presetBaseUrl || baseUrl).trim();
-
-      const result = await window.electronAPI.config.test({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: resolvedBaseUrl || undefined,
-        customProtocol,
-        model: finalModel,
-        useLiveRequest: useLiveTest,
-      });
-      setTestResult(result);
-    } catch (err) {
-      setTestResult({
-        ok: false,
-        errorType: 'unknown',
-        details: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  async function handleSave() {
-    if (!apiKey.trim()) {
-      setError(t('api.testError.missing_key'));
-      return;
-    }
-
-    // Determine which model to use
-    const finalModel = useCustomModel ? customModel.trim() : model;
-    
-    if (!finalModel) {
-      setError(t('api.selectModelRequired'));
-      return;
-    }
-
-    setError('');
-    setIsSaving(true);
-
-    try {
-      const presetBaseUrl = presets?.[provider]?.baseUrl;
-      const resolvedBaseUrl = provider === 'custom'
-        ? baseUrl.trim()
-        : (presetBaseUrl || baseUrl).trim();
-
-      const resolvedOpenaiMode =
-        provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')
-          ? 'responses'
-          : openaiMode;
-
-      await onSave({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: resolvedBaseUrl || undefined,
-        customProtocol,
-        model: finalModel,
-        openaiMode: resolvedOpenaiMode,
-      });
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 1000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('api.saveFailed'));
-    } finally {
-      setIsSaving(false);
-    }
-  }
+    const timer = setTimeout(() => {
+      onClose();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [lastSaveCompletedAt, onClose]);
 
   if (!isOpen) return null;
 
-  const currentPreset = presets?.[provider];
-  const showsCompatibilityProbeHint = provider === 'openrouter' || (provider === 'custom' && customProtocol === 'anthropic');
   const testErrorMessage = (result: ApiTestResult) => {
     switch (result.errorType) {
       case 'missing_key':
@@ -296,22 +136,35 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
         return t('api.testError.server_error');
       case 'network_error':
         return t('api.testError.network_error');
+      case 'ollama_not_running':
+        return t('api.testError.ollama_not_running');
+      case 'proxy_boot_failed':
+        return t('api.testError.proxy_boot_failed');
+      case 'proxy_health_failed':
+        return t('api.testError.proxy_health_failed');
+      case 'proxy_upstream_auth_failed':
+        return t('api.testError.proxy_upstream_auth_failed');
+      case 'proxy_upstream_not_found':
+        return t('api.testError.proxy_upstream_not_found');
       default:
         return t('api.testError.unknown');
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-border">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
+      <div className="bg-background rounded-[2rem] shadow-elevated w-full max-w-[880px] mx-4 max-h-[88vh] overflow-hidden border border-border-subtle flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border-muted bg-background/88">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-hover flex items-center justify-center">
-              <Key className="w-5 h-5 text-white" />
+            <div className="w-11 h-11 rounded-2xl border border-border-subtle bg-background-secondary/88 flex items-center justify-center text-accent">
+              <Key className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-text-primary">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                {t('settings.title')}
+              </p>
+              <h2 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
                 {isFirstRun ? t('api.firstRunTitle') : t('api.settingsTitle')}
               </h2>
               <p className="text-sm text-text-secondary">
@@ -321,34 +174,59 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
+            className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
           >
             <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 space-y-5 flex-1 overflow-y-auto bg-background/70">
+          {/* Config Set Switcher */}
+          <ApiConfigSetManager
+            configSets={configSets}
+            activeConfigSetId={activeConfigSetId}
+            currentConfigSet={currentConfigSet}
+            pendingConfigSetAction={pendingConfigSetAction}
+            pendingConfigSet={pendingConfigSet}
+            hasUnsavedChanges={hasUnsavedChanges}
+            isMutatingConfigSet={isMutatingConfigSet}
+            isSaving={isSaving}
+            canDeleteCurrentConfigSet={canDeleteCurrentConfigSet}
+            onSwitchSet={requestConfigSetSwitch}
+            onRequestCreateBlankSet={requestCreateBlankConfigSet}
+            onSaveCurrentSet={handleSave}
+            onRenameSet={renameConfigSet}
+            onDeleteSet={deleteConfigSet}
+            onCancelPendingAction={cancelPendingConfigSetAction}
+            onSaveAndContinuePendingAction={saveAndContinuePendingConfigSetAction}
+            onDiscardAndContinuePendingAction={discardAndContinuePendingConfigSetAction}
+          />
+
           {/* Provider Selection */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
               <Server className="w-4 h-4" />
               {t('api.provider')}
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'custom'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setProvider(p)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    provider === p
-                      ? 'bg-accent text-white'
-                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                  }`}
-                >
-                  {presets?.[p]?.name || PROVIDER_LABELS[p] || p}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
+                (p) => (
+                  <button
+                    key={p}
+                    onClick={() => changeProvider(p)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      provider === p
+                        ? 'bg-accent text-white'
+                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                    }`}
+                  >
+                    {presets?.[p]?.name ||
+                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
+                      p}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -356,7 +234,7 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
               <Key className="w-4 h-4" />
-              API Key
+              {t('api.apiKey')}
             </label>
             <input
               type="password"
@@ -377,14 +255,17 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 <Server className="w-4 h-4" />
                 {t('api.protocol')}
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  { id: 'anthropic', label: 'Anthropic' },
-                  { id: 'openai', label: 'OpenAI' },
-                ] as const).map((mode) => (
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { id: 'anthropic', label: 'Anthropic' },
+                    { id: 'openai', label: 'OpenAI' },
+                    { id: 'gemini', label: 'Gemini' },
+                  ] as const
+                ).map((mode) => (
                   <button
                     key={mode.id}
-                    onClick={() => setCustomProtocol(mode.id)}
+                    onClick={() => changeProtocol(mode.id)}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                       customProtocol === mode.id
                         ? 'bg-accent text-white'
@@ -396,32 +277,42 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 ))}
               </div>
               <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
+              <GuidanceInlineHint text={protocolGuidanceText} tone={protocolGuidanceTone} />
             </div>
           )}
 
           {/* Base URL - Editable for custom provider */}
-          {provider === 'custom' && (
+          {(provider === 'custom' || provider === 'ollama') && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
                 <Server className="w-4 h-4" />
-                Base URL
+                {t('api.baseUrl')}
               </label>
               <input
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder={
-                  customProtocol === 'openai'
-                    ? 'https://api.openai.com/v1'
-                    : (currentPreset?.baseUrl || 'https://api.anthropic.com')
+                  provider === 'ollama'
+                    ? 'http://localhost:11434/v1'
+                    : customProtocol === 'openai'
+                      ? 'https://api.openai.com/v1'
+                      : customProtocol === 'gemini'
+                        ? 'https://generativelanguage.googleapis.com'
+                        : currentPreset?.baseUrl || 'https://api.anthropic.com'
                 }
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
               <p className="text-xs text-text-muted">
-                {customProtocol === 'openai'
-                  ? t('api.enterOpenAIUrl')
-                  : t('api.enterAnthropicUrl')}
+                {provider === 'ollama'
+                  ? t('api.enterOllamaUrl')
+                  : customProtocol === 'openai'
+                    ? t('api.enterOpenAIUrl')
+                    : customProtocol === 'gemini'
+                      ? t('api.enterGeminiUrl')
+                      : t('api.enterAnthropicUrl')}
               </p>
+              {provider === 'custom' && <GuidanceInlineHint text={baseUrlGuidanceText} />}
             </div>
           )}
 
@@ -432,31 +323,40 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 <Cpu className="w-4 h-4" />
                 {t('api.model')}
               </label>
-              <button
-                type="button"
-                onClick={() => setUseCustomModel(!useCustomModel)}
-                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
-                  useCustomModel
-                    ? 'bg-accent-muted text-accent'
-                    : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                }`}
-              >
-                <Edit3 className="w-3 h-3" />
-                {useCustomModel ? t('api.usePreset') : t('api.custom')}
-              </button>
+              <div className="flex items-center gap-2">
+                {isOllamaMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void refreshModelOptions();
+                    }}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50"
+                    disabled={isRefreshingModels}
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRefreshingModels ? 'animate-spin' : ''}`} />
+                    {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={toggleCustomModel}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+                    useCustomModel
+                      ? 'bg-accent-muted text-accent'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  {useCustomModel ? t('api.usePreset') : t('api.custom')}
+                </button>
+              </div>
             </div>
             {useCustomModel ? (
               <input
                 type="text"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={
-                  provider === 'openrouter'
-                    ? 'openai/gpt-4o or other model ID'
-                    : provider === 'openai' || (provider === 'custom' && customProtocol === 'openai')
-                      ? 'gpt-4o'
-                      : 'claude-sonnet-4'
-                }
+                placeholder={modelInputPlaceholder}
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
             ) : (
@@ -465,8 +365,8 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all appearance-none cursor-pointer"
               >
-                {currentPreset?.models.length ? (
-                  currentPreset.models.map((m) => (
+                {modelOptions.length ? (
+                  modelOptions.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
@@ -478,12 +378,15 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
                 )}
               </select>
             )}
-            {useCustomModel && (
-              <p className="text-xs text-text-muted">
-                {t('api.enterModelId')}
-              </p>
-            )}
+            {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
           </div>
+
+          {provider === 'custom' && (
+            <CommonProviderSetupsCard
+              setups={commonProviderSetups}
+              onApplySetup={applyCommonProviderSetup}
+            />
+          )}
 
           {/* Error Message */}
           {error && (
@@ -493,15 +396,10 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
             </div>
           )}
 
-          {/* Success Message */}
-          {success && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
-              <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              {t('common.saved')}
-            </div>
-          )}
           {testResult && (
-            <div className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
+            <div
+              className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}
+            >
               {testResult.ok ? (
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
               ) : (
@@ -510,9 +408,16 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               <div className="flex-1">
                 <div>
                   {testResult.ok
-                    ? t('api.testSuccess', { ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--' })
+                    ? t('api.testSuccess', {
+                        ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--',
+                      })
                     : testErrorMessage(testResult)}
                 </div>
+                {!testResult.ok && friendlyTestDetails && (
+                  <div className="mt-1 text-xs leading-5 text-text-primary">
+                    {friendlyTestDetails}
+                  </div>
+                )}
                 {!testResult.ok && testResult.details && (
                   <div className="mt-1 text-xs text-text-muted">{testResult.details}</div>
                 )}
@@ -523,26 +428,32 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
 
         {/* Footer */}
         <div className="px-6 py-4 bg-surface-hover border-t border-border">
-          <div className="flex items-start gap-2 text-xs text-text-muted mb-3">
-            <input
-              type="checkbox"
-              id="api-live-test-modal"
-              checked={useLiveTest}
-              onChange={(e) => setUseLiveTest(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
-            />
-            <label htmlFor="api-live-test-modal" className="space-y-0.5">
-              <div className="text-text-primary">{t('api.liveTest')}</div>
-              <div>{t('api.liveTestHint')}</div>
-              {showsCompatibilityProbeHint && (
-                <div>{t('api.liveTestCompatibilityHint')}</div>
-              )}
-            </label>
-          </div>
+          {successMessage && (
+            <div className="mb-3 flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              {successMessage}
+            </div>
+          )}
+          {supportsLiveRequestTest && (
+            <div className="flex items-start gap-2 text-xs text-text-muted mb-3">
+              <input
+                type="checkbox"
+                id="api-live-test-modal"
+                checked={useLiveTest}
+                onChange={(e) => setUseLiveTest(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
+              />
+              <label htmlFor="api-live-test-modal" className="space-y-0.5">
+                <div className="text-text-primary">{t('api.liveTest')}</div>
+                <div>{t('api.liveTestHint')}</div>
+                {showsCompatibilityProbeHint && <div>{t('api.liveTestCompatibilityHint')}</div>}
+              </label>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={handleTest}
-              disabled={isTesting || !apiKey.trim()}
+              disabled={isTesting || (requiresApiKey && !apiKey.trim())}
               className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isTesting ? (
@@ -558,8 +469,10 @@ export function ConfigModal({ isOpen, onClose, onSave, initialConfig, isFirstRun
               )}
             </button>
             <button
-              onClick={handleSave}
-              disabled={isSaving || !apiKey.trim()}
+              onClick={() => {
+                void handleSave();
+              }}
+              disabled={isSaving || (requiresApiKey && !apiKey.trim())}
               className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isSaving ? (

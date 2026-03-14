@@ -34,6 +34,10 @@ extraResources:
     to: mcp
     filter:
       - "**/*"
+  - from: vendor/claude-code-proxy
+    to: vendor/claude-code-proxy
+    filter:
+      - "**/*"
 
 # Unpack claude-code so it can be executed as a CLI
 # Also unpack skills so they can be read/written at runtime
@@ -103,6 +107,10 @@ linux:
   extraResources:
     - from: resources/node/linux-x64
       to: node
+      filter:
+        - "**/*"
+    - from: resources/python/linux-${arch}
+      to: python
       filter:
         - "**/*"
 

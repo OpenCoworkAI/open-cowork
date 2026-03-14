@@ -1,57 +1,87 @@
 import { create } from 'zustand';
-import type { Session, Message, TraceStep, PermissionRequest, UserQuestionRequest, Settings, AppConfig, SandboxSetupProgress, SandboxSyncStatus } from '../types';
+import type {
+  Session,
+  Message,
+  TraceStep,
+  PermissionRequest,
+  SudoPasswordRequest,
+  Settings,
+  AppConfig,
+  SandboxSetupProgress,
+  SandboxSyncStatus,
+  SkillsStorageChangeEvent,
+} from '../types';
 import { applySessionUpdate } from '../utils/session-update';
+
+export type GlobalNoticeType = 'info' | 'warning' | 'error' | 'success';
+export type GlobalNoticeAction = 'open_api_settings';
+
+export interface GlobalNotice {
+  id: string;
+  message: string;
+  messageKey?: string;
+  messageValues?: Record<string, string | number>;
+  type: GlobalNoticeType;
+  actionLabel?: string;
+  action?: GlobalNoticeAction;
+}
 
 interface AppState {
   // Sessions
   sessions: Session[];
   activeSessionId: string | null;
-  
+
   // Messages
   messagesBySession: Record<string, Message[]>;
   partialMessagesBySession: Record<string, string>;
   pendingTurnsBySession: Record<string, string[]>;
   activeTurnsBySession: Record<string, { stepId: string; userMessageId: string } | null>;
-  
+
   // Trace steps
   traceStepsBySession: Record<string, TraceStep[]>;
-  
+
   // UI state
   isLoading: boolean;
   sidebarCollapsed: boolean;
   contextPanelCollapsed: boolean;
-  
+  showSettings: boolean;
+  settingsTab: string | null;
+
   // Permission
   pendingPermission: PermissionRequest | null;
-  
-  // User Question (AskUserQuestion)
-  pendingQuestion: UserQuestionRequest | null;
-  
+
+  // Sudo password
+  pendingSudoPassword: SudoPasswordRequest | null;
+
   // Settings
   settings: Settings;
-  
+
   // App Config (API settings)
   appConfig: AppConfig | null;
   isConfigured: boolean;
   showConfigModal: boolean;
-  
+  hasSeenInitialConfigStatus: boolean;
+  globalNotice: GlobalNotice | null;
+
   // Working directory
   workingDir: string | null;
-  
+
   // Sandbox setup
   sandboxSetupProgress: SandboxSetupProgress | null;
   isSandboxSetupComplete: boolean;
-  
+
   // Sandbox sync (per-session)
   sandboxSyncStatus: SandboxSyncStatus | null;
-  
+  skillsStorageChangedAt: number;
+  skillsStorageChangeEvent: SkillsStorageChangeEvent | null;
+
   // Actions
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
   updateSession: (sessionId: string, updates: Partial<Session>) => void;
   removeSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
-  
+
   addMessage: (sessionId: string, message: Message) => void;
   setMessages: (sessionId: string, messages: Message[]) => void;
   setPartialMessage: (sessionId: string, partial: string) => void;
@@ -62,34 +92,44 @@ interface AppState {
   clearPendingTurns: (sessionId: string) => void;
   clearQueuedMessages: (sessionId: string) => void;
   cancelQueuedMessages: (sessionId: string) => void;
-  
+
   addTraceStep: (sessionId: string, step: TraceStep) => void;
   updateTraceStep: (sessionId: string, stepId: string, updates: Partial<TraceStep>) => void;
   setTraceSteps: (sessionId: string, steps: TraceStep[]) => void;
-  
+
   setLoading: (loading: boolean) => void;
   toggleSidebar: () => void;
   toggleContextPanel: () => void;
-  
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setContextPanelCollapsed: (collapsed: boolean) => void;
+  setShowSettings: (show: boolean) => void;
+  setSettingsTab: (tab: string | null) => void;
+
   setPendingPermission: (permission: PermissionRequest | null) => void;
-  setPendingQuestion: (question: UserQuestionRequest | null) => void;
-  
+
+  setPendingSudoPassword: (request: SudoPasswordRequest | null) => void;
+
   updateSettings: (updates: Partial<Settings>) => void;
-  
+
   // Config actions
   setAppConfig: (config: AppConfig | null) => void;
   setIsConfigured: (configured: boolean) => void;
   setShowConfigModal: (show: boolean) => void;
-  
+  markInitialConfigStatusSeen: () => void;
+  setGlobalNotice: (notice: GlobalNotice | null) => void;
+  clearGlobalNotice: () => void;
+
   // Working directory actions
   setWorkingDir: (path: string | null) => void;
-  
+
   // Sandbox setup actions
   setSandboxSetupProgress: (progress: SandboxSetupProgress | null) => void;
   setSandboxSetupComplete: (complete: boolean) => void;
-  
+
   // Sandbox sync actions
   setSandboxSyncStatus: (status: SandboxSyncStatus | null) => void;
+  setSkillsStorageChangedAt: (timestamp: number) => void;
+  setSkillsStorageChangeEvent: (event: SkillsStorageChangeEvent | null) => void;
 }
 
 const defaultSettings: Settings = {
@@ -132,20 +172,26 @@ export const useAppStore = create<AppState>((set) => ({
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
+  showSettings: false,
+  settingsTab: null,
   pendingPermission: null,
-  pendingQuestion: null,
+  pendingSudoPassword: null,
   settings: defaultSettings,
   appConfig: null,
   isConfigured: false,
   showConfigModal: false,
+  hasSeenInitialConfigStatus: false,
+  globalNotice: null,
   workingDir: null,
   sandboxSetupProgress: null,
   isSandboxSetupComplete: false,
   sandboxSyncStatus: null,
-  
+  skillsStorageChangedAt: 0,
+  skillsStorageChangeEvent: null,
+
   // Session actions
   setSessions: (sessions) => set({ sessions }),
-  
+
   addSession: (session) =>
     set((state) => ({
       sessions: [session, ...state.sessions],
@@ -155,12 +201,12 @@ export const useAppStore = create<AppState>((set) => ({
       activeTurnsBySession: { ...state.activeTurnsBySession, [session.id]: null },
       traceStepsBySession: { ...state.traceStepsBySession, [session.id]: [] },
     })),
-  
+
   updateSession: (sessionId, updates) =>
     set((state) => ({
       sessions: applySessionUpdate(state.sessions, sessionId, updates),
     })),
-  
+
   removeSession: (sessionId) =>
     set((state) => {
       const { [sessionId]: _, ...restMessages } = state.messagesBySession;
@@ -178,9 +224,9 @@ export const useAppStore = create<AppState>((set) => ({
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
     }),
-  
+
   setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
-  
+
   // Message actions
   addMessage: (sessionId, message) =>
     set((state) => {
@@ -227,13 +273,13 @@ export const useAppStore = create<AppState>((set) => ({
         pendingTurnsBySession: updatedPendingTurns,
         partialMessagesBySession: shouldClearPartial
           ? {
-            ...state.partialMessagesBySession,
-            [sessionId]: '',
-          }
+              ...state.partialMessagesBySession,
+              [sessionId]: '',
+            }
           : state.partialMessagesBySession,
       };
     }),
-  
+
   setMessages: (sessionId, messages) =>
     set((state) => ({
       messagesBySession: {
@@ -241,7 +287,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: messages,
       },
     })),
-  
+
   setPartialMessage: (sessionId, partial) =>
     set((state) => ({
       partialMessagesBySession: {
@@ -249,7 +295,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: (state.partialMessagesBySession[sessionId] || '') + partial,
       },
     })),
-  
+
   clearPartialMessage: (sessionId) =>
     set((state) => ({
       partialMessagesBySession: {
@@ -364,7 +410,7 @@ export const useAppStore = create<AppState>((set) => ({
         },
       };
     }),
-  
+
   // Trace actions
   addTraceStep: (sessionId, step) =>
     set((state) => ({
@@ -373,7 +419,7 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: [...(state.traceStepsBySession[sessionId] || []), step],
       },
     })),
-  
+
   updateTraceStep: (sessionId, stepId, updates) =>
     set((state) => ({
       traceStepsBySession: {
@@ -391,36 +437,75 @@ export const useAppStore = create<AppState>((set) => ({
         [sessionId]: steps,
       },
     })),
-  
+
   // UI actions
   setLoading: (loading) => set({ isLoading: loading }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  toggleContextPanel: () => set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
-  
+  toggleContextPanel: () =>
+    set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+  setContextPanelCollapsed: (collapsed) => set({ contextPanelCollapsed: collapsed }),
+  setShowSettings: (show) => set({ showSettings: show }),
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
+
   // Permission actions
   setPendingPermission: (permission) => set({ pendingPermission: permission }),
-  
-  // Question actions (AskUserQuestion)
-  setPendingQuestion: (question) => set({ pendingQuestion: question }),
-  
+
+  // Sudo password actions
+  setPendingSudoPassword: (request) => set({ pendingSudoPassword: request }),
+
   // Settings actions
   updateSettings: (updates) =>
     set((state) => ({
       settings: { ...state.settings, ...updates },
     })),
-  
+
   // Config actions
   setAppConfig: (config) => set({ appConfig: config }),
   setIsConfigured: (configured) => set({ isConfigured: configured }),
   setShowConfigModal: (show) => set({ showConfigModal: show }),
-  
+  markInitialConfigStatusSeen: () => set({ hasSeenInitialConfigStatus: true }),
+  setGlobalNotice: (notice) => set({ globalNotice: notice }),
+  clearGlobalNotice: () => set({ globalNotice: null }),
+
   // Working directory actions
   setWorkingDir: (path) => set({ workingDir: path }),
-  
+
   // Sandbox setup actions
   setSandboxSetupProgress: (progress) => set({ sandboxSetupProgress: progress }),
   setSandboxSetupComplete: (complete) => set({ isSandboxSetupComplete: complete }),
-  
+
   // Sandbox sync actions
   setSandboxSyncStatus: (status) => set({ sandboxSyncStatus: status }),
+  setSkillsStorageChangedAt: (timestamp) => set({ skillsStorageChangedAt: timestamp }),
+  setSkillsStorageChangeEvent: (event) => set({ skillsStorageChangeEvent: event }),
 }));
+
+// Expose helpers for nav-server (CLI-driven UI navigation via executeJavaScript)
+if (typeof window !== 'undefined') {
+  const w = window as unknown as Record<string, unknown>;
+
+  w.__getNavStatus = () => {
+    const s = useAppStore.getState();
+    return {
+      showSettings: !!s.showSettings,
+      activeSessionId: s.activeSessionId || null,
+      sessionCount: (s.sessions || []).length,
+    };
+  };
+
+  w.__navigate = (page: string, tab?: string, sessionId?: string) => {
+    const store = useAppStore.getState();
+    if (page === 'welcome') {
+      store.setShowSettings(false);
+      store.setActiveSession(null);
+    } else if (page === 'settings') {
+      store.setSettingsTab(tab || 'api');
+      store.setShowSettings(true);
+    } else if (page === 'session' && sessionId) {
+      store.setShowSettings(false);
+      store.setActiveSession(sessionId);
+    }
+    return true;
+  };
+}

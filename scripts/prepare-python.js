@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Prepare a bundled Python runtime for Open Cowork (macOS).
+ * Prepare a bundled Python runtime for Open Cowork (macOS/Linux).
  *
  * Goal:
  * - Bundle a standalone python3 into `resources/python/darwin-{arch}/`
  * - Preinstall required packages into `resources/python/darwin-{arch}/site-packages/`
  *   - Pillow (PIL)
  *   - pyobjc-framework-Quartz (import Quartz)
+ *   - claude-code-proxy runtime dependencies
  *
  * Runtime code (gui-operate-server) will prefer the bundled Python and add
  * `${pythonRoot}/site-packages` to PYTHONPATH.
@@ -33,20 +34,42 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const OUTPUT_ROOT = path.join(PROJECT_ROOT, 'resources', 'python');
 const DOWNLOAD_DIR = path.join(OUTPUT_ROOT, '.downloads');
 
-// Pin to a Python minor version that has reliable wheels for Pillow and pyobjc
-const PYTHON_MINOR = process.env.OPEN_COWORK_PYTHON_MINOR || '3.12';
+// Keep the default minor aligned with the checked-in bundled runtime and fallback URLs.
+const PYTHON_MINOR = process.env.OPEN_COWORK_PYTHON_MINOR || '3.10';
 const ABI = `cp${PYTHON_MINOR.replace('.', '')}`; // e.g. 3.12 -> cp312
 
 const GITHUB_REPO = process.env.OPEN_COWORK_PYTHON_STANDALONE_REPO || 'astral-sh/python-build-standalone';
+const PROXY_VENDOR_COMMIT = 'dd4a29aff3b470710187505daaeed20ea025e5bf';
+const PROXY_RUNTIME_VERSION_FILENAME = 'runtime-version.txt';
+const BUNDLED_GUI_PACKAGES = [
+  'pillow',
+  'pyobjc-framework-Quartz',
+];
+const BUNDLED_PROXY_PACKAGES = [
+  'fastapi[standard]>=0.115.11',
+  'uvicorn>=0.34.0',
+  'httpx>=0.25.0',
+  'pydantic>=2.0.0',
+  'litellm>=1.77.7',
+  'python-dotenv>=1.0.0',
+  'google-auth>=2.41.1',
+  'google-cloud-aiplatform>=1.120.0',
+];
+const BUNDLED_PROXY_RUNTIME_FINGERPRINT = [
+  `vendor=${PROXY_VENDOR_COMMIT}`,
+  ...BUNDLED_PROXY_PACKAGES,
+].join('|');
 // Use the correct GitHub API endpoint (v3, no trailing slash)
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=30`;
 
-// Default URLs for stable Python builds (20260203 release, Python 3.10.19)
-// These are used as fallback if no existing archive is found and no env override is set
-const DEFAULT_PYTHON_URLS = {
-  'aarch64-apple-darwin': 'https://github.com/astral-sh/python-build-standalone/releases/download/20260203/cpython-3.10.19+20260203-aarch64-apple-darwin-install_only.tar.gz',
-  'x86_64-apple-darwin': 'https://github.com/astral-sh/python-build-standalone/releases/download/20260203/cpython-3.10.19+20260203-x86_64-apple-darwin-install_only.tar.gz',
-};
+// Default URLs are only used for the checked-in default minor.
+// Other minors fall back to the GitHub releases API or explicit env overrides.
+const DEFAULT_PYTHON_URLS = PYTHON_MINOR === '3.10'
+  ? {
+      'aarch64-apple-darwin': 'https://github.com/astral-sh/python-build-standalone/releases/download/20260203/cpython-3.10.19+20260203-aarch64-apple-darwin-install_only.tar.gz',
+      'x86_64-apple-darwin': 'https://github.com/astral-sh/python-build-standalone/releases/download/20260203/cpython-3.10.19+20260203-x86_64-apple-darwin-install_only.tar.gz',
+    }
+  : {};
 
 const TARGETS = {
   darwin: {
@@ -59,6 +82,13 @@ const TARGETS = {
       triple: 'x86_64-apple-darwin',
       platformTag: 'macosx_11_0_x86_64',
       envUrlKey: 'OPEN_COWORK_PYTHON_STANDALONE_URL_DARWIN_X64',
+    },
+  },
+  linux: {
+    x64: {
+      triple: 'x86_64-unknown-linux-gnu',
+      platformTag: 'manylinux2014_x86_64',
+      envUrlKey: 'OPEN_COWORK_PYTHON_STANDALONE_URL_LINUX_X64',
     },
   },
 };
@@ -74,6 +104,10 @@ function exists(p) {
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function resolveRuntimeVersionFile(runtimeRoot) {
+  return path.join(runtimeRoot, PROXY_RUNTIME_VERSION_FILENAME);
 }
 
 function download(url, dest) {
@@ -253,7 +287,7 @@ async function findStandaloneAssetUrl(triple, envUrlKey) {
       `Failed to fetch Python from python-build-standalone: ${apiError.message}\n` +
         `You can:\n` +
         `  1. Set ${envUrlKey} to a direct download URL\n` +
-        `  2. Or manually download and extract Python to ${path.join(OUTPUT_ROOT, `darwin-${triple.includes('arm64') ? 'arm64' : 'x64'}`)}\n` +
+        `  2. Or manually download and extract Python under ${OUTPUT_ROOT}\n` +
         `\nWhy python-build-standalone?\n` +
         `  - Provides standalone Python (no system dependencies)\n` +
         `  - Smaller size (~50MB vs ~100MB+ for full installer)\n` +
@@ -296,43 +330,69 @@ function extractArchive(archivePath, destDir) {
   execSync(extractCmd, { stdio: 'inherit' });
 }
 
-function installPackages(siteDir, platformTag) {
+function ensurePipAvailable(pythonBin) {
+  try {
+    execSync(`${JSON.stringify(pythonBin)} -m pip --version`, { stdio: 'ignore' });
+  } catch {
+    execSync(`${JSON.stringify(pythonBin)} -m ensurepip --upgrade`, { stdio: 'inherit' });
+  }
+}
+
+function installPackages(siteDir, platformTag, pythonBin) {
   ensureDir(siteDir);
 
-  const pipPython = process.env.OPEN_COWORK_PIP_PYTHON || 'python3';
+  const pipPython = process.env.OPEN_COWORK_PIP_PYTHON || pythonBin;
+  const packageSpecs = [...BUNDLED_GUI_PACKAGES, ...BUNDLED_PROXY_PACKAGES];
+  const pythonRoot = path.resolve(siteDir, '..');
+  const runtimeMarkerFile = resolveRuntimeVersionFile(pythonRoot);
+  const runtimeMarker = exists(runtimeMarkerFile)
+    ? fs.readFileSync(runtimeMarkerFile, 'utf-8').trim()
+    : '';
 
   // Avoid re-install if already present
   const hasPillow = exists(path.join(siteDir, 'PIL'));
   const hasQuartz = exists(path.join(siteDir, 'Quartz'));
-  if (hasPillow && hasQuartz) {
+  const hasProxyDeps = [
+    path.join(siteDir, 'fastapi'),
+    path.join(siteDir, 'uvicorn'),
+    path.join(siteDir, 'httpx'),
+    path.join(siteDir, 'pydantic'),
+    path.join(siteDir, 'litellm'),
+    path.join(siteDir, 'dotenv'),
+    path.join(siteDir, 'google', 'auth'),
+    path.join(siteDir, 'google', 'cloud', 'aiplatform'),
+  ].every(exists);
+  if (hasPillow && hasQuartz && hasProxyDeps && runtimeMarker === BUNDLED_PROXY_RUNTIME_FINGERPRINT) {
     console.log(`✓ Python packages already present in ${siteDir}`);
     return;
   }
 
   console.log(`📦 Installing Python packages into ${siteDir} (platform=${platformTag})...`);
+  ensurePipAvailable(pipPython);
 
   // Install wheels into a target directory (no need to run the bundled python)
   // NOTE: requires network access and a working pip on the build machine.
   const cmd =
-    `${pipPython} -m pip install --upgrade --no-input --only-binary=:all: ` +
+    `${JSON.stringify(pipPython)} -m pip install --upgrade --no-input --only-binary=:all: ` +
     `--target "${siteDir}" ` +
     `--platform "${platformTag}" --python-version "${PYTHON_MINOR}" --implementation "cp" --abi "${ABI}" ` +
-    `pillow pyobjc-framework-Quartz`;
+    `${packageSpecs.map((pkg) => JSON.stringify(pkg)).join(' ')}`;
 
   execSync(cmd, { stdio: 'inherit' });
+  fs.writeFileSync(runtimeMarkerFile, BUNDLED_PROXY_RUNTIME_FINGERPRINT, 'utf-8');
 }
 
-async function prepareDarwinArch(arch) {
-  const target = TARGETS.darwin[arch];
+async function preparePlatformArch(platform, arch) {
+  const target = TARGETS[platform]?.[arch];
   if (!target) return;
 
-  const destDir = path.join(OUTPUT_ROOT, `darwin-${arch}`);
+  const destDir = path.join(OUTPUT_ROOT, `${platform}-${arch}`);
   const pythonBin = path.join(destDir, 'bin', 'python3');
   const siteDir = path.join(destDir, 'site-packages');
 
   // Download + extract standalone python if missing
   if (!exists(pythonBin)) {
-    console.log(`🐍 Preparing standalone Python ${PYTHON_MINOR} for darwin-${arch}...`);
+    console.log(`🐍 Preparing standalone Python ${PYTHON_MINOR} for ${platform}-${arch}...`);
     const url = await findStandaloneAssetUrl(target.triple, target.envUrlKey);
     
     // Handle file:// URLs (existing archive) vs http(s):// URLs (need download)
@@ -364,13 +424,13 @@ async function prepareDarwinArch(arch) {
     console.log(`✓ Standalone Python already present: ${pythonBin}`);
   }
 
-  // Install packages (Pillow + Quartz)
-  installPackages(siteDir, target.platformTag);
+  // Install packages for GUI automation and proxy runtime
+  installPackages(siteDir, target.platformTag, pythonBin);
 }
 
 async function main() {
-  if (process.platform !== 'darwin') {
-    console.log('[prepare:python] Non-macOS platform, skipping.');
+  if (process.platform !== 'darwin' && process.platform !== 'linux') {
+    console.log('[prepare:python] Unsupported platform, skipping.');
     return;
   }
 
@@ -381,16 +441,27 @@ async function main() {
   const wantsAll = args.includes('--all');
   const archIndex = args.indexOf('--arch');
   const requestedArch = archIndex >= 0 ? args[archIndex + 1] : null;
+  const currentPlatform = process.platform;
   const currentArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const supportedArches = Object.keys(TARGETS[currentPlatform] || {});
+  if (supportedArches.length === 0) {
+    console.log(`[prepare:python] No bundled python targets configured for ${currentPlatform}.`);
+    return;
+  }
+  if (requestedArch && !supportedArches.includes(requestedArch)) {
+    throw new Error(
+      `Unsupported Python target for ${currentPlatform}: ${requestedArch}. Supported: ${supportedArches.join(', ')}`
+    );
+  }
 
   const arches = wantsAll
-    ? ['arm64', 'x64']
+    ? supportedArches
     : requestedArch
       ? [requestedArch]
-      : [currentArch];
+      : [supportedArches.includes(currentArch) ? currentArch : supportedArches[0]];
 
   for (const arch of arches) {
-    await prepareDarwinArch(arch);
+    await preparePlatformArch(currentPlatform, arch);
   }
 
   console.log('✅ Bundled Python prepared.');
@@ -400,4 +471,3 @@ main().catch((err) => {
   console.error('\n[prepare:python] ERROR:', err && err.message ? err.message : err);
   process.exitCode = 1;
 });
-

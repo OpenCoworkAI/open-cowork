@@ -4,14 +4,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
-import {
-  Send,
-  Square,
-  Plus,
-  Loader2,
-  Plug,
-  X,
-} from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X } from 'lucide-react';
 
 type AttachedFile = {
   name: string;
@@ -23,15 +16,13 @@ type AttachedFile = {
 
 export function ChatView() {
   const { t } = useTranslation();
-  const {
-    activeSessionId,
-    sessions,
-    messagesBySession,
-    partialMessagesBySession,
-    activeTurnsBySession,
-    pendingTurnsBySession,
-    appConfig,
-  } = useAppStore();
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const sessions = useAppStore((s) => s.sessions);
+  const messagesBySession = useAppStore((s) => s.messagesBySession);
+  const partialMessagesBySession = useAppStore((s) => s.partialMessagesBySession);
+  const activeTurnsBySession = useAppStore((s) => s.activeTurnsBySession);
+  const pendingTurnsBySession = useAppStore((s) => s.pendingTurnsBySession);
+  const appConfig = useAppStore((s) => s.appConfig);
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,7 +31,9 @@ export function ChatView() {
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const connectorMeasureRef = useRef<HTMLDivElement>(null);
-  const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [pastedImages, setPastedImages] = useState<
+    Array<{ url: string; base64: string; mediaType: string }>
+  >([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,7 +55,8 @@ export function ChatView() {
   const activeTurn = activeSessionId ? activeTurnsBySession[activeSessionId] : null;
   const hasActiveTurn = Boolean(activeTurn);
   const pendingCount = pendingTurns.length;
-  const canStop = hasActiveTurn || pendingCount > 0;
+  const isSessionRunning = activeSession?.status === 'running';
+  const canStop = isSessionRunning || hasActiveTurn || pendingCount > 0;
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
@@ -84,11 +78,7 @@ export function ChatView() {
       timestamp: Date.now(),
     };
 
-    return [
-      ...messages.slice(0, insertIndex),
-      streamingMessage,
-      ...messages.slice(insertIndex),
-    ];
+    return [...messages.slice(0, insertIndex), streamingMessage, ...messages.slice(insertIndex)];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
 
   // Debounced scroll function to prevent scroll conflicts
@@ -105,16 +95,19 @@ export function ChatView() {
 
     const performScroll = () => {
       if (!isUserAtBottomRef.current) return;
-      
+
       // Mark as scrolling to prevent concurrent scrolls
       isScrollingRef.current = true;
-      
+
       messagesEndRef.current?.scrollIntoView({ behavior });
-      
+
       // Reset scrolling flag after a short delay
-      setTimeout(() => {
-        isScrollingRef.current = false;
-      }, behavior === 'smooth' ? 300 : 50);
+      setTimeout(
+        () => {
+          isScrollingRef.current = false;
+        },
+        behavior === 'smooth' ? 300 : 50
+      );
     };
 
     if (immediate) {
@@ -131,7 +124,8 @@ export function ChatView() {
     const container = scrollContainerRef.current;
     if (!container) return;
     const updateScrollState = () => {
-      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const distanceToBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
       isUserAtBottomRef.current = distanceToBottom <= 80;
     };
     updateScrollState();
@@ -188,7 +182,7 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [displayedMessages]); // Re-create observer when messages change to ensure we're observing the right element
+  }, [displayedMessages.length]); // Re-create observer when message count changes
 
   // Cleanup scroll timeouts on unmount
   useEffect(() => {
@@ -211,7 +205,7 @@ export function ChatView() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
 
     e.preventDefault();
@@ -237,7 +231,7 @@ export function ChatView() {
       }
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    setPastedImages((prev) => [...prev, ...newImages]);
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -281,8 +275,8 @@ export function ChatView() {
         }
 
         // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
+        const scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
+        const quality = 0.9;
 
         const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
           canvas.width = Math.floor(img.width * currentScale);
@@ -300,7 +294,10 @@ export function ChatView() {
                 }
 
                 // If still too large, try again with lower quality or scale
-                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
+                if (
+                  compressedBlob.size > MAX_BLOB_SIZE &&
+                  (currentQuality > 0.5 || currentScale > 0.3)
+                ) {
                   const newQuality = Math.max(0.5, currentQuality - 0.1);
                   const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
                   attemptCompress(newScale, newQuality).then(resolveBlob);
@@ -327,7 +324,7 @@ export function ChatView() {
   };
 
   const removeImage = (index: number) => {
-    setPastedImages(prev => {
+    setPastedImages((prev) => {
       const updated = [...prev];
       URL.revokeObjectURL(updated[index].url);
       updated.splice(index, 1);
@@ -336,7 +333,7 @@ export function ChatView() {
   };
 
   const removeFile = (index: number) => {
-    setAttachedFiles(prev => {
+    setAttachedFiles((prev) => {
       const updated = [...prev];
       updated.splice(index, 1);
       return updated;
@@ -364,7 +361,7 @@ export function ChatView() {
         };
       });
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[ChatView] Error selecting files:', error);
     }
@@ -389,8 +386,8 @@ export function ChatView() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    const otherFiles = files.filter((file) => !file.type.startsWith('image/'));
 
     // Process images
     if (imageFiles.length > 0) {
@@ -412,14 +409,14 @@ export function ChatView() {
         }
       }
 
-      setPastedImages(prev => [...prev, ...newImages]);
+      setPastedImages((prev) => [...prev, ...newImages]);
     }
 
     // Process other files
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
         otherFiles.map(async (file) => {
-          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
           const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
 
           return {
@@ -432,7 +429,7 @@ export function ChatView() {
         })
       );
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     }
   };
 
@@ -485,11 +482,16 @@ export function ChatView() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    
+
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
-    
-    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || !activeSessionId || isSubmitting) return;
+
+    if (
+      (!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) ||
+      !activeSessionId ||
+      isSubmitting
+    )
+      return;
 
     setIsSubmitting(true);
     try {
@@ -497,7 +499,7 @@ export function ChatView() {
       const contentBlocks: ContentBlock[] = [];
 
       // Add images first
-      pastedImages.forEach(img => {
+      pastedImages.forEach((img) => {
         contentBlocks.push({
           type: 'image',
           source: {
@@ -509,7 +511,7 @@ export function ChatView() {
       });
 
       // Add file attachments
-      attachedFiles.forEach(file => {
+      attachedFiles.forEach((file) => {
         contentBlocks.push({
           type: 'file_attachment',
           filename: file.name,
@@ -536,7 +538,7 @@ export function ChatView() {
       if (textareaRef.current) {
         textareaRef.current.value = '';
       }
-      pastedImages.forEach(img => URL.revokeObjectURL(img.url));
+      pastedImages.forEach((img) => URL.revokeObjectURL(img.url));
       setPastedImages([]);
       setAttachedFiles([]);
     } finally {
@@ -559,14 +561,19 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background">
       {/* Header */}
       <div
         ref={headerRef}
-        className="relative h-14 border-b border-border grid grid-cols-[1fr_auto_1fr] items-center px-6 bg-surface/80 backdrop-blur-sm"
+        className="relative h-12 border-b border-border-muted grid grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8 bg-background/88 backdrop-blur-md"
       >
-        <div />
-        <h2 ref={titleRef} className="font-medium text-text-primary text-center truncate max-w-lg">
+        <div className="text-[11px] font-medium tracking-[0.08em] uppercase text-text-muted">
+          Open Cowork
+        </div>
+        <h2
+          ref={titleRef}
+          className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]"
+        >
           {activeSession.title}
         </h2>
         {activeConnectors.length > 0 && (
@@ -576,21 +583,19 @@ export function ChatView() {
               aria-hidden="true"
               className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
             >
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-purple-500/20">
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-mcp/20">
                 <Plug className="w-3.5 h-3.5" />
                 <span className="text-xs font-medium whitespace-nowrap">
                   {t('chat.connectorCount', { count: activeConnectors.length })}
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 justify-self-end">
-              <Plug className="w-3.5 h-3.5 text-purple-500" />
-              <span className="text-xs text-purple-500 font-medium">
-                {showConnectorLabel ? (
-                  t('chat.connectorCount', { count: activeConnectors.length })
-                ) : (
-                  activeConnectors.length
-                )}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
+              <Plug className="w-3.5 h-3.5 text-mcp" />
+              <span className="text-xs text-mcp font-medium">
+                {showConnectorLabel
+                  ? t('chat.connectorCount', { count: activeConnectors.length })
+                  : activeConnectors.length}
               </span>
             </div>
           </>
@@ -599,39 +604,44 @@ export function ChatView() {
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div ref={messagesContainerRef} className="w-full max-w-[1180px] mx-auto py-6 px-4 lg:px-6 space-y-4">
+        <div
+          ref={messagesContainerRef}
+          className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5"
+        >
           {displayedMessages.length === 0 ? (
-            <div className="text-center py-12 text-text-muted">
-              <p>{t('chat.startConversation')}</p>
+            <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted/80">
+                Open Cowork
+              </p>
+              <p className="text-base text-text-secondary">{t('chat.startConversation')}</p>
             </div>
           ) : (
             displayedMessages.map((message) => {
-              const isStreaming = typeof message.id === 'string' && message.id.startsWith('partial-');
+              const isStreaming =
+                typeof message.id === 'string' && message.id.startsWith('partial-');
               return (
-              <div key={message.id}>
+                <div key={message.id}>
                   <MessageCard message={message} isStreaming={isStreaming} />
-              </div>
+                </div>
               );
             })
           )}
-          
+
           {/* Processing indicator - show when we have an active turn but no partial message yet */}
           {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-surface border border-border max-w-fit">
+            <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-background/80 border border-border-subtle max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
-              <span className="text-sm text-text-secondary">
-                {t('chat.processing')}
-              </span>
+              <span className="text-sm text-text-secondary">{t('chat.processing')}</span>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>
 
       {/* Input */}
-      <div className="border-t border-border bg-surface/80 backdrop-blur-sm">
-        <div className="px-4 py-4">
+      <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
+        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
@@ -641,12 +651,12 @@ export function ChatView() {
           >
             {/* Image previews */}
             {pastedImages.length > 0 && (
-              <div className="grid grid-cols-5 gap-2 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
                 {pastedImages.map((img, index) => (
                   <div key={index} className="relative group">
                     <img
                       src={img.url}
-                      alt={`Pasted ${index + 1}`}
+                      alt={t('common.pastedImageAlt', { index: index + 1 })}
                       className="w-full aspect-square object-cover rounded-lg border border-border block"
                     />
                     <button
@@ -685,15 +695,14 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3 rounded-3xl bg-surface transition-colors ${
+              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
-              style={{ border: '1px solid rgba(255, 255, 255, 0.1)' }}
             >
               <button
                 type="button"
                 onClick={handleFileSelect}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                 title={t('welcome.attachFiles')}
               >
                 <Plus className="w-5 h-5" />
@@ -723,36 +732,44 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-sm py-1.5"
+                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
               />
 
               <div className="flex items-center gap-2">
                 {/* Model display */}
-                <span className="px-2 py-1 text-xs text-text-muted">
-                  {appConfig?.model || 'No model'}
+                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
+                  {appConfig?.model || t('chat.noModel')}
                 </span>
 
                 {canStop && (
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
+                    title={t('chat.stop')}
                   >
                     <Square className="w-4 h-4" />
                   </button>
                 )}
-                  <button
-                    type="submit"
-                  disabled={(!prompt.trim() && !textareaRef.current?.value.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
+                <button
+                  type="submit"
+                  disabled={
+                    (!prompt.trim() &&
+                      !textareaRef.current?.value.trim() &&
+                      pastedImages.length === 0 &&
+                      attachedFiles.length === 0) ||
+                    isSubmitting
+                  }
+                  className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                  title={t('chat.sendMessage')}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            <p className="text-xs text-text-muted text-center mt-2">
-              Open Cowork is AI-powered and may make mistakes. Please double-check responses.
+            <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
+              {t('chat.disclaimer')}
             </p>
           </form>
         </div>

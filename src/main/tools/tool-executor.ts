@@ -4,6 +4,8 @@ import { spawn } from 'child_process';
 import { glob } from 'glob';
 import { PathResolver } from '../sandbox/path-resolver';
 import type { ToolResult, ExecutionContext, MountedPath } from '../../renderer/types';
+import { isUncPath } from '../../shared/local-file-path';
+import { isPathWithinRoot } from './path-containment';
 
 /**
  * ToolExecutor - Secure tool execution framework
@@ -42,7 +44,7 @@ export class ToolExecutor {
     }
 
     // If absolute real path, ensure it lies within a mount
-    const isAbsolute = path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed);
+    const isAbsolute = path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed) || isUncPath(trimmed);
     if (isAbsolute) {
       const absolutePath = path.normalize(trimmed);
       return this.assertInsideMount(absolutePath, mounts);
@@ -66,7 +68,7 @@ export class ToolExecutor {
 
     const allowed = mounts.some((m) => {
       const mountRoot = path.normalize(m.real);
-      return realPath.startsWith(mountRoot);
+      return isPathWithinRoot(realPath, mountRoot);
     });
 
     if (!allowed) {
@@ -267,7 +269,7 @@ export class ToolExecutor {
     const normalizedCwd = path.normalize(cwd);
     const cwdAllowed = mounts.some((m) => {
       const mountRoot = path.normalize(m.real);
-      return normalizedCwd.startsWith(mountRoot) || normalizedCwd === mountRoot.replace(/[\\\/]+$/, '');
+      return isPathWithinRoot(normalizedCwd, mountRoot);
     });
     if (!cwdAllowed) {
       throw new Error('Working directory is outside the mounted workspace');
@@ -282,6 +284,8 @@ export class ToolExecutor {
     const pathPatterns = [
       // Windows absolute paths: C:\... or C:/...
       /[A-Za-z]:[\\\/][^\s;|&"'<>]*/g,
+      // UNC absolute paths: \\server\share\...
+      /\\\\[^\s;|&"'<>]+/g,
       // Unix absolute paths: /...
       /(?:^|[\s;|&"'])\/[^\s;|&"'<>]+/g,
       // Quoted paths
@@ -303,13 +307,13 @@ export class ToolExecutor {
 
     // Validate each extracted path
     for (const p of extractedPaths) {
-      const isAbsolute = path.isAbsolute(p) || /^[A-Za-z]:/.test(p);
+      const isAbsolute = path.isAbsolute(p) || /^[A-Za-z]:/.test(p) || isUncPath(p);
       if (!isAbsolute) continue; // Relative paths are fine (confined by cwd)
 
       const normalizedPath = path.normalize(p);
       const allowed = mounts.some((m) => {
         const mountRoot = path.normalize(m.real);
-        return normalizedPath.startsWith(mountRoot);
+        return isPathWithinRoot(normalizedPath, mountRoot);
       });
 
       if (!allowed) {
@@ -325,7 +329,6 @@ export class ToolExecutor {
       />\s*\/dev\//i,
       /curl.*\|\s*(?:ba)?sh/i,
       /wget.*\|\s*(?:ba)?sh/i,
-      /sudo\s/i,
       /format\s+[A-Za-z]:/i,
       /del\s+\/[sfq]/i,
       /rmdir\s+\/[sq]/i,

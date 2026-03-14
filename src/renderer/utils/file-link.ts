@@ -18,7 +18,7 @@ const cjkFilenamePattern = new RegExp(
   `(?:^|${boundaryPattern.source})([\\p{Script=Han}0-9_-]+\\.[A-Za-z0-9]{1,8})`,
   'gu',
 );
-const pathPattern = /(?:[A-Za-z]:\\|\/)[^\n]+?\.[a-z0-9]{1,8}/gi;
+const pathPattern = /(?:[A-Za-z]:[\\/]|\\\\|\/)[^\n]+?\.[a-z0-9]{1,8}/gi;
 
 function isBoundaryChar(ch?: string): boolean {
   if (!ch) return true;
@@ -28,7 +28,7 @@ function isBoundaryChar(ch?: string): boolean {
 function tokenHasUrlPrefix(text: string, index: number): boolean {
   const tokenStart = text.lastIndexOf(' ', index) + 1;
   const token = text.slice(tokenStart, index);
-  return /https?:\/\//i.test(token);
+  return /(?:https?:\/\/|file:\/\/|mailto:)/i.test(token);
 }
 
 function trimTrailingPunctuation(value: string): string {

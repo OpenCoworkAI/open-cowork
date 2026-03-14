@@ -9,6 +9,7 @@
 
 import { log, logError } from '../utils/logger';
 import { SandboxSync } from './sandbox-sync';
+import { isPathWithinRoot } from '../tools/path-containment';
 
 export interface ValidationResult {
   allowed: boolean;
@@ -90,7 +91,7 @@ export class PathGuard {
     const normalizedPath = path.replace(/\\/g, '/');
 
     // Check if path is within sandbox
-    if (normalizedPath.startsWith(session.sandboxPath)) {
+    if (isPathWithinRoot(normalizedPath, session.sandboxPath)) {
       return { allowed: true };
     }
 
@@ -187,22 +188,40 @@ export class PathGuard {
     // Replace Windows paths with sandbox paths
     let convertedCommand = command;
 
+    // Pattern to match quoted Windows paths with spaces: "C:\foo bar\baz.txt"
+    const quotedWindowsPathPattern = /(["'])([A-Za-z]:[\\\/][^"']+)\1/g;
     // Pattern to match Windows paths: D:\something or D:/something
-    const windowsPathPattern = /([A-Za-z]):[\\\/]([^\s;|&"'<>]*)/g;
+    const windowsPathPattern = /([A-Za-z]:[\\\/][^\s;|&"'<>]*)/g;
 
-    convertedCommand = convertedCommand.replace(windowsPathPattern, (match, drive, rest) => {
-      const fullPath = `${drive}:/${rest.replace(/\\/g, '/')}`.toLowerCase();
+    const convertWindowsPath = (originalPath: string, originalMatch: string): string => {
+      const originalFullPath = originalPath.replace(/\\/g, '/');
+      const normalizedFullPath = originalFullPath.toLowerCase();
 
       // Check if this path is within the workspace
-      if (fullPath.startsWith(normalizedWorkspace.toLowerCase())) {
+      if (isPathWithinRoot(normalizedFullPath, normalizedWorkspace, true)) {
         // Convert to sandbox path
-        const relativePath = fullPath.substring(normalizedWorkspace.length);
+        const relativePath = originalFullPath.substring(normalizedWorkspace.length);
         return session.sandboxPath + relativePath;
       }
 
       // Path is outside workspace - this will be blocked by validateCommand
-      log(`[PathGuard] Path outside workspace: ${match}`);
-      return match; // Return as-is, will be blocked later
+      log(`[PathGuard] Path outside workspace: ${originalMatch}`);
+      return originalMatch; // Return as-is, will be blocked later
+    };
+
+    convertedCommand = convertedCommand.replace(
+      quotedWindowsPathPattern,
+      (match, quote: string, originalPath: string) => {
+        const converted = convertWindowsPath(originalPath, match);
+        return converted === match ? match : `${quote}${converted}${quote}`;
+      }
+    );
+
+    convertedCommand = convertedCommand.replace(windowsPathPattern, (match) => {
+      if (match.startsWith('"') || match.startsWith("'")) {
+        return match;
+      }
+      return convertWindowsPath(match, match);
     });
 
     return convertedCommand;
@@ -226,4 +245,3 @@ export class PathGuard {
 }
 
 export default PathGuard;
-

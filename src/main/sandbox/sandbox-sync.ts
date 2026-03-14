@@ -18,6 +18,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { log, logError } from '../utils/logger';
 import { pathConverter } from './wsl-bridge';
+import { isPathWithinRoot } from '../tools/path-containment';
 
 const execAsync = promisify(exec);
 
@@ -420,7 +421,7 @@ export class SandboxSync {
   static isPathInSandbox(path: string, sessionId: string): boolean {
     const session = sessions.get(sessionId);
     if (!session) return false;
-    return path.startsWith(session.sandboxPath);
+    return isPathWithinRoot(path, session.sandboxPath);
   }
 
   /**
@@ -434,7 +435,7 @@ export class SandboxSync {
     const normalizedWindows = session.windowsPath.replace(/\\/g, '/').toLowerCase();
     const normalizedInput = windowsPath.replace(/\\/g, '/').toLowerCase();
 
-    if (normalizedInput.startsWith(normalizedWindows)) {
+    if (isPathWithinRoot(normalizedInput, normalizedWindows, true)) {
       const relativePath = windowsPath.substring(session.windowsPath.length);
       return session.sandboxPath + relativePath.replace(/\\/g, '/');
     }
@@ -449,7 +450,7 @@ export class SandboxSync {
     const session = sessions.get(sessionId);
     if (!session) return null;
 
-    if (sandboxPath.startsWith(session.sandboxPath)) {
+    if (isPathWithinRoot(sandboxPath, session.sandboxPath)) {
       const relativePath = sandboxPath.substring(session.sandboxPath.length);
       return session.windowsPath + relativePath.replace(/\//g, '\\');
     }

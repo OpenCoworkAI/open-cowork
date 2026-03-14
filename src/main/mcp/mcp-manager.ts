@@ -1,3 +1,16 @@
+/**
+ * @module main/mcp/mcp-manager
+ *
+ * Model Context Protocol (MCP) server manager (1321 lines).
+ *
+ * Responsibilities:
+ * - MCP server config CRUD (add, update, delete, list)
+ * - Server lifecycle: start, stop, restart with health checks
+ * - Transport handling: stdio (child process) and SSE (HTTP stream)
+ * - Tool/resource/prompt discovery from connected servers
+ *
+ * Dependencies: config-store (via mcp-config-store)
+ */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -15,6 +28,7 @@ export interface MCPServerConfig {
   command?: string; // For stdio: command to run
   args?: string[]; // For stdio: command arguments
   env?: Record<string, string>; // Environment variables
+  cwd?: string; // Working directory for stdio command
   url?: string; // For SSE: server URL
   headers?: Record<string, string>; // For SSE: HTTP headers
   enabled: boolean;
@@ -45,6 +59,10 @@ export class MCPManager {
   private tools: Map<string, MCPTool> = new Map(); // toolName -> MCPTool
   private serverConfigs: Map<string, MCPServerConfig> = new Map();
   private npxPath: string | null = null; // Cached npx path
+  // Fingerprint of last initialized config to skip redundant re-init
+  private lastConfigFingerprint: string | null = null;
+  // Cached base environment (shell env + PATH). Resolved once, reused for all MCP server spawns.
+  private cachedBaseEnv: Record<string, string> | null = null;
 
   /**
    * Get bundled Node.js path
@@ -125,18 +143,29 @@ export class MCPManager {
    * This is critical for packaged apps where process.env is very limited
    */
   private async getEnhancedEnv(configEnv: Record<string, string>): Promise<Record<string, string>> {
+    if (!this.cachedBaseEnv) {
+      this.cachedBaseEnv = await this.resolveBaseEnv();
+    }
+    return { ...this.cachedBaseEnv, ...configEnv };
+  }
+
+  /**
+   * Resolve the base environment (shell env + PATH).
+   * Heavy operation — called once, then cached by getEnhancedEnv.
+   */
+  private async resolveBaseEnv(): Promise<Record<string, string>> {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
     const os = await import('os');
     const path = await import('path');
-    
+
     const platform = os.platform();
     const homeDir = os.homedir();
-    
+
     // Start with current process env
     let env = { ...process.env } as Record<string, string>;
-    
+
     // For macOS/Linux, try to get full environment from user's shell
     // This is essential for packaged apps where process.env is minimal
     if (platform === 'darwin' || platform === 'linux') {
@@ -165,9 +194,9 @@ export class MCPManager {
           }
         }
         
-        // Merge shell environment with process environment
-        // For most variables, use shell env (it's more complete)
-        env = { ...env, ...shellEnv };
+        // Merge shell environment safely: enrich missing runtime vars but never override
+        // config-sensitive keys that were already set by app runtime.
+        env = mergeShellEnvForMcp(env, shellEnv);
         
         // Special handling for PATH: merge both shell PATH and process PATH
         // This ensures we have both user tools (from shell) and system paths (from process)
@@ -198,6 +227,29 @@ export class MCPManager {
         logWarn(`[MCPManager] Could not get environment from shell: ${error.message}`);
         logWarn(`[MCPManager] Using limited process.env, MCP servers may fail`);
       }
+    } else if (platform === 'win32') {
+      // Windows: try PowerShell to get user PATH
+      try {
+        const { stdout } = await execAsync(
+          'powershell.exe -NoProfile -Command "[Environment]::GetEnvironmentVariable(\'Path\', \'User\') + \';\' + [Environment]::GetEnvironmentVariable(\'Path\', \'Machine\')"',
+          { timeout: 5000 }
+        );
+        if (stdout.trim()) {
+          const pathDelimiter = ';';
+          const winPaths = stdout.trim().split(pathDelimiter).filter(p => p.trim());
+          const currentPaths = (env.PATH || '').split(pathDelimiter).filter(p => p.trim());
+          const allPaths = [...winPaths];
+          for (const p of currentPaths) {
+            if (!allPaths.some(ep => ep.toLowerCase() === p.toLowerCase())) {
+              allPaths.push(p);
+            }
+          }
+          env.PATH = allPaths.join(pathDelimiter);
+          log(`[MCPManager] Enhanced Windows PATH: ${winPaths.length} user/machine paths + ${allPaths.length - winPaths.length} unique process paths = ${allPaths.length} total`);
+        }
+      } catch (error: any) {
+        logWarn(`[MCPManager] Could not get Windows PATH from PowerShell: ${error.message}`);
+      }
     }
     
     // Add bundled Node.js bin directory to PATH (highest priority)
@@ -220,16 +272,22 @@ export class MCPManager {
     
     log(`[MCPManager] Final PATH: ${env.PATH?.substring(0, 150)}...`);
 
-    // Merge with config env (config env takes precedence)
-    return { ...env, ...configEnv };
+    return env;
   }
 
   /**
    * Initialize MCP servers from configuration
    */
   async initializeServers(configs: MCPServerConfig[]): Promise<void> {
+    const fingerprint = JSON.stringify(configs.map(c => ({ id: c.id, enabled: c.enabled, command: c.command, args: c.args, url: c.url, env: c.env })));
+    if (fingerprint === this.lastConfigFingerprint) {
+      log('[MCPManager] Config unchanged, skipping re-initialization');
+      return;
+    }
+    this.lastConfigFingerprint = fingerprint;
+
     log('[MCPManager] Initializing', configs.length, 'MCP servers');
-    
+
     // Close existing connections
     await this.disconnectAll();
 
@@ -239,16 +297,17 @@ export class MCPManager {
       this.serverConfigs.set(config.id, config);
     }
 
-    // Connect to enabled servers
-    for (const config of configs) {
-      if (config.enabled) {
+    // Connect to enabled servers in parallel
+    const enabledConfigs = configs.filter(c => c.enabled);
+    await Promise.allSettled(
+      enabledConfigs.map(async (config) => {
         try {
           await this.connectServer(config);
         } catch (error) {
           logError(`[MCPManager] Failed to connect to server ${config.name}:`, error);
         }
-      }
-    }
+      })
+    );
 
     // Refresh tools from all connected servers
     await this.refreshTools();
@@ -260,6 +319,7 @@ export class MCPManager {
    */
   async updateServer(config: MCPServerConfig): Promise<void> {
     log(`[MCPManager] Updating server: ${config.name} (enabled: ${config.enabled})`);
+    this.lastConfigFingerprint = null;
     
     // Store the updated config
     this.serverConfigs.set(config.id, config);
@@ -299,6 +359,7 @@ export class MCPManager {
    */
   async removeServer(serverId: string): Promise<void> {
     log(`[MCPManager] Removing server: ${serverId}`);
+    this.lastConfigFingerprint = null;
     await this.disconnectServer(serverId);
     this.serverConfigs.delete(serverId);
     await this.refreshTools();
@@ -467,6 +528,15 @@ export class MCPManager {
       
       // Get environment variables
       const env = await this.getEnhancedEnv(config.env || {});
+      log('[MCPManager] Server auth env summary', {
+        server: config.name,
+        OPENAI_API_KEY: env.OPENAI_API_KEY?.trim() ? 'set' : 'unset',
+        OPENAI_BASE_URL: env.OPENAI_BASE_URL || '(unset)',
+        OPENAI_MODEL: env.OPENAI_MODEL || '(unset)',
+        OPENAI_ACCOUNT_ID: env.OPENAI_ACCOUNT_ID?.trim() ? 'set' : 'unset',
+        ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY?.trim() ? 'set' : 'unset',
+        ANTHROPIC_AUTH_TOKEN: env.ANTHROPIC_AUTH_TOKEN?.trim() ? 'set' : 'unset',
+      });
       
       // In production, set NODE_PATH to include unpacked node_modules
       if (app.isPackaged && isBuiltinServer) {
@@ -517,6 +587,7 @@ export class MCPManager {
         command,
         args,
         env,
+        cwd: config.cwd || undefined,
       });
       
       log(`[MCPManager] STDIO transport created successfully`);
@@ -1010,11 +1081,6 @@ export class MCPManager {
       throw new Error(`MCP tool not found: ${toolName}`);
     }
 
-    const client = this.clients.get(tool.serverId);
-    if (!client) {
-      throw new Error(`MCP server not connected: ${tool.serverId}`);
-    }
-
     // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
     let actualToolName = toolName;
     if (toolName.startsWith('mcp__')) {
@@ -1029,9 +1095,15 @@ export class MCPManager {
 
     const maxRetries = 2;
     let lastError: any;
+    let compatHotReloadTried = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        const client = this.clients.get(tool.serverId);
+        if (!client) {
+          throw new Error(`MCP server not connected: ${tool.serverId}`);
+        }
+
         // Add timeout for tool call
         const timeoutMs = 30000; // 30 second timeout
         const callPromise = client.callTool({
@@ -1043,26 +1115,84 @@ export class MCPManager {
         });
 
         const result = await Promise.race([callPromise, timeoutPromise]);
+
+        const toolErrorMessage = extractStructuredToolErrorMessage(result);
+        if (shouldReconnectOnStructuredToolError(toolErrorMessage)) {
+          // 某些 MCP 服务会把连接错误包在结构化结果里而非直接抛异常，这里转为异常以复用统一重连逻辑。
+          throw new Error(toolErrorMessage);
+        }
+        if (
+          !compatHotReloadTried &&
+          shouldHotReloadGuiVisionServer(tool.serverName, actualToolName, toolErrorMessage)
+        ) {
+          compatHotReloadTried = true;
+          logWarn(
+            `[MCPManager] Detected GUI vision compatibility error (${toolErrorMessage}). Reconnecting server ${tool.serverName} and retrying once.`
+          );
+          const reconnected = await this.reconnectServer(tool.serverId);
+          if (reconnected) {
+            continue;
+          }
+        }
+
         return result;
       } catch (error: any) {
         lastError = error;
         const errorMsg = error.message || String(error);
         logError(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
-        
-        // If connection closed, try to reconnect
-        if (errorMsg.includes('Connection closed') || errorMsg.includes('timeout')) {
-          if (attempt < maxRetries) {
-            log(`[MCPManager] Connection issue detected, waiting before retry...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        } else {
-          // For other errors, don't retry
+
+        if (attempt >= maxRetries) {
           break;
         }
+
+        const lowerErrorMsg = errorMsg.toLowerCase();
+        const shouldReconnect =
+          lowerErrorMsg.includes('mcp server not connected') ||
+          lowerErrorMsg.includes('not connected') ||
+          lowerErrorMsg.includes('connection closed');
+
+        if (shouldReconnect) {
+          log(`[MCPManager] Reconnectable MCP error detected for ${tool.serverName}; attempting reconnect...`);
+          const reconnected = await this.reconnectServer(tool.serverId);
+          if (reconnected) {
+            continue;
+          }
+          logWarn(`[MCPManager] Reconnect attempt failed for ${tool.serverName}, will retry after backoff`);
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          continue;
+        }
+
+        if (errorMsg.includes('timeout')) {
+          log(`[MCPManager] Tool call timeout detected, retrying after backoff...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+
+        // For non-retryable errors, exit retry loop immediately
+        break;
       }
     }
 
     throw lastError;
+  }
+
+  private async reconnectServer(serverId: string): Promise<boolean> {
+    const config = this.serverConfigs.get(serverId);
+    if (!config || !config.enabled) {
+      logWarn(`[MCPManager] Cannot reconnect server ${serverId}: config missing or disabled`);
+      return false;
+    }
+
+    try {
+      await this.disconnectServer(serverId);
+      await this.connectServer(config);
+      await this.refreshTools();
+      log(`[MCPManager] Reconnected server ${config.name} (${serverId})`);
+      return true;
+    } catch (error) {
+      logError(`[MCPManager] Failed to reconnect server ${serverId}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -1094,4 +1224,111 @@ export class MCPManager {
   async shutdown(): Promise<void> {
     await this.disconnectAll();
   }
+}
+
+function hasNonEmptyEnvValue(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isProtectedConfigEnvKey(key: string): boolean {
+  return (
+    key.startsWith('OPENAI_') ||
+    key.startsWith('ANTHROPIC_') ||
+    key.startsWith('CLAUDE_') ||
+    key.startsWith('COWORK_')
+  );
+}
+
+export function mergeShellEnvForMcp(
+  baseEnv: Record<string, string>,
+  shellEnv: Record<string, string>
+): Record<string, string> {
+  const merged = { ...baseEnv };
+  for (const [key, value] of Object.entries(shellEnv)) {
+    if (key === 'PATH') {
+      continue;
+    }
+    if (isProtectedConfigEnvKey(key)) {
+      continue;
+    }
+    if (hasNonEmptyEnvValue(merged[key])) {
+      continue;
+    }
+    if (typeof value === 'string' && value.length > 0) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function extractStructuredToolErrorMessage(result: any): string {
+  if (!result || typeof result !== 'object') {
+    return '';
+  }
+
+  const topLevelIsError = (result as { isError?: unknown }).isError === true;
+  const content = Array.isArray(result.content) ? result.content : [];
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue;
+    if ((item as { type?: string }).type !== 'text') continue;
+    const text = (item as { text?: unknown }).text;
+    if (typeof text !== 'string') continue;
+
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed) as { error?: unknown; message?: unknown };
+        if (parsed.error === true && typeof parsed.message === 'string' && parsed.message.trim()) {
+          return parsed.message.trim();
+        }
+      } catch {
+        // Ignore malformed JSON payloads
+      }
+    }
+
+    if (topLevelIsError && isReconnectableErrorText(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  return '';
+}
+
+function isReconnectableErrorText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    normalized === 'not connected' ||
+    normalized.includes('mcp server not connected') ||
+    normalized.includes('connection closed')
+  );
+}
+
+function shouldReconnectOnStructuredToolError(errorMessage: string): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+  return isReconnectableErrorText(errorMessage);
+}
+
+function shouldHotReloadGuiVisionServer(serverName: string, actualToolName: string, errorMessage: string): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+  if (actualToolName !== 'gui_verify_vision') {
+    return false;
+  }
+  if (!serverName.toLowerCase().includes('gui')) {
+    return false;
+  }
+
+  return (
+    errorMessage.includes('Unsupported parameter: max_output_tokens') ||
+    errorMessage.includes('Instructions are required') ||
+    errorMessage.includes('Stream must be set to true')
+  );
 }

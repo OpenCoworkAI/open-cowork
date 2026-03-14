@@ -54,6 +54,20 @@ const OPEN_COWORK_DATA_DIR = PLATFORM === 'win32'
 // Directory for storing GUI operate files (screenshots, etc.)
 const GUI_OPERATE_DIR = path.join(OPEN_COWORK_DATA_DIR, 'gui_operate');
 const SCREENSHOTS_DIR = path.join(GUI_OPERATE_DIR, 'screenshots');
+const SCREENSHOT_REUSE_WINDOW_MS = 5 * 60_000;
+const OPENAI_PLATFORM_BASE_URL = 'https://api.openai.com/v1';
+
+type ScreenshotCacheEntry = {
+  displayIndex: number;
+  regionKey: string;
+  path: string;
+  base64Image: string;
+  capturedAt: number;
+  displayInfo: { width: number; height: number; scaleFactor: number };
+};
+
+let lastScreenshotCache: ScreenshotCacheEntry | null = null;
+const screenshotRequestCounts = new Map<string, number>();
 
 // ============================================================================
 // Click History Tracking for GUI Locate (App-level Persistent Storage)
@@ -349,12 +363,6 @@ async function getAllVisitedApps(): Promise<string[]> {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         try {
-          // const clickHistoryPath = path.join(GUI_APPS_DIR, entry.name, 'click_history.json');
-          // const data = await fs.readFile(clickHistoryPath, 'utf-8');
-          // const appHistory: AppClickHistory = JSON.parse(data);
-          // if (appHistory.appName) {
-          //   actualAppNames.push(appHistory.appName);
-          // }
           actualAppNames.push(entry.name);
           writeMCPLog(`[getAllVisitedApps] Found app: ${entry.name}`, 'App List');
         } catch (error) {
@@ -828,6 +836,22 @@ function normalizeModifierKeys(modifiers: string[]): string[] {
   return modifiers
     .map(m => modifierMap[m.toLowerCase()])
     .filter((m): m is string => Boolean(m));
+}
+
+/**
+ * Format coordinates for cliclick command.
+ * cliclick requires a '=' prefix before negative coordinates.
+ * For example: c:=-1000,500 instead of c:-1000,500
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @returns Formatted coordinate string like "500,300" or "=-1000,500"
+ */
+function formatCliclickCoords(x: number, y: number): string {
+  // If either coordinate is negative, we need the '=' prefix
+  if (x < 0 || y < 0) {
+    return `=${x},${y}`;
+  }
+  return `${x},${y}`;
 }
 
 async function convertCliclickToCocoaCoordinates(
@@ -1674,105 +1698,125 @@ async function windowsPerformClick(
   clickType: 'single' | 'double' | 'right' | 'triple' = 'single',
   modifiers: string[] = []
 ): Promise<void> {
-  // Build modifier key press/release scripts
-  let modifierDown = '';
-  let modifierUp = '';
-  
+  // Build modifier key virtual key codes
+  const modKeyCodes: number[] = [];
   for (const mod of modifiers) {
     const modLower = mod.toLowerCase();
     // Virtual key codes: Ctrl=0x11, Shift=0x10, Alt=0x12
     if (modLower === 'ctrl' || modLower === 'control') {
-      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 0, 0)\n';
-      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 2, 0)\n';
+      modKeyCodes.push(0x11);
     } else if (modLower === 'shift') {
-      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x10, 0, 0, 0)\n';
-      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x10, 0, 2, 0)\n';
+      modKeyCodes.push(0x10);
     } else if (modLower === 'alt' || modLower === 'option') {
-      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x12, 0, 0, 0)\n';
-      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x12, 0, 2, 0)\n';
+      modKeyCodes.push(0x12);
     } else if (modLower === 'cmd' || modLower === 'command') {
       // Map Cmd to Ctrl on Windows
-      modifierDown += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 0, 0)\n';
-      modifierUp += '[Win32Functions.mouse_event]::keybd_event(0x11, 0, 2, 0)\n';
+      modKeyCodes.push(0x11);
     }
   }
-  
-  let clickScript = '';
-  
-  switch (clickType) {
-    case 'double':
-      clickScript = `
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-Start-Sleep -Milliseconds 50
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-`;
-      break;
-    case 'right':
-      clickScript = `
-[Win32Functions.mouse_event]::mouse_event(0x0008, 0, 0, 0, 0)  # Right down
-[Win32Functions.mouse_event]::mouse_event(0x0010, 0, 0, 0, 0)  # Right up
-`;
-      break;
-    case 'triple':
-      clickScript = `
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-Start-Sleep -Milliseconds 50
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-Start-Sleep -Milliseconds 50
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-`;
-      break;
-    case 'single':
-    default:
-      clickScript = `
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)  # Left down
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)  # Left up
-`;
-      break;
+
+  // Determine mouse flags for SendInput
+  // MOUSEEVENTF_LEFTDOWN=0x0002, LEFTUP=0x0004, RIGHTDOWN=0x0008, RIGHTUP=0x0010
+  let clickCount = 1;
+  let downFlag = '0x0002';
+  let upFlag = '0x0004';
+  if (clickType === 'right') {
+    downFlag = '0x0008';
+    upFlag = '0x0010';
+  } else if (clickType === 'double') {
+    clickCount = 2;
+  } else if (clickType === 'triple') {
+    clickCount = 3;
   }
-  
+
+  // Build modifier press/release PowerShell code using SendInput for keyboard
+  const modDownCode = modKeyCodes.map(vk =>
+    `$ki = New-Object WinClick+INPUT; $ki.type = 1; $ki.ki = New-Object WinClick+KEYBDINPUT; $ki.ki.wVk = ${vk}; $ki.ki.dwFlags = 0; [WinClick]::SendInput(1, @($ki), $inputSize) | Out-Null`
+  ).join('\n');
+  const modUpCode = modKeyCodes.map(vk =>
+    `$ki = New-Object WinClick+INPUT; $ki.type = 1; $ki.ki = New-Object WinClick+KEYBDINPUT; $ki.ki.wVk = ${vk}; $ki.ki.dwFlags = 2; [WinClick]::SendInput(1, @($ki), $inputSize) | Out-Null`
+  ).join('\n');
+
+  // Build click sequence
+  let clickCode = '';
+  for (let i = 0; i < clickCount; i++) {
+    if (i > 0) clickCode += 'Start-Sleep -Milliseconds 50\n';
+    clickCode += `
+$mi = New-Object WinClick+INPUT; $mi.type = 0; $mi.mi = New-Object WinClick+MOUSEINPUT; $mi.mi.dwFlags = ${downFlag}; [WinClick]::SendInput(1, @($mi), $inputSize) | Out-Null
+$mi2 = New-Object WinClick+INPUT; $mi2.type = 0; $mi2.mi = New-Object WinClick+MOUSEINPUT; $mi2.mi.dwFlags = ${upFlag}; [WinClick]::SendInput(1, @($mi2), $inputSize) | Out-Null
+`;
+  }
+
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 
-$signature = @"
-[DllImport("user32.dll")]
-public static extern bool SetProcessDPIAware();
-[DllImport("user32.dll")]
-public static extern bool SetCursorPos(int X, int Y);
-[DllImport("user32.dll")]
-public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
-[DllImport("user32.dll")]
-public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+
+public class WinClick {
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT {
+        public int dx;
+        public int dy;
+        public int mouseData;
+        public int dwFlags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT {
+        public short wVk;
+        public short wScan;
+        public int dwFlags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT {
+        public int type;
+        public MOUSEINPUT mi;
+        public KEYBDINPUT ki;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+}
 "@
 
-Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+Add-Type -TypeDefinition $code -Language CSharp
 
 # Set DPI awareness for accurate cursor positioning
-[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+[WinClick]::SetProcessDPIAware() | Out-Null
+
+$inputSize = [System.Runtime.InteropServices.Marshal]::SizeOf([type][WinClick+INPUT])
 
 # Set cursor position
-[Win32Functions.mouse_event]::SetCursorPos(${globalX}, ${globalY})
-Start-Sleep -Milliseconds 50
+[WinClick]::SetCursorPos(${globalX}, ${globalY})
+Start-Sleep -Milliseconds 100
 
 # Press modifier keys
-${modifierDown}
+${modDownCode}
 
-# Perform click
-${clickScript}
+# Perform click(s)
+${clickCode}
 
 # Release modifier keys
-${modifierUp}
+${modUpCode}
 
 Write-Output "SUCCESS"
 `;
 
   const result = await executePowerShell(script);
-  
+
   if (!result.stdout.includes('SUCCESS')) {
     throw new Error(`Click failed: ${result.stderr || result.stdout}`);
   }
@@ -1956,41 +2000,137 @@ async function windowsPerformScroll(
   amount: number = 3
 ): Promise<void> {
   // WHEEL_DELTA is 120, amount is number of notches
-  const wheelDelta = direction === 'up' ? (120 * amount) : 
+  const wheelDelta = direction === 'up' ? (120 * amount) :
                      direction === 'down' ? (-120 * amount) : 0;
   const hWheelDelta = direction === 'left' ? (-120 * amount) :
                       direction === 'right' ? (120 * amount) : 0;
-  
+
+  // Use SendInput API instead of deprecated mouse_event for better compatibility
+  // with modern applications (e.g. WeChat, Electron apps)
+  const isHorizontal = hWheelDelta !== 0;
+  const delta = isHorizontal ? hWheelDelta : wheelDelta;
+  // MOUSEEVENTF_WHEEL = 0x0800, MOUSEEVENTF_HWHEEL = 0x01000
+  const mouseFlag = isHorizontal ? '0x01000' : '0x0800';
+
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 
-$signature = @"
-[DllImport("user32.dll")]
-public static extern bool SetProcessDPIAware();
-[DllImport("user32.dll")]
-public static extern bool SetCursorPos(int X, int Y);
-[DllImport("user32.dll")]
-public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+
+public class WinScroll {
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT {
+        public int dx;
+        public int dy;
+        public int mouseData;
+        public int dwFlags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT {
+        public short wVk;
+        public short wScan;
+        public int dwFlags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT {
+        public int type;
+        public MOUSEINPUT mi;
+        public KEYBDINPUT ki;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+}
 "@
 
-Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+Add-Type -TypeDefinition $code -Language CSharp
 
-# Set DPI awareness
-[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+try {
+    # Set DPI awareness
+    [WinScroll]::SetProcessDPIAware() | Out-Null
 
-# Set cursor position
-[Win32Functions.mouse_event]::SetCursorPos(${globalX}, ${globalY})
-Start-Sleep -Milliseconds 50
+    # Move cursor to target position
+    [WinScroll]::SetCursorPos(${globalX}, ${globalY})
+    Start-Sleep -Milliseconds 100
 
-# Perform scroll (0x0800 = MOUSEEVENTF_WHEEL, 0x01000 = MOUSEEVENTF_HWHEEL)
-${wheelDelta !== 0 ? `[Win32Functions.mouse_event]::mouse_event(0x0800, 0, 0, ${wheelDelta}, 0)` : ''}
-${hWheelDelta !== 0 ? `[Win32Functions.mouse_event]::mouse_event(0x01000, 0, 0, ${hWheelDelta}, 0)` : ''}
+    # Activate the window under cursor so it receives scroll events
+    $pt = New-Object WinScroll+POINT
+    $pt.X = ${globalX}
+    $pt.Y = ${globalY}
+    $hwnd = [WinScroll]::WindowFromPoint($pt)
+    if ($hwnd -ne [IntPtr]::Zero) {
+        # Get the top-level parent window (GA_ROOT = 2)
+        $rootHwnd = [WinScroll]::GetAncestor($hwnd, 2)
+        if ($rootHwnd -ne [IntPtr]::Zero) {
+            [WinScroll]::SetForegroundWindow($rootHwnd) | Out-Null
+        } else {
+            [WinScroll]::SetForegroundWindow($hwnd) | Out-Null
+        }
+        Start-Sleep -Milliseconds 50
+    }
 
-Write-Output "SUCCESS"
+    # Re-position cursor after window activation (activation may shift focus)
+    [WinScroll]::SetCursorPos(${globalX}, ${globalY})
+    Start-Sleep -Milliseconds 50
+
+    # Build and send scroll input using SendInput
+    $inputSize = [System.Runtime.InteropServices.Marshal]::SizeOf([type][WinScroll+INPUT])
+    $input = New-Object WinScroll+INPUT
+    $input.type = 0  # INPUT_MOUSE
+    $input.mi = New-Object WinScroll+MOUSEINPUT
+    $input.mi.dx = 0
+    $input.mi.dy = 0
+    $input.mi.mouseData = ${delta}
+    $input.mi.dwFlags = ${mouseFlag}
+    $input.mi.time = 0
+    $input.mi.dwExtraInfo = [IntPtr]::Zero
+
+    $inputs = @($input)
+    $result = [WinScroll]::SendInput(1, $inputs, $inputSize)
+
+    if ($result -eq 1) {
+        Write-Output "SUCCESS"
+    } else {
+        $lastErr = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        Write-Output "FAILED: SendInput returned $result, LastError=$lastErr, inputSize=$inputSize"
+    }
+} catch {
+    Write-Output "ERROR: $_"
+    exit 1
+}
 `;
 
   const result = await executePowerShell(script);
-  
+
   if (!result.stdout.includes('SUCCESS')) {
     throw new Error(`Scroll failed: ${result.stderr || result.stdout}`);
   }
@@ -2061,40 +2201,67 @@ async function windowsPerformDrag(
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 
-$signature = @"
-[DllImport("user32.dll")]
-public static extern bool SetProcessDPIAware();
-[DllImport("user32.dll")]
-public static extern bool SetCursorPos(int X, int Y);
-[DllImport("user32.dll")]
-public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+
+public class WinDrag {
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT {
+        public int dx;
+        public int dy;
+        public int mouseData;
+        public int dwFlags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT {
+        public int type;
+        public MOUSEINPUT mi;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+}
 "@
 
-Add-Type -MemberDefinition $signature -Name mouse_event -Namespace Win32Functions
+Add-Type -TypeDefinition $code -Language CSharp
 
 # Set DPI awareness
-[Win32Functions.mouse_event]::SetProcessDPIAware() | Out-Null
+[WinDrag]::SetProcessDPIAware() | Out-Null
+
+$inputSize = [System.Runtime.InteropServices.Marshal]::SizeOf([type][WinDrag+INPUT])
 
 # Move to start position
-[Win32Functions.mouse_event]::SetCursorPos(${fromX}, ${fromY})
-Start-Sleep -Milliseconds 50
+[WinDrag]::SetCursorPos(${fromX}, ${fromY})
+Start-Sleep -Milliseconds 100
 
-# Press left button
-[Win32Functions.mouse_event]::mouse_event(0x0002, 0, 0, 0, 0)
+# Press left button (MOUSEEVENTF_LEFTDOWN = 0x0002)
+$mi = New-Object WinDrag+INPUT; $mi.type = 0; $mi.mi = New-Object WinDrag+MOUSEINPUT; $mi.mi.dwFlags = 0x0002
+[WinDrag]::SendInput(1, @($mi), $inputSize) | Out-Null
 Start-Sleep -Milliseconds 50
 
 # Move to end position
-[Win32Functions.mouse_event]::SetCursorPos(${toX}, ${toY})
+[WinDrag]::SetCursorPos(${toX}, ${toY})
 Start-Sleep -Milliseconds 50
 
-# Release left button
-[Win32Functions.mouse_event]::mouse_event(0x0004, 0, 0, 0, 0)
+# Release left button (MOUSEEVENTF_LEFTUP = 0x0004)
+$mi2 = New-Object WinDrag+INPUT; $mi2.type = 0; $mi2.mi = New-Object WinDrag+MOUSEINPUT; $mi2.mi.dwFlags = 0x0004
+[WinDrag]::SendInput(1, @($mi2), $inputSize) | Out-Null
 
 Write-Output "SUCCESS"
 `;
 
   const result = await executePowerShell(script);
-  
+
   if (!result.stdout.includes('SUCCESS')) {
     throw new Error(`Drag failed: ${result.stderr || result.stdout}`);
   }
@@ -2586,19 +2753,21 @@ async function performClick(
   const cliclickModifiers = normalizedModifiers.join(',');
   
   // Build click command based on type
+  // Use formatCliclickCoords to handle negative coordinates (displays to left/above main)
+  const coords = formatCliclickCoords(globalX, globalY);
   switch (clickType) {
     case 'double':
-      command = `dc:${globalX},${globalY}`;
+      command = `dc:${coords}`;
       break;
     case 'right':
-      command = `rc:${globalX},${globalY}`;
+      command = `rc:${coords}`;
       break;
     case 'triple':
-      command = `tc:${globalX},${globalY}`;
+      command = `tc:${coords}`;
       break;
     case 'single':
     default:
-      command = `c:${globalX},${globalY}`;
+      command = `c:${coords}`;
       break;
   }
   
@@ -2802,36 +2971,34 @@ async function performKeyPress(
   let command = '';
   let resultMessage = '';
   
-  // If key is in keyMap, use kp: command for special keys
-  if (cliclickKey) {
-    if (hasCliclick) {
-      if (cliclickModifiers.length > 0) {
-        command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
-      } else {
-        command = `kp:${cliclickKey}`;
-      }
-      await executeCliclick(command);
+  // For special keys that have key codes, prefer AppleScript key code method
+  // because it's more reliable across different applications (e.g., WeChat, browsers)
+  // cliclick's kp: command doesn't work correctly in some apps
+  const specialKeyCode = specialKeyCodeMap[keyLower];
+  
+  if (specialKeyCode !== undefined) {
+    // Use AppleScript key code for special keys (enter, tab, escape, arrows, etc.)
+    // This is more reliable than cliclick for apps like WeChat
+    const modifierFlags: string[] = [];
+    if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
+    if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
+    if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
+    if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
+    const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
+    const appleScript = `tell application "System Events" to key code ${specialKeyCode}${usingClause}`;
+    writeMCPLog(`[performKeyPress] Using AppleScript key code ${specialKeyCode} for "${key}"`, 'Key Press');
+    await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+    const modifierStr = modifiers.join('+');
+    resultMessage = `Pressed: ${modifierStr ? `${modifierStr}+` : ''}${key}`;
+  } else if (cliclickKey && hasCliclick) {
+    // For other mapped keys that cliclick supports but don't have AppleScript key codes
+    if (cliclickModifiers.length > 0) {
+      command = `kd:${cliclickModifiers.join(',')} kp:${cliclickKey} ku:${cliclickModifiers.join(',')}`;
     } else {
-      // 无 cliclick 时，使用 AppleScript key code 方案
-      const keyCode = specialKeyCodeMap[keyLower];
-      if (keyCode === undefined) {
-        throw new Error(
-          `Key "${key}" requires cliclick on macOS. ` +
-          `Please install/bundle cliclick or use a supported single character key.`
-        );
-      }
-      const modifierFlags: string[] = [];
-      if (cliclickModifiers.includes('cmd')) modifierFlags.push('command down');
-      if (cliclickModifiers.includes('ctrl')) modifierFlags.push('control down');
-      if (cliclickModifiers.includes('shift')) modifierFlags.push('shift down');
-      if (cliclickModifiers.includes('alt')) modifierFlags.push('option down');
-      const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
-      const appleScript = `tell application "System Events" to key code ${keyCode}${usingClause}`;
-      await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
-      const modifierStr = modifiers.join('+');
-      resultMessage = `Pressed: ${modifierStr ? `${modifierStr}+` : ''}${key} (using key code)`;
+      command = `kp:${cliclickKey}`;
     }
-  } else {
+    await executeCliclick(command);
+  } else if (!cliclickKey) {
     // For single characters, cliclick's kp: doesn't work, use t: command instead
     if (key.length === 1) {
       const escapedKey = key.replace(/"/g, '\\"');
@@ -2920,7 +3087,9 @@ async function performScroll(
 
   // macOS implementation
   // First move to the position
-  const moveCommand = `m:${globalX},${globalY}`;
+  // Use formatCliclickCoords to handle negative coordinates (displays to left/above main)
+  const coords = formatCliclickCoords(globalX, globalY);
+  const moveCommand = `m:${coords}`;
   const hasCliclick = Boolean(await resolveCliclickPath());
   
   // cliclick doesn't directly support scrolling, but we can use AppleScript
@@ -2984,7 +3153,10 @@ async function performDrag(
 
   // macOS implementation
   // cliclick drag command: dd: (drag down/start) then du: (drag up/end)
-  const command = `dd:${fromCoords.globalX},${fromCoords.globalY} du:${toCoords.globalX},${toCoords.globalY}`;
+  // Use formatCliclickCoords to handle negative coordinates (displays to left/above main)
+  const fromCoordsStr = formatCliclickCoords(fromCoords.globalX, fromCoords.globalY);
+  const toCoordsStr = formatCliclickCoords(toCoords.globalX, toCoords.globalY);
+  const command = `dd:${fromCoordsStr} du:${toCoordsStr}`;
   const hasCliclick = Boolean(await resolveCliclickPath());
   
   if (hasCliclick) {
@@ -3114,8 +3286,55 @@ async function takeScreenshotForDisplay(
   displayIndex?: number,
   region?: { x: number; y: number; width: number; height: number },
   reason?: string,
+  forceRefresh?: boolean,
   // annotateClicks?: boolean
 ): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+  const normalizedDisplayIndex = displayIndex ?? 0;
+  const regionKey = toRegionKey(region);
+  const requestKey = `${normalizedDisplayIndex}:${regionKey}`;
+  const requestCount = (screenshotRequestCounts.get(requestKey) || 0) + 1;
+  screenshotRequestCounts.set(requestKey, requestCount);
+  const reusable = forceRefresh ? null : getReusableScreenshot(normalizedDisplayIndex, regionKey);
+  if (reusable) {
+    const reusedMetadata: Record<string, any> = {
+      success: true,
+      path: reusable.path,
+      displayIndex: reusable.displayIndex,
+      displayInfo: reusable.displayInfo,
+      timestamp: new Date(reusable.capturedAt).toISOString(),
+      reused: true,
+      duplicateCallCount: requestCount,
+    };
+    if (requestCount > 1) {
+      reusedMetadata.nextStepHint =
+        'Screenshot already captured recently. Please use this screenshot to interpret/verify, and avoid repeated screenshot_for_display calls unless user explicitly asks to refresh.';
+    }
+    if (reason) {
+      reusedMetadata.reason = reason;
+    }
+    if (region) {
+      reusedMetadata.region = region;
+    }
+    writeMCPLog(
+      `[takeScreenshotForDisplay] Reusing screenshot captured ${Date.now() - reusable.capturedAt}ms ago: ${reusable.path} (duplicateCallCount=${requestCount})`,
+      'Screenshot Reuse'
+    );
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(reusedMetadata, null, 2),
+        },
+        {
+          type: 'image',
+          data: reusable.base64Image,
+          mimeType: 'image/png',
+        },
+      ],
+    };
+  }
+
   const timestamp = Date.now();
   const tempPath = path.join(SCREENSHOTS_DIR, `screenshot_display_${timestamp}.png`);
 
@@ -3123,22 +3342,6 @@ async function takeScreenshotForDisplay(
   await takeScreenshot(tempPath, displayIndex, region);
 
   let finalPath = tempPath;
-  // let clickHistoryInfo: string | undefined;
-
-  // // Annotate with click history if requested
-  // if (annotateClicks && currentAppName) {
-  //   try {
-  //     const annotateResult = await annotateScreenshotWithClickHistory(
-  //       tempPath,
-  //       displayIndex ?? 0
-  //     );
-  //     finalPath = annotateResult.annotatedPath;
-  //     clickHistoryInfo = annotateResult.clickHistoryInfo;
-  //   } catch (error) {
-  //     writeMCPLog(`[takeScreenshotForDisplay] Failed to annotate screenshot: ${error}`, 'Screenshot');
-  //     // Continue with un-annotated screenshot
-  //   }
-  // }
 
   // Read the screenshot file and convert to base64
   const imageBuffer = await fs.readFile(finalPath);
@@ -3146,13 +3349,13 @@ async function takeScreenshotForDisplay(
 
   // Get display information
   const config = await getDisplayConfiguration();
-  const display = config.displays.find(d => d.index === (displayIndex ?? 0)) || config.displays[0];
+  const display = config.displays.find(d => d.index === normalizedDisplayIndex) || config.displays[0];
 
   // Build response metadata
   const metadata: Record<string, any> = {
     success: true,
     path: finalPath,
-    displayIndex: displayIndex ?? 0,
+    displayIndex: normalizedDisplayIndex,
     displayInfo: {
       width: display.width,
       height: display.height,
@@ -3164,6 +3367,10 @@ async function takeScreenshotForDisplay(
 
   if (reason) {
     metadata.reason = reason;
+  }
+
+  if (forceRefresh) {
+    metadata.forceRefresh = true;
   }
 
   if (region) {
@@ -3184,9 +3391,18 @@ async function takeScreenshotForDisplay(
     };
   }
 
-  // if (clickHistoryInfo) {
-  //   metadata.clickHistoryInfo = clickHistoryInfo;
-  // }
+  updateScreenshotCache({
+    displayIndex: normalizedDisplayIndex,
+    regionKey,
+    path: finalPath,
+    base64Image,
+    capturedAt: Date.now(),
+    displayInfo: {
+      width: display.width,
+      height: display.height,
+      scaleFactor: display.scaleFactor,
+    },
+  });
 
   // Return MCP response with both text and image content
   return {
@@ -3219,8 +3435,8 @@ async function getMousePosition(): Promise<{ x: number; y: number; displayIndex:
   } else {
     // macOS implementation
     const result = await executeCliclick('p');
-    // Output format: "x,y" or similar
-    const match = result.stdout.trim().match(/(\d+),(\d+)/);
+    // Output format: "x,y" — coordinates may be negative for displays to the left of / above main
+    const match = result.stdout.trim().match(/(-?\d+),(-?\d+)/);
     
     if (!match) {
       throw new Error(`Failed to parse mouse position: ${result.stdout}`);
@@ -3274,9 +3490,11 @@ async function moveMouse(
   }
   
   // macOS implementation
+  // Use formatCliclickCoords to handle negative coordinates (displays to left/above main)
   const hasCliclick = Boolean(await resolveCliclickPath());
   if (hasCliclick) {
-    await executeCliclick(`m:${globalX},${globalY}`);
+    const coords = formatCliclickCoords(globalX, globalY);
+    await executeCliclick(`m:${coords}`);
   } else {
     await performMacMouseMoveViaQuartz(globalX, globalY, []);
   }
@@ -3320,6 +3538,7 @@ async function callVisionAPI(
   const TIMEOUT_MS = 45000; // 45 seconds
   
   const logPrefix = functionName ? `[callVisionAPI:${functionName}]` : '[callVisionAPI]';
+  let compatibilityFallbackUsed = false;
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -3331,16 +3550,47 @@ async function callVisionAPI(
       return result;
     } catch (error: any) {
       const isLastAttempt = attempt === MAX_RETRIES;
+      const errorMessage = String(error?.message || error || '');
+
+      // Deterministic request-shape errors should fail fast instead of wasting retries.
+      if (isVisionRequestShapeError(errorMessage)) {
+        if (!compatibilityFallbackUsed) {
+          compatibilityFallbackUsed = true;
+          writeMCPLog(
+            `${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Request-shape error detected, running one compatibility fallback: ${errorMessage}`,
+            'API Request Error'
+          );
+          try {
+            const compatResult = await callVisionAPIWithTimeout(
+              base64Image,
+              prompt,
+              maxTokens,
+              functionName,
+              TIMEOUT_MS,
+              true,
+              errorMessage
+            );
+            writeMCPLog(`${logPrefix} Compatibility fallback succeeded`, 'API Request');
+            return compatResult;
+          } catch (compatError: any) {
+            const compatMessage = String(compatError?.message || compatError || '');
+            writeMCPLog(`${logPrefix} Compatibility fallback failed: ${compatMessage}`, 'API Request Error');
+            throw new Error(compatMessage || errorMessage);
+          }
+        }
+        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Deterministic error, stop retry: ${errorMessage}`, 'API Request Error');
+        throw new Error(errorMessage);
+      }
       
-      if (error.message.includes('timeout')) {
+      if (errorMessage.includes('timeout')) {
         writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Timeout after ${TIMEOUT_MS}ms`, 'API Request Error');
       } else {
-        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Error: ${error.message}`, 'API Request Error');
+        writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Error: ${errorMessage}`, 'API Request Error');
       }
       
       if (isLastAttempt) {
         writeMCPLog(`${logPrefix} All ${MAX_RETRIES} attempts failed`, 'API Request Failed');
-        throw new Error(`Vision API failed after ${MAX_RETRIES} attempts: ${error.message}`);
+        throw new Error(`Vision API failed after ${MAX_RETRIES} attempts: ${errorMessage}`);
       }
       
       // Wait before retry (exponential backoff: 1s, 2s, 4s)
@@ -3353,6 +3603,65 @@ async function callVisionAPI(
   throw new Error('Vision API failed: Maximum retries exceeded');
 }
 
+function isVisionRequestShapeError(errorMessage: string): boolean {
+  if (!errorMessage) {
+    return false;
+  }
+  return (
+    errorMessage.includes('Unsupported parameter') ||
+    errorMessage.includes('Instructions are required') ||
+    errorMessage.includes('Stream must be set to true')
+  );
+}
+
+function getBaseUrlHost(baseUrl: string | undefined): string {
+  if (!baseUrl) {
+    return '(unset)';
+  }
+  try {
+    return new URL(baseUrl).host || '(unknown)';
+  } catch {
+    return '(invalid-url)';
+  }
+}
+
+function buildVisionRuntimeSummary(
+  functionName: string | undefined,
+  anthropicApiKey: string | undefined,
+  openAIApiKey: string | undefined,
+  baseUrl: string | undefined,
+  model: string,
+  isOpenAICompatible: boolean,
+  compatibilityMode: boolean
+): Record<string, unknown> {
+  return {
+    functionName: functionName || '(unknown)',
+    hasAnthropicApiKey: Boolean(anthropicApiKey),
+    hasOpenAIApiKey: Boolean(openAIApiKey),
+    hasAnyApiKey: Boolean(anthropicApiKey || openAIApiKey),
+    baseUrlHost: getBaseUrlHost(baseUrl),
+    model,
+    isOpenAICompatible,
+    compatibilityMode,
+  };
+}
+
+function pickVisionApiKey(
+  selectedRoute: 'openai-chat-completions' | 'anthropic-messages',
+  anthropicApiKey: string | undefined,
+  openAIApiKey: string | undefined,
+  isOpenRouter: boolean
+): string | undefined {
+  if (selectedRoute === 'anthropic-messages') {
+    return anthropicApiKey;
+  }
+  // OpenRouter historically reuses Anthropic-style key env vars.
+  if (isOpenRouter) {
+    return anthropicApiKey || openAIApiKey;
+  }
+  return openAIApiKey;
+}
+
 /**
  * Call vision API with timeout
  */
@@ -3361,31 +3670,67 @@ async function callVisionAPIWithTimeout(
   prompt: string,
   maxTokens: number,
   functionName: string | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  compatibilityMode: boolean = false,
+  previousErrorMessage?: string
 ): Promise<string> {
-  // Get API configuration from environment
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
-  const baseUrl = process.env.ANTHROPIC_BASE_URL;
-  const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-3-5-sonnet-20241022';
+  // Get API configuration from environment (supports Anthropic/OpenRouter/OpenAI-compatible)
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  const openAIBaseUrl = process.env.OPENAI_BASE_URL?.trim();
+  const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL?.trim();
+  const openAIModel = process.env.OPENAI_MODEL?.trim();
+  const anthropicModel =
+    process.env.CLAUDE_MODEL?.trim() ||
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL?.trim();
+  // NOTE: OPENAI_API_KEY may be auto-hydrated for MCP subprocess compatibility.
+  // Route inference must rely on semantic OpenAI hints (base/model), not key presence.
+  const hasOpenAIConfig = Boolean(openAIBaseUrl || openAIModel);
+  const baseUrl = openAIBaseUrl || anthropicBaseUrl;
+  const model = openAIModel || anthropicModel || 'claude-3-5-sonnet-20241022';
+
+  // Check if using OpenRouter
+  const isOpenRouter = !!baseUrl && (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
   
-  if (!apiKey) {
-    throw new Error('API key not configured. Please set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN environment variable.');
+  // Check if model/config is OpenAI-compatible (Gemini, GPT, etc.)
+  const isOpenAICompatible =
+    hasOpenAIConfig ||
+    model.includes('gemini') ||
+    model.includes('gpt-') ||
+    model.includes('openai/') ||
+    isOpenRouter ||
+    (baseUrl ? baseUrl.includes('api.openai.com') : false);
+
+  const runtimeSummary = buildVisionRuntimeSummary(
+    functionName,
+    anthropicApiKey,
+    openAIApiKey,
+    baseUrl,
+    model,
+    isOpenAICompatible,
+    compatibilityMode
+  );
+  writeMCPLog(JSON.stringify(runtimeSummary), 'Vision Runtime');
+
+  const selectedRoute = isOpenAICompatible
+    ? 'openai-chat-completions'
+    : 'anthropic-messages';
+  writeMCPLog(
+    `[Vision Routing] function=${functionName || '(unknown)'} route=${selectedRoute} host=${getBaseUrlHost(baseUrl)} model=${model}${previousErrorMessage ? ` previousError=${previousErrorMessage}` : ''}`,
+    'Vision Routing'
+  );
+
+  const selectedApiKey = pickVisionApiKey(selectedRoute, anthropicApiKey, openAIApiKey, isOpenRouter);
+  if (!selectedApiKey) {
+    if (selectedRoute === 'anthropic-messages') {
+      throw new Error('Anthropic API key not configured. Please set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN.');
+    }
+    throw new Error('OpenAI API key not configured for vision route. Please set OPENAI_API_KEY.');
   }
-  
-  // Check if using OpenRouter (has AUTH_TOKEN and baseUrl is openrouter.ai)
-  const isOpenRouter = !!process.env.ANTHROPIC_AUTH_TOKEN && 
-                       baseUrl && 
-                       (baseUrl.includes('openrouter.ai') || baseUrl.includes('openrouter'));
-  
-  // Check if model is OpenAI-compatible (Gemini, etc.)
-  const isOpenAICompatible = model.includes('gemini') || 
-                              model.includes('gpt-') || 
-                              model.includes('openai/') ||
-                              isOpenRouter;
-  
+
   if (isOpenAICompatible) {
     // Use OpenAI-compatible API format (for Gemini, GPT, etc. via OpenRouter)
-    const openAIBaseUrl = baseUrl || 'https://api.openai.com/v1';
+    const openAIBaseUrl = baseUrl || OPENAI_PLATFORM_BASE_URL;
     const openAIUrl = openAIBaseUrl.endsWith('/v1') 
       ? `${openAIBaseUrl}/chat/completions`
       : `${openAIBaseUrl}/v1/chat/completions`;
@@ -3425,7 +3770,7 @@ async function callVisionAPIWithTimeout(
     
     const headers: any = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${selectedApiKey}`,
       'Content-Length': Buffer.byteLength(requestBody),
     };
     
@@ -3511,15 +3856,17 @@ async function callVisionAPIWithTimeout(
   } else {
     // Use Anthropic API format
     const Anthropic = require('@anthropic-ai/sdk');
+    const anthropicRouteBaseUrl = anthropicBaseUrl || baseUrl;
+    const anthropicRouteModel = anthropicModel || model;
     const anthropic = new Anthropic({
-      apiKey: apiKey,
-      baseURL: baseUrl,
+      apiKey: selectedApiKey,
+      baseURL: anthropicRouteBaseUrl,
       timeout: timeoutMs,
     });
     
     // Wrap the API call with timeout promise
     const apiCallPromise = anthropic.messages.create({
-      model: model,
+      model: anthropicRouteModel,
       max_tokens: maxTokens,
       messages: [
         {
@@ -3612,9 +3959,12 @@ async function annotateScreenshotWithClickHistory(
   // Get display configuration to handle Retina scaling
   const config = await getDisplayConfiguration();
   const targetDisplay = config.displays.find(d => d.index === displayIndex);
-  const scaleFactor = targetDisplay?.scaleFactor || 1;
-  
-  writeMCPLog(`[annotateScreenshot] Image dimensions: ${imageDims.width}x${imageDims.height}, scaleFactor: ${scaleFactor}`, 'Image Info');
+  const rawScaleFactor = targetDisplay?.scaleFactor || 1;
+  // On Windows, click coordinates are already in physical pixels (DPI-aware pipeline),
+  // so no scaling is needed. On macOS, coordinates are logical and need scaleFactor.
+  const scaleFactor = PLATFORM === 'win32' ? 1 : rawScaleFactor;
+
+  writeMCPLog(`[annotateScreenshot] Image dimensions: ${imageDims.width}x${imageDims.height}, rawScaleFactor: ${rawScaleFactor}, effective: ${scaleFactor}`, 'Image Info');
   
   // Find the most recent click (highest timestamp) to display as #0
   const mostRecentClick = clickHistoryForDisplay.reduce((latest, current) => 
@@ -4003,13 +4353,16 @@ async function analyzeScreenshotWithVision(
     writeMCPLog(`[analyzeScreenshotWithVision] Calculated center from bounding box (pixels): x=${pixelCenterX}, y=${pixelCenterY}`, 'Center Calculation');
 
     // Convert from pixel coordinates to logical coordinates
-    // On Retina displays (scaleFactor=2), screenshots are 2x the logical resolution
-    // Vision returns pixel coordinates, but cliclick uses logical coordinates
-    const scaleFactor = targetDisplay.scaleFactor || 1;
-    writeMCPLog(`[analyzeScreenshotWithVision] Display scaleFactor: ${scaleFactor}`, 'Coordinate Conversion');
+    // On macOS Retina displays (scaleFactor=2), screenshots are 2x the logical resolution,
+    // and cliclick uses logical coordinates, so we must divide by scaleFactor.
+    // On Windows, the entire pipeline (display config, screenshot, SetCursorPos) works in
+    // physical pixels (DPI-aware), so no division is needed (effectiveScaleFactor = 1).
+    const rawScaleFactor = targetDisplay.scaleFactor || 1;
+    const effectiveScaleFactor = PLATFORM === 'win32' ? 1 : rawScaleFactor;
+    writeMCPLog(`[analyzeScreenshotWithVision] Display scaleFactor: ${rawScaleFactor}, effective (platform=${PLATFORM}): ${effectiveScaleFactor}`, 'Coordinate Conversion');
 
-    const logicalX = pixelCenterX / scaleFactor;
-    const logicalY = pixelCenterY / scaleFactor;
+    const logicalX = pixelCenterX / effectiveScaleFactor;
+    const logicalY = pixelCenterY / effectiveScaleFactor;
 
     writeMCPLog(`[analyzeScreenshotWithVision] Logical coordinates for cliclick: x=${logicalX}, y=${logicalY}`, 'Coordinate Conversion');
 
@@ -4304,11 +4657,14 @@ async function locateGUIElement(
       : config.displays.find(d => d.isMain);
 
     if (targetDisplay) {
-      const scaleFactor = targetDisplay.scaleFactor || 1;
-      const pixelX = coords.x * scaleFactor;
-      const pixelY = coords.y * scaleFactor;
+      // On macOS, coords are logical (divided by scaleFactor), so multiply back to get pixels.
+      // On Windows, coords are already in physical pixels (no scaleFactor division was applied).
+      const rawScaleFactor = targetDisplay.scaleFactor || 1;
+      const effectiveScaleFactor = PLATFORM === 'win32' ? 1 : rawScaleFactor;
+      const pixelX = coords.x * effectiveScaleFactor;
+      const pixelY = coords.y * effectiveScaleFactor;
 
-      writeMCPLog(`[locateGUIElement] Marking point on screenshot: logical=(${coords.x}, ${coords.y}), pixel=(${pixelX}, ${pixelY})`, 'Image Marking');
+      writeMCPLog(`[locateGUIElement] Marking point on screenshot: logical=(${coords.x}, ${coords.y}), pixel=(${pixelX}, ${pixelY}), effectiveScale=${effectiveScaleFactor}`, 'Image Marking');
 
       // coords.boundingBox is already in pixel coordinates
       const markedPath = await markPointOnImage(screenshotPath, pixelX, pixelY, undefined, coords.boundingBox);
@@ -4543,13 +4899,41 @@ async function verifyGUIState(
     throw new Error(`GUI verification is not supported on platform: ${PLATFORM}`);
   }
   
-  // Take screenshot
-  const screenshotPath = path.join(SCREENSHOTS_DIR, `gui_verify_${Date.now()}.png`);
-  await takeScreenshot(screenshotPath, displayIndex);
-  
-  // Analyze with vision model
-  const imageBuffer = await fs.readFile(screenshotPath);
-  const base64Image = imageBuffer.toString('base64');
+  const normalizedDisplayIndex = displayIndex ?? 0;
+  const regionKey = toRegionKey(undefined);
+  const reusable = getReusableScreenshot(normalizedDisplayIndex, regionKey);
+
+  let screenshotPath: string;
+  let base64Image: string;
+
+  if (reusable) {
+    screenshotPath = reusable.path;
+    base64Image = reusable.base64Image;
+    writeMCPLog(
+      `[verifyGUIState] Reusing recent screenshot captured ${Date.now() - reusable.capturedAt}ms ago: ${reusable.path}`,
+      'Screenshot Reuse'
+    );
+  } else {
+    screenshotPath = path.join(SCREENSHOTS_DIR, `gui_verify_${Date.now()}.png`);
+    await takeScreenshot(screenshotPath, displayIndex);
+    const imageBuffer = await fs.readFile(screenshotPath);
+    base64Image = imageBuffer.toString('base64');
+
+    const config = await getDisplayConfiguration();
+    const display = config.displays.find(d => d.index === normalizedDisplayIndex) || config.displays[0];
+    updateScreenshotCache({
+      displayIndex: normalizedDisplayIndex,
+      regionKey,
+      path: screenshotPath,
+      base64Image,
+      capturedAt: Date.now(),
+      displayInfo: {
+        width: display.width,
+        height: display.height,
+        scaleFactor: display.scaleFactor,
+      },
+    });
+  }
   
   const prompt = `Analyze this GUI screenshot and answer the following question:
 
@@ -4617,12 +5001,109 @@ Example:
       }
     }
   }
+
+  // Keep success parsing internal; strip the judgment block from user-visible answer text.
+  answer = stripOperationSuccessJudgmentBlock(answer);
   
   return JSON.stringify({
     success: true,
     question,
     answer,
     operationSuccess,
+    screenshot_path: screenshotPath,
+    displayIndex: normalizedDisplayIndex,
+  });
+}
+
+function stripOperationSuccessJudgmentBlock(answer: string): string {
+  if (!answer) {
+    return answer;
+  }
+
+  const normalized = answer.replace(/\r\n/g, '\n');
+  const patterns = [
+    /\n?\*\*Operation Success Judgment:\*\*[\s\S]*?(?:- Status:\s*(?:SUCCESS|FAILURE)[\s\S]*?(?:\n{2,}|$))/gi,
+    /\n?Operation Success Judgment:\s*[\s\S]*?(?:Status:\s*(?:SUCCESS|FAILURE)[\s\S]*?(?:\n{2,}|$))/gi,
+  ];
+
+  let stripped = normalized;
+  for (const pattern of patterns) {
+    stripped = stripped.replace(pattern, '\n\n');
+  }
+  return stripped.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function toRegionKey(region?: { x: number; y: number; width: number; height: number }): string {
+  if (!region) {
+    return 'full';
+  }
+  return `${region.x},${region.y},${region.width},${region.height}`;
+}
+
+function getReusableScreenshot(displayIndex: number, regionKey: string): ScreenshotCacheEntry | null {
+  if (!lastScreenshotCache) {
+    return null;
+  }
+  if (lastScreenshotCache.displayIndex !== displayIndex) {
+    return null;
+  }
+  if (lastScreenshotCache.regionKey !== regionKey) {
+    return null;
+  }
+  const age = Date.now() - lastScreenshotCache.capturedAt;
+  if (age > SCREENSHOT_REUSE_WINDOW_MS) {
+    return null;
+  }
+  return lastScreenshotCache;
+}
+
+function updateScreenshotCache(entry: ScreenshotCacheEntry): void {
+  lastScreenshotCache = entry;
+}
+
+/**
+ * Extract information from GUI screenshot using vision
+ */
+async function extractGUIInfo(
+  extractionPrompt: string,
+  displayIndex?: number
+): Promise<string> {
+  // Supported on both macOS and Windows
+  if (PLATFORM !== 'darwin' && PLATFORM !== 'win32') {
+    throw new Error(`GUI extraction is not supported on platform: ${PLATFORM}`);
+  }
+
+  // Take screenshot
+  const screenshotPath = path.join(SCREENSHOTS_DIR, `gui_extract_${Date.now()}.png`);
+  await takeScreenshot(screenshotPath, displayIndex);
+
+  // Analyze with vision model
+  const imageBuffer = await fs.readFile(screenshotPath);
+  const base64Image = imageBuffer.toString('base64');
+
+  const prompt = `You are an expert at extracting information from GUI screenshots. Analyze this screenshot and extract the requested information.
+
+**Extraction Request:**
+${extractionPrompt}
+
+**Instructions:**
+1. Carefully examine the screenshot to find the requested information.
+2. Extract the information as accurately and completely as possible.
+3. If the information is structured (like a list of messages, table data, menu items), format it clearly.
+4. If certain information cannot be found or is partially visible, mention what is visible and what is missing.
+5. Use appropriate formatting (bullet points, numbered lists, etc.) to present the extracted information clearly.
+
+**Response Format:**
+Provide the extracted information in a clear, structured format. If extracting multiple items, organize them logically.`;
+
+  const extractedInfo = await callVisionAPI(base64Image, prompt, 30000, 'extractGUIInfo');
+  writeMCPLog(`[extractGUIInfo] Response Length: ${extractedInfo.length}`, 'Response');
+  writeMCPLog(`[extractGUIInfo] Response (first 500 chars): ${extractedInfo.substring(0, 500)}`, 'Response Preview');
+
+  return JSON.stringify({
+    success: true,
+    extraction_prompt: extractionPrompt,
+    extracted_info: extractedInfo,
     screenshot_path: screenshotPath,
     displayIndex: displayIndex ?? 'all',
   });
@@ -4742,17 +5223,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'scroll',
-        description: 'Perform a scroll operation at the specified position.',
+        description: 'Perform a scroll operation at the specified position. Coordinates are display-local logical coordinates by default. You can also pass normalized coordinates (0-1000) via coordinate_type.',
         inputSchema: {
           type: 'object',
           properties: {
+            coordinate_type: {
+              type: 'string',
+              enum: ['auto', 'absolute', 'normalized'],
+              description: 'Coordinate interpretation. "absolute" = display-local logical coordinates. "normalized" = 0-1000 relative coordinates. "auto" (default) uses absolute, but converts from normalized if values are out of bounds.',
+            },
             x: {
               type: 'number',
-              description: 'X coordinate to scroll at',
+              description: 'X coordinate to scroll at (interpretation depends on coordinate_type)',
             },
             y: {
               type: 'number',
-              description: 'Y coordinate to scroll at',
+              description: 'Y coordinate to scroll at (interpretation depends on coordinate_type)',
             },
             display_index: {
               type: 'number',
@@ -4779,8 +5265,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             coordinate_type: {
               type: 'string',
-              enum: ['normalized', 'absolute'],
-              description: 'Coordinate interpretation. "normalized" means 0-1000 relative coords on the display. "absolute" means display-local logical pixel coords. Default: normalized',
+              enum: ['auto', 'absolute', 'normalized'],
+              description: 'Coordinate interpretation. "normalized" (default) means 0-1000 relative coords on the display. "absolute" means display-local logical pixel coords. "auto" uses absolute, but converts from normalized if values are out of bounds.',
             },
             from_x: {
               type: 'number',
@@ -4860,6 +5346,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Optional description of why taking this screenshot (e.g., "showing current dialog state", "capturing error message"). This helps document the purpose of the screenshot.',
             },
+            force_refresh: {
+              type: 'boolean',
+              description: 'If true, always capture a fresh screenshot and bypass short-term screenshot cache.',
+            },
             annotate_clicks: {
               type: 'boolean',
               description: 'If true, annotate the screenshot with click history markers. Default: false',
@@ -4879,17 +5369,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'move_mouse',
-        description: 'Move the mouse cursor to a specified position without clicking.',
+        description: 'Move the mouse cursor to a specified position without clicking. Coordinates are display-local logical coordinates by default. You can also pass normalized coordinates (0-1000) via coordinate_type.',
         inputSchema: {
           type: 'object',
           properties: {
+            coordinate_type: {
+              type: 'string',
+              enum: ['auto', 'absolute', 'normalized'],
+              description: 'Coordinate interpretation. "absolute" = display-local logical coordinates. "normalized" = 0-1000 relative coordinates. "auto" (default) uses absolute, but converts from normalized if values are out of bounds.',
+            },
             x: {
               type: 'number',
-              description: 'X coordinate',
+              description: 'X coordinate (interpretation depends on coordinate_type)',
             },
             y: {
               type: 'number',
-              description: 'Y coordinate',
+              description: 'Y coordinate (interpretation depends on coordinate_type)',
             },
             display_index: {
               type: 'number',
@@ -4917,24 +5412,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['duration'],
         },
       },
-      // {
-      //   name: 'gui_plan_action',
-      //   description: 'Plan GUI actions based on a natural language task description. Analyzes the current screen and breaks down the task into step-by-step GUI operations. Returns a plan with specific actions and element descriptions.',
-      //   inputSchema: {
-      //     type: 'object',
-      //     properties: {
-      //       task_description: {
-      //         type: 'string',
-      //         description: 'Natural language description of the task to accomplish (e.g., "create a new file named a.py in Cursor", "click the Save button and enter filename")',
-      //       },
-      //       display_index: {
-      //         type: 'number',
-      //         description: 'Display index to analyze. If not provided, uses main display.',
-      //       },
-      //     },
-      //     required: ['task_description'],
-      //   },
-      // },
       {
         name: 'gui_locate_element',
         description: 'Locate a GUI element on screen using AI vision. Returns the coordinates and confidence level for the element. You may need to re-call this function if you find previously found positions are not accurate (indicated by unsuccessful following operations).',
@@ -4953,24 +5430,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['element_description'],
         },
       },
-      // {
-      //   name: 'gui_interact_vision',
-      //   description: 'Execute a GUI task using natural language description. Automatically plans the task into steps, locates elements, and executes actions. Example: "create a new file named a.py in Cursor" will automatically find the new file button, click it, locate the filename input, and type "a.py".',
-      //   inputSchema: {
-      //     type: 'object',
-      //     properties: {
-      //       task_description: {
-      //         type: 'string',
-      //         description: 'Natural language description of the complete task to accomplish (e.g., "create a new file named a.py", "click the Save button and enter filename test.txt", "open the File menu and select New")',
-      //       },
-      //       display_index: {
-      //         type: 'number',
-      //         description: 'Display index to operate on. If not provided, uses main display.',
-      //       },
-      //     },
-      //     required: ['task_description'],
-      //   },
-      // },
       {
         name: 'gui_verify_vision',
         description: 'Verify GUI state using AI vision. Ask questions about what is visible on screen and get intelligent answers (e.g., "Is the game board visible?", "What is the current player shown?", "Are there any error messages?"). This tool is used to verify the state of the GUI after some operation to ensure the operation was successful (e.g., whether the click was successful, whether the text was typed, etc.).',
@@ -4987,6 +5446,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['question'],
+        },
+      },
+      {
+        name: 'gui_extract_info',
+        description: 'Extract information from GUI screenshot using AI vision. Use natural language to describe what information you want to extract (e.g., "Extract all chat messages currently visible in this group chat", "List all menu items shown", "Extract the table data displayed", "Get the notification text", "List all filenames in this folder view").',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            extraction_prompt: {
+              type: 'string',
+              description: 'Natural language description of what information to extract from the screen',
+            },
+            display_index: {
+              type: 'number',
+              description: 'Display index to capture. If not provided, uses main display.',
+            },
+          },
+          required: ['extraction_prompt'],
         },
       },
       {
@@ -5079,14 +5556,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'scroll': {
-        const { x, y, display_index = 0, direction, amount = 3 } = args as {
+        const { x, y, display_index = 0, direction, amount = 3, coordinate_type = 'auto' } = args as {
           x: number;
           y: number;
           display_index?: number;
           direction: 'up' | 'down' | 'left' | 'right';
           amount?: number;
+          coordinate_type?: 'auto' | 'absolute' | 'normalized';
         };
-        result = await performScroll(x, y, display_index, direction, amount);
+        const resolved = await resolveClickCoordinates(x, y, display_index, coordinate_type);
+        result = await performScroll(resolved.x, resolved.y, display_index, direction, amount);
         break;
       }
       
@@ -5097,24 +5576,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           to_x: number;
           to_y: number;
           display_index?: number;
-          coordinate_type?: 'normalized' | 'absolute';
+          coordinate_type?: 'auto' | 'absolute' | 'normalized';
         };
 
-        let fromX = from_x;
-        let fromY = from_y;
-        let toX = to_x;
-        let toY = to_y;
+        // Use resolveClickCoordinates for consistent coordinate handling
+        const fromResolved = await resolveClickCoordinates(from_x, from_y, display_index, coordinate_type);
+        const toResolved = await resolveClickCoordinates(to_x, to_y, display_index, coordinate_type);
 
-        if (coordinate_type !== 'absolute') {
-          const from = await convertNormalizedToDisplayCoordinates(from_x, from_y, display_index);
-          const to = await convertNormalizedToDisplayCoordinates(to_x, to_y, display_index);
-          fromX = from.x;
-          fromY = from.y;
-          toX = to.x;
-          toY = to.y;
-        }
-
-        result = await performDrag(fromX, fromY, toX, toY, display_index);
+        result = await performDrag(fromResolved.x, fromResolved.y, toResolved.x, toResolved.y, display_index);
         break;
       }
       
@@ -5129,13 +5598,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'screenshot_for_display': {
-        const { display_index, region, reason} = args as {
+        const { display_index, region, reason, force_refresh } = args as {
           display_index?: number;
           region?: { x: number; y: number; width: number; height: number };
           reason?: string;
+          force_refresh?: boolean;
         };
         // This tool returns a special format with image data, so return directly
-        return await takeScreenshotForDisplay(display_index, region, reason);
+        return await takeScreenshotForDisplay(display_index, region, reason, force_refresh === true);
       }
 
       case 'get_mouse_position': {
@@ -5145,12 +5615,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'move_mouse': {
-        const { x, y, display_index = 0 } = args as {
+        const { x, y, display_index = 0, coordinate_type = 'auto' } = args as {
           x: number;
           y: number;
           display_index?: number;
+          coordinate_type?: 'auto' | 'absolute' | 'normalized';
         };
-        result = await moveMouse(x, y, display_index);
+        const resolved = await resolveClickCoordinates(x, y, display_index, coordinate_type);
+        result = await moveMouse(resolved.x, resolved.y, display_index);
         break;
       }
       
@@ -5198,6 +5670,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           display_index?: number;
         };
         result = await verifyGUIState(question, display_index);
+        break;
+      }
+
+      case 'gui_extract_info': {
+        const { extraction_prompt, display_index } = args as {
+          extraction_prompt: string;
+          display_index?: number;
+        };
+        result = await extractGUIInfo(extraction_prompt, display_index);
         break;
       }
       
@@ -5282,6 +5763,16 @@ async function main() {
     writeMCPLog(`Platform: ${process.platform}`, 'Initialization');
     writeMCPLog(`Working directory: ${process.cwd()}`, 'Initialization');
     writeMCPLog(`Script path: ${__filename}`, 'Initialization');
+    writeMCPLog(
+      JSON.stringify({
+        hasAnthropicApiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+        hasOpenAIApiKey: Boolean(process.env.OPENAI_API_KEY),
+        openAIBaseUrlHost: getBaseUrlHost(process.env.OPENAI_BASE_URL || process.env.ANTHROPIC_BASE_URL),
+        openAIModel: process.env.OPENAI_MODEL || '(unset)',
+        anthropicModel: process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || '(unset)',
+      }),
+      'Initialization'
+    );
     
     writeMCPLog('Creating StdioServerTransport...', 'Initialization');
     const transport = new StdioServerTransport();

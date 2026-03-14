@@ -6,8 +6,8 @@
 import Database from 'better-sqlite3';
 import { app } from 'electron';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { log } from '../utils/logger';
+import { existsSync, mkdirSync, statSync, renameSync, openSync, readSync, closeSync } from 'fs';
+import { log, logError, logWarn } from '../utils/logger';
 
 export interface DatabaseInstance {
   // Raw database access (for advanced queries)
@@ -36,6 +36,14 @@ export interface DatabaseInstance {
     getBySessionId: (sessionId: string) => TraceStepRow[];
     deleteBySessionId: (sessionId: string) => void;
   };
+
+  scheduledTasks: {
+    create: (task: ScheduledTaskRow) => void;
+    update: (id: string, updates: Partial<ScheduledTaskRow>) => void;
+    get: (id: string) => ScheduledTaskRow | undefined;
+    getAll: () => ScheduledTaskRow[];
+    delete: (id: string) => void;
+  };
   
   // For compatibility with old interface
   prepare: (sql: string) => Database.Statement;
@@ -48,11 +56,13 @@ export interface SessionRow {
   id: string;
   title: string;
   claude_session_id: string | null;
+  openai_thread_id: string | null;
   status: string;
   cwd: string | null;
   mounted_paths: string; // JSON string
   allowed_tools: string; // JSON string
   memory_enabled: number;
+  model: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -81,7 +91,104 @@ export interface TraceStepRow {
   duration: number | null;
 }
 
+export interface ScheduledTaskRow {
+  id: string;
+  title: string;
+  prompt: string;
+  cwd: string;
+  run_at: number;
+  next_run_at: number | null;
+  schedule_config: string | null;
+  repeat_every: number | null;
+  repeat_unit: string | null;
+  enabled: number;
+  last_run_at: number | null;
+  last_run_session_id: string | null;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 let db: DatabaseInstance | null = null;
+const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'utf8');
+
+function buildBackupPath(targetPath: string, suffix: string): string {
+  return `${targetPath}.${suffix}-${Date.now()}`;
+}
+
+function moveIfExists(sourcePath: string, destinationPath: string): void {
+  if (!existsSync(sourcePath)) {
+    return;
+  }
+  renameSync(sourcePath, destinationPath);
+}
+
+function ensureDirectory(pathToEnsure: string, label: string): void {
+  if (!existsSync(pathToEnsure)) {
+    mkdirSync(pathToEnsure, { recursive: true });
+    return;
+  }
+
+  const stats = statSync(pathToEnsure);
+  if (stats.isDirectory()) {
+    return;
+  }
+
+  const backupPath = buildBackupPath(pathToEnsure, 'backup');
+  renameSync(pathToEnsure, backupPath);
+  logWarn(`[Database] ${label} path is not a directory, moved to backup:`, backupPath);
+  mkdirSync(pathToEnsure, { recursive: true });
+}
+
+function isSqliteFile(filePath: string): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(filePath, 'r');
+    const buffer = Buffer.alloc(SQLITE_HEADER.length);
+    const bytesRead = readSync(fd, buffer, 0, SQLITE_HEADER.length, 0);
+    if (bytesRead < SQLITE_HEADER.length) {
+      return false;
+    }
+    return buffer.equals(SQLITE_HEADER);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) {
+      closeSync(fd);
+    }
+  }
+}
+
+function prepareDatabaseDirectory(userDataPath: string): string {
+  ensureDirectory(userDataPath, 'userData');
+
+  const dbDir = join(userDataPath, 'data');
+  if (!existsSync(dbDir)) {
+    mkdirSync(dbDir, { recursive: true });
+    return dbDir;
+  }
+
+  const stats = statSync(dbDir);
+  if (stats.isDirectory()) {
+    return dbDir;
+  }
+
+  const preservedPath = buildBackupPath(dbDir, isSqliteFile(dbDir) ? 'legacy-db' : 'conflict');
+  renameSync(dbDir, preservedPath);
+  mkdirSync(dbDir, { recursive: true });
+
+  if (isSqliteFile(preservedPath)) {
+    const recoveredDbPath = join(dbDir, 'cowork.db');
+    renameSync(preservedPath, recoveredDbPath);
+    moveIfExists(`${dbDir}-wal`, `${recoveredDbPath}-wal`);
+    moveIfExists(`${dbDir}-shm`, `${recoveredDbPath}-shm`);
+    logWarn('[Database] Recovered legacy SQLite file into:', recoveredDbPath);
+  } else {
+    logWarn('[Database] Database directory path was occupied by a file, moved to backup:', preservedPath);
+  }
+
+  return dbDir;
+}
 
 /**
  * Get the database file path
@@ -89,14 +196,16 @@ let db: DatabaseInstance | null = null;
 function getDatabasePath(): string {
   // Use electron's userData path for persistent storage
   const userDataPath = app.getPath('userData');
-  const dbDir = join(userDataPath, 'data');
-  
-  // Ensure directory exists
-  if (!existsSync(dbDir)) {
-    mkdirSync(dbDir, { recursive: true });
+  const dbDir = prepareDatabaseDirectory(userDataPath);
+  const dbPath = join(dbDir, 'cowork.db');
+
+  if (existsSync(dbPath) && statSync(dbPath).isDirectory()) {
+    const backupPath = buildBackupPath(dbPath, 'dir-backup');
+    renameSync(dbPath, backupPath);
+    logWarn('[Database] Database file path is a directory, moved to backup:', backupPath);
   }
-  
-  return join(dbDir, 'cowork.db');
+
+  return dbPath;
 }
 
 /**
@@ -112,6 +221,7 @@ function initializeSchema(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       claude_session_id TEXT,
+      openai_thread_id TEXT,
       status TEXT NOT NULL DEFAULT 'idle',
       cwd TEXT,
       mounted_paths TEXT NOT NULL DEFAULT '[]',
@@ -121,6 +231,9 @@ function initializeSchema(database: Database.Database): void {
       updated_at INTEGER NOT NULL
     )
   `);
+
+  ensureColumn(database, 'sessions', 'openai_thread_id', 'openai_thread_id TEXT');
+  ensureColumn(database, 'sessions', 'model', 'model TEXT');
   
   // Create messages table
   database.exec(`
@@ -199,8 +312,48 @@ function initializeSchema(database: Database.Database): void {
       created_at INTEGER NOT NULL
     )
   `);
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      run_at INTEGER NOT NULL,
+      next_run_at INTEGER,
+      schedule_config TEXT,
+      repeat_every INTEGER,
+      repeat_unit TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_run_at INTEGER,
+      last_run_session_id TEXT,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  ensureColumn(database, 'scheduled_tasks', 'schedule_config', 'schedule_config TEXT');
+
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
+    ON scheduled_tasks(enabled, next_run_at)
+  `);
   
   log('[Database] Schema initialized');
+}
+
+function ensureColumn(
+  database: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const exists = rows.some((row) => row.name === column);
+  if (exists) {
+    return;
+  }
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 }
 
 /**
@@ -211,9 +364,15 @@ export function initDatabase(): DatabaseInstance {
   
   const dbPath = getDatabasePath();
   log('[Database] Opening database at:', dbPath);
-  
-  const rawDb = new Database(dbPath);
-  
+
+  let rawDb: Database.Database;
+  try {
+    rawDb = new Database(dbPath);
+  } catch (error) {
+    logError('[Database] Failed to open database at:', dbPath, error);
+    throw error;
+  }
+
   // Enable foreign keys
   rawDb.pragma('foreign_keys = ON');
   
@@ -222,9 +381,9 @@ export function initDatabase(): DatabaseInstance {
   
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
-    INSERT OR REPLACE INTO sessions 
-    (id, title, claude_session_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO sessions
+    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   
   // Note: Dynamic update queries are built in sessions.update() for flexibility
@@ -275,6 +434,25 @@ export function initDatabase(): DatabaseInstance {
   const deleteTraceStepsBySessionStmt = rawDb.prepare(`
     DELETE FROM trace_steps WHERE session_id = ?
   `);
+
+  const insertScheduledTask = rawDb.prepare(`
+    INSERT OR REPLACE INTO scheduled_tasks (
+      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getScheduledTaskStmt = rawDb.prepare(`
+    SELECT * FROM scheduled_tasks WHERE id = ?
+  `);
+
+  const getAllScheduledTasksStmt = rawDb.prepare(`
+    SELECT * FROM scheduled_tasks ORDER BY created_at ASC
+  `);
+
+  const deleteScheduledTaskStmt = rawDb.prepare(`
+    DELETE FROM scheduled_tasks WHERE id = ?
+  `);
   
   db = {
     raw: rawDb,
@@ -285,11 +463,13 @@ export function initDatabase(): DatabaseInstance {
           session.id,
           session.title,
           session.claude_session_id,
+          session.openai_thread_id,
           session.status,
           session.cwd,
           session.mounted_paths,
           session.allowed_tools,
           session.memory_enabled,
+          session.model,
           session.created_at,
           session.updated_at
         );
@@ -399,6 +579,61 @@ export function initDatabase(): DatabaseInstance {
 
       deleteBySessionId: (sessionId: string) => {
         deleteTraceStepsBySessionStmt.run(sessionId);
+      },
+    },
+
+    scheduledTasks: {
+      create: (task: ScheduledTaskRow) => {
+        insertScheduledTask.run(
+          task.id,
+          task.title,
+          task.prompt,
+          task.cwd,
+          task.run_at,
+          task.next_run_at,
+          task.schedule_config,
+          task.repeat_every,
+          task.repeat_unit,
+          task.enabled,
+          task.last_run_at,
+          task.last_run_session_id,
+          task.last_error,
+          task.created_at,
+          task.updated_at
+        );
+      },
+
+      update: (id: string, updates: Partial<ScheduledTaskRow>) => {
+        const setClauses: string[] = [];
+        const values: unknown[] = [];
+
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            setClauses.push(`${key} = ?`);
+            values.push(value);
+          }
+        }
+
+        if (setClauses.length === 0) return;
+
+        setClauses.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+
+        const sql = `UPDATE scheduled_tasks SET ${setClauses.join(', ')} WHERE id = ?`;
+        rawDb.prepare(sql).run(...values);
+      },
+
+      get: (id: string): ScheduledTaskRow | undefined => {
+        return getScheduledTaskStmt.get(id) as ScheduledTaskRow | undefined;
+      },
+
+      getAll: (): ScheduledTaskRow[] => {
+        return getAllScheduledTasksStmt.all() as ScheduledTaskRow[];
+      },
+
+      delete: (id: string) => {
+        deleteScheduledTaskStmt.run(id);
       },
     },
     

@@ -3,13 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
+import { getInitialSessionTitle } from '../../shared/session-title';
 import {
   FileText,
   BarChart3,
   FolderOpen,
   ArrowRight,
   Mail,
-  Chrome,
   X,
   Paperclip,
   BookOpen,
@@ -24,21 +24,45 @@ type AttachedFile = {
   inlineDataBase64?: string;
 };
 
+const welcomeLogoSrc = new URL('../../../resources/logo.png', import.meta.url).href;
+
 export function WelcomeView() {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isComposingRef = useRef(false);
-  const [pastedImages, setPastedImages] = useState<Array<{ url: string; base64: string; mediaType: string }>>([]);
+  const [pastedImages, setPastedImages] = useState<
+    Array<{ url: string; base64: string; mediaType: string }>
+  >([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { startSession, changeWorkingDir, isElectron } = useIPC();
   const workingDir = useAppStore((state) => state.workingDir);
+  const setGlobalNotice = useAppStore((state) => state.setGlobalNotice);
+  const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
 
   const handleSelectFolder = async () => {
-    await changeWorkingDir();
+    try {
+      const result = await changeWorkingDir(undefined, workingDir || undefined);
+      if (!result.success && result.error && result.error !== 'User cancelled') {
+        setGlobalNotice({
+          id: `notice-workdir-select-${Date.now()}`,
+          type: 'warning',
+          message: `${t('welcome.selectWorkingFolderFailed')}: ${result.error}`,
+        });
+      }
+    } catch (error) {
+      setGlobalNotice({
+        id: `notice-workdir-select-${Date.now()}`,
+        type: 'error',
+        message:
+          error instanceof Error && error.message
+            ? `${t('welcome.selectWorkingFolderFailed')}: ${error.message}`
+            : t('welcome.selectWorkingFolderFailed'),
+      });
+    }
   };
 
   // Handle paste event for images
@@ -46,7 +70,7 @@ export function WelcomeView() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
     if (imageItems.length === 0) return;
 
     e.preventDefault();
@@ -72,7 +96,7 @@ export function WelcomeView() {
       }
     }
 
-    setPastedImages(prev => [...prev, ...newImages]);
+    setPastedImages((prev) => [...prev, ...newImages]);
   };
 
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -116,8 +140,8 @@ export function WelcomeView() {
         }
 
         // Start with a scale factor based on size ratio
-        let scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
-        let quality = 0.9;
+        const scale = Math.sqrt(MAX_BLOB_SIZE / blob.size);
+        const quality = 0.9;
 
         const attemptCompress = (currentScale: number, currentQuality: number): Promise<Blob> => {
           canvas.width = Math.floor(img.width * currentScale);
@@ -135,7 +159,10 @@ export function WelcomeView() {
                 }
 
                 // If still too large, try again with lower quality or scale
-                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
+                if (
+                  compressedBlob.size > MAX_BLOB_SIZE &&
+                  (currentQuality > 0.5 || currentScale > 0.3)
+                ) {
                   const newQuality = Math.max(0.5, currentQuality - 0.1);
                   const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
                   attemptCompress(newScale, newQuality).then(resolveBlob);
@@ -162,7 +189,7 @@ export function WelcomeView() {
   };
 
   const removeImage = (index: number) => {
-    setPastedImages(prev => {
+    setPastedImages((prev) => {
       const updated = [...prev];
       URL.revokeObjectURL(updated[index].url);
       updated.splice(index, 1);
@@ -171,7 +198,7 @@ export function WelcomeView() {
   };
 
   const removeFile = (index: number) => {
-    setAttachedFiles(prev => {
+    setAttachedFiles((prev) => {
       const updated = [...prev];
       updated.splice(index, 1);
       return updated;
@@ -198,7 +225,7 @@ export function WelcomeView() {
         };
       });
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[WelcomeView] Error selecting files:', error);
     }
@@ -223,8 +250,8 @@ export function WelcomeView() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    const otherFiles = files.filter(file => !file.type.startsWith('image/'));
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    const otherFiles = files.filter((file) => !file.type.startsWith('image/'));
 
     if (imageFiles.length > 0) {
       const newImages: Array<{ url: string; base64: string; mediaType: string }> = [];
@@ -245,13 +272,13 @@ export function WelcomeView() {
         }
       }
 
-      setPastedImages(prev => [...prev, ...newImages]);
+      setPastedImages((prev) => [...prev, ...newImages]);
     }
 
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
         otherFiles.map(async (file) => {
-          const droppedPath = ('path' in file && typeof file.path === 'string') ? file.path : '';
+          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
           const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
 
           return {
@@ -264,7 +291,7 @@ export function WelcomeView() {
         })
       );
 
-      setAttachedFiles(prev => [...prev, ...newFiles]);
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
     }
   };
 
@@ -274,13 +301,17 @@ export function WelcomeView() {
     // Get value from ref to handle both controlled and uncontrolled cases
     const currentPrompt = textareaRef.current?.value || prompt;
 
-    if ((!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) || isSubmitting) return;
+    if (
+      (!currentPrompt.trim() && pastedImages.length === 0 && attachedFiles.length === 0) ||
+      isSubmitting
+    )
+      return;
 
     // Build content blocks
     const contentBlocks: ContentBlock[] = [];
 
     // Add images first
-    pastedImages.forEach(img => {
+    pastedImages.forEach((img) => {
       contentBlocks.push({
         type: 'image',
         source: {
@@ -292,7 +323,7 @@ export function WelcomeView() {
     });
 
     // Add file attachments
-    attachedFiles.forEach(file => {
+    attachedFiles.forEach((file) => {
       contentBlocks.push({
         type: 'file_attachment',
         filename: file.name,
@@ -314,15 +345,17 @@ export function WelcomeView() {
     // Use the global working directory (always available after app startup)
     setIsSubmitting(true);
     try {
-      const sessionTitle = currentPrompt.slice(0, 50) + (currentPrompt.length > 50 ? '...' : '');
-      await startSession(sessionTitle, contentBlocks, workingDir || undefined);
-      setPrompt('');
-      if (textareaRef.current) {
-        textareaRef.current.value = '';
+      const sessionTitle = getInitialSessionTitle(currentPrompt, attachedFiles[0]?.name);
+      const session = await startSession(sessionTitle, contentBlocks, workingDir || undefined);
+      if (session) {
+        setPrompt('');
+        if (textareaRef.current) {
+          textareaRef.current.value = '';
+        }
+        pastedImages.forEach((img) => URL.revokeObjectURL(img.url));
+        setPastedImages([]);
+        setAttachedFiles([]);
       }
-      pastedImages.forEach(img => URL.revokeObjectURL(img.url));
-      setPastedImages([]);
-      setAttachedFiles([]);
     } finally {
       setIsSubmitting(false);
     }
@@ -361,57 +394,97 @@ export function WelcomeView() {
   }, [prompt]);
 
   const quickTags = [
-    { id: 'create', label: t('welcome.createFile'), icon: FileText, prompt: 'Create a new file for me' },
-    { id: 'crunch', label: t('welcome.crunchData'), icon: BarChart3, prompt: 'Help me analyze and process data' },
-    { id: 'organize', label: t('welcome.organizeFiles'), icon: FolderOpen, prompt: 'Help me organize my files and folders' },
-    { 
-      id: 'email', 
-      label: t('welcome.checkEmails'), 
-      icon: Mail, 
-      prompt: 'Help me use Chrome to summarize the new emails from the past three days in my Gmail and NetEase Mail. Note that the saved accounts already include the full email suffix. Therefore, if the email suffix is already pre-filled on the webpage or in a screenshot, do not enter it again, to avoid login failure. Also, first check whether the corresponding account credentials are saved. If the username or password for a given email service is not saved, you can skip that email account.',
-      requiresChrome: true 
+    {
+      id: 'create',
+      label: t('welcome.createFile'),
+      icon: FileText,
+      prompt: t('welcome.quickPromptCreate'),
     },
-    { 
-      id: 'papers', 
-      label: t('welcome.searchPapers'), 
-      icon: BookOpen, 
-      prompt: 'Please help me use Chrome to search for and summarize papers related to [Agent] within two days.\nSource websites:\n1. HuggingFace Daily Papers. Please include the vote information and a brief summary. Note that it may not include papers in the weekend, so you may need to check the papers in previous days. But make sure that there is a total of two days.',
-      requiresChrome: true 
+    {
+      id: 'crunch',
+      label: t('welcome.crunchData'),
+      icon: BarChart3,
+      prompt: t('welcome.quickPromptCrunch'),
     },
-    { 
-      id: 'research-notion', 
-      label: t('welcome.summarizePapersToNotion'), 
-      icon: FileSearch, 
-      prompt: 'Help me research three representative survey papers related to agents, and add them under a Notion page titled "Agent Survey". For each paper, include the title, authors, publication venue/year, and a brief summary of the main contributions.',
-      requiresNotion: true 
+    {
+      id: 'organize',
+      label: t('welcome.organizeFiles'),
+      icon: FolderOpen,
+      prompt: t('welcome.quickPromptOrganize'),
+    },
+    {
+      id: 'email',
+      label: t('welcome.checkEmails'),
+      icon: Mail,
+      prompt: t('welcome.quickPromptEmail'),
+      requiresChrome: true,
+    },
+    {
+      id: 'papers',
+      label: t('welcome.searchPapers'),
+      icon: BookOpen,
+      prompt: t('welcome.quickPromptPapers'),
+      requiresChrome: true,
+    },
+    {
+      id: 'research-notion',
+      label: t('welcome.summarizePapersToNotion'),
+      icon: FileSearch,
+      prompt: t('welcome.quickPromptNotion'),
+      requiresNotion: true,
     },
   ];
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-6 animate-fade-in">
+    <div className="flex-1 flex flex-col items-center justify-center px-5 py-10 md:px-8 md:py-14">
+      <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
+        <div className="space-y-4 text-center">
+          <div className="flex items-center justify-center gap-4">
+            <img
+              src={welcomeLogoSrc}
+              alt={t('welcome.logoAlt')}
+              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+            />
+            <div className="text-left">
+              <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
+                Open Cowork
+              </h1>
+            </div>
+          </div>
+          <p className="heading-serif text-[1.15rem] md:text-[1.45rem] font-medium tracking-[-0.02em] text-text-secondary text-center">
+            {t('welcome.title')}
+          </p>
+        </div>
+
         {/* Quick Action Tags */}
-        <div className="flex flex-wrap gap-2 justify-center">
+        <div className="flex flex-wrap gap-2 justify-center px-3">
           {quickTags.map((tag) => (
             <button
               key={tag.id}
               onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`tag ${selectedTag === tag.id ? 'tag-active' : ''} ${
-                ('requiresChrome' in tag && tag.requiresChrome) || ('requiresNotion' in tag && tag.requiresNotion) ? 'relative' : ''
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                selectedTag === tag.id
+                  ? 'border-accent/30 bg-accent-muted text-accent'
+                  : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              } ${
+                ('requiresChrome' in tag && tag.requiresChrome) ||
+                ('requiresNotion' in tag && tag.requiresNotion)
+                  ? 'relative'
+                  : ''
               }`}
             >
-              <tag.icon className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`} />
+              <tag.icon
+                className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`}
+              />
               <span>{tag.label}</span>
               {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                  <Chrome className="w-3 h-3" />
-                  <span>{t('welcome.chromeRequired')}</span>
+                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
+                  {t('welcome.chromeRequired')}
                 </span>
               )}
               {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="flex items-center gap-1 ml-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800/10 text-gray-700 border border-gray-800/20">
-                  <span className="text-sm">📝</span>
-                  <span>{t('welcome.notionRequired')}</span>
+                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
+                  {t('welcome.notionRequired')}
                 </span>
               )}
             </button>
@@ -424,18 +497,18 @@ export function WelcomeView() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`card p-4 space-y-4 transition-colors ${
+          className={`rounded-[1.9rem] border border-border-muted bg-background/85 shadow-soft px-5 py-5 space-y-4 transition-colors ${
             isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
           }`}
         >
           {/* Image previews */}
           {pastedImages.length > 0 && (
-            <div className="grid grid-cols-5 gap-2 pb-2 border-b border-border w-full">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 pb-2 border-b border-border w-full">
               {pastedImages.map((img, index) => (
                 <div key={index} className="relative group">
                   <img
                     src={img.url}
-                    alt={`Pasted ${index + 1}`}
+                    alt={t('welcome.pastedImageAlt', { index: index + 1 })}
                     className="w-full aspect-square object-cover rounded-lg border border-border"
                   />
                   <button
@@ -488,7 +561,7 @@ export function WelcomeView() {
               isComposingRef.current = false;
             }}
             onPaste={handlePaste}
-            placeholder={t('welcome.title')}
+            placeholder={t('welcome.placeholder')}
             rows={1}
             style={{ minHeight: '72px', maxHeight: '200px' }}
             className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-base leading-relaxed overflow-hidden"
@@ -505,7 +578,7 @@ export function WelcomeView() {
           />
 
           {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center justify-between pt-3 border-t border-border-muted">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -518,7 +591,9 @@ export function WelcomeView() {
                 title={workingDir || t('welcome.selectWorkingFolder')}
               >
                 <FolderOpen className="w-4 h-4" />
-                <span>{workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}</span>
+                <span>
+                  {workingDir ? workingDir.split(/[/\\]/).pop() : t('welcome.selectWorkingFolder')}
+                </span>
               </button>
 
               {isElectron && (
@@ -535,8 +610,8 @@ export function WelcomeView() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="btn btn-primary px-5 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!canSubmit || isSubmitting}
+              className="btn btn-primary px-5 py-2.5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
               <ArrowRight className="w-4 h-4" />

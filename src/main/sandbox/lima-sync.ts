@@ -17,6 +17,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { log, logError } from '../utils/logger';
+import { isPathWithinRoot } from '../tools/path-containment';
 
 const execAsync = promisify(exec);
 
@@ -388,7 +389,7 @@ export class LimaSync {
   static isPathInSandbox(path: string, sessionId: string): boolean {
     const session = sessions.get(sessionId);
     if (!session) return false;
-    return path.startsWith(session.sandboxPath);
+    return isPathWithinRoot(path, session.sandboxPath);
   }
 
   /**
@@ -402,7 +403,7 @@ export class LimaSync {
     const normalizedMac = session.macPath;
     const normalizedInput = macPath;
 
-    if (normalizedInput.startsWith(normalizedMac)) {
+    if (isPathWithinRoot(normalizedInput, normalizedMac)) {
       const relativePath = macPath.substring(session.macPath.length);
       return session.sandboxPath + relativePath;
     }
@@ -417,7 +418,7 @@ export class LimaSync {
     const session = sessions.get(sessionId);
     if (!session) return null;
 
-    if (sandboxPath.startsWith(session.sandboxPath)) {
+    if (isPathWithinRoot(sandboxPath, session.sandboxPath)) {
       const relativePath = sandboxPath.substring(session.sandboxPath.length);
       return session.macPath + relativePath;
     }

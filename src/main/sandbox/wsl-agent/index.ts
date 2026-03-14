@@ -14,6 +14,7 @@ import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { isPathWithinRoot } from '../../tools/path-containment';
 
 // Types
 interface JSONRPCRequest {
@@ -76,7 +77,7 @@ class SandboxAgent {
 
     const resolved = path.resolve(targetPath);
     
-    if (!resolved.startsWith(this.workspacePath)) {
+    if (!isPathWithinRoot(resolved, this.workspacePath)) {
       throw new Error(`Path is outside workspace: ${resolved}`);
     }
 
@@ -125,7 +126,7 @@ class SandboxAgent {
       // Check if it's a path in /mnt/ (Windows paths)
       if (p.startsWith('/mnt/')) {
         const resolved = path.resolve(p);
-        if (!resolved.startsWith(this.workspacePath)) {
+        if (!isPathWithinRoot(resolved, this.workspacePath)) {
           throw new Error(`Command references path outside workspace: ${p}`);
         }
       }
@@ -528,4 +529,3 @@ main().catch((error) => {
   console.error('Failed to start WSL agent:', error);
   process.exit(1);
 });
-

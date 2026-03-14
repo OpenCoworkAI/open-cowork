@@ -11,6 +11,8 @@ import { SandboxAdapter, getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { PathResolver } from '../sandbox/path-resolver';
 // Logger imports removed - using sandbox adapter's internal logging
 import type { ToolResult, ExecutionContext, MountedPath } from '../../renderer/types';
+import { isUncPath } from '../../shared/local-file-path';
+import { isPathWithinRoot } from './path-containment';
 
 /**
  * SandboxToolExecutor - Executes tools through the sandbox
@@ -47,7 +49,7 @@ export class SandboxToolExecutor {
     }
 
     // If absolute real path, ensure it lies within a mount
-    const isAbsolute = path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed);
+    const isAbsolute = path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed) || isUncPath(trimmed);
     if (isAbsolute) {
       const absolutePath = path.normalize(trimmed);
       return this.assertInsideMount(absolutePath, mounts);
@@ -70,8 +72,7 @@ export class SandboxToolExecutor {
 
     const allowed = mounts.some((m) => {
       const mountRoot = path.normalize(m.real);
-      const mountLower = isWindows ? mountRoot.toLowerCase() : mountRoot;
-      return targetLower.startsWith(mountLower);
+      return isPathWithinRoot(targetLower, mountRoot, isWindows);
     });
 
     if (!allowed) {
@@ -521,4 +522,3 @@ export class SandboxToolExecutor {
     return this.sandboxAdapter.mode;
   }
 }
-

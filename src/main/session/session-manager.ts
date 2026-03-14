@@ -1,28 +1,47 @@
+/**
+ * @module main/session/session-manager
+ *
+ * Session lifecycle manager (957 lines).
+ *
+ * Responsibilities:
+ * - Session CRUD: create, continue, stop, delete, list
+ * - Chat history persistence to SQLite via DatabaseInstance
+ * - Workspace-scoped sessions with sandbox integration
+ * - Delegates AI execution to ClaudeAgentRunner
+ *
+ * Dependencies: database, agent-runner, config-store, mcp-manager, sandbox-adapter
+ */
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
-import OpenAI from 'openai';
-import { Anthropic } from '@anthropic-ai/sdk';
 import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
 import { SandboxAdapter, getSandboxAdapter, initializeSandbox, reinitializeSandbox } from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
-import { OpenAIResponsesRunner } from '../openai/responses-runner';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 import { maybeGenerateSessionTitle } from './session-title-flow';
+import {
+  buildTitlePrompt,
+  getDefaultTitleFromPrompt,
+  normalizeGeneratedTitle,
+} from './session-title-utils';
+import { generateTitleWithClaudeSdk } from '../claude/claude-sdk-one-shot';
+import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
   cancel(sessionId: string): void;
-  handleQuestionResponse(questionId: string, answer: string): void;
   clearSdkSession?(sessionId: string): void;
 }
+
+const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
+const TITLE_GENERATION_TIMEOUT_MS = 20000;
 
 export class SessionManager {
   private db: DatabaseInstance;
@@ -35,8 +54,11 @@ export class SessionManager {
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
+  private pendingSudoPasswords: Map<string, { sessionId: string; resolve: (password: string | null) => void }> = new Map();
   private sandboxInitPromises: Map<string, Promise<void>> = new Map();
   private sessionTitleAttempts: Set<string> = new Set();
+  private titleGenerationTokens: Map<string, symbol> = new Map();
+  private messageCache: Map<string, Message[]> = new Map();
 
   constructor(
     db: DatabaseInstance,
@@ -72,53 +94,50 @@ export class SessionManager {
    * Can be called to recreate runner when config changes
    */
   private createAgentRunner(): void {
-    const provider = configStore.get('provider');
-    const customProtocol = configStore.get('customProtocol');
-    const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
-    if (useOpenAI) {
-      this.agentRunner = new OpenAIResponsesRunner({
+    this.agentRunner = this.createClaudeAgentRunner();
+    log('[SessionManager] Using pi-coding-agent runner');
+  }
+
+  private createClaudeAgentRunner(): ClaudeAgentRunner {
+    return new ClaudeAgentRunner(
+      {
         sendToRenderer: this.sendToRenderer,
         saveMessage: (message: Message) => this.saveMessage(message),
-        pathResolver: this.pathResolver,
-        requestPermission: (sessionId, toolUseId, toolName, input) =>
-          this.requestPermission(sessionId, toolUseId, toolName, input),
-      });
-      log('[SessionManager] Using OpenAI Responses runner');
-    } else {
-      // Initialize Claude Agent Runner with message save callback
-      this.agentRunner = new ClaudeAgentRunner(
-        {
-          sendToRenderer: this.sendToRenderer,
-          saveMessage: (message: Message) => this.saveMessage(message),
-        },
-        this.pathResolver,
-        this.mcpManager,
-        this.pluginRuntimeService
-      );
-      log('[SessionManager] Using Claude Agent runner');
-    }
+        requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
+          this.requestSudoPassword(sessionId, toolUseId, command),
+      },
+      this.pathResolver,
+      this.mcpManager,
+      this.pluginRuntimeService
+    );
   }
 
   /**
-   * Reload config and recreate agent runner
-   * This is safer than recreating the entire SessionManager
+   * Reload API config only — recreate agent runner without touching MCP or sandbox.
    */
   reloadConfig(): void {
-    log('[SessionManager] Reloading config and recreating agent runner');
-
-    // Stop all active sessions before recreating runner
+    log('[SessionManager] Reloading API config and recreating agent runner');
     for (const sessionId of this.activeSessions.keys()) {
       log('[SessionManager] Stopping active session before config reload:', sessionId);
       this.stopSession(sessionId);
     }
-
-    // Recreate agent runner with new config
     this.createAgentRunner();
+    log('[SessionManager] API config reloaded successfully');
+  }
 
-    // Reinitialize sandbox adapter to pick up sandboxEnabled changes
-    this.reinitializeSandboxAsync();
+  /**
+   * Reinitialize MCP servers (call only when MCP config actually changes)
+   */
+  async reloadMCP(): Promise<void> {
+    log('[SessionManager] Reloading MCP servers');
+    await this.initializeMCP();
+  }
 
-    log('[SessionManager] Config reloaded successfully');
+  /**
+   * Reinitialize sandbox adapter (call only when sandbox config changes)
+   */
+  async reloadSandbox(): Promise<void> {
+    await this.reinitializeSandboxAsync();
   }
 
   /**
@@ -184,6 +203,13 @@ export class SessionManager {
   }
 
   // Create a new session object
+  private buildMountedPaths(cwd?: string): Session['mountedPaths'] {
+    if (!cwd) {
+      return [];
+    }
+    return [{ virtual: WORKSPACE_MOUNT_VIRTUAL_PATH, real: cwd }];
+  }
+
   private createSession(title: string, cwd?: string, allowedTools?: string[]): Session {
     const now = Date.now();
     // Prefer frontend-provided cwd; fallback to env vars if provided
@@ -194,7 +220,7 @@ export class SessionManager {
       title,
       status: 'idle',
       cwd: effectiveCwd,
-      mountedPaths: effectiveCwd ? [{ virtual: `/mnt/workspace`, real: effectiveCwd }] : [],
+      mountedPaths: this.buildMountedPaths(effectiveCwd),
       allowedTools: allowedTools || [
         'askuserquestion',
         'todowrite',
@@ -209,6 +235,7 @@ export class SessionManager {
         'grep',
       ],
       memoryEnabled: false,
+      model: configStore.get('model') || undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -220,11 +247,13 @@ export class SessionManager {
       id: session.id,
       title: session.title,
       claude_session_id: session.claudeSessionId || null,
+      openai_thread_id: session.openaiThreadId || null,
       status: session.status,
       cwd: session.cwd || null,
       mounted_paths: JSON.stringify(session.mountedPaths),
       allowed_tools: JSON.stringify(session.allowedTools),
       memory_enabled: session.memoryEnabled ? 1 : 0,
+      model: session.model || null,
       created_at: session.createdAt,
       updated_at: session.updatedAt,
     });
@@ -239,11 +268,13 @@ export class SessionManager {
       id: row.id,
       title: row.title,
       claudeSessionId: row.claude_session_id || undefined,
+      openaiThreadId: row.openai_thread_id || undefined,
       status: row.status as Session['status'],
       cwd: row.cwd || undefined,
       mountedPaths: JSON.parse(row.mounted_paths),
       allowedTools: JSON.parse(row.allowed_tools),
       memoryEnabled: row.memory_enabled === 1,
+      model: row.model || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -257,11 +288,13 @@ export class SessionManager {
       id: row.id,
       title: row.title,
       claudeSessionId: row.claude_session_id || undefined,
+      openaiThreadId: row.openai_thread_id || undefined,
       status: row.status as Session['status'],
       cwd: row.cwd || undefined,
       mountedPaths: JSON.parse(row.mounted_paths),
       allowedTools: JSON.parse(row.allowed_tools),
       memoryEnabled: row.memory_enabled === 1,
+      model: row.model || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -277,6 +310,26 @@ export class SessionManager {
     }
 
     this.enqueuePrompt(session, prompt, content);
+  }
+
+  async generateSessionTitleFromPrompt(prompt: string, cwd?: string): Promise<string> {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt) {
+      return 'New Session';
+    }
+
+    const generated = await this.withTimeout(
+      this.generateTitleWithConfig(buildTitlePrompt(normalizedPrompt), cwd),
+      TITLE_GENERATION_TIMEOUT_MS,
+      'session-title-preview'
+    );
+    const normalizedGenerated = normalizeGeneratedTitle(generated);
+    return normalizedGenerated ?? getDefaultTitleFromPrompt(normalizedPrompt);
+  }
+
+  async generateScheduledTaskTitle(prompt: string, cwd?: string): Promise<string> {
+    const sessionTitle = await this.generateSessionTitleFromPrompt(prompt, cwd);
+    return buildScheduledTaskTitle(sessionTitle);
   }
 
   /**
@@ -447,6 +500,7 @@ export class SessionManager {
       }
 
       // Save user message to database for persistence
+      const existingMessages = this.getMessages(session.id);
       const userMessage: Message = {
         id: uuidv4(),
         sessionId: session.id,
@@ -456,25 +510,63 @@ export class SessionManager {
       };
       this.saveMessage(userMessage);
       log('[SessionManager] User message saved:', userMessage.id, 'with', messageContent.length, 'content blocks');
+      const messagesForContext = [...existingMessages, userMessage];
 
-      // Get existing messages for context (including the one we just saved)
-      const existingMessages = this.getMessages(session.id);
+      // Update session model to match current config (may have changed since session creation)
+      const currentModel = configStore.get('model');
+      if (currentModel && currentModel !== session.model) {
+        session.model = currentModel;
+        this.db.sessions.update(session.id, { model: currentModel });
+        this.sendToRenderer({
+          type: 'session.update',
+          payload: { sessionId: session.id, updates: { model: currentModel } },
+        });
+      }
 
-      void this.runSessionTitleGeneration(session, prompt, existingMessages);
+      // Run the agent
+      await this.agentRunner.run(session, enhancedPrompt, messagesForContext);
 
-      // Run the agent - this handles everything including sending messages
-      // Use enhanced prompt that includes file information
-      await this.agentRunner.run(session, enhancedPrompt, existingMessages);
+      // 标题生成不再与首轮对话并发，避免与主请求竞争同一上游配额/通道导致体感变慢。
+      this.runSessionTitleGeneration(session, prompt, existingMessages)
+        .catch(err => logError('[SessionManager] Title generation failed:', err));
     } catch (error) {
       logError('[SessionManager] Error processing prompt:', error);
+      const errorText = error instanceof Error ? error.message : 'Unknown error';
+      const alreadyReportedToUser = Boolean(
+        error &&
+        typeof error === 'object' &&
+        (error as { alreadyReportedToUser?: boolean }).alreadyReportedToUser
+      );
+      if (!alreadyReportedToUser) {
+        const assistantMessage: Message = {
+          id: uuidv4(),
+          sessionId: session.id,
+          role: 'assistant',
+          content: [{ type: 'text', text: `**Error**: ${errorText}` }],
+          timestamp: Date.now(),
+        };
+        this.saveMessage(assistantMessage);
+        this.sendToRenderer({
+          type: 'stream.message',
+          payload: { sessionId: session.id, message: assistantMessage },
+        });
+      }
       this.sendToRenderer({
         type: 'error',
-        payload: { message: error instanceof Error ? error.message : 'Unknown error' },
+        payload: { message: errorText },
       });
     }
   }
 
   private async runSessionTitleGeneration(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+    const token = Symbol(`title:${session.id}`);
+    this.titleGenerationTokens.set(session.id, token);
+    const shouldAbort = () => {
+      if (this.titleGenerationTokens.get(session.id) !== token) {
+        return true;
+      }
+      return !this.db.sessions.get(session.id);
+    };
     const userMessageCount = existingMessages.filter((message) => message.role === 'user').length;
     try {
       await maybeGenerateSessionTitle({
@@ -483,60 +575,63 @@ export class SessionManager {
         userMessageCount,
         currentTitle: session.title,
         hasAttempted: this.sessionTitleAttempts.has(session.id),
-        generateTitle: (titlePrompt) => this.generateTitleWithConfig(titlePrompt),
+        generateTitle: async (titlePrompt) => {
+          if (shouldAbort()) {
+            return null;
+          }
+          const title = await this.withTimeout(
+            this.generateTitleWithConfig(titlePrompt, session.cwd),
+            TITLE_GENERATION_TIMEOUT_MS,
+            session.id
+          );
+          return normalizeGeneratedTitle(title);
+        },
         getLatestTitle: () => this.db.sessions.get(session.id)?.title ?? null,
         markAttempt: () => {
           this.sessionTitleAttempts.add(session.id);
         },
         updateTitle: async (title) => {
+          if (shouldAbort()) {
+            log('[SessionTitle] Skip update: session no longer active', session.id);
+            return;
+          }
           session.title = title;
           this.updateSessionTitle(session.id, title);
         },
+        shouldAbort,
         log,
       });
     } catch (error) {
       logError('[SessionTitle] Unexpected error', session.id, error);
+    } finally {
+      if (this.titleGenerationTokens.get(session.id) === token) {
+        this.titleGenerationTokens.delete(session.id);
+      }
     }
   }
 
-  private async generateTitleWithConfig(titlePrompt: string): Promise<string | null> {
-    const provider = configStore.get('provider');
-    const customProtocol = configStore.get('customProtocol');
-    const apiKey = configStore.get('apiKey');
-    const baseUrl = configStore.get('baseUrl');
-    const model = configStore.get('model');
-    const useOpenAI = provider === 'openai' || (provider === 'custom' && customProtocol === 'openai');
-
-    if (!apiKey || !model) {
-      log('[SessionTitle] Missing apiKey/model, skip generation');
-      return null;
-    }
-
-    if (useOpenAI) {
-      const client = new OpenAI({
-        apiKey,
-        baseURL: baseUrl || undefined,
-      });
-      const response = await client.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: titlePrompt }],
-        temperature: 0.2,
-        max_tokens: 64,
-      });
-      return response.choices[0]?.message?.content?.trim() || null;
-    }
-
-    const useAuthTokenHeader = provider === 'openrouter';
-    const client = useAuthTokenHeader
-      ? new Anthropic({ authToken: apiKey, baseURL: baseUrl || undefined })
-      : new Anthropic({ apiKey, baseURL: baseUrl || undefined });
-    const response = await client.messages.create({
-      model,
-      max_tokens: 64,
-      messages: [{ role: 'user', content: titlePrompt }],
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, sessionId: string): Promise<T | null> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        logError('[SessionTitle] Generation timed out', { sessionId, timeoutMs });
+        resolve(null);
+      }, timeoutMs);
+      promise
+        .then((value) => {
+          clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          logError('[SessionTitle] Generation rejected', { sessionId, error });
+          resolve(null);
+        });
     });
-    const text = response.content.find((item) => item.type === 'text')?.text;
-    return text?.trim() || null;
+  }
+
+  private async generateTitleWithConfig(titlePrompt: string, cwd?: string): Promise<string | null> {
+    // Always use pi-ai SDK for title generation
+    return normalizeGeneratedTitle(await generateTitleWithClaudeSdk(titlePrompt, configStore.getAll(), cwd));
   }
 
   private enqueuePrompt(session: Session, prompt: string, content?: ContentBlock[]): void {
@@ -566,7 +661,13 @@ export class SessionManager {
         const item = queue.shift();
         if (!item) continue;
 
-        await this.processPrompt(session, item.prompt, item.content);
+        const latestSession = this.loadSession(session.id);
+        if (!latestSession) {
+          log('[SessionManager] Session removed while processing queue:', session.id);
+          break;
+        }
+
+        await this.processPrompt(latestSession, item.prompt, item.content);
 
         if (controller.signal.aborted) break;
       }
@@ -577,18 +678,36 @@ export class SessionManager {
         this.promptQueues.delete(session.id);
       }
       this.updateSessionStatus(session.id, 'idle');
+      const pendingQueue = this.promptQueues.get(session.id);
+      if (pendingQueue && pendingQueue.length > 0) {
+        const latestSession = this.loadSession(session.id);
+        if (latestSession) {
+          log('[SessionManager] Restarting queued prompts after stop/drain:', session.id);
+          void this.processQueue(latestSession);
+        } else {
+          this.promptQueues.delete(session.id);
+        }
+      }
     }
   }
 
   // Stop a running session
   stopSession(sessionId: string): void {
     log('[SessionManager] Stopping session:', sessionId);
+    this.titleGenerationTokens.delete(sessionId);
     this.agentRunner.cancel(sessionId);
+    // Cancel any pending sudo password requests for this session
+    for (const [toolUseId, entry] of this.pendingSudoPasswords) {
+      if (entry.sessionId === sessionId) {
+        entry.resolve(null);
+        this.pendingSudoPasswords.delete(toolUseId);
+        this.sendToRenderer({ type: 'sudo.password.dismiss', payload: { toolUseId } });
+      }
+    }
     // Also abort any pending controller we tracked
     const controller = this.activeSessions.get(sessionId);
     if (controller) {
       controller.abort();
-      this.activeSessions.delete(sessionId);
     }
     this.promptQueues.delete(sessionId);
     this.updateSessionStatus(sessionId, 'idle');
@@ -613,7 +732,9 @@ export class SessionManager {
 
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
+    this.messageCache.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
+    this.titleGenerationTokens.delete(sessionId);
     
     log('[SessionManager] Session deleted:', sessionId);
   }
@@ -629,6 +750,10 @@ export class SessionManager {
   }
 
   private updateSessionTitle(sessionId: string, title: string): void {
+    if (!this.db.sessions.get(sessionId)) {
+      log('[SessionTitle] Skip title update for deleted session:', sessionId);
+      return;
+    }
     this.db.sessions.update(sessionId, { title });
     this.sendToRenderer({
       type: 'session.update',
@@ -639,11 +764,18 @@ export class SessionManager {
   // Update session's working directory
   // Also clears SDK session cache because Claude SDK sessions are bound to cwd
   updateSessionCwd(sessionId: string, cwd: string): void {
+    if (this.activeSessions.has(sessionId)) {
+      logWarn('[SessionManager] CWD change requested while session running; stopping active run first', { sessionId, cwd });
+      this.stopSession(sessionId);
+    }
+    const mountedPaths = this.buildMountedPaths(cwd);
     // Clear claude_session_id in DB so next query creates a new SDK session
     // (Claude SDK sessions cannot change cwd mid-session)
     this.db.sessions.update(sessionId, { 
       cwd, 
+      mounted_paths: JSON.stringify(mountedPaths),
       claude_session_id: null,
+      openai_thread_id: null,
       updated_at: Date.now() 
     });
     
@@ -651,6 +783,11 @@ export class SessionManager {
     if (this.agentRunner?.clearSdkSession) {
       this.agentRunner.clearSdkSession(sessionId);
     }
+
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: { sessionId, updates: { cwd, mountedPaths } },
+    });
     
     log('[SessionManager] Session cwd updated:', sessionId, '->', cwd, '(SDK session cleared)');
   }
@@ -665,15 +802,23 @@ export class SessionManager {
       timestamp: message.timestamp,
       token_usage: message.tokenUsage ? JSON.stringify(message.tokenUsage) : null,
     });
+    const cached = this.messageCache.get(message.sessionId);
+    if (cached) {
+      cached.push(message);
+    }
     
     log('[SessionManager] Message saved:', message.id, 'role:', message.role);
   }
 
   // Get messages for a session
   getMessages(sessionId: string): Message[] {
-    const rows = this.db.messages.getBySessionId(sessionId);
+    const cached = this.messageCache.get(sessionId);
+    if (cached) {
+      return [...cached];
+    }
 
-    return rows.map((row) => ({
+    const rows = this.db.messages.getBySessionId(sessionId);
+    const messages = rows.map((row) => ({
       id: row.id,
       sessionId: row.session_id,
       role: row.role as Message['role'],
@@ -681,6 +826,8 @@ export class SessionManager {
       timestamp: row.timestamp,
       tokenUsage: row.token_usage ? JSON.parse(row.token_usage) : undefined,
     }));
+    this.messageCache.set(sessionId, messages);
+    return [...messages];
   }
 
   private normalizeContent(raw: string): ContentBlock[] {
@@ -735,11 +882,6 @@ export class SessionManager {
     }
   }
 
-  // Handle user's response to AskUserQuestion
-  handleQuestionResponse(questionId: string, answer: string): void {
-    this.agentRunner.handleQuestionResponse(questionId, answer);
-  }
-
   // Request permission for a tool
   async requestPermission(
     sessionId: string,
@@ -754,6 +896,41 @@ export class SessionManager {
         payload: { toolUseId, toolName, input, sessionId },
       });
     });
+  }
+
+  // Request sudo password from the user
+  async requestSudoPassword(
+    sessionId: string,
+    toolUseId: string,
+    command: string
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingSudoPasswords.delete(toolUseId);
+        resolve(null);
+        this.sendToRenderer({ type: 'sudo.password.dismiss', payload: { toolUseId } });
+      }, 60_000);
+      this.pendingSudoPasswords.set(toolUseId, {
+        sessionId,
+        resolve: (password: string | null) => {
+          clearTimeout(timeout);
+          resolve(password);
+        },
+      });
+      this.sendToRenderer({
+        type: 'sudo.password.request',
+        payload: { toolUseId, command, sessionId },
+      });
+    });
+  }
+
+  // Handle sudo password response from renderer
+  handleSudoPasswordResponse(toolUseId: string, password: string | null): void {
+    const entry = this.pendingSudoPasswords.get(toolUseId);
+    if (entry) {
+      entry.resolve(password);
+      this.pendingSudoPasswords.delete(toolUseId);
+    }
   }
 
   private saveTraceStep(sessionId: string, step: TraceStep): void {

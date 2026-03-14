@@ -39,5 +39,8 @@ export function createTitleFlowHarness(options: HarnessOptions) {
     get updatedTitle() {
       return updatedTitle;
     },
+    get hasAttempted() {
+      return attemptedSessions.has(sessionId);
+    },
   };
 }

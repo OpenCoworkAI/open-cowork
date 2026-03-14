@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { log } from '../utils/logger';
+import { isPathWithinRoot } from '../tools/path-containment';
 import type {
   SandboxConfig,
   SandboxExecutor,
@@ -61,7 +62,7 @@ export class NativeExecutor implements SandboxExecutor {
       ? normalizedTarget.toLowerCase() 
       : normalizedTarget;
 
-    if (!targetCheck.startsWith(workspaceCheck)) {
+    if (!isPathWithinRoot(targetCheck, workspaceCheck, isWindows)) {
       throw new Error(`Path is outside workspace: ${resolved}`);
     }
 
@@ -69,7 +70,7 @@ export class NativeExecutor implements SandboxExecutor {
     if (fs.existsSync(resolved)) {
       const realPath = fs.realpathSync(resolved);
       const realCheck = isWindows ? realPath.toLowerCase() : realPath;
-      if (!realCheck.startsWith(workspaceCheck)) {
+      if (!isPathWithinRoot(realCheck, workspaceCheck, isWindows)) {
         throw new Error(`Symlink escape detected: ${resolved} -> ${realPath}`);
       }
     }
@@ -97,7 +98,6 @@ export class NativeExecutor implements SandboxExecutor {
       />\s*\/dev\//i,
       /curl.*\|\s*(?:ba)?sh/i,
       /wget.*\|\s*(?:ba)?sh/i,
-      /sudo\s/i,
     ];
 
     if (process.platform === 'win32') {
@@ -321,4 +321,3 @@ export class NativeExecutor implements SandboxExecutor {
     return this.isInitialized;
   }
 }
-

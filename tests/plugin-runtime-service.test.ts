@@ -65,13 +65,13 @@ function createPluginFixture(root: string, pluginName: string): string {
   return pluginRoot;
 }
 
-async function createRuntimeService() {
+async function createRuntimeService(options?: { catalogService?: any; commandRunner?: any }) {
   const { PluginRuntimeService } = await import('../src/main/skills/plugin-runtime-service');
-  const fakeCatalogService = {
+  const fakeCatalogService = options?.catalogService ?? ({
     listAnthropicPlugins: vi.fn(),
     downloadPlugin: vi.fn(),
-  } as any;
-  return new PluginRuntimeService(fakeCatalogService);
+  } as any);
+  return new PluginRuntimeService(fakeCatalogService, options?.commandRunner);
 }
 
 describe('PluginRuntimeService', () => {
@@ -87,6 +87,254 @@ describe('PluginRuntimeService', () => {
     if (testRoot && fs.existsSync(testRoot)) {
       fs.rmSync(testRoot, { recursive: true, force: true });
     }
+  });
+
+  it('installs plugin via claude CLI and imports from installPath', async () => {
+    const fixturesRoot = path.join(testRoot, 'fixtures');
+    const pluginRoot = createPluginFixture(fixturesRoot, 'context7');
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'context7',
+        description: 'Context plugin',
+        version: undefined,
+        authorName: 'Upstash',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'context7@claude-plugins-official',
+        installCommand: 'claude plugin install context7@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/context7',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          installed: [
+            {
+              id: 'context7@claude-plugins-official',
+              installPath: pluginRoot,
+            },
+          ],
+        }),
+        stderr: '',
+      });
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+    const result = await service.install('context7');
+
+    expect(commandRunner).toHaveBeenNthCalledWith(1, 'claude', ['plugin', 'install', 'context7@claude-plugins-official']);
+    expect(commandRunner).toHaveBeenNthCalledWith(2, 'claude', ['plugin', 'list', '--json']);
+    expect(result.plugin.name).toBe('context7');
+    expect(fs.existsSync(result.plugin.runtimePath)).toBe(true);
+  });
+
+  it('installs plugin when claude plugin list --json returns an array payload', async () => {
+    const fixturesRoot = path.join(testRoot, 'fixtures');
+    const pluginRoot = createPluginFixture(fixturesRoot, 'agent-sdk-dev');
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'agent-sdk-dev',
+        description: 'Agent SDK plugin',
+        version: undefined,
+        authorName: 'Anthropic',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'agent-sdk-dev@claude-plugins-official',
+        installCommand: 'claude plugin install agent-sdk-dev@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/agent-sdk-dev',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            id: 'agent-sdk-dev@claude-plugins-official',
+            installPath: pluginRoot,
+          },
+        ]),
+        stderr: '',
+      });
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+    const result = await service.install('agent-sdk-dev');
+
+    expect(result.plugin.name).toBe('agent-sdk-dev');
+    expect(fs.existsSync(result.plugin.runtimePath)).toBe(true);
+  });
+
+  it('installs by full plugin id when marketplace has duplicate names', async () => {
+    const fixturesRoot = path.join(testRoot, 'fixtures');
+    const pluginRoot = createPluginFixture(fixturesRoot, 'agent-sdk-dev');
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'Agent SDK Dev',
+        description: 'Official plugin',
+        version: undefined,
+        authorName: 'Anthropic',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'agent-sdk-dev@claude-plugins-official',
+        installCommand: 'claude plugin install agent-sdk-dev@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/agent-sdk-dev',
+        catalogSource: 'claude-marketplace',
+      },
+      {
+        name: 'Agent SDK Dev',
+        description: 'Community fork',
+        version: undefined,
+        authorName: 'Someone',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'agent-sdk-dev@community',
+        installCommand: 'claude plugin install agent-sdk-dev@community',
+        detailUrl: 'https://claude.com/plugins/agent-sdk-dev-community',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          installed: [
+            {
+              id: 'agent-sdk-dev@claude-plugins-official',
+              installPath: pluginRoot,
+            },
+          ],
+        }),
+        stderr: '',
+      });
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+    const result = await service.install('agent-sdk-dev@claude-plugins-official');
+
+    expect(commandRunner).toHaveBeenNthCalledWith(
+      1,
+      'claude',
+      ['plugin', 'install', 'agent-sdk-dev@claude-plugins-official']
+    );
+    expect(result.plugin.name).toBe('agent-sdk-dev');
+  });
+
+  it('fails fast with readable error when plugin name is ambiguous', async () => {
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'Agent SDK Dev',
+        description: 'Official plugin',
+        version: undefined,
+        authorName: 'Anthropic',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'agent-sdk-dev@claude-plugins-official',
+        installCommand: 'claude plugin install agent-sdk-dev@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/agent-sdk-dev',
+        catalogSource: 'claude-marketplace',
+      },
+      {
+        name: 'Agent SDK Dev',
+        description: 'Community fork',
+        version: undefined,
+        authorName: 'Someone',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'agent-sdk-dev@community',
+        installCommand: 'claude plugin install agent-sdk-dev@community',
+        detailUrl: 'https://claude.com/plugins/agent-sdk-dev-community',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi.fn();
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+    await expect(service.install('Agent SDK Dev')).rejects.toThrow('Multiple plugins share this name');
+    expect(commandRunner).not.toHaveBeenCalled();
+  });
+
+  it('fails install when installPath is missing from claude plugin list output', async () => {
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'context7',
+        description: 'Context plugin',
+        version: undefined,
+        authorName: 'Upstash',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'context7@claude-plugins-official',
+        installCommand: 'claude plugin install context7@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/context7',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ installed: [] }), stderr: '' });
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+
+    await expect(service.install('context7')).rejects.toThrow('installPath not found');
+  });
+
+  it('surfaces clear error when claude command is unavailable', async () => {
+    const listAnthropicPlugins = vi.fn(async () => [
+      {
+        name: 'context7',
+        description: 'Context plugin',
+        version: undefined,
+        authorName: 'Upstash',
+        installable: true,
+        hasManifest: false,
+        componentCounts: { skills: 0, commands: 0, agents: 0, hooks: 0, mcp: 0 },
+        skillCount: 0,
+        hasSkills: false,
+        pluginId: 'context7@claude-plugins-official',
+        installCommand: 'claude plugin install context7@claude-plugins-official',
+        detailUrl: 'https://claude.com/plugins/context7',
+        catalogSource: 'claude-marketplace',
+      },
+    ]);
+    const catalogService = { listAnthropicPlugins } as any;
+    const commandRunner = vi.fn(async () => {
+      const error = new Error('spawn claude ENOENT') as Error & { code?: string };
+      error.code = 'ENOENT';
+      throw error;
+    });
+
+    const service = await createRuntimeService({ catalogService, commandRunner });
+
+    await expect(service.install('context7')).rejects.toThrow('claude command not found');
   });
 
   it('materializes runtime with default component policy', async () => {

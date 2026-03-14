@@ -26,8 +26,14 @@ import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
   startSession(title: string, prompt: string, cwd?: string): Promise<Session>;
-  continueSession(sessionId: string, prompt: string, content?: ContentBlock[]): Promise<void>;
+  continueSession(
+    sessionId: string,
+    prompt: string,
+    content?: ContentBlock[],
+    cwd?: string
+  ): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
+  validateWorkingDirectory?(cwd: string): Promise<string | null> | string | null;
 }
 
 // Question/Permission request from agent
@@ -111,6 +117,10 @@ export class RemoteManager extends EventEmitter {
         );
       }
     );
+
+    if (executor.validateWorkingDirectory) {
+      this.messageRouter.setWorkingDirectoryValidator(executor.validateWorkingDirectory);
+    }
     
     log('[RemoteManager] Agent executor set');
   }
@@ -504,7 +514,7 @@ export class RemoteManager extends EventEmitter {
         'mcp__Chrome__evaluate_script', 'mcp__Chrome__get_network_request',
         'mcp__Chrome__list_network_requests', 'mcp__Chrome__list_console_messages',
         // Task tools
-        'Task', 'TodoWrite',
+        'Task',
       ];
       
       if (safeTools.includes(toolName)) {
@@ -996,7 +1006,7 @@ export class RemoteManager extends EventEmitter {
       }
       log('[RemoteManager] Continuing session:', actualSessionId, 'for remote:', sessionId);
       this.emitRemoteUserMessage(actualSessionId, content, prompt);
-      await this.agentExecutor.continueSession(actualSessionId, prompt, content);
+      await this.agentExecutor.continueSession(actualSessionId, prompt, content, workingDirectory);
     }
     
     // Note: The actual response handling is done through the session manager

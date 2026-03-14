@@ -3,11 +3,13 @@ export interface Session {
   id: string;
   title: string;
   claudeSessionId?: string;
+  openaiThreadId?: string;
   status: SessionStatus;
   cwd?: string;
   mountedPaths: MountedPath[];
   allowedTools: string[];
   memoryEnabled: boolean;
+  model?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -109,6 +111,67 @@ export interface TraceStep {
 export type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
 export type TraceStepStatus = 'pending' | 'running' | 'completed' | 'error';
 
+export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
+export type ScheduleWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface DailyScheduleConfig {
+  kind: 'daily';
+  times: string[];
+}
+
+export interface WeeklyScheduleConfig {
+  kind: 'weekly';
+  weekdays: ScheduleWeekday[];
+  times: string[];
+}
+
+export type ScheduleConfig = DailyScheduleConfig | WeeklyScheduleConfig;
+
+export interface ScheduleTask {
+  id: string;
+  title: string;
+  prompt: string;
+  cwd: string;
+  runAt: number;
+  nextRunAt: number | null;
+  scheduleConfig: ScheduleConfig | null;
+  repeatEvery: number | null;
+  repeatUnit: ScheduleRepeatUnit | null;
+  enabled: boolean;
+  lastRunAt: number | null;
+  lastRunSessionId: string | null;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ScheduleCreateInput {
+  title?: string;
+  prompt: string;
+  cwd: string;
+  runAt: number;
+  nextRunAt?: number | null;
+  scheduleConfig?: ScheduleConfig | null;
+  repeatEvery?: number | null;
+  repeatUnit?: ScheduleRepeatUnit | null;
+  enabled?: boolean;
+}
+
+export interface ScheduleUpdateInput {
+  title?: string;
+  prompt?: string;
+  cwd?: string;
+  runAt?: number;
+  nextRunAt?: number | null;
+  scheduleConfig?: ScheduleConfig | null;
+  repeatEvery?: number | null;
+  repeatUnit?: ScheduleRepeatUnit | null;
+  enabled?: boolean;
+  lastRunAt?: number | null;
+  lastRunSessionId?: string | null;
+  lastError?: string | null;
+}
+
 // Skills types
 export interface Skill {
   id: string;
@@ -148,6 +211,10 @@ export interface PluginCatalogItemV2 {
   installable: boolean;
   hasManifest: boolean;
   componentCounts: PluginComponentCounts;
+  pluginId?: string;
+  installCommand?: string;
+  detailUrl?: string;
+  catalogSource?: 'claude-marketplace';
 }
 
 export interface PluginCatalogItem extends PluginCatalogItemV2 {
@@ -188,6 +255,12 @@ export interface PluginInstallResult {
   errors: string[];
 }
 
+export interface SkillsStorageChangeEvent {
+  path: string;
+  reason: 'updated' | 'path_changed' | 'fallback' | 'watcher_error';
+  message?: string;
+}
+
 // Memory types
 export interface MemoryEntry {
   id: string;
@@ -213,7 +286,14 @@ export interface PermissionRequest {
 
 export type PermissionResult = 'allow' | 'deny' | 'allow_always';
 
-// AskUserQuestion types - matches Claude SDK format
+// Sudo password types
+export interface SudoPasswordRequest {
+  toolUseId: string;
+  command: string;
+  sessionId: string;
+}
+
+// AskUserQuestion display types - kept for rendering historical messages
 export interface QuestionOption {
   label: string;
   description?: string;
@@ -224,18 +304,6 @@ export interface QuestionItem {
   header?: string;
   options?: QuestionOption[];
   multiSelect?: boolean;
-}
-
-export interface UserQuestionRequest {
-  questionId: string;
-  sessionId: string;
-  toolUseId: string;
-  questions: QuestionItem[];
-}
-
-export interface UserQuestionResponse {
-  questionId: string;
-  answer: string;  // JSON string of Record<number, string[]> (questionIndex -> selected labels)
 }
 
 export interface PermissionRule {
@@ -254,12 +322,12 @@ export type ClientEvent =
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
-  | { type: 'question.response'; payload: UserQuestionResponse }
+  | { type: 'sudo.password.response'; payload: { toolUseId: string; password: string | null } }
   | { type: 'settings.update'; payload: Record<string, unknown> }
   | { type: 'folder.select'; payload: Record<string, never> }
   | { type: 'workdir.get'; payload: Record<string, never> }
   | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
-  | { type: 'workdir.select'; payload: { sessionId?: string } };
+  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase = 
@@ -306,16 +374,20 @@ export type ServerEvent =
   | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
   | { type: 'session.list'; payload: { sessions: Session[] } }
   | { type: 'permission.request'; payload: PermissionRequest }
-  | { type: 'question.request'; payload: UserQuestionRequest }
+  | { type: 'sudo.password.request'; payload: SudoPasswordRequest }
+  | { type: 'sudo.password.dismiss'; payload: { toolUseId: string } }
   | { type: 'trace.step'; payload: { sessionId: string; step: TraceStep } }
   | { type: 'trace.update'; payload: { sessionId: string; stepId: string; updates: Partial<TraceStep> } }
   | { type: 'folder.selected'; payload: { path: string } }
-  | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig | null } }
+  | { type: 'config.status'; payload: { isConfigured: boolean; config: AppConfig } }
   | { type: 'sandbox.progress'; payload: SandboxSetupProgress }
   | { type: 'sandbox.sync'; payload: SandboxSyncStatus }
+  | { type: 'skills.storageChanged'; payload: SkillsStorageChangeEvent }
   | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
-  | { type: 'error'; payload: { message: string } };
+  | { type: 'proxy.warmup'; payload: { status: 'warming' | 'ready' | 'failed' } }
+  | { type: 'navigate.to'; payload: { page: 'welcome' | 'settings' | 'session'; tab?: string; sessionId?: string } }
+  | { type: 'error'; payload: { message: string; code?: 'CONFIG_REQUIRED_ACTIVE_SET'; action?: 'open_api_settings' } };
 
 // Settings types
 export interface Settings {
@@ -346,15 +418,56 @@ export interface ExecutionContext {
 }
 
 // App Config types
-export interface AppConfig {
-  provider: 'openrouter' | 'anthropic' | 'custom' | 'openai';
+export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
+export type ProviderProfileKey =
+  | 'openrouter'
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'custom:anthropic'
+  | 'custom:openai'
+  | 'custom:gemini';
+export type ConfigSetId = string;
+
+export interface ProviderProfile {
   apiKey: string;
   baseUrl?: string;
-  customProtocol?: 'anthropic' | 'openai';
   model: string;
-  openaiMode?: 'responses' | 'chat';
+}
+
+export interface ApiConfigSet {
+  id: ConfigSetId;
+  name: string;
+  isSystem?: boolean;
+  provider: ProviderType;
+  customProtocol: CustomProtocolType;
+  activeProfileKey: ProviderProfileKey;
+  profiles: Partial<Record<ProviderProfileKey, ProviderProfile>>;
+  enableThinking: boolean;
+  updatedAt: string;
+}
+
+export interface CreateSetPayload {
+  name: string;
+  mode: 'blank' | 'clone';
+  fromSetId?: string;
+}
+
+export interface AppConfig {
+  provider: ProviderType;
+  apiKey: string;
+  baseUrl?: string;
+  customProtocol?: CustomProtocolType;
+  model: string;
+  activeProfileKey: ProviderProfileKey;
+  profiles: Partial<Record<ProviderProfileKey, ProviderProfile>>;
+  activeConfigSetId: ConfigSetId;
+  configSets: ApiConfigSet[];
   claudeCodePath?: string;
   defaultWorkdir?: string;
+  globalSkillsPath?: string;
   sandboxEnabled?: boolean;
   enableThinking?: boolean;
   isConfigured: boolean;
@@ -373,6 +486,13 @@ export interface ProviderPresets {
   anthropic: ProviderPreset;
   custom: ProviderPreset;
   openai: ProviderPreset;
+  gemini: ProviderPreset;
+  ollama: ProviderPreset;
+}
+
+export interface ProviderModelInfo {
+  id: string;
+  name: string;
 }
 
 export interface ApiTestInput {
@@ -396,6 +516,11 @@ export interface ApiTestResult {
     | 'rate_limited'
     | 'server_error'
     | 'network_error'
+    | 'ollama_not_running'
+    | 'proxy_boot_failed'
+    | 'proxy_health_failed'
+    | 'proxy_upstream_auth_failed'
+    | 'proxy_upstream_not_found'
     | 'unknown';
   details?: string;
 }

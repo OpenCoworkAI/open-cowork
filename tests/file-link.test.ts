@@ -40,8 +40,56 @@ describe('splitTextByFileMentions', () => {
     ]);
   });
 
+  it('detects Windows absolute paths that use forward slashes', () => {
+    const input = 'Saved to C:/Users/demo/Documents/report.txt successfully';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([
+      { type: 'text', value: 'Saved to ' },
+      { type: 'file', value: 'C:/Users/demo/Documents/report.txt' },
+      { type: 'text', value: ' successfully' },
+    ]);
+  });
+
+  it('detects UNC network share paths', () => {
+    const input = 'Saved to \\\\server\\share\\reports\\summary.docx successfully';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([
+      { type: 'text', value: 'Saved to ' },
+      { type: 'file', value: '\\\\server\\share\\reports\\summary.docx' },
+      { type: 'text', value: ' successfully' },
+    ]);
+  });
+
+  it('detects bare Chinese filename after descriptive paragraph', () => {
+    const input = [
+      '已创建 Word 文档，内容为“北京未来一个月天气介绍”（含趋势、气温体感、降水风力、生活建议等）：',
+      '',
+      '北京未来一个月天气介绍.docx',
+    ].join('\n');
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([
+      {
+        type: 'text',
+        value: '已创建 Word 文档，内容为“北京未来一个月天气介绍”（含趋势、气温体感、降水风力、生活建议等）：\n\n',
+      },
+      { type: 'file', value: '北京未来一个月天气介绍.docx' },
+    ]);
+  });
+
   it('ignores urls', () => {
     const input = '查看 https://example.com/demo.txt';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([{ type: 'text', value: input }]);
+  });
+
+  it('ignores file URLs instead of turning them into broken file buttons', () => {
+    const input = '查看 file:///C:/Users/demo/report.txt';
+    const parts = splitTextByFileMentions(input);
+    expect(parts).toEqual([{ type: 'text', value: input }]);
+  });
+
+  it('ignores UNC file URLs instead of splitting out the trailing filename', () => {
+    const input = '查看 file://server/share/report.txt';
     const parts = splitTextByFileMentions(input);
     expect(parts).toEqual([{ type: 'text', value: input }]);
   });
