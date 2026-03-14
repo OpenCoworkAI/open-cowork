@@ -267,21 +267,21 @@ export class ToolExecutor {
     const normalizedCwd = path.normalize(cwd);
     const cwdAllowed = mounts.some((m) => {
       const mountRoot = path.normalize(m.real);
-      return normalizedCwd.startsWith(mountRoot) || normalizedCwd === mountRoot.replace(/[\\\/]+$/, '');
+      return normalizedCwd.startsWith(mountRoot) || normalizedCwd === mountRoot.replace(/[/\\]+$/, '');
     });
     if (!cwdAllowed) {
       throw new Error('Working directory is outside the mounted workspace');
     }
 
     // Block path traversal attempts
-    if (/(?:^|[\s;|&])\.\.(?:[\s;|&\/\\]|$)/.test(command) || command.includes('../') || command.includes('..\\')) {
+    if (/(?:^|[\s;|&])\.\.(?:[\s;|&/\\]|$)/.test(command) || command.includes('../') || command.includes('..\\')) {
       throw new Error('Command blocked: path traversal (..) is not allowed');
     }
 
     // Extract potential paths from command (quoted strings and unquoted tokens)
     const pathPatterns = [
       // Windows absolute paths: C:\... or C:/...
-      /[A-Za-z]:[\\\/][^\s;|&"'<>]*/g,
+      /[A-Za-z]:[/\\][^\s;|&"'<>]*/g,
       // Unix absolute paths: /...
       /(?:^|[\s;|&"'])\/[^\s;|&"'<>]+/g,
       // Quoted paths
@@ -319,7 +319,7 @@ export class ToolExecutor {
 
     // Block dangerous patterns
     const dangerousPatterns = [
-      /rm\s+-rf?\s+[\/~]/i,
+      /rm\s+-rf?\s+[/~]/i,
       /dd\s+if=/i,
       /mkfs/i,
       />\s*\/dev\//i,

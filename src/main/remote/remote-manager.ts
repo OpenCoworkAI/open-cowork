@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
+import { WebSocketChannel } from './channels/websocket/websocket-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -920,7 +921,17 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Feishu channel registered');
     }
     
-    // TODO: Register other channels (WeChat, Telegram, DingTalk)
+    // Register WebSocket channel (always available for direct client connections)
+    const wsConfig = config.channels?.websocket;
+    if (wsConfig) {
+      const wsChannel = new WebSocketChannel(wsConfig);
+      this.gateway.registerChannel(wsChannel);
+      log('[RemoteManager] WebSocket channel registered');
+    }
+
+    // Note: WeChat, Telegram, and DingTalk channels require their respective
+    // SDK packages (wechaty, node-telegram-bot-api, dingtalk-stream).
+    // Register them here when their implementations are added to channels/.
   }
   
   /**

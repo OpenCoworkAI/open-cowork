@@ -595,7 +595,7 @@ export class OpenAIResponsesRunner {
     toolConfig: ToolConfig,
     signal: AbortSignal
   ): Promise<void> {
-    let input: unknown[] = this.buildInput(existingMessages, prompt);
+    const input: unknown[] = this.buildInput(existingMessages, prompt);
     let conversationItems: unknown[] = Array.isArray(input) ? [...input] : [];
     let previousResponseId: string | null = null;
     let supportsPreviousResponseId = true;
@@ -666,6 +666,7 @@ export class OpenAIResponsesRunner {
     let response = initialResponse;
     let streamed = initialStreamed;
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const outputText = this.extractOutputText(response);
       if (outputText) {

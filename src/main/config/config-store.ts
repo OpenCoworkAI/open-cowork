@@ -244,6 +244,7 @@ class ConfigStore {
     // Only set CLAUDE_CODE_PATH if the configured path actually exists
     // This allows auto-detection to work when the configured path is invalid
     if (config.claudeCodePath) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const fs = require('fs');
       if (fs.existsSync(config.claudeCodePath)) {
         process.env.CLAUDE_CODE_PATH = config.claudeCodePath;

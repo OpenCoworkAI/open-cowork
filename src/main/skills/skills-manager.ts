@@ -302,16 +302,25 @@ export class SkillsManager {
       return;
     }
 
-    // TODO: Implement actual MCP server startup
-    // const { spawn } = await import('child_process');
-    // const mcpConfig = skill.config.mcp as McpServerConfig;
-    // 
-    // const proc = spawn(mcpConfig.command, mcpConfig.args || [], {
-    //   env: { ...process.env, ...mcpConfig.env },
-    // });
-    // 
-    // this.runningServers.set(skill.id, { process: proc, skill });
+    const { spawn } = await import('child_process');
+    const mcpConfig = skill.config.mcp as McpServerConfig;
 
+    const proc = spawn(mcpConfig.command, mcpConfig.args || [], {
+      env: { ...process.env, ...mcpConfig.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    proc.on('error', (err) => {
+      logError(`MCP server error for skill ${skill.name}:`, err);
+      this.runningServers.delete(skill.id);
+    });
+
+    proc.on('exit', (code) => {
+      log(`MCP server for ${skill.name} exited with code ${code}`);
+      this.runningServers.delete(skill.id);
+    });
+
+    this.runningServers.set(skill.id, { process: proc, skill });
     log(`MCP server started for skill: ${skill.name}`);
   }
 
@@ -324,8 +333,18 @@ export class SkillsManager {
       return;
     }
 
-    // TODO: Implement graceful shutdown
-    // server.process.kill();
+    // Graceful shutdown: send SIGTERM, then SIGKILL after timeout
+    const proc = server.process;
+    if (proc && !proc.killed) {
+      proc.kill('SIGTERM');
+      // Force kill after 5 seconds if still running
+      const killTimeout = setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill('SIGKILL');
+        }
+      }, 5000);
+      proc.on('exit', () => clearTimeout(killTimeout));
+    }
 
     this.runningServers.delete(skillId);
     log(`MCP server stopped for skill: ${server.skill.name}`);

@@ -222,7 +222,7 @@ export class RemoteGateway extends EventEmitter {
     return {
       running: this._running,
       port: this._running ? this.config.port : undefined,
-      publicUrl: undefined, // TODO: Add tunnel support
+      publicUrl: this.config.tunnel?.enabled ? undefined : undefined, // Tunnel URL managed by TunnelManager in RemoteManager
       channels: channelStatuses,
       activeSessions: this.messageRouter.getActiveSessionCount(),
       pendingPairings: this.pairingRequests.size,
@@ -364,8 +364,16 @@ export class RemoteGateway extends EventEmitter {
       return true;
     }
     
-    // TODO: Check channel-specific group settings
-    // For now, require mention in groups by default
+    // Check channel-specific group settings from config
+    const channel = this.channels.get(message.channelType);
+    if (channel && 'config' in channel) {
+      const channelConfig = (channel as any).config;
+      // If channel config explicitly allows all group messages
+      if (channelConfig?.allowGroupMessages) {
+        return true;
+      }
+    }
+    // Default: require mention in groups
     return false;
   }
   

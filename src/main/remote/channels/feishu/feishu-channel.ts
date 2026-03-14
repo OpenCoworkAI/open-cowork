@@ -179,12 +179,37 @@ export class FeishuChannel extends ChannelBase {
         return { status: 200, data: { code: 0 } };
       }
       
-      // Verify request if encryption is enabled
+      // Decrypt request if encryption is enabled
       if (this.config.encryptKey && data.encrypt) {
-        log('[Feishu] Encrypted message received, decryption not yet implemented');
-        // TODO: Implement message decryption
+        log('[Feishu] Encrypted message received, attempting decryption');
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const crypto = require('crypto');
+          const encryptKey = this.config.encryptKey;
+
+          // Feishu uses AES-256-CBC with SHA256 hash of key
+          const keyHash = crypto.createHash('sha256').update(encryptKey).digest();
+          const encryptedData = Buffer.from(data.encrypt, 'base64');
+
+          // First 16 bytes are the IV
+          const iv = encryptedData.subarray(0, 16);
+          const encrypted = encryptedData.subarray(16);
+
+          const decipher = crypto.createDecipheriv('aes-256-cbc', keyHash, iv);
+          let decrypted = decipher.update(encrypted, undefined, 'utf8');
+          decrypted += decipher.final('utf8');
+
+          const decryptedData = JSON.parse(decrypted);
+          log('[Feishu] Message decrypted successfully');
+
+          // Re-process decrypted data
+          return this.handleWebhook(_headers, JSON.stringify(decryptedData));
+        } catch (decryptError) {
+          logError('[Feishu] Message decryption failed:', decryptError);
+          return { status: 400, data: { error: 'Decryption failed' } };
+        }
       }
-      
+
       log('[Feishu] Unknown webhook format, returning OK');
       return { status: 200, data: { code: 0 } };
       

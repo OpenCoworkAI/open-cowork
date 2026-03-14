@@ -197,65 +197,61 @@ export function useIPC() {
 
       // Browser mode mock
       if (!isElectron) {
-        try {
-          const sessionId = `mock-session-${Date.now()}`;
-          const session: Session = {
-            id: sessionId,
-            title: title || 'New Session',
-            status: 'running',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            cwd: cwd || '',
-            mountedPaths: [],
-            allowedTools: [
-              'askuserquestion',
-              'todowrite',
-              'todoread',
-              'webfetch',
-              'websearch',
-              'read',
-              'write',
-              'edit',
-              'list_directory',
-              'glob',
-              'grep',
-            ],
-            memoryEnabled: false,
-          };
+        const sessionId = `mock-session-${Date.now()}`;
+        const session: Session = {
+          id: sessionId,
+          title: title || 'New Session',
+          status: 'running',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cwd: cwd || '',
+          mountedPaths: [],
+          allowedTools: [
+            'askuserquestion',
+            'todowrite',
+            'todoread',
+            'webfetch',
+            'websearch',
+            'read',
+            'write',
+            'edit',
+            'list_directory',
+            'glob',
+            'grep',
+          ],
+          memoryEnabled: false,
+        };
 
-          addSession(session);
-          useAppStore.getState().setActiveSession(sessionId);
+        addSession(session);
+        useAppStore.getState().setActiveSession(sessionId);
 
-          const userMessage: Message = {
-            id: `msg-user-${Date.now()}`,
-            sessionId,
-            role: 'user',
-            content,
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, userMessage);
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
+        const userMessage: Message = {
+          id: `msg-user-${Date.now()}`,
+          sessionId,
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, userMessage);
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
 
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          setLoading(false);
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        setLoading(false);
 
-          return session;
-        } catch (e) {
-          throw e;
-        }
+        return session;
       }
 
       // Electron mode
@@ -330,29 +326,25 @@ export function useIPC() {
       
       // Browser mode mock
       if (!isElectron) {
-        try {
-          updateSession(sessionId, { status: 'running' });
-          const mockStepId = `mock-step-${Date.now()}`;
-          activateNextTurn(sessionId, mockStepId);
-          
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const assistantMessage: Message = {
-            id: `msg-assistant-${Date.now()}`,
-            sessionId,
-            role: 'assistant',
-            content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
-            timestamp: Date.now(),
-          };
-          addMessage(sessionId, assistantMessage);
-          
-          updateSession(sessionId, { status: 'idle' });
-          clearActiveTurn(sessionId, mockStepId);
-          clearPendingTurns(sessionId);
-          setLoading(false);
-        } catch (e) {
-          throw e;
-        }
+        updateSession(sessionId, { status: 'running' });
+        const mockStepId = `mock-step-${Date.now()}`;
+        activateNextTurn(sessionId, mockStepId);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const assistantMessage: Message = {
+          id: `msg-assistant-${Date.now()}`,
+          sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: `Mock response to: "${prompt}"` }],
+          timestamp: Date.now(),
+        };
+        addMessage(sessionId, assistantMessage);
+
+        updateSession(sessionId, { status: 'idle' });
+        clearActiveTurn(sessionId, mockStepId);
+        clearPendingTurns(sessionId);
+        setLoading(false);
         return;
       }
       

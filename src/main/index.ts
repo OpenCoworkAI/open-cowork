@@ -384,9 +384,19 @@ function sendToRenderer(event: ServerEvent) {
 
 // Initialize app
 app.whenReady().then(async () => {
-  // TODO: Re-enable sandbox when debugging is complete
-  // Force disable sandbox on startup (temporary fix)
-  configStore.set('sandboxEnabled', false);
+  // Initialize sandbox if enabled in config
+  const sandboxEnabled = configStore.get('sandboxEnabled');
+  if (sandboxEnabled) {
+    try {
+      const adapter = getSandboxAdapter();
+      if (adapter) {
+        log('[App] Sandbox adapter initialized');
+      }
+    } catch (error) {
+      logWarn('[App] Sandbox initialization failed, continuing without sandbox:', error);
+      configStore.set('sandboxEnabled', false);
+    }
+  }
   
   // Apply dev logs setting from config
   const enableDevLogs = configStore.get('enableDevLogs');
@@ -1594,8 +1604,18 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return { success: false, path: '', error: 'User cancelled' };
 
     case 'settings.update':
-      // TODO: Implement settings update
-      return null;
+      if (event.payload && typeof event.payload === 'object') {
+        const updates = event.payload as Partial<AppConfig>;
+        for (const [key, value] of Object.entries(updates)) {
+          configStore.set(key as keyof AppConfig, value);
+        }
+        // Apply dev logs setting immediately if changed
+        if ('enableDevLogs' in updates) {
+          setDevLogsEnabled(updates.enableDevLogs as boolean);
+        }
+        log('[Settings] Updated:', Object.keys(updates).join(', '));
+      }
+      return { success: true };
 
     default:
       logWarn('Unknown event type:', event);

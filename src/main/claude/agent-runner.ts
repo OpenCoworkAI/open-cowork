@@ -240,7 +240,7 @@ Use tool \`mcp__Chrome__click\` with arguments: { "selector": "button.submit" }
         return lines.join('\n');
       };
 
-      let sections: string[] = [];
+      const sections: string[] = [];
       
       if (emailCredentials.length > 0) {
         sections.push(`**Email Accounts (${emailCredentials.length}):**\n${emailCredentials.map(formatCredential).join('\n\n')}`);
@@ -845,6 +845,7 @@ Then follow the workflow described in that file.
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { execSync } = require('child_process');
             execSync(`wsl -d ${distro} -e mkdir -p "${sandboxSkillsPath}"`, {
               encoding: 'utf-8',
@@ -980,6 +981,7 @@ Then follow the workflow described in that file.
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { execSync } = require('child_process');
             execSync(`limactl shell claude-sandbox -- mkdir -p "${sandboxSkillsPath}"`, {
               encoding: 'utf-8',
@@ -1105,7 +1107,7 @@ Then follow the workflow described in that file.
       const builtinSkillsPathForValidation = this.getBuiltinSkillsPath();
       const appClaudeDirForValidation = this.getAppClaudeDir();
       
-      // @ts-ignore - Reserved for future use
+      // @ts-expect-error - Reserved for future use
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const isPathInsideWorkspace = (targetPath: string): boolean => {
         if (!targetPath) return true;
@@ -1167,7 +1169,7 @@ Then follow the workflow described in that file.
           const cmd = String(input.command);
           
           // Extract Windows absolute paths (C:\... or D:\...)
-          const winPaths = cmd.match(/[A-Za-z]:[\\\/][^\s;|&"'<>]*/g) || [];
+          const winPaths = cmd.match(/[A-Za-z]:[\\/][^\s;|&"'<>]*/g) || [];
           paths.push(...winPaths);
           
           // Extract quoted paths
@@ -1345,7 +1347,7 @@ Then follow the workflow described in that file.
               : (config.command === 'node' && bundledNodePaths ? bundledNodePaths.node : config.command);
             
             // 使用内置 npx/node 时，将内置 node bin 注入 PATH
-            let serverEnv = { ...config.env };
+            const serverEnv = { ...config.env };
             if (bundledNodePaths && (config.command === 'npx' || config.command === 'node')) {
               const nodeBinDir = path.dirname(bundledNodePaths.node);
               const currentPath = process.env.PATH || '';
@@ -1475,7 +1477,7 @@ Then follow the workflow described in that file.
           let actualCommand = command;
           let actualArgs = args;
           let actualEnv: NodeJS.ProcessEnv = { ...spawnEnv };
-          let spawnOptions2: any = {
+          const spawnOptions2: any = {
             cwd: spawnCwd,
             stdio: ['pipe', 'pipe', 'pipe'],
             env: actualEnv,
@@ -1509,8 +1511,8 @@ Then follow the workflow described in that file.
               // Fallback to Electron as Node.js if bundled node not found
               log('[ClaudeAgentRunner] Bundled Node.js not found, using Electron as fallback');
               if (process.platform === 'darwin') {
-                const electronPath = process.execPath.replace(/'/g, "'\''");
-                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\''")}'`).join(' ');
+                const electronPath = process.execPath.replace(/'/g, "'\\''");
+                const quotedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
                 const shellCommand = `ELECTRON_RUN_AS_NODE=1 '${electronPath}' ${quotedArgs}`;
                 actualCommand = '/bin/bash';
                 actualArgs = ['-c', shellCommand];

@@ -12,7 +12,8 @@ export function getFileLinkButtonClassName(): string {
   return fileLinkButtonClassName;
 }
 
-const boundaryPattern = /[\s\]\[\(\)\{\}<>"'“”‘’。.,，、:;!?：；]/;
+// eslint-disable-next-line no-useless-escape
+const boundaryPattern = /[\s\]\[\(\)\{\}<>”’””’’。.,，、:;!?：；]/;
 const asciiFilenamePattern = /[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]{1,8}/gi;
 const cjkFilenamePattern = new RegExp(
   `(?:^|${boundaryPattern.source})([\\p{Script=Han}0-9_-]+\\.[A-Za-z0-9]{1,8})`,
@@ -32,7 +33,8 @@ function tokenHasUrlPrefix(text: string, index: number): boolean {
 }
 
 function trimTrailingPunctuation(value: string): string {
-  return value.replace(/[\]\[\(\)\{\}<>"'“”‘’。.,，、:;!?：；]+$/g, '');
+  // eslint-disable-next-line no-useless-escape
+  return value.replace(/[\]\[\(\)\{\}<>”’””’’。.,，、:;!?：；]+$/g, '');
 }
 
 function extensionHasLetter(value: string): boolean {

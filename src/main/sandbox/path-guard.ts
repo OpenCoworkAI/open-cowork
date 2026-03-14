@@ -155,7 +155,7 @@ export class PathGuard {
     }
 
     // Check for Windows-style paths that weren't converted
-    if (/[A-Za-z]:[\\\/]/.test(command)) {
+    if (/[A-Za-z]:[/\\]/.test(command)) {
       // This shouldn't happen if paths are properly converted, but log it
       log(`[PathGuard] Windows path detected in command, needs conversion`);
     }
@@ -188,7 +188,7 @@ export class PathGuard {
     let convertedCommand = command;
 
     // Pattern to match Windows paths: D:\something or D:/something
-    const windowsPathPattern = /([A-Za-z]):[\\\/]([^\s;|&"'<>]*)/g;
+    const windowsPathPattern = /([A-Za-z]):[/\\]([^\s;|&"'<>]*)/g;
 
     convertedCommand = convertedCommand.replace(windowsPathPattern, (match, drive, rest) => {
       const fullPath = `${drive}:/${rest.replace(/\\/g, '/')}`.toLowerCase();

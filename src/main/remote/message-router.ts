@@ -211,7 +211,7 @@ export class MessageRouter {
     });
     
     // Convert remote content to agent content blocks
-    const content = this.convertToContentBlocks(message);
+    const content = await this.convertToContentBlocks(message);
     const { prompt, cwd } = this.extractPromptAndCwd(message);
     
     // Get session mapping to update/get working directory
@@ -305,7 +305,7 @@ export class MessageRouter {
   /**
    * Convert remote message content to agent content blocks
    */
-  private convertToContentBlocks(message: RemoteMessage): ContentBlock[] {
+  private async convertToContentBlocks(message: RemoteMessage): Promise<ContentBlock[]> {
     const blocks: ContentBlock[] = [];
     
     switch (message.content.type) {
@@ -319,13 +319,36 @@ export class MessageRouter {
         break;
         
       case 'image':
-        // TODO: Download image and convert to base64
         if (message.content.imageUrl) {
-          // For now, add as text description
-          blocks.push({
-            type: 'text',
-            text: `[用户发送了一张图片: ${message.content.imageUrl}]`,
-          } as TextContent);
+          try {
+            // Download image and convert to base64 for vision-capable models
+            const imageResponse = await fetch(message.content.imageUrl);
+            if (imageResponse.ok) {
+              const arrayBuffer = await imageResponse.arrayBuffer();
+              const base64Data = Buffer.from(arrayBuffer).toString('base64');
+              const contentType = imageResponse.headers.get('content-type') || 'image/png';
+              const mediaType = contentType.split(';')[0].trim() as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+              blocks.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data: base64Data,
+                },
+              } as any);
+            } else {
+              blocks.push({
+                type: 'text',
+                text: `[图片下载失败: ${message.content.imageUrl}]`,
+              } as TextContent);
+            }
+          } catch (error) {
+            log(`[MessageRouter] Failed to download image: ${error}`);
+            blocks.push({
+              type: 'text',
+              text: `[图片下载失败: ${message.content.imageUrl}]`,
+            } as TextContent);
+          }
         }
         break;
         
@@ -339,11 +362,21 @@ export class MessageRouter {
         break;
         
       case 'voice':
-        // TODO: Transcribe voice message
-        blocks.push({
-          type: 'text',
-          text: '[用户发送了语音消息]',
-        } as TextContent);
+        if (message.content.voice?.url) {
+          // Include voice URL as text context for agent processing
+          const duration = message.content.voice.duration
+            ? ` (${message.content.voice.duration}秒)`
+            : '';
+          blocks.push({
+            type: 'text',
+            text: `[用户发送了语音消息${duration}，音频地址: ${message.content.voice.url}]`,
+          } as TextContent);
+        } else {
+          blocks.push({
+            type: 'text',
+            text: '[用户发送了语音消息]',
+          } as TextContent);
+        }
         break;
         
       default:

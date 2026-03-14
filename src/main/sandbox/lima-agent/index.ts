@@ -100,7 +100,7 @@ class SandboxAgent {
 
     // Block dangerous patterns
     const dangerousPatterns = [
-      /rm\s+-rf?\s+[\/~]/i,
+      /rm\s+-rf?\s+[/~]/i,
       /dd\s+if=/i,
       /mkfs/i,
       />\s*\/dev\//i,
@@ -117,7 +117,7 @@ class SandboxAgent {
     }
 
     // Extract and validate absolute paths in command
-    const pathMatches = command.match(/\/[\w\/\-\.]+/g) || [];
+    const pathMatches = command.match(/\/[\w/\-.]+/g) || [];
     for (const p of pathMatches) {
       // Skip system paths that are commonly used
       if (p.startsWith('/usr/') || p.startsWith('/bin/') ||
