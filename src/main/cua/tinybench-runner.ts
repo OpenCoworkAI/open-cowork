@@ -14,6 +14,12 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { CreateMessageRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  SamplingMessage,
+  SamplingMessageContentBlock,
+  CreateMessageResult,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
   createAgentSession,
   SessionManager as PiSessionManager,
@@ -27,8 +33,44 @@ import {
   buildSyntheticPiModel,
 } from '../claude/pi-model-resolution';
 import type { RunResult, TaskSpec, ToolCallRecord } from './types';
+import OpenAI from 'openai';
 
 const execAsync = promisify(exec);
+
+// ---------------------------------------------------------------------------
+// MCP Sampling: message format conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert MCP SamplingMessage[] to OpenAI Responses API `input` format.
+ *
+ * MCP:  [{role:'user', content:[{type:'image', data, mimeType}, {type:'text', text}]}]
+ * Resp: [{type:'message', role:'user', content:[{type:'input_image', image_url:'data:...'}, {type:'input_text', text}]}]
+ */
+export function convertMcpMessagesToResponsesInput(
+  messages: SamplingMessage[],
+): Array<Record<string, unknown>> {
+  return messages.map((msg) => {
+    const blocks: SamplingMessageContentBlock[] = Array.isArray(msg.content)
+      ? msg.content
+      : [msg.content];
+
+    const content = blocks.map((block) => {
+      if (block.type === 'image') {
+        return {
+          type: 'input_image',
+          image_url: `data:${block.mimeType};base64,${block.data}`,
+        };
+      }
+      if (block.type === 'text') {
+        return { type: 'input_text', text: block.text };
+      }
+      return block;
+    });
+
+    return { type: 'message', role: msg.role, content };
+  });
+}
 
 const GUI_SYSTEM_PROMPT = `You are a GUI automation agent. You operate a real desktop computer through tools.
 
@@ -101,17 +143,23 @@ interface McpToolInfo {
   inputSchema: Record<string, unknown>;
 }
 
-async function connectGuiOperate(): Promise<{
+async function connectGuiOperate(
+  envOverrides?: Record<string, string>,
+  samplingConfig?: { apiKey: string; baseUrl: string; model: string }
+): Promise<{
   client: Client;
   transport: StdioClientTransport;
   tools: McpToolInfo[];
 }> {
   const serverPath = resolveGuiOperateServerPath();
-  const env = Object.fromEntries(
+  const env: Record<string, string> = Object.fromEntries(
     Object.entries(process.env).filter(
       (entry): entry is [string, string] => typeof entry[1] === 'string'
     )
   );
+  if (envOverrides) {
+    Object.assign(env, envOverrides);
+  }
 
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -119,10 +167,43 @@ async function connectGuiOperate(): Promise<{
     env,
   });
 
+  // Declare sampling capability so the server can delegate vision calls back
   const client = new Client(
     { name: 'tinybench', version: '0.1.0' },
-    { capabilities: {} }
+    { capabilities: samplingConfig ? { sampling: {} } : {} }
   );
+
+  // Register sampling/createMessage handler — routes vision calls through
+  // OpenAI Responses API using the same verified route as the main agent.
+  if (samplingConfig) {
+    const { apiKey, baseUrl, model } = samplingConfig;
+    client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+      const { messages, maxTokens } = request.params;
+      const input = convertMcpMessagesToResponsesInput(messages);
+
+      const openai = new OpenAI({ apiKey, baseURL: baseUrl });
+      const response = await openai.responses.create({
+        model,
+        input: input as never,
+        max_output_tokens: maxTokens,
+      });
+
+      const text = response.output
+        .filter((b: { type: string }) => b.type === 'message')
+        .flatMap((b: { type: string; content?: Array<{ type: string; text?: string }> }) =>
+          b.content ?? [],
+        )
+        .filter((c: { type: string }) => c.type === 'output_text')
+        .map((c: { type: string; text?: string }) => c.text ?? '')
+        .join('');
+
+      return {
+        model,
+        role: 'assistant',
+        content: { type: 'text', text },
+      } satisfies CreateMessageResult;
+    });
+  }
 
   await client.connect(transport);
 
@@ -161,18 +242,27 @@ function bridgeToolsForPiSdk(
         if (allowedApps?.length && MUTATING_TOOLS.has(tool.name)) {
           const { allowed, activeApp } = await checkActiveAppAllowed(allowedApps);
           if (!allowed) {
+            // Auto-focus the allowed app and retry once
             console.warn(
-              `[TinyBench] BLOCKED: "${tool.name}" — active app "${activeApp}" not in allowedApps [${allowedApps.join(', ')}]`
+              `[TinyBench] Focus lost: "${activeApp}" is active, expected [${allowedApps.join(', ')}]. Auto-refocusing...`
             );
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Action blocked: active application "${activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Please switch to an allowed application first.`,
-                },
-              ],
-              details: undefined as unknown,
-            };
+            await focusAllowedApp(allowedApps);
+            const retry = await checkActiveAppAllowed(allowedApps);
+            if (!retry.allowed) {
+              console.warn(
+                `[TinyBench] BLOCKED after refocus: "${retry.activeApp}" still active, not in [${allowedApps.join(', ')}]`
+              );
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: `Action blocked: active application "${retry.activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Auto-refocus to "${allowedApps[0]}" was attempted but failed.`,
+                  },
+                ],
+                details: undefined as unknown,
+              };
+            }
+            console.log(`[TinyBench] Refocused to "${retry.activeApp}" — proceeding with ${tool.name}`);
           }
         }
 
@@ -248,6 +338,16 @@ async function runSetup(command: string | undefined): Promise<void> {
   await new Promise((r) => setTimeout(r, 1500));
 }
 
+export async function focusAllowedApp(allowedApps?: string[]): Promise<void> {
+  if (!allowedApps?.length) return;
+  const appName = allowedApps[0];
+  await execAsync(
+    `osascript -e 'tell application "${appName}" to activate'`
+  );
+  // Wait for window activation animation
+  await new Promise((r) => setTimeout(r, 1000));
+}
+
 async function runTeardown(command: string | undefined): Promise<void> {
   if (!command) return;
   try {
@@ -269,12 +369,25 @@ export async function runTask(
   let finalText = '';
   let steps = 0;
 
-  // Connect to gui-operate MCP
-  const { client, transport, tools } = await connectGuiOperate();
+  // Build env overrides so the MCP server's vision API uses the correct model/key/base
+  const mcpEnv: Record<string, string> = {};
+  const apiKey = options?.apiKey || process.env.GUI_CUA_API_KEY || process.env.OPENAI_API_KEY || '';
+  const baseUrl = options?.baseUrl || process.env.GUI_CUA_BASE_URL || process.env.OPENAI_BASE_URL || '';
+  if (apiKey) mcpEnv.OPENAI_API_KEY = apiKey;
+  if (baseUrl) mcpEnv.OPENAI_BASE_URL = baseUrl;
+  mcpEnv.OPENAI_MODEL = spec.model;
+
+  // Connect to gui-operate MCP — pass sampling config so vision calls route
+  // through client's OpenAI SDK instead of server's broken HTTP path
+  const samplingConfig = apiKey && baseUrl
+    ? { apiKey, baseUrl, model: spec.model }
+    : undefined;
+  const { client, transport, tools } = await connectGuiOperate(mcpEnv, samplingConfig);
 
   try {
     // Setup
     await runSetup(spec.setupCommand);
+    await focusAllowedApp(spec.allowedApps);
 
     // Bridge MCP tools for Pi SDK
     const customTools = bridgeToolsForPiSdk(client, tools, spec.allowedApps);
@@ -305,7 +418,7 @@ export async function runTask(
     await resourceLoader.reload();
 
     const { session: piSession } = await createAgentSession({
-      model: piModel as unknown as Parameters<typeof createAgentSession>[0]['model'],
+      model: piModel as any,
       thinkingLevel: 'off',
       authStorage,
       modelRegistry,

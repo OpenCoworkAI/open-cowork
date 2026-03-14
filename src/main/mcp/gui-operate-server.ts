@@ -3526,6 +3526,52 @@ async function performWait(
 // ============================================================================
 
 /**
+ * Call vision API via MCP sampling/createMessage.
+ * The client handles the actual API call using its verified route (e.g. OpenAI Responses API).
+ */
+async function callVisionViaSampling(
+  base64Image: string,
+  prompt: string,
+  maxTokens: number,
+  functionName?: string
+): Promise<string> {
+  const logPrefix = functionName ? `[callVisionViaSampling:${functionName}]` : '[callVisionViaSampling]';
+  writeMCPLog(`${logPrefix} Delegating vision call to client via MCP sampling`, 'Sampling');
+
+  const result = await server.createMessage({
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', data: base64Image, mimeType: 'image/png' },
+        { type: 'text', text: prompt },
+      ],
+    }],
+    maxTokens,
+  });
+
+  // Extract text from the sampling result
+  let text: string;
+  if (typeof result.content === 'string') {
+    text = result.content;
+  } else if (Array.isArray(result.content)) {
+    text = result.content
+      .filter((b: { type: string }) => b.type === 'text')
+      .map((b: { type: string; text?: string }) => b.text ?? '')
+      .join('');
+  } else if (result.content.type === 'text') {
+    text = result.content.text;
+  } else {
+    text = JSON.stringify(result.content);
+  }
+
+  const logLabel = functionName ? `Vision Sampling Response [${functionName}]` : 'Vision Sampling Response';
+  writeMCPLog(text, logLabel);
+  writeMCPLog(`${logPrefix} Response length: ${text.length}`, 'Sampling');
+
+  return text;
+}
+
+/**
  * Call vision API to analyze images with timeout and retry
  */
 async function callVisionAPI(
@@ -3534,12 +3580,23 @@ async function callVisionAPI(
   maxTokens: number = 2048,
   functionName?: string
 ): Promise<string> {
+  // Prefer MCP Sampling when the connected client supports it.
+  // This routes vision calls through the client's verified API route
+  // (e.g. OpenAI Responses API via MSRA Relay), avoiding the broken
+  // direct HTTP → /v1/chat/completions path.
+  const clientCaps = server.getClientCapabilities?.();
+  if (clientCaps?.sampling) {
+    const logPrefix = functionName ? `[callVisionAPI:${functionName}]` : '[callVisionAPI]';
+    writeMCPLog(`${logPrefix} Client supports sampling — using MCP sampling path`, 'Vision Routing');
+    return callVisionViaSampling(base64Image, prompt, maxTokens, functionName);
+  }
+
   const MAX_RETRIES = 3;
   const TIMEOUT_MS = 45000; // 45 seconds
-  
+
   const logPrefix = functionName ? `[callVisionAPI:${functionName}]` : '[callVisionAPI]';
   let compatibilityFallbackUsed = false;
-  
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       writeMCPLog(`${logPrefix} Attempt ${attempt}/${MAX_RETRIES} - Starting API call`, 'API Request');

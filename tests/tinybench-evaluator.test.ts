@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateTextAssert,
   evaluateManualReview,
+  evaluateFilesystemCheck,
 } from '../src/main/cua/tinybench-evaluator';
 import type { RunResult, TaskSpec } from '../src/main/cua/types';
 
@@ -82,6 +83,48 @@ describe('tinybench-evaluator', () => {
       expect(result.passed).toBe(false);
       expect(result.mode).toBe('manual_review');
       expect(result.detail).toContain('Manual review');
+    });
+  });
+
+  describe('evaluateFilesystemCheck', () => {
+    it('passes when path exists', () => {
+      const result = evaluateFilesystemCheck(
+        makeSpec({ verificationMode: 'filesystem_check', expectedPath: '/tmp' }),
+        makeRun()
+      );
+      expect(result.passed).toBe(true);
+      expect(result.mode).toBe('filesystem_check');
+      expect(result.detail).toContain('exists');
+    });
+
+    it('fails when path does not exist', () => {
+      const result = evaluateFilesystemCheck(
+        makeSpec({
+          verificationMode: 'filesystem_check',
+          expectedPath: '/tmp/tinybench-nonexistent-path-' + Date.now(),
+        }),
+        makeRun()
+      );
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain('does not exist');
+    });
+
+    it('fails when no expectedPath defined', () => {
+      const result = evaluateFilesystemCheck(
+        makeSpec({ verificationMode: 'filesystem_check', expectedPath: undefined }),
+        makeRun()
+      );
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain('No expectedPath');
+    });
+
+    it('fails when run has an error', () => {
+      const result = evaluateFilesystemCheck(
+        makeSpec({ verificationMode: 'filesystem_check', expectedPath: '/tmp' }),
+        makeRun({ error: 'timeout' })
+      );
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain('error');
     });
   });
 });

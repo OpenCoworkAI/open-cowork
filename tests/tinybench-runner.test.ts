@@ -29,7 +29,7 @@ function setFrontmostApp(appName: string) {
 }
 
 // Import after mocks
-import { checkActiveAppAllowed } from '../src/main/cua/tinybench-runner';
+import { checkActiveAppAllowed, focusAllowedApp } from '../src/main/cua/tinybench-runner';
 
 describe('checkActiveAppAllowed', () => {
   beforeEach(() => {
@@ -73,5 +73,38 @@ describe('checkActiveAppAllowed', () => {
     setFrontmostApp('Calculator');
     const result = await checkActiveAppAllowed([]);
     expect(result.allowed).toBe(false);
+  });
+});
+
+describe('focusAllowedApp', () => {
+  beforeEach(() => {
+    mockedExec.mockReset();
+  });
+
+  it('calls osascript to activate the first allowed app', async () => {
+    mockedExec.mockImplementation((_cmd: any, _opts: any, cb?: any) => {
+      const callback = cb || _opts;
+      if (typeof callback === 'function') {
+        callback(null, { stdout: '', stderr: '' });
+      }
+      return {} as any;
+    });
+
+    await focusAllowedApp(['Calculator', 'Finder']);
+
+    expect(mockedExec).toHaveBeenCalledTimes(1);
+    const call = mockedExec.mock.calls[0];
+    expect(call[0]).toContain('Calculator');
+    expect(call[0]).toContain('activate');
+  });
+
+  it('does nothing when allowedApps is undefined', async () => {
+    await focusAllowedApp(undefined);
+    expect(mockedExec).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when allowedApps is empty', async () => {
+    await focusAllowedApp([]);
+    expect(mockedExec).not.toHaveBeenCalled();
   });
 });

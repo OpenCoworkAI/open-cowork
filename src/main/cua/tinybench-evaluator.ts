@@ -6,6 +6,8 @@
  * - llm_judge: call GPT-5.4 as judge to evaluate the result
  * - manual_review: always returns "needs review"
  */
+import fs from 'node:fs';
+import os from 'node:os';
 import type { EvalResult, RunResult, TaskSpec } from './types';
 
 export function evaluateTextAssert(
@@ -103,8 +105,8 @@ export async function evaluateLlmJudge(
         'openai',
         'openai',
         options?.baseUrl || '',
-        api
-      );
+        api,
+      ) as any;
     }
 
     const judgePrompt = `You are an evaluation judge for a GUI automation benchmark.
@@ -158,6 +160,55 @@ Then on a new line, give a brief explanation (1-2 sentences).`;
   }
 }
 
+export function evaluateFilesystemCheck(
+  spec: TaskSpec,
+  run: RunResult
+): EvalResult {
+  if (run.error) {
+    return {
+      taskId: spec.id,
+      passed: false,
+      mode: 'filesystem_check',
+      detail: `Run failed with error: ${run.error}`,
+    };
+  }
+
+  if (!spec.expectedPath) {
+    return {
+      taskId: spec.id,
+      passed: false,
+      mode: 'filesystem_check',
+      detail: 'No expectedPath defined for filesystem_check.',
+    };
+  }
+
+  // Expand ~ and $HOME
+  const expandedPath = spec.expectedPath
+    .replace(/^~/, os.homedir())
+    .replace(/\$HOME/g, os.homedir());
+
+  try {
+    const exists = fs.existsSync(expandedPath);
+    return {
+      taskId: spec.id,
+      passed: exists,
+      mode: 'filesystem_check',
+      detail: exists
+        ? `Path "${expandedPath}" exists.`
+        : `Path "${expandedPath}" does not exist.`,
+      confidence: 1.0,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return {
+      taskId: spec.id,
+      passed: false,
+      mode: 'filesystem_check',
+      detail: `Filesystem check error: ${msg}`,
+    };
+  }
+}
+
 export async function evaluate(
   spec: TaskSpec,
   run: RunResult,
@@ -168,7 +219,13 @@ export async function evaluate(
       return evaluateTextAssert(spec, run);
     case 'llm_judge':
       return evaluateLlmJudge(spec, run, options);
+    case 'filesystem_check':
+      return evaluateFilesystemCheck(spec, run);
     case 'manual_review':
       return evaluateManualReview(spec, run);
+    default: {
+      const _exhaustive: never = spec.verificationMode;
+      throw new Error(`Unknown verification mode: ${_exhaustive}`);
+    }
   }
 }
