@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Cowork - Progress Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">OC</div>
+        <div>
+          <h1>Open Cowork</h1>
+          <p class="subtitle">Progress Tracker</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="toggleTracking" class="btn-icon" title="Toggle tracking">
+          <span id="trackingIcon">&#9654;</span>
+        </button>
+        <button id="openSettings" class="btn-icon" title="Settings">&#9881;</button>
+      </div>
+    </header>
+
+    <!-- Current Activity -->
+    <section id="currentSection" class="section current-activity">
+      <div class="section-label">Currently tracking</div>
+      <div id="currentActivity" class="current-card">
+        <span class="current-icon" id="currentIcon">--</span>
+        <div class="current-info">
+          <div id="currentTitle" class="current-title">No activity</div>
+          <div id="currentDuration" class="current-duration">--</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab navigation -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="today">Today</button>
+      <button class="tab" data-tab="week">Week</button>
+      <button class="tab" data-tab="goals">Goals</button>
+    </nav>
+
+    <!-- Today Tab -->
+    <section id="tab-today" class="tab-content active">
+      <!-- Focus Score -->
+      <div class="focus-ring-container">
+        <div class="focus-ring">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="52" class="ring-bg"/>
+            <circle id="focusRing" cx="60" cy="60" r="52" class="ring-fg"
+              stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+          </svg>
+          <div class="focus-value">
+            <span id="focusScore" class="focus-number">0</span>
+            <span class="focus-label">Focus</span>
+          </div>
+        </div>
+        <div class="focus-stats">
+          <div class="stat">
+            <div id="totalTime" class="stat-value">0h 0m</div>
+            <div class="stat-label">Total Time</div>
+          </div>
+          <div class="stat">
+            <div id="sessionsCount" class="stat-value">0</div>
+            <div class="stat-label">Sessions</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category breakdown -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-label">Category Breakdown</span>
+        </div>
+        <div id="categoryBreakdown" class="category-list">
+          <div class="empty-state">No activity tracked yet</div>
+        </div>
+      </div>
+
+      <!-- Top sites -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-label">Top Sites</span>
+        </div>
+        <div id="topSites" class="site-list">
+          <div class="empty-state">No sites visited yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Week Tab -->
+    <section id="tab-week" class="tab-content">
+      <div class="week-chart-container">
+        <div class="section-label">This Week</div>
+        <div id="weekChart" class="week-chart"></div>
+        <div class="week-stats">
+          <div class="stat">
+            <div id="weekTotal" class="stat-value">0h</div>
+            <div class="stat-label">Total</div>
+          </div>
+          <div class="stat">
+            <div id="weekAvgFocus" class="stat-value">0%</div>
+            <div class="stat-label">Avg Focus</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Goals Tab -->
+    <section id="tab-goals" class="tab-content">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-label">Career Goals</span>
+          <button id="addGoal" class="btn-small">+ Add</button>
+        </div>
+        <div id="goalsList" class="goals-list">
+          <div class="empty-state">
+            Set career development goals to track your progress
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Goal Modal -->
+      <div id="addGoalModal" class="modal hidden">
+        <div class="modal-content">
+          <h3>New Career Goal</h3>
+          <input id="goalTitle" type="text" placeholder="e.g., Learn React" class="input"/>
+          <select id="goalCategory" class="input">
+            <option value="learning">Learning & Courses</option>
+            <option value="coding">Coding & Development</option>
+            <option value="research">Research & Reading</option>
+            <option value="career">Career & Job Search</option>
+            <option value="design">Design & Creative</option>
+            <option value="writing">Writing & Documentation</option>
+          </select>
+          <input id="goalTarget" type="number" placeholder="Target hours" class="input" min="1"/>
+          <div class="modal-actions">
+            <button id="cancelGoal" class="btn-secondary">Cancel</button>
+            <button id="saveGoal" class="btn-primary">Save</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sync indicator -->
+    <footer class="footer">
+      <span id="syncStatus" class="sync-status">Local</span>
+      <span id="lastUpdate" class="last-update"></span>
+    </footer>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

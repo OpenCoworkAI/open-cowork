@@ -1,0 +1,25 @@
+<!-- Open this file in a browser, right-click the canvases, and save as PNG -->
+<canvas id="c16" width="16" height="16"></canvas>
+<canvas id="c48" width="48" height="48"></canvas>
+<canvas id="c128" width="128" height="128"></canvas>
+<script>
+function drawIcon(canvas) {
+  const ctx = canvas.getContext('2d');
+  const s = canvas.width;
+  // Background
+  const grad = ctx.createLinearGradient(0, 0, s, s);
+  grad.addColorStop(0, '#3b82f6');
+  grad.addColorStop(1, '#06b6d4');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, s, s, s * 0.2);
+  ctx.fill();
+  // Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${s * 0.35}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('OC', s/2, s/2);
+}
+['c16','c48','c128'].forEach(id => drawIcon(document.getElementById(id)));
+</script>

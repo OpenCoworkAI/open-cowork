@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Cowork - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">OC</div>
+      <div>
+        <h1>Open Cowork Settings</h1>
+        <p>Configure your progress tracker and Coeadapt integration</p>
+      </div>
+    </header>
+
+    <!-- Tracking Settings -->
+    <section class="card">
+      <h2>Tracking</h2>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="trackingEnabled" checked/>
+          Enable activity tracking
+        </label>
+        <p class="hint">Track your browser activity for career development progress.</p>
+      </div>
+      <div class="field">
+        <label for="idleThreshold">Idle timeout (minutes)</label>
+        <input type="number" id="idleThreshold" min="1" max="60" value="5" class="input-sm"/>
+        <p class="hint">Stop tracking after this many minutes of inactivity.</p>
+      </div>
+      <div class="field">
+        <label for="dailyGoal">Daily goal (minutes)</label>
+        <input type="number" id="dailyGoal" min="30" max="1440" value="480" class="input-sm"/>
+        <p class="hint">Your target productive time per day.</p>
+      </div>
+    </section>
+
+    <!-- Excluded Domains -->
+    <section class="card">
+      <h2>Excluded Domains</h2>
+      <p class="hint">Domains listed here won't be tracked. One per line.</p>
+      <textarea id="excludedDomains" class="textarea" rows="4" placeholder="example.com&#10;social-media.com"></textarea>
+    </section>
+
+    <!-- Desktop App Connection -->
+    <section class="card">
+      <h2>Desktop App Connection</h2>
+      <p class="hint">Connect to the Open Cowork desktop app for unified tracking.</p>
+      <div class="field">
+        <label for="desktopApiUrl">Desktop API URL</label>
+        <input type="text" id="desktopApiUrl" class="input" value="http://localhost:3777" placeholder="http://localhost:3777"/>
+      </div>
+      <div class="field">
+        <button id="testDesktopConnection" class="btn-secondary">Test Connection</button>
+        <span id="desktopStatus" class="status-badge"></span>
+      </div>
+    </section>
+
+    <!-- Coeadapt Integration -->
+    <section class="card">
+      <h2>Coeadapt Integration</h2>
+      <p class="hint">Sync your progress data to the Coeadapt web app for career development insights and recommendations.</p>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="syncEnabled"/>
+          Enable sync to Coeadapt
+        </label>
+      </div>
+      <div class="field">
+        <label for="coeadaptApiUrl">Coeadapt API URL</label>
+        <input type="text" id="coeadaptApiUrl" class="input" placeholder="https://api.coeadapt.com"/>
+      </div>
+      <div class="field">
+        <label for="coeadaptApiKey">API Key</label>
+        <input type="password" id="coeadaptApiKey" class="input" placeholder="Your Coeadapt API key"/>
+      </div>
+      <div class="field">
+        <button id="testCoeadaptConnection" class="btn-secondary">Test Connection</button>
+        <span id="coeadaptStatus" class="status-badge"></span>
+      </div>
+    </section>
+
+    <!-- Data Management -->
+    <section class="card">
+      <h2>Data Management</h2>
+      <div class="field">
+        <button id="exportData" class="btn-secondary">Export Data (JSON)</button>
+        <button id="clearData" class="btn-danger">Clear All Data</button>
+      </div>
+      <p class="hint">Data is stored locally in your browser. Export before clearing.</p>
+    </section>
+
+    <!-- Save -->
+    <div class="actions">
+      <button id="saveSettings" class="btn-primary">Save Settings</button>
+      <span id="saveStatus" class="save-status"></span>
+    </div>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>
