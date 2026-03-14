@@ -25,7 +25,6 @@ import { getSharedAuthStorage, ModelRegistry } from '../claude/shared-auth';
 import {
   resolvePiRegistryModel,
   buildSyntheticPiModel,
-  inferPiApi,
 } from '../claude/pi-model-resolution';
 import type { RunResult, TaskSpec, ToolCallRecord } from './types';
 
@@ -227,8 +226,8 @@ function resolveModel(
   });
 
   if (!piModel) {
-    const api = inferPiApi('openai');
-    piModel = buildSyntheticPiModel(modelId, provider, 'openai', baseUrl || '', api);
+    // Use Responses API — completions is being deprecated by OpenAI
+    piModel = buildSyntheticPiModel(modelId, provider, 'openai', baseUrl || '', 'openai-responses');
   }
 
   // Set API key
