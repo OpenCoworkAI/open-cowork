@@ -104,12 +104,16 @@ const GUI_SYSTEM_PROMPT = `You are a GUI automation agent controlling a real ${I
 - (0, 0) is the top-left corner of the primary display.
 - Click the **CENTER** of the target UI element.
 
+## Critical Rule
+**You MUST perform at least one mutating action (click, type_text, key_press, scroll) before claiming a task is complete.** The screen may show STALE results from a previous session. Simply observing a result on screen does NOT mean you performed the task. Always execute the required actions yourself, then verify the result.
+
 ## Workflow
-1. Take a screenshot with screenshot_for_display to observe the current screen.
+1. Use the **observe** tool to see the current screen state (screenshot + active app + mouse position).
 2. Identify the UI element you need to interact with.
 3. Execute exactly **ONE action** per turn (click, type_text, key_press, or scroll).
 4. The action result includes an updated screenshot — examine it immediately.
-5. If the task is complete, clearly state the final result and stop.
+5. Repeat steps 2-4 until the task is complete.
+6. After you have performed ALL required actions and verified the result visually, state the final result and stop.
 
 ## Action Discipline
 - Execute **ONE action per turn**. Never chain multiple actions without checking results.
@@ -130,9 +134,10 @@ const GUI_SYSTEM_PROMPT = `You are a GUI automation agent controlling a real ${I
 - If truly stuck, report what you see and what you've tried, then stop.
 
 ## Completion
-- When the task result is visible on screen, report it immediately and stop.
-- Do NOT take extra screenshots after you already see the answer.
-- Be concise — state the result in one sentence.`;
+- You may ONLY report completion AFTER you have performed all required actions yourself.
+- If you see a result on screen but have not performed any actions yet, that is STALE state — you must still execute the task.
+- When done, state the result in one sentence.
+- Do NOT take extra screenshots after you already see the verified answer.`;
 
 async function resolveGuiOperateServerPath(): Promise<string> {
   const explicit = process.env.GUI_OPERATE_SERVER_PATH?.trim();
@@ -270,12 +275,15 @@ async function connectGuiOperate(
   return { client, transport, tools };
 }
 
-// Only bridge these 6 essential tools — reduces model confusion and action space
+// Only bridge these essential tools — reduces model confusion and action space
+// Note: observe replaces screenshot_for_display — it returns screenshot + metadata
+// (active app, mouse position, display info) in one call for richer context.
 const CORE_TOOLS = new Set([
   'click',
   'type_text',
   'key_press',
   'scroll',
+  'observe',
   'screenshot_for_display',
   'wait',
 ]);
@@ -361,39 +369,24 @@ function bridgeToolsForPiSdk(
           };
         }
 
-        // Safety zone check: block mutating tools if active app not in whitelist
+        // Soft focus check: try to bring allowed app to front, but don't block the action.
+        // In automated bench mode, the terminal may hold focus — let the agent proceed
+        // and discover wrong-app state via screenshot feedback (more robust than hard blocking).
         if (allowedApps?.length && MUTATING_TOOLS.has(tool.name)) {
           const { allowed, activeApp } = await checkActiveAppAllowed(allowedApps);
           if (!allowed) {
-            // Auto-focus the allowed app and retry with progressive backoff
             console.warn(
-              `[TinyBench] Focus lost: "${activeApp}" is active, expected [${allowedApps.join(', ')}]. Auto-refocusing...`
+              `[TinyBench] Focus check: "${activeApp}" is active, expected [${allowedApps.join(', ')}]. Attempting refocus...`
             );
-            let refocused = false;
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              await focusAllowedApp(allowedApps);
-              await new Promise((r) => setTimeout(r, attempt * 1000));
-              const retry = await checkActiveAppAllowed(allowedApps);
-              if (retry.allowed) {
-                console.log(`[TinyBench] Refocused to "${retry.activeApp}" on attempt ${attempt} — proceeding with ${tool.name}`);
-                refocused = true;
-                break;
-              }
-            }
-            if (!refocused) {
-              const retry = await checkActiveAppAllowed(allowedApps);
+            await focusAllowedApp(allowedApps);
+            // Brief check after focus attempt
+            const retry = await checkActiveAppAllowed(allowedApps);
+            if (retry.allowed) {
+              console.log(`[TinyBench] Refocused to "${retry.activeApp}" — proceeding with ${tool.name}`);
+            } else {
               console.warn(
-                `[TinyBench] BLOCKED after 3 refocus attempts: "${retry.activeApp}" still active`
+                `[TinyBench] Focus still on "${retry.activeApp}" — proceeding anyway (agent will verify via screenshot)`
               );
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: `Action blocked: active application "${retry.activeApp}" is not in the allowed list [${allowedApps.join(', ')}]. Auto-refocus to "${allowedApps[0]}" failed after 3 attempts.`,
-                  },
-                ],
-                details: undefined as unknown,
-              };
             }
           }
         }
@@ -545,8 +538,8 @@ export async function focusAllowedApp(allowedApps?: string[]): Promise<void> {
       `osascript -e 'tell application "${appName}" to activate'`
     );
   }
-  // Wait for window activation animation (3s for reliability)
-  await new Promise((r) => setTimeout(r, 3000));
+  // Wait for window activation (1s is enough, 3s was too conservative)
+  await new Promise((r) => setTimeout(r, 1000));
 }
 
 async function runTeardown(command: string | undefined): Promise<void> {
