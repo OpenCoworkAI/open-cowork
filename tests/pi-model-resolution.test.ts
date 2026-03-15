@@ -101,4 +101,96 @@ describe('pi model resolution helpers', () => {
 
     expect(model.api).toBe('openai-responses');
   });
+
+  it('disables developer role for third-party openai-compatible endpoints', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'kimi-k2.5',
+        name: 'kimi-k2.5',
+        api: 'openai-completions',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+      {
+        configProvider: 'openai',
+        rawProvider: 'openai',
+        customBaseUrl: 'https://api.moonshot.cn/v1',
+      }
+    );
+
+    expect(model.baseUrl).toBe('https://api.moonshot.cn/v1');
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+  });
+
+  it('keeps developer role enabled for first-party openai endpoints', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'gpt-5.4',
+        name: 'gpt-5.4',
+        api: 'openai-completions',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+      {
+        configProvider: 'openai',
+        rawProvider: 'openai',
+        customBaseUrl: 'https://api.openai.com/v1',
+      }
+    );
+
+    expect(model.compat?.supportsDeveloperRole).toBeUndefined();
+  });
+
+  it('auto-detects reasoning models by model id pattern', () => {
+    const thinking = buildSyntheticPiModel('kimi-k2-thinking', 'moonshot', 'openai', 'https://api.moonshot.cn/v1');
+    expect(thinking.reasoning).toBe(true);
+
+    const kimiK2 = buildSyntheticPiModel('kimi-k2.5', 'moonshot', 'openai', 'https://api.moonshot.cn/v1');
+    expect(kimiK2.reasoning).toBe(true);
+
+    const deepseekR1 = buildSyntheticPiModel('deepseek-r1-distill', 'deepseek', 'openai', 'https://api.deepseek.com/v1');
+    expect(deepseekR1.reasoning).toBe(true);
+
+    const reasoner = buildSyntheticPiModel('o3-reasoner', 'openai', 'openai');
+    expect(reasoner.reasoning).toBe(true);
+
+    // Non-reasoning models should default to false
+    const gpt = buildSyntheticPiModel('gpt-5.4', 'openai', 'openai');
+    expect(gpt.reasoning).toBe(false);
+
+    const llama = buildSyntheticPiModel('llama-4-scout', 'meta', 'openai');
+    expect(llama.reasoning).toBe(false);
+  });
+
+  it('allows explicit reasoning override in buildSyntheticPiModel', () => {
+    // Force reasoning=true on a model that wouldn't auto-detect
+    const forced = buildSyntheticPiModel('custom-model', 'custom', 'openai', '', undefined, true);
+    expect(forced.reasoning).toBe(true);
+
+    // Force reasoning=false on a model that would auto-detect
+    const suppressed = buildSyntheticPiModel('kimi-k2.5', 'moonshot', 'openai', '', undefined, false);
+    expect(suppressed.reasoning).toBe(false);
+  });
+
+  it('does not false-positive on models with thinking as a substring', () => {
+    // "critical-thinking-v2" should NOT match — \bthinking\b requires word boundary,
+    // but here "thinking" IS a whole word between hyphens, so it WILL match.
+    // This is intentional — hyphens are not \w so \b fires.
+    const critical = buildSyntheticPiModel('critical-thinking-v2', 'custom', 'openai');
+    expect(critical.reasoning).toBe(true);
+
+    // But a model like "rethinkingai" should NOT match — no word boundary around "thinking"
+    const rethinking = buildSyntheticPiModel('rethinkingai', 'custom', 'openai');
+    expect(rethinking.reasoning).toBe(false);
+  });
 });

@@ -64,6 +64,7 @@ export function ConfigModal({
     lastSaveCompletedAt,
     isTesting,
     isRefreshingModels,
+    isDiscoveringLocalOllama,
     testResult,
     friendlyTestDetails,
     useLiveTest,
@@ -102,6 +103,7 @@ export function ConfigModal({
     handleSave,
     handleTest,
     refreshModelOptions,
+    discoverLocalOllama,
   } = useApiConfigState({
     enabled: isOpen,
     initialConfig,
@@ -284,10 +286,27 @@ export function ConfigModal({
           {/* Base URL - Editable for custom provider */}
           {(provider === 'custom' || provider === 'ollama') && (
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <Server className="w-4 h-4" />
-                {t('api.baseUrl')}
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                  <Server className="w-4 h-4" />
+                  {t('api.baseUrl')}
+                </label>
+                {isOllamaMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void discoverLocalOllama();
+                    }}
+                    disabled={isDiscoveringLocalOllama}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-accent-muted text-accent hover:bg-accent-muted/80 disabled:opacity-50"
+                  >
+                    <Plug className="w-3 h-3" />
+                    {isDiscoveringLocalOllama
+                      ? t('api.discoveringLocalOllama')
+                      : t('api.discoverLocalOllama')}
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={baseUrl}
@@ -312,6 +331,9 @@ export function ConfigModal({
                       ? t('api.enterGeminiUrl')
                       : t('api.enterAnthropicUrl')}
               </p>
+              {isOllamaMode && (
+                <p className="text-xs text-text-muted">{t('api.discoverLocalOllamaHint')}</p>
+              )}
               {provider === 'custom' && <GuidanceInlineHint text={baseUrlGuidanceText} />}
             </div>
           )}
@@ -361,7 +383,7 @@ export function ConfigModal({
               />
             ) : (
               <select
-                value={model}
+                value={modelOptions.length ? model : ''}
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all appearance-none cursor-pointer"
               >

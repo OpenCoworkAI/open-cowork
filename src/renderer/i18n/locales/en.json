@@ -125,6 +125,11 @@
     "enterGeminiUrl": "Enter a Gemini-compatible base URL",
     "enterModelId": "Enter model ID, e.g., deepseek-chat, kimi-k2-thinking, gpt-5.4",
     "selectModelRequired": "Please select a model",
+    "contextWindow": "Context Window",
+    "contextWindowPlaceholder": "Auto-detect",
+    "maxOutputTokens": "Max Output Tokens",
+    "maxOutputTokensPlaceholder": "Auto-detect",
+    "contextWindowHint": "Leave empty for auto-detection. Override only if the model reports incorrect limits.",
     "saveFailed": "Failed to save settings. Please try again.",
     "getStarted": "Get Started",
     "saveSettings": "Save Settings",
@@ -136,6 +141,13 @@
     "refreshModels": "Refresh Models",
     "refreshingModels": "Refreshing...",
     "refreshModelsFailed": "Failed to refresh models. Check the URL or service status.",
+    "discoverLocalOllama": "Find Local Ollama",
+    "discoveringLocalOllama": "Finding...",
+    "discoverLocalOllamaHint": "Scan your local machine for a running Ollama service and fill in the local URL and models.",
+    "localOllamaDiscovered": "Found local Ollama with {{count}} available model(s).",
+    "localOllamaNotFound": "No local Ollama service was found. Start it with `ollama serve` and try again.",
+    "localOllamaNoModels": "Found a local Ollama service, but it does not currently expose any models.",
+    "localOllamaModelUnavailable": "Found local Ollama, but model {{model}} could not complete a minimal inference request.",
     "liveTest": "Live request verification",
     "liveTestHint": "Sends a minimal request and may consume a small quota",
     "liveTestCompatibilityHint": "Some compatible providers may reject this probe; disable it and try again if needed.",
@@ -244,7 +256,38 @@
     "configSetMissing": "Config set not found",
     "configSetCloneSourceMissing": "Could not find a config set to clone",
     "configSetSystemDeleteForbidden": "The default config set cannot be deleted",
-    "configSetKeepOne": "Keep at least one config set"
+    "configSetKeepOne": "Keep at least one config set",
+    "diagnostic": {
+      "runDiagnostics": "Diagnose Connection",
+      "running": "Diagnosing...",
+      "step": {
+        "dns": "DNS Resolution",
+        "tcp": "TCP Connection",
+        "tls": "TLS Handshake",
+        "auth": "API Authentication",
+        "model": "Model Verification"
+      },
+      "status": {
+        "pending": "Pending",
+        "running": "Checking...",
+        "ok": "OK",
+        "fail": "Failed",
+        "skip": "Skipped"
+      },
+      "overallSuccess": "All checks passed ({{ms}}ms)",
+      "overallFail": "Diagnosis failed at {{step}}",
+      "latency": "{{ms}}ms",
+      "fix": {
+        "dns_resolve_failed": "Cannot resolve hostname {{host}}. Please check if the URL is correct.",
+        "tcp_connect_failed": "Cannot connect to {{host}}. Please check your network or firewall settings.",
+        "tls_handshake_failed": "TLS handshake failed. This may be caused by a certificate issue or proxy interference.",
+        "missing_api_key": "API Key is missing or invalid. Please check your key.",
+        "auth_invalid_key": "API Key is invalid or expired. Please check if the key is correct.",
+        "auth_endpoint_not_found": "API endpoint not found. Please check if the Base URL is correct.",
+        "auth_request_failed": "Authentication request failed. Please check your configuration.",
+        "model_unavailable": "Model {{model}} is not available. Please verify the model name."
+      }
+    }
   },
   "window": {
     "minimize": "Minimize",
@@ -381,6 +424,7 @@
     "type": "Type",
     "typeStdioLocal": "STDIO (Local)",
     "typeSseRemote": "SSE (Remote)",
+    "typeStreamableHttp": "HTTP (Streamable)",
     "command": "Command",
     "commandPlaceholder": "npx",
     "arguments": "Arguments",
@@ -489,11 +533,11 @@
   "logs": {
     "actionsTitle": "Log Actions",
     "title": "Application Logs",
-    "description": "View and export application logs for debugging. Logs are automatically rotated when they exceed 10MB.",
+    "description": "View and export diagnostic bundles for debugging. Logs rotate automatically after 10MB, and exports also include recent session and error summaries.",
     "inventoryDescription": "Current log inventory and storage footprint.",
-    "recentDescription": "Recent application logs available for export or inspection.",
+    "recentDescription": "Recent application logs available for inspection. You can still export a diagnostics bundle even when no log file exists yet.",
     "directoryDescription": "Current on-disk location for application logs.",
-    "actionsDescription": "Export, reveal, or clear log files.",
+    "actionsDescription": "Export a diagnostics bundle, reveal the log directory, or clear log files.",
     "enableDevLogs": "Enable Developer Logs",
     "enableDevLogsDesc": "Record detailed logs for debugging. Disable to reduce disk usage.",
     "devLogsEnabled": "Developer logs enabled",
@@ -503,16 +547,16 @@
     "totalSize": "Total Size",
     "noLogFiles": "No log files found",
     "logsDirectory": "Logs Directory:",
-    "exportZip": "Export ZIP",
+    "exportZip": "Export Diagnostics",
     "openFolder": "Open Folder",
     "clearAll": "Clear All",
     "clearConfirm": "Are you sure you want to clear all log files? This action cannot be undone.",
-    "exportSuccess": "Logs exported successfully to {{path}}",
+    "exportSuccess": "Diagnostics exported successfully to {{path}}",
     "clearSuccess": "Cleared {{count}} log file(s)",
     "exportFailed": "Failed to export logs",
     "clearFailed": "Failed to clear logs",
-    "helpText1": "💡 Logs are useful for debugging issues with MCP connections and other problems.",
-    "helpText2": "Export logs as a ZIP file to share with support or for your own analysis."
+    "helpText1": "The exported diagnostics bundle includes app logs, a redacted runtime snapshot, and metadata-only session/error summaries without message bodies by default.",
+    "helpText2": "Sharing that bundle usually lets us narrow issues down much faster, whether they come from the UI, tool execution, or local environment."
   },
   "sidebar": {
     "recents": "Recents",
@@ -532,7 +576,14 @@
     "previousWeek": "Previous 7 Days",
     "older": "Older",
     "settings": "Settings",
-    "themeToggle": "Toggle theme"
+    "themeToggle": "Toggle theme",
+    "manage": "Manage",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "nSelected": "{{count}} selected",
+    "batchDeleteConfirm": "Delete {{count}} conversations? This cannot be undone.",
+    "cancel": "Cancel",
+    "confirmDelete": "Delete"
   },
   "chat": {
     "sendMessage": "Send message",
@@ -574,7 +625,9 @@
     "totalTokens": "Total",
     "changeDir": "Change directory",
     "changeDirFailed": "Failed to change directory",
-    "copyPath": "Copy path"
+    "copyPath": "Copy path",
+    "contextUsage": "Context Usage",
+    "contextUsageLabel": "{{used}} / {{total}}"
   },
   "messageCard": {
     "request": "Request",
@@ -588,7 +641,8 @@
     "taskProgress": "Task Progress",
     "noQuestions": "No questions",
     "question": "Question",
-    "thinking": "Thinking"
+    "thinking": "Thinking",
+    "executionTime": "Execution time: {{time}}"
   },
   "schedule": {
     "createTitle": "Create Schedule",

@@ -2,6 +2,7 @@ import Store from 'electron-store';
 import { app } from 'electron';
 import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
+import { log, logError } from '../utils/logger';
 
 /**
  * Preset MCP Server Configurations
@@ -177,15 +178,15 @@ class MCPConfigStore {
     // Verify file exists and log for debugging
     try {
       if (fs.existsSync(sourcePath)) {
-        console.log(`[MCPConfigStore] MCP Server path resolved (${filename}):`, sourcePath);
+        log(`[MCPConfigStore] MCP Server path resolved (${filename}):`, sourcePath);
         return sourcePath;
       } else {
-        console.error(`[MCPConfigStore] File not found at:`, sourcePath);
-        console.error('[MCPConfigStore] __dirname:', __dirname);
-        console.error('[MCPConfigStore] projectRoot:', projectRoot);
+        logError(`[MCPConfigStore] File not found at:`, sourcePath);
+        logError('[MCPConfigStore] __dirname:', __dirname);
+        logError('[MCPConfigStore] projectRoot:', projectRoot);
       }
     } catch (error) {
-      console.error('[MCPConfigStore] Error checking file:', error);
+      logError('[MCPConfigStore] Error checking file:', error);
     }
     
     return sourcePath;

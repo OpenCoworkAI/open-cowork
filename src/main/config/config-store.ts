@@ -54,6 +54,8 @@ export interface ProviderProfile {
   apiKey: string;
   baseUrl?: string;
   model: string;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface ApiConfigSet {
@@ -79,6 +81,8 @@ export interface AppConfig {
 
   // Model selection
   model: string;
+  contextWindow?: number;
+  maxTokens?: number;
 
   // Active profile
   activeProfileKey: ProviderProfileKey;
@@ -526,6 +530,8 @@ export class ConfigStore {
     apiKey: string;
     baseUrl?: string;
     model: string;
+    contextWindow?: number;
+    maxTokens?: number;
     enableThinking: boolean;
   } {
     const profiles = this.cloneProfiles(configSet.profiles);
@@ -542,6 +548,8 @@ export class ConfigStore {
       apiKey: activeProfile.apiKey,
       baseUrl: activeProfile.baseUrl,
       model: activeProfile.model,
+      contextWindow: activeProfile.contextWindow,
+      maxTokens: activeProfile.maxTokens,
       enableThinking: toBoolean(configSet.enableThinking, false),
     };
   }

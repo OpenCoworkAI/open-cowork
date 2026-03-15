@@ -11,4 +11,10 @@ describe('ConfigModal Claude-style layout', () => {
     expect(source).toContain('rounded-[2rem]');
     expect(source).toContain('max-w-[880px]');
   });
+
+  it('offers a local Ollama discovery action in the base-url section', () => {
+    const source = fs.readFileSync(configModalPath, 'utf8');
+    expect(source).toContain('discoverLocalOllama');
+    expect(source).toContain("t('api.discoverLocalOllama')");
+  });
 });

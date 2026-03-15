@@ -530,6 +530,7 @@ describe('ScheduledTaskManager', () => {
 
     expect(executeTask).toHaveBeenCalledTimes(1);
     expect(consoleSpy).toHaveBeenCalledWith(
+      expect.any(String), // timestamp prefix from logger
       expect.stringContaining('[ScheduledTask] Unhandled error executing task'),
       expect.any(Error)
     );

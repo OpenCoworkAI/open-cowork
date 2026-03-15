@@ -179,4 +179,41 @@ describe('api config set helpers', () => {
     expect(bootstrap.configSets[0].activeProfileKey).toBe('ollama');
     expect(bootstrap.configSets[0].profiles.ollama?.baseUrl).toBe('http://localhost:11434/v1');
   });
+
+  it('normalizes ollama config-set base urls to /v1 in UI bootstrap', () => {
+    const config = {
+      provider: 'ollama',
+      customProtocol: 'openai',
+      activeProfileKey: 'ollama',
+      activeConfigSetId: 'ollama-remote',
+      apiKey: '',
+      baseUrl: 'https://ollama.example.internal/proxy',
+      model: 'qwen3.5:0.8b',
+      configSets: [
+        {
+          id: 'ollama-remote',
+          name: 'Remote Ollama',
+          isSystem: false,
+          provider: 'ollama',
+          customProtocol: 'openai',
+          activeProfileKey: 'ollama',
+          profiles: {
+            ollama: {
+              apiKey: '',
+              baseUrl: 'https://ollama.example.internal/proxy',
+              model: 'qwen3.5:0.8b',
+            },
+          },
+          enableThinking: false,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      isConfigured: true,
+    } as AppConfig;
+
+    const bootstrap = buildApiConfigBootstrap(config, FALLBACK_PROVIDER_PRESETS);
+    expect(bootstrap.configSets[0].profiles.ollama?.baseUrl).toBe(
+      'https://ollama.example.internal/proxy/v1'
+    );
+  });
 });

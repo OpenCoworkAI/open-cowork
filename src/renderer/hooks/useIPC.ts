@@ -37,6 +37,9 @@ export function useIPC() {
     const pendingPartials: Record<string, string[]> = {};
     let partialRafId: number | null = null;
 
+    const pendingThinking: Record<string, string[]> = {};
+    let thinkingRafId: number | null = null;
+
     const flushPartials = () => {
       partialRafId = null;
       const store = storeRef.current;
@@ -54,6 +57,26 @@ export function useIPC() {
       pendingPartials[sessionId].push(delta);
       if (partialRafId === null) {
         partialRafId = requestAnimationFrame(flushPartials);
+      }
+    };
+
+    const flushThinking = () => {
+      thinkingRafId = null;
+      const store = storeRef.current;
+      for (const sessionId in pendingThinking) {
+        const chunks = pendingThinking[sessionId];
+        if (chunks.length > 0) {
+          store.setPartialThinking(sessionId, chunks.join(''));
+          pendingThinking[sessionId] = [];
+        }
+      }
+    };
+
+    const bufferThinking = (sessionId: string, delta: string) => {
+      if (!pendingThinking[sessionId]) pendingThinking[sessionId] = [];
+      pendingThinking[sessionId].push(delta);
+      if (thinkingRafId === null) {
+        thinkingRafId = requestAnimationFrame(flushThinking);
       }
     };
 
@@ -97,6 +120,7 @@ export function useIPC() {
             status: event.payload.status,
           });
           if (event.payload.status !== 'running') {
+            store.finishExecutionClock(event.payload.sessionId);
             store.setLoading(false);
             store.clearActiveTurn(event.payload.sessionId);
             store.clearPendingTurns(event.payload.sessionId);
@@ -115,11 +139,19 @@ export function useIPC() {
             'content:',
             JSON.stringify(event.payload.message.content)
           );
+          // Clear pending partial buffer to prevent RAF from appending stale chunks
+          delete pendingPartials[event.payload.sessionId];
+          // Clear thinking buffer too — final thinking is in the message content blocks
+          delete pendingThinking[event.payload.sessionId];
           store.addMessage(event.payload.sessionId, event.payload.message);
           break;
 
         case 'stream.partial':
           bufferPartial(event.payload.sessionId, event.payload.delta);
+          break;
+
+        case 'stream.thinking':
+          bufferThinking(event.payload.sessionId, event.payload.delta);
           break;
 
         case 'trace.step': {
@@ -156,17 +188,6 @@ export function useIPC() {
             stepId: event.payload.stepId,
             updates: event.payload.updates,
           });
-          if (event.payload.updates.status && event.payload.updates.status !== 'running') {
-            // Flush pending traces so the store reflects any trace.step adds from this frame
-            flushTraces();
-            const steps = useAppStore.getState().traceStepsBySession[event.payload.sessionId] || [];
-            const step = steps.find((item) => item.id === event.payload.stepId);
-            if (step?.type === 'thinking') {
-              // 兜底：若 session.status 丢失，仍能结束加载状态
-              store.updateSession(event.payload.sessionId, { status: 'idle' });
-              store.setLoading(false);
-            }
-          }
           break;
 
         case 'permission.request':
@@ -232,6 +253,10 @@ export function useIPC() {
           store.setWorkingDir(event.payload.path || null);
           break;
 
+        case 'session.contextInfo':
+          store.setSessionContextWindow(event.payload.sessionId, event.payload.contextWindow);
+          break;
+
         case 'proxy.warmup':
           if (event.payload.status === 'warming') {
             store.setGlobalNotice({
@@ -278,6 +303,7 @@ export function useIPC() {
     return () => {
       console.log('[useIPC] Cleaning up IPC listener');
       if (partialRafId !== null) cancelAnimationFrame(partialRafId);
+      if (thinkingRafId !== null) cancelAnimationFrame(thinkingRafId);
       if (traceRafId !== null) cancelAnimationFrame(traceRafId);
       cleanup?.();
     };
@@ -293,6 +319,8 @@ export function useIPC() {
   const activateNextTurn = useAppStore((s) => s.activateNextTurn);
   const clearPendingTurns = useAppStore((s) => s.clearPendingTurns);
   const cancelQueuedMessages = useAppStore((s) => s.cancelQueuedMessages);
+  const startExecutionClock = useAppStore((s) => s.startExecutionClock);
+  const finishExecutionClock = useAppStore((s) => s.finishExecutionClock);
 
   // Send event to main process
   const send = useCallback((event: ClientEvent) => {
@@ -365,6 +393,7 @@ export function useIPC() {
           timestamp: Date.now(),
         };
         addMessage(sessionId, userMessage);
+        startExecutionClock(sessionId, userMessage.timestamp);
         const mockStepId = `mock-step-${Date.now()}`;
         activateNextTurn(sessionId, mockStepId);
 
@@ -410,6 +439,7 @@ export function useIPC() {
             timestamp: Date.now(),
           };
           addMessage(session.id, userMessage);
+          startExecutionClock(session.id, userMessage.timestamp);
 
           // Immediately activate turn to show processing indicator while waiting for API
           const mockStepId = `pending-step-${Date.now()}`;
@@ -428,7 +458,7 @@ export function useIPC() {
         return null;
       }
     },
-    [invoke, addSession, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn]
+    [invoke, addSession, addMessage, updateSession, setLoading, activateNextTurn, clearActiveTurn, startExecutionClock]
   );
 
   // Continue an existing session
@@ -463,6 +493,7 @@ export function useIPC() {
         localStatus: shouldQueue ? 'queued' : undefined,
       };
       addMessage(sessionId, userMessage);
+      startExecutionClock(sessionId, userMessage.timestamp);
 
       // Browser mode mock
       if (!isElectron) {
@@ -513,6 +544,7 @@ export function useIPC() {
       activateNextTurn,
       clearActiveTurn,
       clearPendingTurns,
+      startExecutionClock,
     ]
   );
 
@@ -521,6 +553,7 @@ export function useIPC() {
       cancelQueuedMessages(sessionId);
       clearPendingTurns(sessionId);
       clearActiveTurn(sessionId);
+      finishExecutionClock(sessionId);
       if (!isElectron) {
         updateSession(sessionId, { status: 'idle' });
         setLoading(false);
@@ -529,7 +562,7 @@ export function useIPC() {
       send({ type: 'session.stop', payload: { sessionId } });
       setLoading(false);
     },
-    [send, updateSession, setLoading, cancelQueuedMessages, clearPendingTurns, clearActiveTurn]
+    [send, updateSession, setLoading, cancelQueuedMessages, clearPendingTurns, clearActiveTurn, finishExecutionClock]
   );
 
   const deleteSession = useCallback(
@@ -537,6 +570,16 @@ export function useIPC() {
       useAppStore.getState().removeSession(sessionId);
       if (isElectron) {
         send({ type: 'session.delete', payload: { sessionId } });
+      }
+    },
+    [send]
+  );
+
+  const batchDeleteSessions = useCallback(
+    (sessionIds: string[]) => {
+      useAppStore.getState().removeSessions(sessionIds);
+      if (isElectron) {
+        send({ type: 'session.batchDelete', payload: { sessionIds } });
       }
     },
     [send]
@@ -644,6 +687,7 @@ export function useIPC() {
     continueSession,
     stopSession,
     deleteSession,
+    batchDeleteSessions,
     listSessions,
     getSessionMessages,
     getSessionTraceSteps,

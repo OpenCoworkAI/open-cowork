@@ -13,6 +13,7 @@
 import * as http from 'http';
 import { URL } from 'url';
 import { BrowserWindow } from 'electron';
+import { log, logError, logWarn } from './utils/logger';
 
 const PORT = 19888;
 const HOST = '127.0.0.1';
@@ -99,7 +100,7 @@ export function startNavServer(getMainWindow: () => BrowserWindow | null): void 
             return json(res, 503, { ok: false, error: 'Renderer not ready (window.__navigate not available)' });
           }
         } catch (err) {
-          console.error('[NavServer] /navigate executeJavaScript error:', err);
+          logError('[NavServer] /navigate executeJavaScript error:', err);
           return json(res, 500, { ok: false, error: 'Failed to execute navigation' });
         }
 
@@ -128,14 +129,14 @@ export function startNavServer(getMainWindow: () => BrowserWindow | null): void 
             sessionCount: parsed.sessionCount,
           });
         } catch (err) {
-          console.error('[NavServer] /status error:', err);
+          logError('[NavServer] /status error:', err);
           return json(res, 500, { ok: false, error: 'Failed to read renderer state' });
         }
       }
 
       json(res, 404, { ok: false, error: 'Not found. Use /navigate or /status' });
     } catch (err) {
-      console.error('[NavServer] Unexpected error:', err);
+      logError('[NavServer] Unexpected error:', err);
       if (!res.headersSent) {
         json(res, 500, { ok: false, error: 'Internal server error' });
       }
@@ -143,7 +144,7 @@ export function startNavServer(getMainWindow: () => BrowserWindow | null): void 
   });
 
   server.listen(PORT, HOST, () => {
-    console.log(`[NavServer] Listening on http://${HOST}:${PORT}`);
+    log(`[NavServer] Listening on http://${HOST}:${PORT}`);
   });
 
   // Don't let the server prevent app exit
@@ -151,9 +152,9 @@ export function startNavServer(getMainWindow: () => BrowserWindow | null): void 
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.warn(`[NavServer] Port ${PORT} already in use, skipping`);
+      logWarn(`[NavServer] Port ${PORT} already in use, skipping`);
     } else {
-      console.error('[NavServer] Failed to start:', err);
+      logError('[NavServer] Failed to start:', err);
     }
     server = null;
   });

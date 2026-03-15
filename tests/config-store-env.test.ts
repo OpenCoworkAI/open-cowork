@@ -140,7 +140,7 @@ describe('ConfigStore applyToEnv', () => {
     store.update({
       provider: 'ollama',
       apiKey: '',
-      baseUrl: 'https://ollama.example.internal/proxy',
+      baseUrl: 'https://ollama.example.internal/proxy/api',
       model: 'qwen3.5:0.8b',
     });
     store.applyToEnv();

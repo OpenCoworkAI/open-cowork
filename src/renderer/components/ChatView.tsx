@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
-import { Send, Square, Plus, Loader2, Plug, X } from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
 
 type AttachedFile = {
   name: string;
@@ -20,8 +20,10 @@ export function ChatView() {
   const sessions = useAppStore((s) => s.sessions);
   const messagesBySession = useAppStore((s) => s.messagesBySession);
   const partialMessagesBySession = useAppStore((s) => s.partialMessagesBySession);
+  const partialThinkingBySession = useAppStore((s) => s.partialThinkingBySession);
   const activeTurnsBySession = useAppStore((s) => s.activeTurnsBySession);
   const pendingTurnsBySession = useAppStore((s) => s.pendingTurnsBySession);
+  const executionClockBySession = useAppStore((s) => s.executionClockBySession);
   const appConfig = useAppStore((s) => s.appConfig);
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
@@ -52,6 +54,9 @@ export function ChatView() {
   const messages = activeSessionId ? messagesBySession[activeSessionId] || [] : [];
   const pendingTurns = activeSessionId ? pendingTurnsBySession[activeSessionId] || [] : [];
   const partialMessage = activeSessionId ? partialMessagesBySession[activeSessionId] || '' : '';
+  const partialThinking = activeSessionId
+    ? partialThinkingBySession[activeSessionId] || ''
+    : '';
   const activeTurn = activeSessionId ? activeTurnsBySession[activeSessionId] : null;
   const hasActiveTurn = Boolean(activeTurn);
   const pendingCount = pendingTurns.length;
@@ -60,7 +65,9 @@ export function ChatView() {
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
-    if (!partialMessage || !activeTurn?.userMessageId) return messages;
+    // Show streaming message if we have partial text OR partial thinking
+    const hasStreamingContent = partialMessage || partialThinking;
+    if (!hasStreamingContent || !activeTurn?.userMessageId) return messages;
     const anchorIndex = messages.findIndex((message) => message.id === activeTurn.userMessageId);
     if (anchorIndex === -1) return messages;
 
@@ -70,16 +77,55 @@ export function ChatView() {
       insertIndex += 1;
     }
 
+    const contentBlocks: ContentBlock[] = [];
+    if (partialThinking) {
+      contentBlocks.push({ type: 'thinking', thinking: partialThinking });
+    }
+    if (partialMessage) {
+      contentBlocks.push({ type: 'text', text: partialMessage });
+    }
+
     const streamingMessage: Message = {
       id: `partial-${activeSessionId}`,
       sessionId: activeSessionId,
       role: 'assistant',
-      content: [{ type: 'text', text: partialMessage }],
+      content: contentBlocks,
       timestamp: Date.now(),
     };
 
     return [...messages.slice(0, insertIndex), streamingMessage, ...messages.slice(insertIndex)];
-  }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage]);
+  }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage, partialThinking]);
+
+  // Format execution time for display
+  const formatExecutionTime = useCallback((ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    const minutes = Math.floor(ms / 60000);
+    const seconds = ((ms % 60000) / 1000).toFixed(0);
+    return `${minutes}m ${seconds}s`;
+  }, []);
+
+  // --- Real-time execution timer ---
+  const executionClock = activeSessionId ? executionClockBySession[activeSessionId] : undefined;
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const isActive = Boolean(executionClock?.startAt && executionClock.endAt === null);
+    if (!isActive) {
+      return;
+    }
+    setClockNow(Date.now());
+    const interval = setInterval(() => {
+      setClockNow(Date.now());
+    }, 100);
+    return () => clearInterval(interval);
+  }, [executionClock?.startAt, executionClock?.endAt]);
+
+  const liveElapsed =
+    executionClock?.startAt == null
+      ? 0
+      : Math.max(0, (executionClock.endAt ?? clockNow) - executionClock.startAt);
+  const timerActive = Boolean(executionClock?.startAt && executionClock.endAt === null);
 
   // Debounced scroll function to prevent scroll conflicts
   const scrollToBottom = useRef((behavior: ScrollBehavior = 'auto', immediate: boolean = false) => {
@@ -137,7 +183,7 @@ export function ChatView() {
 
   useEffect(() => {
     const messageCount = messages.length;
-    const partialLength = partialMessage.length;
+    const partialLength = partialMessage.length + partialThinking.length;
     const hasNewMessage = messageCount !== prevMessageCountRef.current;
     const isStreamingTick = partialLength !== prevPartialLengthRef.current && !hasNewMessage;
 
@@ -161,7 +207,7 @@ export function ChatView() {
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
-  }, [messages.length, partialMessage]);
+  }, [messages.length, partialMessage, partialThinking]);
 
   // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)
   useEffect(() => {
@@ -627,11 +673,25 @@ export function ChatView() {
             })
           )}
 
-          {/* Processing indicator - show when we have an active turn but no partial message yet */}
-          {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && (
+          {/* Processing indicator - show when we have an active turn but no streaming content yet */}
+          {hasActiveTurn &&
+            (!partialMessage || partialMessage.trim() === '') &&
+            !partialThinking && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-full bg-background/80 border border-border-subtle max-w-fit">
               <Loader2 className="w-4 h-4 text-accent animate-spin" />
               <span className="text-sm text-text-secondary">{t('chat.processing')}</span>
+            </div>
+          )}
+
+          {/* Real-time execution timer */}
+          {liveElapsed > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1 ml-0.5">
+              <Clock className="w-3 h-3" />
+              <span>
+                {timerActive
+                  ? formatExecutionTime(liveElapsed)
+                  : t('messageCard.executionTime', { time: formatExecutionTime(liveElapsed) })}
+              </span>
             </div>
           )}
 

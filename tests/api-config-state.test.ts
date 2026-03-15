@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../src/renderer/types';
+import fs from 'node:fs';
+import path from 'node:path';
+import { shouldAutoDiscoverLocalOllamaBaseUrl } from '../src/shared/ollama-base-url';
 import {
   FALLBACK_PROVIDER_PRESETS,
   buildApiConfigSnapshot,
@@ -10,6 +13,8 @@ import {
   profileKeyFromProvider,
   profileKeyToProvider,
 } from '../src/renderer/hooks/useApiConfigState';
+
+const hookPath = path.resolve(process.cwd(), 'src/renderer/hooks/useApiConfigState.ts');
 
 describe('api config state helpers', () => {
   it('maps provider/protocol to profile key and back', () => {
@@ -53,6 +58,28 @@ describe('api config state helpers', () => {
     expect(snapshot.activeProfileKey).toBe('ollama');
     expect(snapshot.profiles.ollama.baseUrl).toBe('http://localhost:11434/v1');
     expect(snapshot.profiles.ollama.model).toBe('qwen3.5:0.8b');
+  });
+
+  it('normalizes ollama profile base urls during renderer bootstrap', () => {
+    const config = {
+      provider: 'ollama',
+      customProtocol: 'openai',
+      activeProfileKey: 'ollama',
+      apiKey: '',
+      baseUrl: 'http://localhost:11434/api',
+      model: 'qwen3.5:0.8b',
+      profiles: {
+        ollama: {
+          apiKey: '',
+          baseUrl: 'http://localhost:11434/api',
+          model: 'qwen3.5:0.8b',
+        },
+      },
+      isConfigured: true,
+    } as AppConfig;
+
+    const snapshot = buildApiConfigSnapshot(config, FALLBACK_PROVIDER_PRESETS);
+    expect(snapshot.profiles.ollama.baseUrl).toBe('http://localhost:11434/v1');
   });
 
   it('keeps remote custom openai configs generic instead of auto-migrating them to ollama', () => {
@@ -231,5 +258,29 @@ describe('api config state helpers', () => {
     expect(getModelInputGuidance('custom', 'openai').placeholder).toContain('deepseek-chat');
     expect(getModelInputGuidance('custom', 'openai').placeholder).not.toContain('kimi');
     expect(getModelInputGuidance('custom', 'openai').hint).toContain('selected protocol or endpoint');
+  });
+
+  it('wires local Ollama discovery through the shared config hook', () => {
+    const source = fs.readFileSync(hookPath, 'utf8');
+    expect(source).toContain('window.electronAPI.config.discoverLocal({');
+    expect(source).toContain('baseUrl: requestedBaseUrl || undefined');
+    expect(source).toContain("showErrorKey('api.localOllamaNotFound')");
+    expect(source).toContain("showSuccessKey('api.localOllamaDiscovered'");
+    expect(source).toContain("showErrorKey('api.localOllamaNoModels')");
+    expect(source).toContain("showErrorKey('api.localOllamaModelUnavailable'");
+    expect(source).toContain('shouldAutoDiscoverLocalOllamaBaseUrl(baseUrl)');
+    expect(source).toContain('ollamaDiscoverRequestIdRef');
+    expect(source).toContain('clearDiscoveredModelsForProfile(setDiscoveredModels, requestedProfileKey)');
+    expect(source).toContain("autoSelectModelId: result.status === 'model_usable' ? result.probeModel : undefined");
+  });
+
+  it('only auto-discovers local Ollama for the default local endpoint', () => {
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl(undefined)).toBe(true);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('')).toBe(true);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('http://localhost:11434')).toBe(true);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('http://localhost:11434/api')).toBe(true);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('http://127.0.0.1:11434')).toBe(false);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('http://127.0.0.1:8080/v1')).toBe(false);
+    expect(shouldAutoDiscoverLocalOllamaBaseUrl('https://ollama.example.internal/v1')).toBe(false);
   });
 });

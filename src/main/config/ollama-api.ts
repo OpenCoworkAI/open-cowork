@@ -18,8 +18,33 @@ function buildHeaders(apiKey: string | undefined): HeadersInit {
   return headers;
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const causeMessage =
+      typeof (error as Error & { cause?: { message?: unknown } }).cause?.message === 'string'
+        ? (error as Error & { cause?: { message?: string } }).cause!.message
+        : '';
+    return [error.message, causeMessage].filter(Boolean).join(' | ');
+  }
+  return String(error);
+}
+
+function extractErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return '';
+  }
+  const directCode = typeof (error as Error & { code?: unknown }).code === 'string'
+    ? (error as Error & { code?: string }).code
+    : '';
+  const causeCode = typeof (error as Error & { cause?: { code?: unknown } }).cause?.code === 'string'
+    ? (error as Error & { cause?: { code?: string } }).cause!.code
+    : '';
+  return directCode || causeCode || '';
+}
+
 function normalizeError(error: unknown): ApiTestResult {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = extractErrorMessage(error);
+  const code = extractErrorCode(error);
   if (/401|403|unauthorized|forbidden/i.test(message)) {
     return { ok: false, errorType: 'unauthorized', details: message };
   }
@@ -32,10 +57,14 @@ function normalizeError(error: unknown): ApiTestResult {
   if (/5\d\d|server error|internal error/i.test(message)) {
     return { ok: false, errorType: 'server_error', details: message };
   }
-  if (/econnrefused/i.test(message)) {
+  if (code === 'ECONNREFUSED' || /econnrefused/i.test(message)) {
     return { ok: false, errorType: 'ollama_not_running', details: message };
   }
-  if (/timed?\s*out|timeout|network|fetch failed|enotfound|eai_again/i.test(message)) {
+  if (
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    /timed?\s*out|timeout|network|fetch failed|enotfound|eai_again/i.test(message)
+  ) {
     return { ok: false, errorType: 'network_error', details: message };
   }
   return { ok: false, errorType: 'unknown', details: message };

@@ -15,6 +15,7 @@ import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
 } from '../../shared/schedule/task-title';
+import { logError } from '../utils/logger';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
 export type ScheduledTaskWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -274,7 +275,7 @@ export class ScheduledTaskManager {
     }
     const taskToExecute = this.prepareExecution(task);
     this.executeAndRecord(taskToExecute).catch((err) => {
-      console.error(`[ScheduledTask] Unhandled error executing task ${taskToExecute.id}:`, err);
+      logError(`[ScheduledTask] Unhandled error executing task ${taskToExecute.id}:`, err);
     });
   }
 

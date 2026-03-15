@@ -19,6 +19,6 @@ describe('provider guidance UI wiring', () => {
     expect(source).toContain('CommonProviderSetupsCard');
     expect(source).toContain('GuidanceInlineHint');
     expect(source).toContain('onApplySetup={applyCommonProviderSetup}');
-    expect(source).toContain('friendlyTestDetails');
+    expect(source).toContain('<ApiDiagnosticsPanel');
   });
 });

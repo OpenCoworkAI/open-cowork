@@ -28,6 +28,11 @@ vi.mock('../src/main/claude/pi-model-resolution', () => ({
   },
   resolvePiRegistryModel: mocks.resolvePiRegistryModel,
   buildSyntheticPiModel: mocks.buildSyntheticPiModel,
+  inferPiApi: (protocol: string) => {
+    if (protocol === 'anthropic') return 'anthropic-messages';
+    if (protocol === 'gemini' || protocol === 'google') return 'google-generative-ai';
+    return 'openai-completions';
+  },
 }));
 
 import { probeWithClaudeSdk } from '../src/main/claude/claude-sdk-one-shot';
@@ -132,5 +137,88 @@ describe('probeWithClaudeSdk', () => {
     expect(mocks.completeSimple.mock.calls[0]?.[2]).toEqual({
       apiKey: 'sk-ant-local-proxy',
     });
+  });
+
+  it('treats thinking-only response as successful probe', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [{ type: 'thinking', thinking: 'Let me think about this probe request...' }],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'kimi-k2.5' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('returns empty_probe_response when thinking blocks are empty', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [{ type: 'thinking', thinking: '' }],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'kimi-k2.5' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.details).toBe('empty_probe_response');
+  });
+
+  it('succeeds when response has both text ack and thinking blocks', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [
+        { type: 'thinking', thinking: 'The user wants me to reply with sdk_probe_ok.' },
+        { type: 'text', text: 'sdk_probe_ok' },
+      ],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'kimi-k2.5' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts probe ack wrapped in markdown formatting', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [{ type: 'text', text: '**sdk_probe_ok**' }],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'gpt-5.4' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts probe ack with trailing punctuation', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [{ type: 'text', text: 'sdk_probe_ok.' }],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'gpt-5.4' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts probe ack with chatty prefix', async () => {
+    mocks.completeSimple.mockResolvedValue({
+      content: [{ type: 'text', text: 'Sure! sdk_probe_ok' }],
+    });
+
+    const result = await probeWithClaudeSdk(
+      { provider: 'openai', apiKey: 'sk-test', model: 'gpt-5.4' },
+      createConfig()
+    );
+
+    expect(result.ok).toBe(true);
   });
 });

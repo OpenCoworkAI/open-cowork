@@ -28,7 +28,7 @@ describe('SettingsPanel skills plugin browse entry', () => {
     expect(settingsPanelContent).toContain('window.electronAPI.skills.openStoragePath()');
     expect(settingsPanelContent).toContain('Promise.allSettled([');
     expect(settingsPanelContent).toContain("throw new Error(errors.join(' | '));");
-    expect(settingsPanelContent).toContain("`${t('skills.failedToLoad')}: ${err.message}`");
+    expect(settingsPanelContent).toContain("`${tRef.current('skills.failedToLoad')}: ${err.message}`");
     expect(settingsPanelContent).toContain('await loadSkills();');
   });
 

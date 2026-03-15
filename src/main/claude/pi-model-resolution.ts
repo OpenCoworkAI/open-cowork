@@ -1,7 +1,9 @@
 import { getModel, type Api, type Model } from '@mariozechner/pi-ai';
+import { isOfficialOpenAIBaseUrl } from '../config/auth-utils';
 
 const COMMON_FALLBACK_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 const INVALID_REGISTRY_PROVIDERS = new Set(['', 'custom']);
+const REASONING_MODEL_PATTERN = /\bthinking\b|\breasoner\b|deepseek-r1|kimi-k2/i;
 type PiRegistryProvider = Parameters<typeof getModel>[0];
 
 export interface PiModelStringInput {
@@ -15,11 +17,29 @@ export interface PiModelLookupOptions {
   configProvider?: string;
   rawProvider?: string;
   customBaseUrl?: string;
+  customProtocol?: string;
 }
 
 export interface PiModelLookupCandidate {
   provider: string;
   model: string;
+}
+
+function shouldDisableDeveloperRoleForEndpoint(
+  model: Model<Api>,
+  options: PiModelLookupOptions,
+): boolean {
+  if (model.api !== 'openai-completions' && model.api !== 'openai-responses') {
+    return false;
+  }
+
+  const endpoint = options.customBaseUrl?.trim() || model.baseUrl?.trim();
+  if (!endpoint || isOfficialOpenAIBaseUrl(endpoint)) {
+    return false;
+  }
+
+  const effectiveProvider = options.rawProvider || options.configProvider;
+  return effectiveProvider === 'custom' || effectiveProvider === 'openai';
 }
 
 export function inferPiApi(protocol: string): string {
@@ -35,25 +55,65 @@ export function inferPiApi(protocol: string): string {
   }
 }
 
+/**
+ * Known context window / max output specs for common Ollama model families.
+ * Used as a middle layer between user config overrides and the hardcoded default.
+ */
+const KNOWN_MODEL_SPECS: Record<string, { contextWindow: number; maxTokens: number }> = {
+  'qwen3.5':      { contextWindow: 258048, maxTokens: 32768 },
+  'qwen3':        { contextWindow: 40960,  maxTokens: 8192 },
+  'qwen2.5':      { contextWindow: 131072, maxTokens: 8192 },
+  'llama3':       { contextWindow: 131072, maxTokens: 4096 },
+  'llama3.1':     { contextWindow: 131072, maxTokens: 4096 },
+  'llama3.2':     { contextWindow: 131072, maxTokens: 4096 },
+  'llama3.3':     { contextWindow: 131072, maxTokens: 4096 },
+  'deepseek-r1':  { contextWindow: 65536,  maxTokens: 8192 },
+  'deepseek-v3':  { contextWindow: 65536,  maxTokens: 8192 },
+  'gemma2':       { contextWindow: 8192,   maxTokens: 4096 },
+  'gemma3':       { contextWindow: 131072, maxTokens: 8192 },
+  'phi3':         { contextWindow: 131072, maxTokens: 4096 },
+  'phi4':         { contextWindow: 16384,  maxTokens: 4096 },
+  'mistral':      { contextWindow: 32768,  maxTokens: 4096 },
+  'mixtral':      { contextWindow: 32768,  maxTokens: 4096 },
+  'codellama':    { contextWindow: 16384,  maxTokens: 4096 },
+  'command-r':    { contextWindow: 131072, maxTokens: 4096 },
+};
+
+function lookupModelSpecs(modelId: string): { contextWindow: number; maxTokens: number } | undefined {
+  const lower = modelId.toLowerCase();
+  // Match by prefix: "qwen3.5:0.8b" → "qwen3.5", "deepseek-r1-distill" → "deepseek-r1"
+  for (const [key, specs] of Object.entries(KNOWN_MODEL_SPECS)) {
+    if (lower === key || lower.startsWith(key + ':') || lower.startsWith(key + '-')) {
+      return specs;
+    }
+  }
+  return undefined;
+}
+
 export function buildSyntheticPiModel(
   modelId: string,
   provider: string,
   protocol: string,
   baseUrl?: string,
   apiOverride?: string,
+  reasoning?: boolean,
+  contextWindow?: number,
+  maxTokens?: number,
 ): Model<Api> {
   const api = apiOverride || inferPiApi(protocol);
+  const autoReasoning = reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
+  const knownSpecs = lookupModelSpecs(modelId);
   return {
     id: modelId,
     name: modelId,
     api,
     provider,
     baseUrl: baseUrl || '',
-    reasoning: false,
+    reasoning: autoReasoning,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128000,
-    maxTokens: 16384,
+    contextWindow: contextWindow || knownSpecs?.contextWindow || 128000,
+    maxTokens: maxTokens || knownSpecs?.maxTokens || 16384,
   } as Model<Api>;
 }
 
@@ -133,9 +193,10 @@ export function applyPiModelRuntimeOverrides(
 ): Model<Api> {
   let nextModel = model;
   const isCustomProvider = options.rawProvider === 'custom' || options.configProvider === 'custom';
+  const shouldHonorConfiguredBaseUrl = options.rawProvider === 'openai' || isCustomProvider;
   const modelHasBaseUrl = Boolean(nextModel.baseUrl);
 
-  if (options.customBaseUrl && (isCustomProvider || !modelHasBaseUrl)) {
+  if (options.customBaseUrl && (shouldHonorConfiguredBaseUrl || !modelHasBaseUrl)) {
     nextModel = { ...nextModel, baseUrl: options.customBaseUrl } as typeof nextModel;
   }
 
@@ -150,6 +211,23 @@ export function applyPiModelRuntimeOverrides(
   }
   if (effectiveProvider === 'openrouter' && nextModel.api !== 'openai-completions') {
     nextModel = { ...nextModel, api: 'openai-completions' } as typeof nextModel;
+  }
+  if (shouldDisableDeveloperRoleForEndpoint(nextModel, options)) {
+    nextModel = {
+      ...nextModel,
+      compat: {
+        ...(nextModel.compat || {}),
+        supportsDeveloperRole: false,
+      },
+    } as typeof nextModel;
+  }
+
+  // Handle custom provider with explicit protocol override
+  if (isCustomProvider && options.customProtocol) {
+    const targetApi = inferPiApi(options.customProtocol);
+    if (nextModel.api !== targetApi) {
+      nextModel = { ...nextModel, api: targetApi } as typeof nextModel;
+    }
   }
 
   return nextModel;

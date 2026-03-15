@@ -125,6 +125,11 @@
     "enterGeminiUrl": "输入 Gemini 兼容的服务 URL",
     "enterModelId": "输入模型 ID，例如：deepseek-chat、kimi-k2-thinking、gpt-5.4",
     "selectModelRequired": "请选择模型",
+    "contextWindow": "上下文窗口",
+    "contextWindowPlaceholder": "自动检测",
+    "maxOutputTokens": "最大输出 Token",
+    "maxOutputTokensPlaceholder": "自动检测",
+    "contextWindowHint": "留空则自动检测。仅在模型限制不正确时手动覆盖。",
     "saveFailed": "保存失败，请稍后重试",
     "getStarted": "开始使用",
     "saveSettings": "保存设置",
@@ -136,6 +141,13 @@
     "refreshModels": "刷新模型",
     "refreshingModels": "刷新中...",
     "refreshModelsFailed": "刷新模型失败，请检查 URL 或服务状态",
+    "discoverLocalOllama": "发现本地 Ollama",
+    "discoveringLocalOllama": "发现中...",
+    "discoverLocalOllamaHint": "扫描本机是否已有运行中的 Ollama，并自动填入本地 URL 与模型列表。",
+    "localOllamaDiscovered": "已发现本地 Ollama，可用模型 {{count}} 个。",
+    "localOllamaNotFound": "未发现本地 Ollama 服务，请先执行 `ollama serve` 后重试。",
+    "localOllamaNoModels": "已发现本地 Ollama 服务，但当前没有可用模型。",
+    "localOllamaModelUnavailable": "已发现本地 Ollama，但模型 {{model}} 目前无法完成最小推理请求。",
     "liveTest": "真实请求验证",
     "liveTestHint": "会发送一次最小请求，可能消耗少量额度",
     "liveTestCompatibilityHint": "部分兼容服务可能不支持该探测请求，失败时可关闭后重试。",
@@ -244,7 +256,38 @@
     "configSetMissing": "配置方案不存在",
     "configSetCloneSourceMissing": "找不到可复制的配置方案",
     "configSetSystemDeleteForbidden": "默认方案不可删除",
-    "configSetKeepOne": "至少需要保留一个配置方案"
+    "configSetKeepOne": "至少需要保留一个配置方案",
+    "diagnostic": {
+      "runDiagnostics": "诊断连接",
+      "running": "诊断中...",
+      "step": {
+        "dns": "DNS 解析",
+        "tcp": "TCP 连接",
+        "tls": "TLS 握手",
+        "auth": "API 认证",
+        "model": "模型验证"
+      },
+      "status": {
+        "pending": "等待中",
+        "running": "检测中...",
+        "ok": "通过",
+        "fail": "失败",
+        "skip": "跳过"
+      },
+      "overallSuccess": "所有检查通过 ({{ms}}ms)",
+      "overallFail": "诊断在 {{step}} 步骤失败",
+      "latency": "{{ms}}ms",
+      "fix": {
+        "dns_resolve_failed": "无法解析域名 {{host}}，请检查 URL 是否正确",
+        "tcp_connect_failed": "无法连接到 {{host}}，请检查网络或防火墙设置",
+        "tls_handshake_failed": "TLS 握手失败，可能是证书问题或代理干扰",
+        "missing_api_key": "API Key 缺失或无效，请检查 Key",
+        "auth_invalid_key": "API Key 无效或已过期，请检查 Key 是否正确",
+        "auth_endpoint_not_found": "API 端点不存在，请检查 Base URL 是否正确",
+        "auth_request_failed": "认证请求失败，请检查配置",
+        "model_unavailable": "模型 {{model}} 不可用，请确认模型名称是否正确"
+      }
+    }
   },
   "window": {
     "minimize": "最小化",
@@ -381,6 +424,7 @@
     "type": "类型",
     "typeStdioLocal": "STDIO（本地）",
     "typeSseRemote": "SSE（远程）",
+    "typeStreamableHttp": "HTTP（Streamable）",
     "command": "命令",
     "commandPlaceholder": "npx",
     "arguments": "参数",
@@ -489,11 +533,11 @@
   "logs": {
     "actionsTitle": "日志操作",
     "title": "应用日志",
-    "description": "查看和导出应用日志以进行调试。日志超过 10MB 时会自动轮转。",
+    "description": "查看和导出诊断日志包以进行排障。日志超过 10MB 时会自动轮转，导出时还会附带最近会话和错误摘要。",
     "inventoryDescription": "当前日志清单与占用空间。",
-    "recentDescription": "最近生成的应用日志，可用于导出或检查。",
+    "recentDescription": "最近生成的应用日志，可用于检查；即使当前没有日志文件，也可以单独导出诊断摘要。",
     "directoryDescription": "应用日志当前在磁盘上的存储位置。",
-    "actionsDescription": "导出、打开或清理日志文件。",
+    "actionsDescription": "导出诊断包、打开日志目录或清理日志文件。",
     "enableDevLogs": "启用开发者日志",
     "enableDevLogsDesc": "记录详细的调试日志。关闭可减少磁盘占用。",
     "devLogsEnabled": "开发者日志已启用",
@@ -503,16 +547,16 @@
     "totalSize": "总大小",
     "noLogFiles": "未找到日志文件",
     "logsDirectory": "日志目录：",
-    "exportZip": "导出 ZIP",
+    "exportZip": "导出诊断包",
     "openFolder": "打开文件夹",
     "clearAll": "清除所有",
     "clearConfirm": "确定要清除所有日志文件吗？此操作无法撤销。",
-    "exportSuccess": "日志已成功导出到 {{path}}",
+    "exportSuccess": "诊断包已成功导出到 {{path}}",
     "clearSuccess": "已清除 {{count}} 个日志文件",
     "exportFailed": "导出日志失败",
     "clearFailed": "清除日志失败",
-    "helpText1": "💡 日志对于调试 MCP 连接和其他问题很有用。",
-    "helpText2": "将日志导出为 ZIP 文件以与技术支持共享或自行分析。"
+    "helpText1": "导出的诊断包会包含应用日志、脱敏后的运行环境信息，以及最近会话/错误的元数据摘要，不会默认附带消息正文。",
+    "helpText2": "把诊断包发给我们后，通常可以更快定位到是前端异常、工具调用失败，还是配置/环境问题。"
   },
   "sidebar": {
     "recents": "最近",
@@ -532,7 +576,14 @@
     "previousWeek": "最近 7 天",
     "older": "更早",
     "settings": "设置",
-    "themeToggle": "切换主题"
+    "themeToggle": "切换主题",
+    "manage": "管理",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "nSelected": "已选 {{count}} 个",
+    "batchDeleteConfirm": "删除 {{count}} 个对话？此操作无法撤销。",
+    "cancel": "取消",
+    "confirmDelete": "删除"
   },
   "chat": {
     "sendMessage": "发送消息",
@@ -574,7 +625,9 @@
     "totalTokens": "总计",
     "changeDir": "更改目录",
     "changeDirFailed": "更改目录失败",
-    "copyPath": "复制路径"
+    "copyPath": "复制路径",
+    "contextUsage": "上下文用量",
+    "contextUsageLabel": "{{used}} / {{total}}"
   },
   "messageCard": {
     "request": "请求",
@@ -588,7 +641,8 @@
     "taskProgress": "任务进度",
     "noQuestions": "暂无问题",
     "question": "问题",
-    "thinking": "思考"
+    "thinking": "思考",
+    "executionTime": "执行时间: {{time}}"
   },
   "schedule": {
     "createTitle": "新建定时任务",

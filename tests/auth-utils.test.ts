@@ -249,6 +249,10 @@ describe('auth-utils', () => {
     expect(normalizeOllamaBaseUrl('http://localhost:11434')).toBe('http://localhost:11434/v1');
     expect(normalizeOllamaBaseUrl('http://localhost:11434/')).toBe('http://localhost:11434/v1');
     expect(normalizeOllamaBaseUrl('http://localhost:11434/v1')).toBe('http://localhost:11434/v1');
+    expect(normalizeOllamaBaseUrl('http://localhost:11434/api')).toBe('http://localhost:11434/v1');
+    expect(normalizeOllamaBaseUrl('https://ollama.com/api')).toBe('https://ollama.com/v1');
+    expect(normalizeOllamaBaseUrl('https://ollama.example.internal/proxy/api')).toBe('https://ollama.example.internal/proxy/v1');
+    expect(normalizeOllamaBaseUrl('https://ollama.example.internal/proxy/api/v1')).toBe('https://ollama.example.internal/proxy/v1');
     expect(normalizeOllamaBaseUrl('https://ollama.example.internal/proxy')).toBe('https://ollama.example.internal/proxy/v1');
     expect(normalizeOllamaBaseUrl(undefined)).toBeUndefined();
   });
@@ -258,7 +262,7 @@ describe('auth-utils', () => {
       provider: 'ollama',
       customProtocol: 'openai',
       apiKey: '',
-      baseUrl: 'http://localhost:11434',
+      baseUrl: 'http://localhost:11434/api',
     });
 
     expect(resolved).toEqual({

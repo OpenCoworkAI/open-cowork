@@ -30,6 +30,7 @@ export interface Message {
   timestamp: number;
   tokenUsage?: TokenUsage;
   localStatus?: 'queued' | 'cancelled';
+  executionTimeMs?: number;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -318,6 +319,7 @@ export type ClientEvent =
   | { type: 'session.continue'; payload: { sessionId: string; prompt: string; content?: ContentBlock[] } }
   | { type: 'session.stop'; payload: { sessionId: string } }
   | { type: 'session.delete'; payload: { sessionId: string } }
+  | { type: 'session.batchDelete'; payload: { sessionIds: string[] } }
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
@@ -370,6 +372,8 @@ export interface SandboxSyncStatus {
 export type ServerEvent =
   | { type: 'stream.message'; payload: { sessionId: string; message: Message } }
   | { type: 'stream.partial'; payload: { sessionId: string; delta: string } }
+  | { type: 'stream.thinking'; payload: { sessionId: string; delta: string } }
+  | { type: 'stream.executionTime'; payload: { sessionId: string; messageId: string; executionTimeMs: number } }
   | { type: 'session.status'; payload: { sessionId: string; status: SessionStatus; error?: string } }
   | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
   | { type: 'session.list'; payload: { sessions: Session[] } }
@@ -386,6 +390,7 @@ export type ServerEvent =
   | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'proxy.warmup'; payload: { status: 'warming' | 'ready' | 'failed' } }
+  | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
   | { type: 'navigate.to'; payload: { page: 'welcome' | 'settings' | 'session'; tab?: string; sessionId?: string } }
   | { type: 'error'; payload: { message: string; code?: 'CONFIG_REQUIRED_ACTIVE_SET'; action?: 'open_api_settings' } };
 
@@ -435,6 +440,8 @@ export interface ProviderProfile {
   apiKey: string;
   baseUrl?: string;
   model: string;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface ApiConfigSet {
@@ -461,6 +468,8 @@ export interface AppConfig {
   baseUrl?: string;
   customProtocol?: CustomProtocolType;
   model: string;
+  contextWindow?: number;
+  maxTokens?: number;
   activeProfileKey: ProviderProfileKey;
   profiles: Partial<Record<ProviderProfileKey, ProviderProfile>>;
   activeConfigSetId: ConfigSetId;
@@ -523,6 +532,40 @@ export interface ApiTestResult {
     | 'proxy_upstream_not_found'
     | 'unknown';
   details?: string;
+}
+
+// API Diagnostics types
+export type DiagnosticStepName = 'dns' | 'tcp' | 'tls' | 'auth' | 'model';
+export type DiagnosticStepStatus = 'pending' | 'running' | 'ok' | 'fail' | 'skip';
+
+export interface DiagnosticStep {
+  name: DiagnosticStepName;
+  status: DiagnosticStepStatus;
+  latencyMs?: number;
+  error?: string;
+  fix?: string;
+}
+
+export interface DiagnosticResult {
+  steps: DiagnosticStep[];
+  overallOk: boolean;
+  /** Which step failed first (null if all ok) */
+  failedAt?: DiagnosticStepName;
+  totalLatencyMs: number;
+}
+
+export interface DiagnosticInput {
+  provider: AppConfig['provider'];
+  apiKey: string;
+  baseUrl?: string;
+  customProtocol?: AppConfig['customProtocol'];
+  model?: string;
+}
+
+export interface LocalServiceInfo {
+  type: 'ollama';
+  baseUrl: string;
+  models?: string[];
 }
 
 // MCP types

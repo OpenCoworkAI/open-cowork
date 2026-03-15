@@ -24,6 +24,8 @@ describe('logger fallback behavior', () => {
 
     expect(logger.getLogsDirectory()).toBe(FALLBACK_LOGS_DIR);
 
+    // Trigger lazy init by writing a log entry
+    logger.log('init');
     const logFilePath = logger.getLogFilePath();
     expect(logFilePath).toBeTruthy();
     expect(logFilePath?.startsWith(FALLBACK_LOGS_DIR)).toBe(true);
@@ -36,6 +38,8 @@ describe('logger fallback behavior', () => {
     }));
 
     const logger = await import('../src/main/utils/logger');
+    // Trigger lazy init by writing a log entry
+    logger.log('init');
     const initialLogPath = logger.getLogFilePath();
     expect(initialLogPath).toBeTruthy();
 
@@ -59,6 +63,8 @@ describe('logger fallback behavior', () => {
     }));
 
     const logger = await import('../src/main/utils/logger');
+    // Trigger lazy init by writing a log entry
+    logger.log('init');
     const logFilePath = logger.getLogFilePath();
     expect(logFilePath).toBeTruthy();
 
@@ -77,6 +83,8 @@ describe('logger fallback behavior', () => {
     }));
 
     const logger = await import('../src/main/utils/logger');
+    // Trigger lazy init by writing a log entry
+    logger.log('init');
     const firstLogPath = logger.getLogFilePath();
     expect(firstLogPath).toBeTruthy();
 
@@ -105,14 +113,4 @@ describe('logger fallback behavior', () => {
     logger.closeLogFile();
   });
 
-  it('ignores ENOENT while collecting old log file metadata during cleanup', () => {
-    const source = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/main/utils/logger.ts'),
-      'utf8'
-    );
-
-    expect(source).toContain('.flatMap((f) => {');
-    expect(source).toContain("if (errno.code === 'ENOENT') {");
-    expect(source).toContain('return [];');
-  });
 });

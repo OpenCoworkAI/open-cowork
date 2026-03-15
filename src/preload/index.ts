@@ -20,6 +20,7 @@ import type {
   ScheduleUpdateInput,
   ProviderModelInfo,
 } from '../renderer/types';
+import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -111,6 +112,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.test', config),
     listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }): Promise<ProviderModelInfo[]> =>
       ipcRenderer.invoke('config.listModels', payload),
+    diagnose: (input: DiagnosticInput): Promise<DiagnosticResult> =>
+      ipcRenderer.invoke('config.diagnose', input),
+    discoverLocal: (payload?: { baseUrl?: string }): Promise<{ available: boolean; baseUrl: string; models?: string[]; status: 'unavailable' | 'service_available' | 'model_usable' | 'model_unusable'; probeModel?: string; probeError?: string }> =>
+      ipcRenderer.invoke('config.discover-local', payload),
   },
 
   auth: {
@@ -369,6 +374,8 @@ declare global {
         isConfigured: () => Promise<boolean>;
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
         listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }) => Promise<ProviderModelInfo[]>;
+        diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
+        discoverLocal: (payload?: { baseUrl?: string }) => Promise<{ available: boolean; baseUrl: string; models?: string[]; status: 'unavailable' | 'service_available' | 'model_usable' | 'model_unusable'; probeModel?: string; probeError?: string }>;
       };
       auth: {
         getStatus: () => Promise<Array<Record<string, unknown>>>;

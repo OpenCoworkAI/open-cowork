@@ -6,7 +6,6 @@ import {
   splitChildrenByFileMentions,
   getFileLinkButtonClassName,
 } from '../utils/file-link';
-import { isUncPath, isWindowsDrivePath } from '../../shared/local-file-path';
 import { resolvePathAgainstWorkspace } from '../../shared/workspace-path';
 import {
   normalizeLocalFileMarkdownLinks,

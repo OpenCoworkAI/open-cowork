@@ -1,5 +1,6 @@
 import type { AppConfig } from './config-store';
 import { isLoopbackBaseUrl as sharedIsLoopbackBaseUrl } from '../../shared/network/loopback';
+import { normalizeOllamaBaseUrl as sharedNormalizeOllamaBaseUrl } from '../../shared/ollama-base-url';
 
 const API_KEY_PREFIX_RE = /^sk-/i;
 const CHATGPT_ACCOUNT_ID_RE = /^[-_a-zA-Z0-9]{6,}$/;
@@ -88,26 +89,7 @@ export function normalizeOpenAICompatibleBaseUrl(baseUrl: string | undefined): s
 }
 
 export function normalizeOllamaBaseUrl(baseUrl: string | undefined): string | undefined {
-  const normalized = normalizeBaseUrl(baseUrl);
-  if (!normalized) {
-    return undefined;
-  }
-  try {
-    const parsed = new URL(normalized);
-    const pathname = parsed.pathname.replace(/\/+$/, '');
-    if (!pathname || pathname === '/') {
-      parsed.pathname = '/v1';
-      return parsed.toString().replace(/\/+$/, '');
-    }
-    if (pathname.endsWith('/v1')) {
-      parsed.pathname = pathname;
-      return parsed.toString().replace(/\/+$/, '');
-    }
-    parsed.pathname = `${pathname}/v1`;
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return /\/v1$/i.test(normalized) ? normalized : `${normalized}/v1`;
-  }
+  return sharedNormalizeOllamaBaseUrl(baseUrl);
 }
 
 function extractHostname(baseUrl: string | undefined): string | undefined {
@@ -217,7 +199,7 @@ export function shouldAllowEmptyOpenAIApiKey(
   config: Pick<AppConfig, 'provider' | 'customProtocol' | 'baseUrl'>
 ): boolean {
   return config.provider === 'custom'
-    && (config.customProtocol ?? 'anthropic') === 'openai'
+    && config.customProtocol === 'openai'
     && isLoopbackBaseUrl(config.baseUrl);
 }
 

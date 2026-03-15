@@ -6,7 +6,7 @@
  * Responsibilities:
  * - MCP server config CRUD (add, update, delete, list)
  * - Server lifecycle: start, stop, restart with health checks
- * - Transport handling: stdio (child process) and SSE (HTTP stream)
+ * - Transport handling: stdio (child process), SSE (HTTP stream), and Streamable HTTP
  * - Tool/resource/prompt discovery from connected servers
  *
  * Dependencies: config-store (via mcp-config-store)
@@ -14,9 +14,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { app } from 'electron';
 import path from 'path';
-import { log, logError, logWarn } from '../utils/logger';
+import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 
 /**
  * MCP Server Configuration
@@ -24,13 +25,13 @@ import { log, logError, logWarn } from '../utils/logger';
 export interface MCPServerConfig {
   id: string;
   name: string;
-  type: 'stdio' | 'sse';
+  type: 'stdio' | 'sse' | 'streamable-http';
   command?: string; // For stdio: command to run
   args?: string[]; // For stdio: command arguments
   env?: Record<string, string>; // Environment variables
   cwd?: string; // Working directory for stdio command
-  url?: string; // For SSE: server URL
-  headers?: Record<string, string>; // For SSE: HTTP headers
+  url?: string; // For SSE / Streamable HTTP: server URL
+  headers?: Record<string, string>; // For SSE / Streamable HTTP: HTTP headers
   enabled: boolean;
 }
 
@@ -54,7 +55,7 @@ export interface MCPTool {
  */
 export class MCPManager {
   private clients: Map<string, Client> = new Map();
-  private transports: Map<string, StdioClientTransport | SSEClientTransport> = new Map();
+  private transports: Map<string, StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport> = new Map();
   private processes: Map<string, any> = new Map();
   private tools: Map<string, MCPTool> = new Map(); // toolName -> MCPTool
   private serverConfigs: Map<string, MCPServerConfig> = new Map();
@@ -449,7 +450,7 @@ export class MCPManager {
   private async connectServer(config: MCPServerConfig): Promise<void> {
     log(`[MCPManager] Connecting to MCP server: ${config.name} (${config.type})`);
 
-    let transport: StdioClientTransport | SSEClientTransport;
+    let transport: StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport;
     let commandForLogging = '';
     let argsForLogging: string[] = [];
 
@@ -653,6 +654,22 @@ export class MCPManager {
       transport = new SSEClientTransport(
         new URL(config.url),
         config.headers || {}
+      );
+    } else if (config.type === 'streamable-http') {
+      if (!config.url) {
+        throw new Error(`Streamable HTTP server ${config.name} requires a URL`);
+      }
+
+      log(`[MCPManager] Creating Streamable HTTP transport: ${config.url}`);
+
+      // Create Streamable HTTP transport
+      const requestInit: RequestInit = {};
+      if (config.headers && Object.keys(config.headers).length > 0) {
+        requestInit.headers = config.headers;
+      }
+      transport = new StreamableHTTPClientTransport(
+        new URL(config.url),
+        { requestInit }
       );
     } else {
       throw new Error(`Unsupported transport type: ${config.type}`);
@@ -1091,8 +1108,9 @@ export class MCPManager {
       }
     }
 
-    log(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
+    logCtx(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
 
+    const callStartTime = Date.now();
     const maxRetries = 2;
     let lastError: any;
     let compatHotReloadTried = false;
@@ -1135,11 +1153,12 @@ export class MCPManager {
           }
         }
 
+        logTiming(`MCP tool ${actualToolName}`, callStartTime);
         return result;
       } catch (error: any) {
         lastError = error;
         const errorMsg = error.message || String(error);
-        logError(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
+        logCtxError(`[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`, errorMsg);
 
         if (attempt >= maxRetries) {
           break;

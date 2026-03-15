@@ -74,6 +74,7 @@ export interface MessageRow {
   content: string; // JSON string
   timestamp: number;
   token_usage: string | null; // JSON string
+  execution_time_ms: number | null;
 }
 
 export interface TraceStepRow {
@@ -212,6 +213,7 @@ function getDatabasePath(): string {
  * Initialize the database schema
  */
 function initializeSchema(database: Database.Database): void {
+  try {
   // Enable WAL mode for better performance
   database.pragma('journal_mode = WAL');
   
@@ -234,6 +236,7 @@ function initializeSchema(database: Database.Database): void {
 
   ensureColumn(database, 'sessions', 'openai_thread_id', 'openai_thread_id TEXT');
   ensureColumn(database, 'sessions', 'model', 'model TEXT');
+  ensureColumn(database, 'messages', 'execution_time_ms', 'execution_time_ms INTEGER');
   
   // Create messages table
   database.exec(`
@@ -340,6 +343,10 @@ function initializeSchema(database: Database.Database): void {
   `);
   
   log('[Database] Schema initialized');
+  } catch (error) {
+    logError('[Database] Schema initialization failed:', error);
+    throw error;
+  }
 }
 
 function ensureColumn(
@@ -404,12 +411,16 @@ export function initDatabase(): DatabaseInstance {
   `);
   
   const insertMessage = rawDb.prepare(`
-    INSERT INTO messages (id, session_id, role, content, timestamp, token_usage)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, session_id, role, content, timestamp, token_usage, execution_time_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   
   const getMessagesBySessionStmt = rawDb.prepare(`
     SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC
+  `);
+  
+  const updateMessageStmt = rawDb.prepare(`
+    UPDATE messages SET execution_time_ms = ? WHERE id = ?
   `);
   
   const deleteMessageStmt = rawDb.prepare(`
@@ -520,8 +531,15 @@ export function initDatabase(): DatabaseInstance {
           message.role,
           message.content,
           message.timestamp,
-          message.token_usage
+          message.token_usage,
+          message.execution_time_ms ?? null
         );
+      },
+      
+      update: (id: string, updates: Partial<Pick<MessageRow, 'execution_time_ms'>>) => {
+        if (updates.execution_time_ms !== undefined) {
+          updateMessageStmt.run(updates.execution_time_ms, id);
+        }
       },
       
       getBySessionId: (sessionId: string): MessageRow[] => {

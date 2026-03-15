@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Cpu,
   Copy,
+  Layers,
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo } from '../types';
 
@@ -39,6 +40,7 @@ export function ContextPanel() {
   const messagesBySession = useAppStore((s) => s.messagesBySession);
   const appConfig = useAppStore((s) => s.appConfig);
   const contextPanelCollapsed = useAppStore((s) => s.contextPanelCollapsed);
+  const contextWindowBySession = useAppStore((s) => s.contextWindowBySession);
   const toggleContextPanel = useAppStore((s) => s.toggleContextPanel);
   const workingDir = useAppStore((s) => s.workingDir);
   const setGlobalNotice = useAppStore((s) => s.setGlobalNotice);
@@ -91,6 +93,24 @@ export function ContextPanel() {
     }
     return { input, output, total: input + output };
   }, [messages]);
+
+  // Context usage: last message's input tokens ≈ current context occupation
+  const contextUsage = useMemo(() => {
+    const contextWindow = activeSessionId ? contextWindowBySession[activeSessionId] : undefined;
+    if (!contextWindow) return null;
+
+    let lastInput = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].tokenUsage?.input) {
+        lastInput = messages[i].tokenUsage!.input;
+        break;
+      }
+    }
+    if (lastInput === 0) return null;
+
+    const percentage = Math.min((lastInput / contextWindow) * 100, 100);
+    return { used: lastInput, total: contextWindow, percentage };
+  }, [activeSessionId, contextWindowBySession, messages]);
   const artifactStepKey = useMemo(
     () => displayArtifactSteps.map((step) => step.id).join('|'),
     [displayArtifactSteps]
@@ -203,10 +223,10 @@ export function ContextPanel() {
 
   if (contextPanelCollapsed) {
     return (
-      <div className="w-11 bg-background-secondary/88 border-l border-border-muted flex items-start justify-center py-3">
+      <div className="w-10 bg-background border-l border-border-muted flex items-start justify-center pt-3">
         <button
           onClick={toggleContextPanel}
-          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
           title={t('context.expandPanel')}
         >
           <ChevronLeft className="w-4 h-4" />
@@ -216,26 +236,29 @@ export function ContextPanel() {
   }
 
   return (
-    <div className="w-[18.5rem] bg-background-secondary/88 border-l border-border-muted flex flex-col overflow-hidden">
-      <div className="px-3 py-3 border-b border-border-muted flex items-center justify-start">
+    <div className="w-72 bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
+      {/* Header */}
+      <div className="px-3 h-10 flex items-center gap-2 border-b border-border-muted shrink-0">
         <button
           onClick={toggleContextPanel}
-          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+          className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
           title={t('context.collapsePanel')}
         >
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
+        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
+          {t('context.context')}
+        </span>
       </div>
 
-      {/* Session Info Card */}
+      {/* Session Stats */}
       {activeSession && (
-        <div className="px-4 py-4 border-b border-border-muted">
-          <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-            <span className="text-sm font-medium text-text-primary truncate">{modelName}</span>
+        <div className="px-4 py-3 border-b border-border-muted space-y-1.5">
+          <div className="flex items-center gap-1.5 text-text-primary font-medium">
+            <Cpu className="w-3.5 h-3.5 text-text-muted shrink-0" />
+            <span className="truncate">{modelName}</span>
           </div>
-          <div className="flex items-center gap-3 text-xs text-text-muted">
+          <div className="flex items-center gap-3 text-xs text-text-muted pl-5">
             <span className="flex items-center gap-1">
               <MessageSquare className="w-3 h-3" />
               {messageCount}
@@ -244,18 +267,46 @@ export function ContextPanel() {
               <Wrench className="w-3 h-3" />
               {toolCallCount}
             </span>
-          </div>
+            {tokenUsage.total > 0 && (
+              <span className="ml-auto text-text-muted/70">
+                {t('context.inputTokens')} {formatTokenCount(tokenUsage.input)} · {t('context.outputTokens')} {formatTokenCount(tokenUsage.output)}
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {/* Token Usage */}
-      {tokenUsage.total > 0 && (
-        <div className="px-4 pb-4 border-b border-border-muted">
-          <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-2.5 flex items-center justify-between text-xs text-text-muted">
-            <span>{t('context.inputTokens')}: {formatTokenCount(tokenUsage.input)}</span>
-            <span>{t('context.outputTokens')}: {formatTokenCount(tokenUsage.output)}</span>
+      {/* Context Usage */}
+      {activeSession && contextUsage && (
+        <div className="px-4 py-2.5 border-b border-border-muted space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              {t('context.contextUsage')}
+            </span>
+            <span className={`text-xs font-medium ${
+              contextUsage.percentage > 95 ? 'text-error' :
+              contextUsage.percentage > 80 ? 'text-warning' :
+              'text-text-primary'
+            }`}>
+              {Math.round(contextUsage.percentage)}%
+            </span>
           </div>
+          <div className="h-1.5 bg-surface-muted rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ease-out ${
+                contextUsage.percentage > 95 ? 'bg-error' :
+                contextUsage.percentage > 80 ? 'bg-warning' :
+                'bg-gradient-to-r from-accent to-accent-hover'
+              }`}
+              style={{ width: `${contextUsage.percentage}%` }}
+            />
+          </div>
+          <p className="text-xs text-text-muted">
+            {t('context.contextUsageLabel', {
+              used: formatTokenCount(contextUsage.used),
+              total: formatTokenCount(contextUsage.total),
+            })}
+          </p>
         </div>
       )}
 
@@ -263,23 +314,27 @@ export function ContextPanel() {
       <div className="border-b border-border-muted">
         <button
           onClick={() => setArtifactsOpen(!artifactsOpen)}
-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface-hover transition-colors"
+          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-surface-hover transition-colors"
         >
-          <span className="text-sm font-medium text-text-primary">{t('context.artifacts')}</span>
+          <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
+            {t('context.artifacts')}
+          </span>
           {artifactsOpen ? (
-            <ChevronUp className="w-4 h-4 text-text-muted" />
+            <ChevronUp className="w-3.5 h-3.5 text-text-muted" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-text-muted" />
+            <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
           )}
         </button>
-        
+
         {artifactsOpen && (
-          <div className="px-4 pb-4 max-h-80 overflow-y-auto">
-            {/* Extract artifacts from trace steps */}
+          <div className="pb-2 max-h-64 overflow-y-auto">
             {displayArtifacts.length === 0 ? (
-              <p className="text-xs text-text-muted">{t('context.noArtifactsYet')}</p>
+              <div className="flex items-center gap-2 px-4 py-2 text-xs text-text-muted">
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span>{t('context.noArtifactsYet')}</span>
+              </div>
             ) : (
-              <div className="space-y-1">
+              <div>
                 {displayArtifacts.map((artifact, index) => {
                   const label = artifact.label || t('context.fileCreated');
                   const artifactPath = artifact.path;
@@ -300,7 +355,7 @@ export function ContextPanel() {
                   return (
                     <div
                       key={index}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
+                      className={`flex items-center gap-2 px-4 py-1.5 transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
                       onClick={async () => {
                         if (!canClick) return;
                         const revealed = await window.electronAPI.showItemInFolder(artifactPath, currentWorkingDir ?? undefined);
@@ -314,10 +369,8 @@ export function ContextPanel() {
                       }}
                       title={canClick ? artifactPath : undefined}
                     >
-                      <IconComponent className="w-4 h-4 text-text-muted" />
-                      <span className="text-sm text-text-primary truncate">
-                        {label}
-                      </span>
+                      <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                      <span className="text-xs text-text-primary truncate">{label}</span>
                     </div>
                   );
                 })}
@@ -328,85 +381,99 @@ export function ContextPanel() {
       </div>
 
       {/* Working Directory */}
-      <div className="px-4 py-4 border-b border-border-muted">
-        <div className="rounded-2xl border border-border-subtle bg-background/50 px-4 py-3 flex items-center gap-2 min-w-0">
-          <FolderOpen className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-          <span className="text-sm text-text-primary truncate flex-1" title={currentWorkingDir || ''}>
-            {currentWorkingDir ? formatPath(currentWorkingDir) : t('context.noFolderSelected')}
-          </span>
-          {currentWorkingDir && (
+      <div className="border-b border-border-muted">
+        <div className="px-4 py-2.5">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+            {t('context.workingDirectory')}
+          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <FolderOpen className="w-3.5 h-3.5 text-text-muted shrink-0" />
+            <span className="text-xs text-text-primary truncate flex-1" title={currentWorkingDir || ''}>
+              {currentWorkingDir ? formatPath(currentWorkingDir) : t('context.noFolderSelected')}
+            </span>
+            {currentWorkingDir && (
+              <button
+                onClick={() => handleCopyPath(currentWorkingDir)}
+                className="text-text-muted hover:text-text-primary transition-colors shrink-0 ml-1"
+                title={t('context.copyPath')}
+              >
+                {copiedPath ? (
+                  <Check className="w-3 h-3 text-success" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+              </button>
+            )}
             <button
-              onClick={() => handleCopyPath(currentWorkingDir)}
-              className="text-text-muted hover:text-text-primary transition-colors flex-shrink-0"
-              title={t('context.copyPath')}
-            >
-              {copiedPath ? (
-                <Check className="w-3.5 h-3.5 text-success" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-            </button>
-          )}
-          <button
-            onClick={async () => {
-              setIsChangingDir(true);
-              try {
-                const result = await changeWorkingDir(
-                  activeSessionId || undefined,
-                  currentWorkingDir || undefined
-                );
-                if (!result.success && result.error && result.error !== 'User cancelled') {
+              onClick={async () => {
+                setIsChangingDir(true);
+                try {
+                  const result = await changeWorkingDir(
+                    activeSessionId || undefined,
+                    currentWorkingDir || undefined
+                  );
+                  if (!result.success && result.error && result.error !== 'User cancelled') {
+                    setGlobalNotice({
+                      id: `change-dir-failed-${Date.now()}`,
+                      type: 'warning',
+                      message: `${t('context.changeDirFailed')}: ${result.error}`,
+                    });
+                  }
+                } catch (error) {
                   setGlobalNotice({
                     id: `change-dir-failed-${Date.now()}`,
-                    type: 'warning',
-                    message: `${t('context.changeDirFailed')}: ${result.error}`,
+                    type: 'error',
+                    message:
+                      error instanceof Error && error.message
+                        ? `${t('context.changeDirFailed')}: ${error.message}`
+                        : t('context.changeDirFailed'),
                   });
+                } finally {
+                  setIsChangingDir(false);
                 }
-              } catch (error) {
-                setGlobalNotice({
-                  id: `change-dir-failed-${Date.now()}`,
-                  type: 'error',
-                  message:
-                    error instanceof Error && error.message
-                      ? `${t('context.changeDirFailed')}: ${error.message}`
-                      : t('context.changeDirFailed'),
-                });
-              } finally {
-                setIsChangingDir(false);
-              }
-            }}
-            disabled={isChangingDir}
-            className="text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors flex-shrink-0"
-            title={t('context.changeDir')}
-          >
-            {isChangingDir ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <FolderSync className="w-3.5 h-3.5" />
-            )}
-          </button>
+              }}
+              disabled={isChangingDir}
+              className="text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors shrink-0"
+              title={t('context.changeDir')}
+            >
+              {isChangingDir ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FolderSync className="w-3 h-3" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* MCP Connectors */}
-      {mcpServers.length > 0 && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-4 py-4 space-y-2">
-            <p className="text-xs text-text-muted mb-2">{t('context.mcpConnectors')}</p>
-            {mcpServers.map((server) => (
-              <ConnectorItem
-                key={server.id}
-                server={server}
-                steps={steps}
-                expanded={expandedConnector === server.id}
-                onToggle={() =>
-                  setExpandedConnector(expandedConnector === server.id ? null : server.id)
-                }
-              />
-            ))}
-          </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-2.5">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+            {t('context.mcpConnectors')}
+          </p>
+          {mcpServers.length === 0 ? (
+            <div className="flex items-center gap-2 text-xs text-text-muted py-1">
+              <Plug className="w-3.5 h-3.5 shrink-0" />
+              <span>{t('context.noConnectors')}</span>
+            </div>
+          ) : (
+            <div className="space-y-0.5">
+              {mcpServers.map((server) => (
+                <ConnectorItem
+                  key={server.id}
+                  server={server}
+                  steps={steps}
+                  expanded={expandedConnector === server.id}
+                  onToggle={() =>
+                    setExpandedConnector(expandedConnector === server.id ? null : server.id)
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

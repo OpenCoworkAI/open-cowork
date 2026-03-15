@@ -26,6 +26,11 @@ export interface GlobalNotice {
   action?: GlobalNoticeAction;
 }
 
+export interface SessionExecutionClock {
+  startAt: number | null;
+  endAt: number | null;
+}
+
 interface AppState {
   // Sessions
   sessions: Session[];
@@ -34,8 +39,10 @@ interface AppState {
   // Messages
   messagesBySession: Record<string, Message[]>;
   partialMessagesBySession: Record<string, string>;
+  partialThinkingBySession: Record<string, string>;
   pendingTurnsBySession: Record<string, string[]>;
   activeTurnsBySession: Record<string, { stepId: string; userMessageId: string } | null>;
+  executionClockBySession: Record<string, SessionExecutionClock>;
 
   // Trace steps
   traceStepsBySession: Record<string, TraceStep[]>;
@@ -75,17 +82,26 @@ interface AppState {
   skillsStorageChangedAt: number;
   skillsStorageChangeEvent: SkillsStorageChangeEvent | null;
 
+  // Context window per session (from model resolution)
+  contextWindowBySession: Record<string, number>;
+
   // Actions
   setSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
   updateSession: (sessionId: string, updates: Partial<Session>) => void;
   removeSession: (sessionId: string) => void;
+  removeSessions: (sessionIds: string[]) => void;
   setActiveSession: (sessionId: string | null) => void;
 
   addMessage: (sessionId: string, message: Message) => void;
+  startExecutionClock: (sessionId: string, startAt: number) => void;
+  finishExecutionClock: (sessionId: string, endAt?: number) => void;
+  clearExecutionClock: (sessionId: string) => void;
   setMessages: (sessionId: string, messages: Message[]) => void;
   setPartialMessage: (sessionId: string, partial: string) => void;
   clearPartialMessage: (sessionId: string) => void;
+  setPartialThinking: (sessionId: string, delta: string) => void;
+  clearPartialThinking: (sessionId: string) => void;
   activateNextTurn: (sessionId: string, stepId: string) => void;
   updateActiveTurnStep: (sessionId: string, stepId: string) => void;
   clearActiveTurn: (sessionId: string, stepId?: string) => void;
@@ -130,6 +146,9 @@ interface AppState {
   setSandboxSyncStatus: (status: SandboxSyncStatus | null) => void;
   setSkillsStorageChangedAt: (timestamp: number) => void;
   setSkillsStorageChangeEvent: (event: SkillsStorageChangeEvent | null) => void;
+
+  // Context window actions
+  setSessionContextWindow: (sessionId: string, contextWindow: number) => void;
 }
 
 const defaultSettings: Settings = {
@@ -166,8 +185,10 @@ export const useAppStore = create<AppState>((set) => ({
   activeSessionId: null,
   messagesBySession: {},
   partialMessagesBySession: {},
+  partialThinkingBySession: {},
   pendingTurnsBySession: {},
   activeTurnsBySession: {},
+  executionClockBySession: {},
   traceStepsBySession: {},
   isLoading: false,
   sidebarCollapsed: false,
@@ -188,6 +209,7 @@ export const useAppStore = create<AppState>((set) => ({
   sandboxSyncStatus: null,
   skillsStorageChangedAt: 0,
   skillsStorageChangeEvent: null,
+  contextWindowBySession: {},
 
   // Session actions
   setSessions: (sessions) => set({ sessions }),
@@ -197,8 +219,13 @@ export const useAppStore = create<AppState>((set) => ({
       sessions: [session, ...state.sessions],
       messagesBySession: { ...state.messagesBySession, [session.id]: [] },
       partialMessagesBySession: { ...state.partialMessagesBySession, [session.id]: '' },
+      partialThinkingBySession: { ...state.partialThinkingBySession, [session.id]: '' },
       pendingTurnsBySession: { ...state.pendingTurnsBySession, [session.id]: [] },
       activeTurnsBySession: { ...state.activeTurnsBySession, [session.id]: null },
+      executionClockBySession: {
+        ...state.executionClockBySession,
+        [session.id]: { startAt: null, endAt: null },
+      },
       traceStepsBySession: { ...state.traceStepsBySession, [session.id]: [] },
     })),
 
@@ -211,17 +238,78 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const { [sessionId]: _, ...restMessages } = state.messagesBySession;
       const { [sessionId]: __partials, ...restPartials } = state.partialMessagesBySession;
+      const { [sessionId]: __thinkingPartials, ...restThinkingPartials } =
+        state.partialThinkingBySession;
       const { [sessionId]: __pending, ...restPendingTurns } = state.pendingTurnsBySession;
       const { [sessionId]: __active, ...restActiveTurns } = state.activeTurnsBySession;
+      const { [sessionId]: __clock, ...restExecutionClocks } = state.executionClockBySession;
       const { [sessionId]: __traces, ...restTraces } = state.traceStepsBySession;
+      const { [sessionId]: __ctx, ...restContextWindows } = state.contextWindowBySession;
       return {
         sessions: state.sessions.filter((s) => s.id !== sessionId),
         messagesBySession: restMessages,
         partialMessagesBySession: restPartials,
+        partialThinkingBySession: restThinkingPartials,
         pendingTurnsBySession: restPendingTurns,
         activeTurnsBySession: restActiveTurns,
+        executionClockBySession: restExecutionClocks,
         traceStepsBySession: restTraces,
+        contextWindowBySession: restContextWindows,
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+      };
+    }),
+
+  removeSessions: (sessionIds) =>
+    set((state) => {
+      const idSet = new Set(sessionIds);
+      const newMessages: Record<string, Message[]> = {};
+      const newPartials: Record<string, string> = {};
+      const newThinkingPartials: Record<string, string> = {};
+      const newPendingTurns: Record<string, string[]> = {};
+      const newActiveTurns: Record<string, { stepId: string; userMessageId: string } | null> = {};
+      const newExecutionClocks: Record<string, SessionExecutionClock> = {};
+      const newTraces: Record<string, TraceStep[]> = {};
+      const newContextWindows: Record<string, number> = {};
+
+      for (const key of Object.keys(state.messagesBySession)) {
+        if (!idSet.has(key)) newMessages[key] = state.messagesBySession[key];
+      }
+      for (const key of Object.keys(state.partialMessagesBySession)) {
+        if (!idSet.has(key)) newPartials[key] = state.partialMessagesBySession[key];
+      }
+      for (const key of Object.keys(state.partialThinkingBySession)) {
+        if (!idSet.has(key)) newThinkingPartials[key] = state.partialThinkingBySession[key];
+      }
+      for (const key of Object.keys(state.pendingTurnsBySession)) {
+        if (!idSet.has(key)) newPendingTurns[key] = state.pendingTurnsBySession[key];
+      }
+      for (const key of Object.keys(state.activeTurnsBySession)) {
+        if (!idSet.has(key)) newActiveTurns[key] = state.activeTurnsBySession[key];
+      }
+      for (const key of Object.keys(state.executionClockBySession)) {
+        if (!idSet.has(key)) newExecutionClocks[key] = state.executionClockBySession[key];
+      }
+      for (const key of Object.keys(state.traceStepsBySession)) {
+        if (!idSet.has(key)) newTraces[key] = state.traceStepsBySession[key];
+      }
+      for (const key of Object.keys(state.contextWindowBySession)) {
+        if (!idSet.has(key)) newContextWindows[key] = state.contextWindowBySession[key];
+      }
+
+      return {
+        sessions: state.sessions.filter((s) => !idSet.has(s.id)),
+        messagesBySession: newMessages,
+        partialMessagesBySession: newPartials,
+        partialThinkingBySession: newThinkingPartials,
+        pendingTurnsBySession: newPendingTurns,
+        activeTurnsBySession: newActiveTurns,
+        executionClockBySession: newExecutionClocks,
+        traceStepsBySession: newTraces,
+        contextWindowBySession: newContextWindows,
+        activeSessionId:
+          state.activeSessionId && idSet.has(state.activeSessionId)
+            ? null
+            : state.activeSessionId,
       };
     }),
 
@@ -277,8 +365,45 @@ export const useAppStore = create<AppState>((set) => ({
               [sessionId]: '',
             }
           : state.partialMessagesBySession,
+        partialThinkingBySession: shouldClearPartial
+          ? {
+              ...state.partialThinkingBySession,
+              [sessionId]: '',
+            }
+          : state.partialThinkingBySession,
       };
     }),
+
+  startExecutionClock: (sessionId, startAt) =>
+    set((state) => ({
+      executionClockBySession: {
+        ...state.executionClockBySession,
+        [sessionId]: { startAt, endAt: null },
+      },
+    })),
+
+  finishExecutionClock: (sessionId, endAt) =>
+    set((state) => {
+      const current = state.executionClockBySession[sessionId] ?? { startAt: null, endAt: null };
+      if (current.startAt === null) return {};
+      return {
+        executionClockBySession: {
+          ...state.executionClockBySession,
+          [sessionId]: {
+            startAt: current.startAt,
+            endAt: endAt ?? Date.now(),
+          },
+        },
+      };
+    }),
+
+  clearExecutionClock: (sessionId) =>
+    set((state) => ({
+      executionClockBySession: {
+        ...state.executionClockBySession,
+        [sessionId]: { startAt: null, endAt: null },
+      },
+    })),
 
   setMessages: (sessionId, messages) =>
     set((state) => ({
@@ -300,6 +425,22 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       partialMessagesBySession: {
         ...state.partialMessagesBySession,
+        [sessionId]: '',
+      },
+    })),
+
+  setPartialThinking: (sessionId, delta) =>
+    set((state) => ({
+      partialThinkingBySession: {
+        ...state.partialThinkingBySession,
+        [sessionId]: (state.partialThinkingBySession[sessionId] || '') + delta,
+      },
+    })),
+
+  clearPartialThinking: (sessionId) =>
+    set((state) => ({
+      partialThinkingBySession: {
+        ...state.partialThinkingBySession,
         [sessionId]: '',
       },
     })),
@@ -479,6 +620,15 @@ export const useAppStore = create<AppState>((set) => ({
   setSandboxSyncStatus: (status) => set({ sandboxSyncStatus: status }),
   setSkillsStorageChangedAt: (timestamp) => set({ skillsStorageChangedAt: timestamp }),
   setSkillsStorageChangeEvent: (event) => set({ skillsStorageChangeEvent: event }),
+
+  // Context window actions
+  setSessionContextWindow: (sessionId, contextWindow) =>
+    set((state) => ({
+      contextWindowBySession: {
+        ...state.contextWindowBySession,
+        [sessionId]: contextWindow,
+      },
+    })),
 }));
 
 // Expose helpers for nav-server (CLI-driven UI navigation via executeJavaScript)
