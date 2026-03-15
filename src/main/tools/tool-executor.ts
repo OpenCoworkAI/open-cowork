@@ -539,7 +539,7 @@ export class ToolExecutor {
 
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
-          const lines = content.split('\n');
+          const lines = content.split(/\r?\n/);
           
           lines.forEach((line, index) => {
             if (results.length < maxResults && regex.test(line)) {
@@ -747,7 +747,7 @@ export class ToolExecutor {
         }
 
         const content = fs.readFileSync(realPath, 'utf-8');
-        const lines = content.split('\n');
+        const lines = content.split(/\r?\n/);
         
         lines.forEach((line, index) => {
           if (regex.test(line)) {

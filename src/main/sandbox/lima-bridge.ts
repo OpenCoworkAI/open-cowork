@@ -153,7 +153,7 @@ export class LimaBridge implements SandboxExecutor {
         log('[Lima] limactl list output:', stdout);
 
         // Parse text output - format is: NAME STATUS SSH CPUS MEMORY DISK DIR
-        const lines = stdout.trim().split('\n');
+        const lines = stdout.trim().split(/\r?\n/);
         for (const line of lines) {
           if (line.includes(LIMA_INSTANCE_NAME)) {
             instanceExists = true;
@@ -360,7 +360,7 @@ export class LimaBridge implements SandboxExecutor {
       const checkRunning = async (): Promise<boolean> => {
         try {
           const { stdout } = await execAsync('limactl list', { timeout: 5000 });
-          const lines = stdout.trim().split('\n');
+          const lines = stdout.trim().split(/\r?\n/);
           return lines.some((line) =>
             line.includes(LIMA_INSTANCE_NAME) && line.includes('Running')
           );
@@ -735,7 +735,7 @@ export class LimaBridge implements SandboxExecutor {
    * Process incoming data buffer for complete JSON messages
    */
   private processBuffer(): void {
-    const lines = this.buffer.split('\n');
+    const lines = this.buffer.split(/\r?\n/);
     this.buffer = lines.pop() || '';
 
     for (const line of lines) {

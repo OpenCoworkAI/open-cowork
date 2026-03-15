@@ -566,13 +566,13 @@ const ToolUseBlock = memo(function ToolUseBlock({
   const getSummary = (): string => {
     if (!toolResult) return '';
     if (toolResult.isError) {
-      const firstLine = toolResult.content.split('\n')[0];
+      const firstLine = toolResult.content.split(/\r?\n/)[0];
       return firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
     }
     const toolName = block.name;
     if (shouldUseScreenshotSummary(toolName, toolResult.content)) return 'Screenshot captured';
     if (toolResult.content.length < 60) return toolResult.content.trim();
-    const lines = toolResult.content.trim().split('\n');
+    const lines = toolResult.content.trim().split(/\r?\n/);
     return `${lines.length} lines`;
   };
 
@@ -970,12 +970,12 @@ const ToolResultBlock = memo(function ToolResultBlock({
 
   const getSummary = (): string => {
     if (block.isError) {
-      const firstLine = block.content.split('\n')[0];
+      const firstLine = block.content.split(/\r?\n/)[0];
       return firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
     }
     if (shouldUseScreenshotSummary(toolName, block.content)) return 'Screenshot captured';
     if (block.content.length < 60) return block.content.trim();
-    const lines = block.content.trim().split('\n');
+    const lines = block.content.trim().split(/\r?\n/);
     return `${lines.length} lines`;
   };
 

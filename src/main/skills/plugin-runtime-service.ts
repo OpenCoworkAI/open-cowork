@@ -13,6 +13,7 @@ import type {
   PluginToggleResult,
 } from '../../renderer/types';
 import { log, logError } from '../utils/logger';
+import { getDefaultShell } from '../utils/shell-resolver';
 import { pluginRegistryStore } from './plugin-registry-store';
 import { PluginCatalogService } from './plugin-catalog-service';
 
@@ -293,7 +294,7 @@ export class PluginRuntimeService {
     let env = { ...process.env };
     if (process.platform === 'darwin' || process.platform === 'linux') {
       try {
-        const userShell = process.env.SHELL || '/bin/bash';
+        const userShell = getDefaultShell();
         const { execSync } = require('child_process');
         const shellOutput = execSync(`${userShell} -l -c "echo $PATH"`, {
           encoding: 'utf-8',

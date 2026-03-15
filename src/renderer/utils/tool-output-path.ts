@@ -72,9 +72,9 @@ export function extractFilePathFromToolInput(
 function extractFilePathFromText(text: string): string | null {
   const match = text.match(/File (?:written|edited):\s*(.+)$/i)
     || text.match(/File created successfully at:?\s*(.+)$/i)
-    || text.match(/Successfully wrote \d+ bytes to ([^\n]+)/i)
+    || text.match(/Successfully wrote \d+ bytes to ([^\r\n]+)/i)
     || text.match(/The file (.+?) has been updated(?: successfully)?(?:\.|$)/i)
-    || text.match(/Saved screenshot to ([^\n]+)/i);
+    || text.match(/Saved screenshot to ([^\r\n]+)/i);
   if (!match || !match[1]) {
     return null;
   }

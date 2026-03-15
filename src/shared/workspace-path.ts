@@ -15,6 +15,10 @@ export function resolvePathAgainstWorkspace(
         ? joinRelativePath(workspacePath, pathValue.slice('/workspace/'.length))
         : pathValue;
     }
+    if (/^[A-Za-z]:[/\\]workspace[/\\]/i.test(pathValue)) {
+      const relativePart = pathValue.replace(/^[A-Za-z]:[/\\]workspace[/\\]/i, '');
+      return workspacePath ? joinRelativePath(workspacePath, relativePart) : pathValue;
+    }
     return pathValue;
   }
 

@@ -18,6 +18,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { app } from 'electron';
 import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
+import { getDefaultShell } from '../utils/shell-resolver';
 
 /**
  * MCP Server Configuration
@@ -80,7 +81,7 @@ export class MCPManager {
     // In production, resources are in app.asar.unpacked or extraResources
     let resourcesPath: string;
     
-    if (process.env.NODE_ENV === 'development') {
+    if (!app.isPackaged) {
       // Development: use downloaded node in resources/node
       // __dirname is dist-electron/main, so go up to project root
       log('[MCPManager] Development mode, using downloaded node in resources/node');
@@ -171,7 +172,7 @@ export class MCPManager {
     // This is essential for packaged apps where process.env is minimal
     if (platform === 'darwin' || platform === 'linux') {
       try {
-        const shell = process.env.SHELL || '/bin/zsh';
+        const shell = getDefaultShell();
         const shellName = path.basename(shell);
         
         log(`[MCPManager] Getting full environment from ${shellName}...`);
@@ -183,7 +184,7 @@ export class MCPManager {
         });
         
         // Parse environment variables
-        const lines = stdout.split('\n');
+        const lines = stdout.split(/\r?\n/);
         const shellEnv: Record<string, string> = {};
         
         for (const line of lines) {
@@ -563,14 +564,12 @@ export class MCPManager {
       
       // Test if npx can be executed with the current environment
       try {
-        const { exec } = await import('child_process');
+        const { execFile } = await import('child_process');
         const { promisify } = await import('util');
-        const execAsync = promisify(exec);
-        
+        const execFileAsync = promisify(execFile);
+
         log(`[MCPManager] Testing npx execution: ${command} --version`);
-        // Quote the command path to handle spaces
-        const quotedCommand = `"${command}"`;
-        const testResult = await execAsync(`${quotedCommand} --version`, { 
+        const testResult = await execFileAsync(command, ['--version'], {
           timeout: 5000,
           env: env
         });

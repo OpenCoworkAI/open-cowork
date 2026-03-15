@@ -14,13 +14,10 @@
  *   - App is closed/shutdown
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execFileSync } from 'child_process';
 import { log, logError } from '../utils/logger';
 import { pathConverter } from './wsl-bridge';
 import { isPathWithinRoot } from '../tools/path-containment';
-
-const execAsync = promisify(exec);
 
 export interface SyncSession {
   sessionId: string;
@@ -466,11 +463,13 @@ export class SandboxSync {
     command: string,
     timeout = 60000
   ): Promise<{ stdout: string; stderr: string }> {
-    // Windows CMD requires double quotes, escape inner double quotes
-    const escapedCommand = command.replace(/"/g, '\\"');
-    const fullCommand = `wsl -d ${distro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; ${escapedCommand}"`;
-
-    return execAsync(fullCommand, { timeout, encoding: 'utf-8' });
+    const bashScript = `source ~/.nvm/nvm.sh 2>/dev/null; ${command}`;
+    const result = execFileSync('wsl', ['-d', distro, '-e', 'bash', '-c', bashScript], {
+      timeout,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { stdout: result, stderr: '' };
   }
 
   /**

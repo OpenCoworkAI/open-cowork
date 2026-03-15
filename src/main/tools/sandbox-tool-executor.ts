@@ -406,7 +406,7 @@ export class SandboxToolExecutor {
 
           try {
             const content = await this.sandboxAdapter.readFile(fullPath);
-            const lines = content.split('\n');
+            const lines = content.split(/\r?\n/);
             
             lines.forEach((line, index) => {
               if (results.length < maxResults && regex.test(line)) {

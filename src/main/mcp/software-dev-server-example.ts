@@ -24,7 +24,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 // import { start } from 'repl';
 // import { log, logError, logWarn } from '../utils/logger';
@@ -33,6 +33,7 @@ import { writeMCPLog } from './mcp-logger';
 
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Get workspace directory from environment or use current directory
 const WORKSPACE_DIR = process.env.WORKSPACE_DIR || process.cwd();
@@ -200,10 +201,9 @@ ENTRYPOINT ["/entrypoint.sh"]
   
   // Build image
   try {
-    const { stdout, stderr } = await executeCommand(
-      `docker build -t ${imageName} -f "${dockerfilePath}" "${path.dirname(dockerfilePath)}"`,
-      WORKSPACE_DIR
-    );
+    const { stdout, stderr } = await execFileAsync('docker', [
+      'build', '-t', imageName, '-f', dockerfilePath, path.dirname(dockerfilePath)
+    ], { cwd: WORKSPACE_DIR, maxBuffer: 10 * 1024 * 1024, timeout: 300000 });
     writeMCPLog('[Docker] Image built successfully');
     writeMCPLog(stdout);
     if (stderr) writeMCPLog(stderr);
@@ -240,24 +240,26 @@ async function startGUIApplicationInDocker(
   
   // Start container
   const containerName = `mcp-gui-test-${Date.now()}`;
-  const dockerCommand = [
-    'docker run',
+  const dockerArgs = [
+    'run',
     '--rm',
     '-d',
-    `--name ${containerName}`,
-    `-v "${workspacePath}:/workspace"`,
-    `-w /workspace`,
-    `-e ENABLE_VNC=${enableVnc}`,
-    `-e TEST_COMMAND="${startCommand}"`,
-    enableVnc ? `-p ${vncPort}:${vncPort}` : '',
+    '--name', containerName,
+    '-v', `${workspacePath}:/workspace`,
+    '-w', '/workspace',
+    '-e', `ENABLE_VNC=${enableVnc}`,
+    '-e', `TEST_COMMAND=${startCommand}`,
+    ...(enableVnc ? ['-p', `${vncPort}:${vncPort}`] : []),
     imageName,
-  ].filter(Boolean).join(' ');
-  
+  ];
+
   writeMCPLog(`[Docker] Starting container: ${containerName}`);
-  writeMCPLog(`[Docker] Command: ${dockerCommand}`);
-  
+  writeMCPLog(`[Docker] Command: docker ${dockerArgs.join(' ')}`);
+
   try {
-    const { stdout } = await executeCommand(dockerCommand, WORKSPACE_DIR);
+    const { stdout } = await execFileAsync('docker', dockerArgs, {
+      cwd: WORKSPACE_DIR, maxBuffer: 10 * 1024 * 1024, timeout: 300000
+    });
     const containerId = stdout.trim();
     
     writeMCPLog(`[Docker] Container started: ${containerId.substring(0, 12)}`);
@@ -284,10 +286,9 @@ async function startGUIApplicationInDocker(
       let vncRunning = false;
       for (let i = 0; i < 10; i++) {
         try {
-          const { stdout: checkOutput } = await executeCommand(
-            `docker exec ${containerId} bash -c "ps aux | grep x11vnc | grep -v grep"`,
-            WORKSPACE_DIR
-          );
+          const { stdout: checkOutput } = await execFileAsync('docker', [
+            'exec', containerId, 'bash', '-c', 'ps aux | grep x11vnc | grep -v grep'
+          ]);
           if (checkOutput.trim()) {
             vncRunning = true;
             writeMCPLog('[Docker] VNC server is running');
@@ -306,10 +307,9 @@ async function startGUIApplicationInDocker(
       
       // Check port mapping
       try {
-        const { stdout: portCheck } = await executeCommand(
-          `docker port ${containerId} ${vncPort}/tcp`,
-          WORKSPACE_DIR
-        );
+        const { stdout: portCheck } = await execFileAsync('docker', [
+          'port', containerId, `${vncPort}/tcp`
+        ]);
         writeMCPLog(`[Docker] Port mapping: ${portCheck.trim()}`);
       } catch (e) {
         writeMCPLog(`[Docker] Warning: Could not verify port mapping: ${e}`);
@@ -436,9 +436,9 @@ async function stopGUIApplication(instance: GUIAppInstance, force: boolean = fal
     
     try {
       if (force) {
-        await executeCommand(`docker kill ${instance.containerId}`);
+        await execFileAsync('docker', ['kill', instance.containerId]);
       } else {
-        await executeCommand(`docker stop ${instance.containerId}`);
+        await execFileAsync('docker', ['stop', instance.containerId]);
       }
       writeMCPLog('[Docker] Container stopped successfully');
     } catch (error: any) {
@@ -456,9 +456,17 @@ async function stopGUIApplication(instance: GUIAppInstance, force: boolean = fal
   
   try {
     if (force) {
-      instance.process.kill('SIGKILL');
+      if (process.platform === 'win32') {
+        instance.process.kill(); // On Windows, kill() sends TerminateProcess
+      } else {
+        instance.process.kill('SIGKILL');
+      }
     } else {
-      instance.process.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        instance.process.kill(); // On Windows, kill() sends TerminateProcess
+      } else {
+        instance.process.kill('SIGTERM');
+      }
     }
     
     // Wait a bit for cleanup
@@ -471,8 +479,8 @@ async function stopGUIApplication(instance: GUIAppInstance, force: boolean = fal
 // Helper: Get Docker container logs
 async function getDockerContainerLogs(containerId: string, tail: number = 0): Promise<string> {
   try {
-    const tailFlag = tail > 0 ? `--tail ${tail}` : '';
-    const { stdout } = await executeCommand(`docker logs ${tailFlag} ${containerId}`);
+    const args = ['logs', ...(tail > 0 ? ['--tail', String(tail)] : []), containerId];
+    const { stdout } = await execFileAsync('docker', args);
     return stdout;
   } catch (error: any) {
     writeMCPLog(`[Docker] Error getting logs: ${error.message}`);
@@ -507,36 +515,33 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
   // 2. Check running processes
   diagnostics += `--- Running Processes ---\n`;
   try {
-    const { stdout } = await executeCommand(
-      `docker exec ${containerId} bash -c "ps aux"`,
-      WORKSPACE_DIR
-    );
+    const { stdout } = await execFileAsync('docker', [
+      'exec', containerId, 'bash', '-c', 'ps aux'
+    ]);
     diagnostics += stdout;
   } catch (error: any) {
     diagnostics += `Error checking processes: ${error.message}\n`;
   }
   diagnostics += `\n\n`;
-  
+
   // 3. Check Xvfb
   diagnostics += `--- Xvfb Status ---\n`;
   try {
-    const { stdout } = await executeCommand(
-      `docker exec ${containerId} bash -c "ps aux | grep Xvfb | grep -v grep"`,
-      WORKSPACE_DIR
-    );
+    const { stdout } = await execFileAsync('docker', [
+      'exec', containerId, 'bash', '-c', 'ps aux | grep Xvfb | grep -v grep'
+    ]);
     diagnostics += stdout || 'Xvfb not running\n';
   } catch (error: any) {
     diagnostics += `Error checking Xvfb: ${error.message}\n`;
   }
   diagnostics += `\n\n`;
-  
+
   // 4. Check VNC server
   diagnostics += `--- VNC Server Status ---\n`;
   try {
-    const { stdout } = await executeCommand(
-      `docker exec ${containerId} bash -c "ps aux | grep x11vnc | grep -v grep"`,
-      WORKSPACE_DIR
-    );
+    const { stdout } = await execFileAsync('docker', [
+      'exec', containerId, 'bash', '-c', 'ps aux | grep x11vnc | grep -v grep'
+    ]);
     diagnostics += stdout || 'VNC server not running\n';
   } catch (error: any) {
     diagnostics += `Error checking VNC: ${error.message}\n`;
@@ -546,23 +551,23 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
   // 5. Check X11 windows
   diagnostics += `--- X11 Windows ---\n`;
   try {
-    const { stdout } = await executeCommand(
-      `docker exec ${containerId} bash -c "DISPLAY=:99 xwininfo -root -tree 2>&1 || echo 'xwininfo not available or no windows'"`,
-      WORKSPACE_DIR
-    );
+    const { stdout } = await execFileAsync('docker', [
+      'exec', containerId, 'bash', '-c',
+      'DISPLAY=:99 xwininfo -root -tree 2>&1 || echo \'xwininfo not available or no windows\''
+    ]);
     diagnostics += stdout;
   } catch (error: any) {
     diagnostics += `Error checking windows: ${error.message}\n`;
   }
   diagnostics += `\n\n`;
-  
+
   // 6. Check environment variables
   diagnostics += `--- Environment Variables ---\n`;
   try {
-    const { stdout } = await executeCommand(
-      `docker exec ${containerId} bash -c "env | grep -E '(DISPLAY|ENABLE_VNC|TEST_COMMAND)'"`,
-      WORKSPACE_DIR
-    );
+    const { stdout } = await execFileAsync('docker', [
+      'exec', containerId, 'bash', '-c',
+      'env | grep -E \'(DISPLAY|ENABLE_VNC|TEST_COMMAND)\''
+    ]);
     diagnostics += stdout || 'No relevant environment variables found\n';
   } catch (error: any) {
     diagnostics += `Error checking environment: ${error.message}\n`;

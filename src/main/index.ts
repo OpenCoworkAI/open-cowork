@@ -12,7 +12,7 @@
  * Dependencies: session-manager, config-store, mcp-manager, sandbox-adapter,
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray } from 'electron';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
@@ -208,6 +208,135 @@ if (!hasSingleInstanceLock) {
   });
 }
 
+// Tray instance (kept alive to prevent GC)
+let tray: Tray | null = null;
+
+function buildMacMenu() {
+  if (process.platform !== 'darwin') return;
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Preferences…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
+        },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { role: 'resetZoom' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+        { type: 'separator' },
+        { role: 'front' },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function setupTray() {
+  if (tray) return;
+
+  const iconName = process.platform === 'darwin' ? 'tray-iconTemplate.png' : 'tray-icon.png';
+  const iconPath = join(__dirname, '../../resources', iconName);
+
+  // Gracefully skip tray if icon is missing (e.g. dev environment)
+  if (!fs.existsSync(iconPath)) {
+    log('[Tray] Icon not found at', iconPath, '— skipping tray setup');
+    return;
+  }
+
+  tray = new Tray(iconPath);
+  tray.setToolTip('Open Cowork');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show / Hide Window',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow();
+        } else if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    {
+      label: 'New Session',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('server-event', { type: 'new-session' });
+        }
+      },
+    },
+    {
+      label: 'Settings',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('server-event', { type: 'navigate', payload: 'settings' });
+        }
+      },
+    },
+    { type: 'separator' },
+    { label: 'Quit', role: 'quit' },
+  ]);
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+    } else if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 function createWindow() {
   // Theme colors (warm cream theme)
   const THEME = {
@@ -231,7 +360,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false, // Temporarily disabled to test if it resolves the console error
+      sandbox: true,
     },
   };
 
@@ -648,8 +777,57 @@ app
     });
     // pi-ai handles model routing natively — no proxy warmup needed
 
+    // macOS: application menu, dock menu, tray icon
+    buildMacMenu();
+    setupTray();
+
     // Show window after core managers are ready so first-load actions can be handled.
     createWindow();
+
+    // macOS: dock menu
+    if (process.platform === 'darwin') {
+      const dockMenu = Menu.buildFromTemplate([
+        {
+          label: 'New Session',
+          click: () => mainWindow?.webContents.send('server-event', { type: 'new-session' }),
+        },
+        {
+          label: 'Settings',
+          click: () => mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
+        },
+      ]);
+      app.dock.setMenu(dockMenu);
+    }
+
+    // macOS: send initial system theme to renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.on('did-finish-load', () => {
+        sendToRenderer({
+          type: 'native-theme.changed',
+          payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
+        });
+      });
+    }
+
+    // Listen for system theme changes
+    nativeTheme.on('updated', () => {
+      sendToRenderer({
+        type: 'native-theme.changed',
+        payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
+      });
+    });
+
+    // Auto-updater: check for updates in production
+    if (!isDev) {
+      import('electron-updater').then(({ autoUpdater }) => {
+        autoUpdater.checkForUpdatesAndNotify().catch((err: unknown) => {
+          log('[AutoUpdater] Update check failed:', err);
+        });
+      }).catch((err: unknown) => {
+        log('[AutoUpdater] Failed to load electron-updater:', err);
+      });
+    }
+
     startNavServer(() => mainWindow);
 
     const scheduledTaskStore = createScheduledTaskStore(db);
@@ -851,8 +1029,23 @@ ipcMain.handle('get-version', () => {
   return app.getVersion();
 });
 
+ipcMain.handle('system.getTheme', () => {
+  return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
+});
+
 ipcMain.handle('shell.openExternal', async (_event, url: string) => {
   if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+      logWarn('[shell.openExternal] Blocked URL with disallowed protocol:', parsed.protocol);
+      return false;
+    }
+  } catch {
+    logWarn('[shell.openExternal] Blocked invalid URL:', url);
     return false;
   }
 
@@ -889,8 +1082,14 @@ async function revealFileInFolder(filePath: string, cwd?: string): Promise<boole
     normalizedPath = resolve(baseDir, normalizedPath);
   }
 
-  if (normalizedPath.startsWith('/workspace/')) {
-    normalizedPath = resolve(baseDir, normalizedPath.slice('/workspace/'.length));
+  if (
+    normalizedPath.startsWith('/workspace/') ||
+    /^[A-Za-z]:[/\\]workspace[/\\]/i.test(normalizedPath)
+  ) {
+    const relativePart = normalizedPath.startsWith('/workspace/')
+      ? normalizedPath.slice('/workspace/'.length)
+      : normalizedPath.replace(/^[A-Za-z]:[/\\]workspace[/\\]/i, '');
+    normalizedPath = resolve(baseDir, relativePart);
   }
 
   if (!isUncPath(normalizedPath)) {

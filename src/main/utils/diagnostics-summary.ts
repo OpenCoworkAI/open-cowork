@@ -158,6 +158,30 @@ export function redactFileSystemPath(value?: string | null): string | null {
     return tail ? `<home>/${tail}` : '<home>';
   }
 
+  const winTempDirs = [process.env.TEMP, process.env.TMP]
+    .filter(Boolean)
+    .map((d) => normalizePathSeparators(path.normalize(d!)));
+  const normalizedForTmpCheck = normalizePathSeparators(path.normalize(trimmed));
+
+  for (const winTmp of winTempDirs) {
+    if (normalizedForTmpCheck.startsWith(winTmp)) {
+      const tail = getRelativeTail(normalizedForTmpCheck, winTmp);
+      return tail ? `<tmp>/${tail}` : '<tmp>';
+    }
+  }
+
+  if (/AppData[/\\]Local[/\\]Temp/i.test(trimmed)) {
+    const appDataTempIdx = normalizedForTmpCheck.search(/appdata\/local\/temp/i);
+    if (appDataTempIdx >= 0) {
+      const tmpBase = normalizedForTmpCheck.slice(
+        0,
+        appDataTempIdx + 'AppData/Local/Temp'.length
+      );
+      const tail = getRelativeTail(normalizedForTmpCheck, tmpBase);
+      return tail ? `<tmp>/${tail}` : '<tmp>';
+    }
+  }
+
   if (
     normalized.startsWith('/tmp') ||
     normalized.startsWith('/private/tmp') ||

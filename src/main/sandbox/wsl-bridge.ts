@@ -162,7 +162,7 @@ export class WSLBridge implements SandboxExecutor {
       
       // Parse available distros - filter out empty lines and garbage
       const distros = decodedOutput
-        .split('\n')
+        .split(/\r?\n/)
         .map(d => d.trim())
         .filter(d => d && d.length > 0 && /^[a-zA-Z0-9\-_.]+$/.test(d));
 
@@ -770,7 +770,7 @@ export class WSLBridge implements SandboxExecutor {
    * Process incoming data buffer for complete JSON messages
    */
   private processBuffer(): void {
-    const lines = this.buffer.split('\n');
+    const lines = this.buffer.split(/\r?\n/);
     this.buffer = lines.pop() || '';
 
     for (const line of lines) {

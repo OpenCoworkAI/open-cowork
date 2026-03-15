@@ -18,7 +18,7 @@ const cjkFilenamePattern = new RegExp(
   `(?:^|${boundaryPattern.source})([\\p{Script=Han}0-9_-]+\\.[A-Za-z0-9]{1,8})`,
   'gu',
 );
-const pathPattern = /(?:[A-Za-z]:[\\/]|\\\\|\/)[^\n]+?\.[a-z0-9]{1,8}/gi;
+const pathPattern = /(?:[A-Za-z]:[\\/]|\\\\|\/)[^\r\n]+?\.[a-z0-9]{1,8}/gi;
 
 function isBoundaryChar(ch?: string): boolean {
   if (!ch) return true;

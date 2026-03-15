@@ -39,6 +39,7 @@ import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { configStore } from '../config/config-store';
@@ -59,7 +60,7 @@ function getBundledNodePaths(): { node: string; npx: string } | null {
   const platform = process.platform;
   const arch = process.arch;
   let resourcesPath: string;
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged) {
     const projectRoot = path.join(__dirname, '..', '..');
     resourcesPath = path.join(projectRoot, 'resources', 'node', `${platform}-${arch}`);
   } else {
@@ -83,7 +84,7 @@ function resolveBundledPythonBinDir(): string | null {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
 
   const candidates: string[] = [];
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged) {
     const projectRoot = path.join(__dirname, '..', '..');
     if (platform === 'darwin') {
       candidates.push(path.join(projectRoot, 'resources', 'python', `darwin-${arch}`, 'bin'));
@@ -109,7 +110,7 @@ function resolveBundledToolsBinDir(): string | null {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
 
   const candidates: string[] = [];
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged) {
     const projectRoot = path.join(__dirname, '..', '..');
     candidates.push(path.join(projectRoot, 'resources', 'tools', `darwin-${arch}`, 'bin'));
     candidates.push(path.join(projectRoot, 'resources', 'tools', 'bin'));
@@ -145,7 +146,7 @@ async function enrichProcessPathForBuild(): Promise<void> {
   if (pathEnriched) return;
   pathEnriched = true;
 
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged) {
     log('[ClaudeAgentRunner] Dev mode — skipping PATH enrichment');
     return;
   }
@@ -158,7 +159,7 @@ async function enrichProcessPathForBuild(): Promise<void> {
   let shellPaths: string[] = [];
   if (platform === 'darwin' || platform === 'linux') {
     try {
-      const shell = process.env.SHELL || '/bin/zsh';
+      const shell = getDefaultShell();
       const output = (execFileSync(shell, ['-l', '-c', 'echo $PATH'], {
         encoding: 'utf-8',
         timeout: 5000,
@@ -453,7 +454,7 @@ ${sections.join('\n\n')}
    * paths help the model avoid ambiguity when Skills reference bare commands.
    */
   private getBundledPathHints(): string {
-    if (process.env.NODE_ENV === 'development') return '';
+    if (!app.isPackaged) return '';
 
     const hints: string[] = [];
 
@@ -898,14 +899,14 @@ ${hints.join('\n')}
             const copiedSkills = execFileSync('wsl', ['-d', distro, '-e', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
-            }).trim().split('\n').filter(Boolean);
+            }).trim().split(/\r?\n/).filter(Boolean);
 
             log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
             log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
           } catch (error) {
             logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
           }
-          
+
           if (isNewSession) {
             // Notify UI: sync complete (only for new sessions)
             this.sendToRenderer({
@@ -1031,14 +1032,14 @@ ${hints.join('\n')}
             const copiedSkills = execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath], {
               encoding: 'utf-8',
               timeout: 10000
-            }).trim().split('\n').filter(Boolean);
+            }).trim().split(/\r?\n/).filter(Boolean);
 
             log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
             log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
           } catch (error) {
             logError('[ClaudeAgentRunner] Failed to copy skills to sandbox:', error);
           }
-          
+
           if (isNewLimaSession) {
             // Notify UI: sync complete (only for new sessions)
             this.sendToRenderer({

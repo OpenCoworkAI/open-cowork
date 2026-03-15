@@ -704,8 +704,8 @@ export class SkillsManager {
     // Parse SKILL.md frontmatter
     try {
       const content = fs.readFileSync(skillMdPath, 'utf-8');
-      const nameMatch = content.match(/name:\s*["']?([^"'\n]+)["']?/);
-      const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+      const nameMatch = content.match(/name:\s*["']?([^"'\r\n]+)["']?/);
+      const descMatch = content.match(/description:\s*["']?([^"'\r\n]+)["']?/);
 
       if (!nameMatch) {
         errors.push('SKILL.md missing "name" in frontmatter');
@@ -732,8 +732,8 @@ export class SkillsManager {
 
     try {
       const content = fs.readFileSync(skillMdPath, 'utf-8');
-      const nameMatch = content.match(/name:\s*["']?([^"'\n]+)["']?/);
-      const descMatch = content.match(/description:\s*["']?([^"'\n]+)["']?/);
+      const nameMatch = content.match(/name:\s*["']?([^"'\r\n]+)["']?/);
+      const descMatch = content.match(/description:\s*["']?([^"'\r\n]+)["']?/);
 
       if (!nameMatch || !descMatch) {
         return null;

@@ -352,7 +352,7 @@ class SandboxAgent {
           // Parse output as messages
           try {
             const messages = output
-              .split('\n')
+              .split(/\r?\n/)
               .filter(Boolean)
               .map(line => {
                 try {

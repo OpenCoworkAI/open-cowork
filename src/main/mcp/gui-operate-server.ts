@@ -894,25 +894,11 @@ let cachedPythonExec: PythonExec | null | undefined;
 
 // Check if we're in dev environment
 function isDevEnvironment(): boolean {
-  // Check NODE_ENV
-  const nodeEnv = process.env.NODE_ENV;
-  if (nodeEnv === 'development') {
-    writeMCPLog(`[isDevEnvironment] Detected dev environment via NODE_ENV=${nodeEnv}`, 'Python Resolve');
-    return true;
-  }
-  // Check if script path contains dist-mcp or src/main/mcp (dev build)
-  try {
-    const scriptPath = __filename || process.argv[1] || '';
-    writeMCPLog(`[isDevEnvironment] Checking script path: ${scriptPath}`, 'Python Resolve');
-    if (scriptPath.includes('dist-mcp') || scriptPath.includes('src/main/mcp')) {
-      writeMCPLog(`[isDevEnvironment] Detected dev environment via script path`, 'Python Resolve');
-      return true;
-    }
-  } catch (error) {
-    writeMCPLog(`[isDevEnvironment] Error checking script path: ${error instanceof Error ? error.message : String(error)}`, 'Python Resolve');
-  }
-  writeMCPLog(`[isDevEnvironment] Not in dev environment (NODE_ENV=${nodeEnv || 'unset'})`, 'Python Resolve');
-  return false;
+  // MCP servers run as child processes — cannot use Electron's app.isPackaged
+  // Use VITE_DEV_SERVER_URL (set during dev) or script path heuristic
+  const isDev = !!process.env.VITE_DEV_SERVER_URL || process.env.NODE_ENV === 'development';
+  writeMCPLog(`[isDevEnvironment] isDev=${isDev}`, 'Python Resolve');
+  return isDev;
 }
 
 async function resolvePythonExec(): Promise<PythonExec | null> {
@@ -1142,7 +1128,11 @@ async function executePython(
 
     const timer = setTimeout(() => {
       try {
-        child.kill('SIGKILL');
+        if (process.platform === 'win32') {
+          child.kill(); // On Windows, kill() sends TerminateProcess
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // ignore
       }
@@ -1295,7 +1285,11 @@ async function macReadClipboardBytes(timeoutMs: number = 2000): Promise<Buffer |
 
     const timer = setTimeout(() => {
       try {
-        child.kill('SIGKILL');
+        if (process.platform === 'win32') {
+          child.kill(); // On Windows, kill() sends TerminateProcess
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // ignore
       }
@@ -1334,7 +1328,11 @@ async function macWriteClipboardBytes(bytes: Buffer, timeoutMs: number = 5000): 
 
     const timer = setTimeout(() => {
       try {
-        child.kill('SIGKILL');
+        if (process.platform === 'win32') {
+          child.kill(); // On Windows, kill() sends TerminateProcess
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // ignore
       }

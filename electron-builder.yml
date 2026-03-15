@@ -16,6 +16,7 @@ files:
   - node_modules/@anthropic-ai/claude-code/**/*
   - node_modules/@anthropic-ai/claude-agent-sdk/**/*
   - node_modules/@img/**/*
+  - node_modules/better-sqlite3/**/*
   - .claude/skills/**/*
 
 # WSL Agent resources (for Windows sandbox)
@@ -48,6 +49,8 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk/**/*
   - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
+  - node_modules/bufferutil/**/*
+  - node_modules/utf-8-validate/**/*
   - .claude/skills/**/*
 
 win:
@@ -76,11 +79,14 @@ mac:
         - arm64
         - x64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
-  identity: null
-  hardenedRuntime: false
-  gatekeeperAssess: false
+  identity: auto
+  hardenedRuntime: true
+  gatekeeperAssess: true
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  afterSign: scripts/notarize.js
+  extendInfo:
+    LSApplicationCategoryType: public.app-category.developer-tools
   extraResources:
     - from: resources/node/darwin-${arch}
       to: node
@@ -121,18 +127,23 @@ nsis:
   deleteAppDataOnUninstall: false
 
 dmg:
+  window:
+    width: 600
+    height: 440
   contents:
-    - x: 130
+    - x: 150
       y: 220
-    - x: 410
+      name: "Open Cowork"
+    - x: 450
       y: 220
       type: link
       path: /Applications
+      name: "Applications"
 
 extraMetadata:
   main: dist-electron/main/index.js
 
 publish:
   provider: github
-  owner: your-username
+  owner: OpenCoworkAI
   repo: open-cowork
