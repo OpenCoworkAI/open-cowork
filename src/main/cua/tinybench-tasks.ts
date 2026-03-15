@@ -32,9 +32,9 @@ const TASKS: Record<string, TaskTemplate> = {
       'Open the Calculator app, compute 2 + 3, and tell me the result when you see it on screen.',
     setupCommand: 'open -a Calculator',
     teardownCommand: 'osascript -e \'tell application "Calculator" to quit\'',
-    verificationMode: 'text_assert',
+    verificationMode: 'llm_judge',
     expected: '5',
-    evaluationGoal: 'Calculator displays 5.',
+    evaluationGoal: 'Calculator displays 5 as the result of 2+3.',
     allowedApps: ['Calculator'],
   },
   'calc-chain-12-34': {
@@ -43,9 +43,9 @@ const TASKS: Record<string, TaskTemplate> = {
       'Use Calculator to compute 12 + 34, then tell me the result when the UI shows it.',
     setupCommand: 'open -a Calculator',
     teardownCommand: 'osascript -e \'tell application "Calculator" to quit\'',
-    verificationMode: 'text_assert',
+    verificationMode: 'llm_judge',
     expected: '46',
-    evaluationGoal: 'Calculator displays 46.',
+    evaluationGoal: 'Calculator displays 46 as the result of 12+34.',
     allowedApps: ['Calculator'],
   },
   'textedit-hello': {

@@ -30,6 +30,7 @@ export interface RunResult {
   toolCalls: ToolCallRecord[];
   error?: string;
   artifactDir: string;
+  lastScreenshotBase64?: string;
 }
 
 export interface ToolCallRecord {
