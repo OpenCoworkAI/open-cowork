@@ -35,9 +35,31 @@ import {
 } from '../claude/pi-model-resolution';
 import type { RunResult, TaskSpec, ToolCallRecord } from './types';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 
 const execAsync = promisify(exec);
 const IS_WINDOWS = os.platform() === 'win32';
+
+// ---------------------------------------------------------------------------
+// Screenshot compression — resize to logical resolution + JPEG to keep
+// API payloads under relay size limits (~4.5MB PNG → ~200KB JPEG)
+// ---------------------------------------------------------------------------
+const MAX_SCREENSHOT_WIDTH = 1512;
+const JPEG_QUALITY = 80;
+
+async function compressScreenshot(
+  base64Png: string,
+): Promise<{ data: string; mimeType: string }> {
+  const inputBuffer = Buffer.from(base64Png, 'base64');
+  const jpegBuffer = await sharp(inputBuffer)
+    .resize({ width: MAX_SCREENSHOT_WIDTH, withoutEnlargement: true })
+    .jpeg({ quality: JPEG_QUALITY })
+    .toBuffer();
+  return {
+    data: jpegBuffer.toString('base64'),
+    mimeType: 'image/jpeg',
+  };
+}
 
 // ---------------------------------------------------------------------------
 // MCP Sampling: message format conversion
@@ -297,7 +319,8 @@ export function detectStuck(recentCalls: RecentCall[]): 'ok' | 'warn' | 'error' 
 function bridgeToolsForPiSdk(
   client: Client,
   mcpTools: McpToolInfo[],
-  allowedApps?: string[]
+  allowedApps?: string[],
+  screenshotCapture?: { lastBase64: string | undefined }
 ): ToolDefinition[] {
   const recentCalls: RecentCall[] = [];
 
@@ -388,18 +411,27 @@ function bridgeToolsForPiSdk(
           isError?: boolean;
         };
 
-        // Build response — properly pass through image content as base64 data URLs
-        const contentParts: Array<{ type: 'text'; text: string }> = [];
+        // Build response — pass through ImageContent natively so Pi SDK's
+        // Responses API adapter can send it as input_image (not bloated text)
+        const contentParts: Array<
+          { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+        > = [];
         if (result?.content) {
           for (const part of result.content) {
             if (part.type === 'text') {
               contentParts.push({ type: 'text' as const, text: part.text || '' });
             } else if (part.type === 'image' && part.data) {
-              // Convert MCP image block to inline base64 data URL that Pi SDK can render
-              const mimeType = part.mimeType || 'image/png';
+              // Save raw base64 for judge evaluation
+              if (screenshotCapture) {
+                screenshotCapture.lastBase64 = part.data;
+              }
+              // Compress: 3024×1964 PNG (~4.7MB) → 1512×982 JPEG (~200KB)
+              // to stay under MSRA relay request size limits
+              const compressed = await compressScreenshot(part.data);
               contentParts.push({
-                type: 'text' as const,
-                text: `![screenshot](data:${mimeType};base64,${part.data})`,
+                type: 'image' as const,
+                data: compressed.data,
+                mimeType: compressed.mimeType,
               });
             } else {
               contentParts.push({ type: 'text' as const, text: JSON.stringify(part) });
@@ -538,6 +570,7 @@ export async function runTask(
   let tokens = { input: 0, output: 0, total: 0 };
   let finalText = '';
   let steps = 0;
+  const screenshotCapture: { lastBase64: string | undefined } = { lastBase64: undefined };
 
   // Build env overrides so the MCP server's vision API uses the correct model/key/base
   const mcpEnv: Record<string, string> = {};
@@ -560,7 +593,7 @@ export async function runTask(
     await focusAllowedApp(spec.allowedApps);
 
     // Bridge MCP tools for Pi SDK
-    const customTools = bridgeToolsForPiSdk(client, tools, spec.allowedApps);
+    const customTools = bridgeToolsForPiSdk(client, tools, spec.allowedApps, screenshotCapture);
     console.log(
       `[TinyBench] ${customTools.length} GUI tools bridged:`,
       customTools.map((t) => t.name).join(', ')
@@ -683,6 +716,7 @@ export async function runTask(
       finalText,
       toolCalls,
       artifactDir: spec.outputDir,
+      lastScreenshotBase64: screenshotCapture.lastBase64,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -696,6 +730,7 @@ export async function runTask(
       toolCalls,
       error: message,
       artifactDir: spec.outputDir,
+      lastScreenshotBase64: screenshotCapture.lastBase64,
     };
   } finally {
     await runTeardown(spec.teardownCommand);
