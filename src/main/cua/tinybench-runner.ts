@@ -112,7 +112,7 @@ const GUI_SYSTEM_PROMPT = `You are a GUI automation agent controlling a real ${I
 - Do NOT take extra screenshots after you already see the answer.
 - Be concise — state the result in one sentence.`;
 
-function resolveGuiOperateServerPath(): string {
+async function resolveGuiOperateServerPath(): Promise<string> {
   const explicit = process.env.GUI_OPERATE_SERVER_PATH?.trim();
   const candidates = [
     explicit,
@@ -122,8 +122,7 @@ function resolveGuiOperateServerPath(): string {
 
   for (const candidate of candidates) {
     try {
-      // Use sync check — only runs once at startup
-      const stat = require('node:fs').statSync(candidate);
+      const stat = await fs.stat(candidate);
       if (stat.isFile()) return candidate;
     } catch {
       // not found, try next
@@ -183,7 +182,7 @@ async function connectGuiOperate(
   transport: StdioClientTransport;
   tools: McpToolInfo[];
 }> {
-  const serverPath = resolveGuiOperateServerPath();
+  const serverPath = await resolveGuiOperateServerPath();
   const env: Record<string, string> = Object.fromEntries(
     Object.entries(process.env).filter(
       (entry): entry is [string, string] => typeof entry[1] === 'string'
