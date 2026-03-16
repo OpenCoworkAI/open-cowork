@@ -34,6 +34,12 @@ export function toUserFacingErrorText(errorText: string): string {
   if (/\b429\b/.test(errorText) || lower.includes('rate limit')) {
     return `请求被限流（429），当前模型或 API 端点的调用频率已达上限，请稍后重试。\n原始错误: ${errorText}`;
   }
+  if (/\b(5\d{2})\b/.test(errorText) || lower.includes('server error') || lower.includes('internal error') || lower.includes('service unavailable') || lower.includes('overloaded')) {
+    return `上游服务异常，可能是模型服务过载或临时故障，SDK 将自动重试。\n原始错误: ${errorText}`;
+  }
+  if (lower.includes('terminated') || lower.includes('connection') || lower.includes('fetch failed') || lower.includes('other side closed') || lower.includes('reset before headers') || lower.includes('upstream connect')) {
+    return `网络连接中断（${errorText}），可能是代理/网关不稳定，SDK 将自动重试。`;
+  }
   return errorText;
 }
 

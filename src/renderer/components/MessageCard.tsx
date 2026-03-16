@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState, isValidElement, cloneElement, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
+import { PanelErrorBoundary } from './PanelErrorBoundary';
 import {
   splitTextByFileMentions,
   splitChildrenByFileMentions,
@@ -13,6 +14,7 @@ import {
 } from '../utils/markdown-local-link';
 import { normalizeLatexDelimiters } from '../utils/latex-delimiters';
 import { shouldUseScreenshotSummary } from '../utils/tool-result-summary';
+import hljs from 'highlight.js';
 import type {
   Message,
   ContentBlock,
@@ -287,19 +289,27 @@ const ContentBlockView = memo(function ContentBlockView({
       }
 
       return (
-        <Suspense
+        <PanelErrorBoundary
+          name="MessageMarkdown"
           fallback={
             <div className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words">
               {normalizedText}
             </div>
           }
         >
-          <MessageMarkdown
-            normalizedText={normalizedText}
-            isStreaming={isStreaming}
-            components={{
-              a({ children, href }: { children?: React.ReactNode; href?: string }) {
-                const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);
+          <Suspense
+            fallback={
+              <div className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words">
+                {normalizedText}
+              </div>
+            }
+          >
+            <MessageMarkdown
+              normalizedText={normalizedText}
+              isStreaming={isStreaming}
+              components={{
+                a({ children, href }: { children?: React.ReactNode; href?: string }) {
+                  const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);
                 if (localFilePath) {
                   return (
                     <button
@@ -342,9 +352,11 @@ const ContentBlockView = memo(function ContentBlockView({
                   );
                 }
 
+                const safeHref =
+                  href && /^(?:https?:|mailto:|#|file:)/i.test(href) ? href : undefined;
                 return (
                   <a
-                    href={href}
+                    href={safeHref}
                     rel="noreferrer"
                     onClick={(event) => {
                       event.preventDefault();
@@ -376,13 +388,13 @@ const ContentBlockView = memo(function ContentBlockView({
                 className?: string;
                 children?: React.ReactNode;
               }) {
-                const match = /language-(\w+)/.exec(className || '');
+                const match = /language-([\w+#.-]+)/.exec(className || '');
                 const isInline = !match;
 
                 if (isInline) {
                   const raw = String(children);
                   const parts = splitTextByFileMentions(raw);
-                  if (parts.length === 1 && parts[0].type === 'file') {
+                  if (parts.length === 1 && parts[0]?.type === 'file') {
                     return renderFileButton(parts[0].value);
                   }
                   return (
@@ -461,6 +473,7 @@ const ContentBlockView = memo(function ContentBlockView({
             }}
           />
         </Suspense>
+        </PanelErrorBoundary>
       );
     }
 
@@ -469,6 +482,9 @@ const ContentBlockView = memo(function ContentBlockView({
         type: 'image';
         source: { type: 'base64'; media_type: string; data: string };
       };
+      if (!imageBlock.source?.media_type || !imageBlock.source?.data) {
+        return null;
+      }
       const { source } = imageBlock;
       const imageSrc = `data:${source.media_type};base64,${source.data}`;
 
@@ -583,18 +599,18 @@ const ToolUseBlock = memo(function ToolUseBlock({
   // Result summary
   const getSummary = (): string => {
     if (!toolResult) return '';
+    const content = typeof toolResult.content === 'string' ? toolResult.content : '';
     if (toolResult.isError) {
-      const firstLine = toolResult.content.split(/\r?\n/)[0];
+      const firstLine = content.split(/\r?\n/)[0];
       return firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
     }
     const toolName = block.name;
-    if (shouldUseScreenshotSummary(toolName, toolResult.content)) return 'Screenshot captured';
-    if (toolResult.content.length < 60) return toolResult.content.trim();
-    const lines = toolResult.content.trim().split(/\r?\n/);
+    if (shouldUseScreenshotSummary(toolName, content)) return 'Screenshot captured';
+    if (content.length < 60) return content.trim();
+    const lines = content.trim().split(/\r?\n/);
     return `${lines.length} lines`;
   };
 
-  const hasImages = toolResult?.images && toolResult.images.length > 0;
   const summary = getSummary();
 
   // Duration from trace steps
@@ -698,17 +714,19 @@ const ToolUseBlock = memo(function ToolUseBlock({
               </pre>
 
               {/* Images */}
-              {hasImages &&
-                toolResult.images!.map((image, index) => (
-                  <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
-                    <img
-                      src={`data:${image.mimeType};base64,${image.data}`}
-                      alt={`Output ${index + 1}`}
-                      className="w-full h-auto"
-                      style={{ maxHeight: '400px', objectFit: 'contain' }}
-                    />
-                  </div>
-                ))}
+              {Array.isArray(toolResult.images) &&
+                toolResult.images.map((image, index) =>
+                  image?.mimeType && image?.data ? (
+                    <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
+                      <img
+                        src={`data:${image.mimeType};base64,${image.data}`}
+                        alt={`Output ${index + 1}`}
+                        className="w-full h-auto"
+                        style={{ maxHeight: '400px', objectFit: 'contain' }}
+                      />
+                    </div>
+                  ) : null
+                )}
             </div>
           )}
         </div>
@@ -719,6 +737,7 @@ const ToolUseBlock = memo(function ToolUseBlock({
 
 /** Shorten a file path to just filename or last 2 segments */
 function shortenPath(p: string): string {
+  if (typeof p !== 'string') return String(p);
   const segments = p.replace(/\\/g, '/').split('/').filter(Boolean);
   if (segments.length <= 2) return segments.join('/');
   return segments.slice(-2).join('/');
@@ -735,30 +754,30 @@ function getToolLabel(name: string, input: any): string {
 
   const nameLower = name.toLowerCase();
   if (nameLower === 'read' || nameLower === 'read_file') {
-    const p = inp.file_path || inp.path || '';
+    const p = String(inp.file_path || inp.path || '');
     return p ? `Read ${shortenPath(p)}` : 'Read file';
   }
   if (nameLower === 'write' || nameLower === 'write_file') {
-    const p = inp.file_path || inp.path || '';
+    const p = String(inp.file_path || inp.path || '');
     return p ? `Write ${shortenPath(p)}` : 'Write file';
   }
   if (nameLower === 'edit' || nameLower === 'edit_file') {
-    const p = inp.file_path || inp.path || '';
+    const p = String(inp.file_path || inp.path || '');
     return p ? `Edit ${shortenPath(p)}` : 'Edit file';
   }
   if (nameLower === 'bash' || nameLower === 'execute_command') {
-    const cmd = inp.command || inp.cmd || '';
+    const cmd = String(inp.command || inp.cmd || '');
     if (cmd) {
       const short = cmd.length > 60 ? cmd.substring(0, 57) + '...' : cmd;
       return `$ ${short}`;
     }
     return 'Run command';
   }
-  if (nameLower === 'glob') return inp.pattern ? `Glob ${inp.pattern}` : 'Glob';
-  if (nameLower === 'grep') return inp.pattern ? `Grep "${inp.pattern}"` : 'Grep';
-  if (nameLower === 'websearch') return inp.query ? `Search "${inp.query}"` : 'Web search';
+  if (nameLower === 'glob') return inp.pattern ? `Glob ${String(inp.pattern)}` : 'Glob';
+  if (nameLower === 'grep') return inp.pattern ? `Grep "${String(inp.pattern)}"` : 'Grep';
+  if (nameLower === 'websearch') return inp.query ? `Search "${String(inp.query)}"` : 'Web search';
   if (nameLower === 'webfetch') {
-    const url = inp.url || '';
+    const url = String(inp.url || '');
     return url ? `Fetch ${url.length > 50 ? url.substring(0, 47) + '...' : url}` : 'Fetch URL';
   }
   return name;
@@ -987,13 +1006,14 @@ const ToolResultBlock = memo(function ToolResultBlock({
     : toolName || 'tool';
 
   const getSummary = (): string => {
+    const content = typeof block.content === 'string' ? block.content : '';
     if (block.isError) {
-      const firstLine = block.content.split(/\r?\n/)[0];
+      const firstLine = content.split(/\r?\n/)[0];
       return firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
     }
-    if (shouldUseScreenshotSummary(toolName, block.content)) return 'Screenshot captured';
-    if (block.content.length < 60) return block.content.trim();
-    const lines = block.content.trim().split(/\r?\n/);
+    if (shouldUseScreenshotSummary(toolName, content)) return 'Screenshot captured';
+    if (content.length < 60) return content.trim();
+    const lines = content.trim().split(/\r?\n/);
     return `${lines.length} lines`;
   };
 
@@ -1022,7 +1042,7 @@ const ToolResultBlock = memo(function ToolResultBlock({
         <span className="text-[11px] text-text-muted truncate flex-1">{getSummary()}</span>
         {hasImages && (
           <span className="text-[11px] text-text-muted flex-shrink-0">
-            +{block.images!.length} img
+            +{block.images?.length ?? 0} img
           </span>
         )}
         {expanded ? (
@@ -1099,13 +1119,18 @@ const ThinkingBlock = memo(function ThinkingBlock({
       {expanded && (
         <div className="border-t border-border/50 px-4 py-3 animate-fade-in">
           <div className="text-sm text-text-secondary leading-relaxed prose-chat max-w-none">
-            <Suspense
-              fallback={
-                <div className="whitespace-pre-wrap">{text}</div>
-              }
+            <PanelErrorBoundary
+              name="ThinkingMarkdown"
+              fallback={<div className="whitespace-pre-wrap">{text}</div>}
             >
-              <MessageMarkdown normalizedText={text} />
-            </Suspense>
+              <Suspense
+                fallback={
+                  <div className="whitespace-pre-wrap">{text}</div>
+                }
+              >
+                <MessageMarkdown normalizedText={text} />
+              </Suspense>
+            </PanelErrorBoundary>
           </div>
         </div>
       )}
@@ -1122,10 +1147,26 @@ const CodeBlock = memo(function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
 
+  const highlightedHtml = useMemo(() => {
+    try {
+      const lang = language.toLowerCase();
+      if (hljs.getLanguage(lang)) {
+        return hljs.highlight(children, { language: lang }).value;
+      }
+      return hljs.highlightAuto(children).value;
+    } catch {
+      return null;
+    }
+  }, [children, language]);
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard write can fail if focus is lost or permission denied
+    }
   };
 
   return (
@@ -1144,7 +1185,12 @@ const CodeBlock = memo(function CodeBlock({
         </button>
       </div>
       <pre className="code-block">
-        <code>{children}</code>
+        {highlightedHtml ? (
+          // highlight.js auto-escapes input before injecting <span> tokens
+          <code dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        ) : (
+          <code>{children}</code>
+        )}
       </pre>
     </div>
   );
