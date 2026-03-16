@@ -269,6 +269,14 @@
     list-style-position: outside;
   }
 
+  .prose-chat ul ul {
+    list-style: circle;
+  }
+
+  .prose-chat ul ul ul {
+    list-style: square;
+  }
+
   .prose-chat ol {
     list-style: decimal;
     list-style-position: outside;
@@ -302,6 +310,10 @@
     margin-bottom: 0.5rem;
   }
 
+  .prose-chat > :first-child {
+    margin-top: 0;
+  }
+
   .prose-chat h1 { font-size: 1.5rem; }
   .prose-chat h2 { font-size: 1.25rem; }
   .prose-chat h3 { font-size: 1.125rem; }
@@ -314,7 +326,13 @@
   }
 
   .prose-chat .katex {
-    font-size: 1em;
+    font-size: 1.1em;
+  }
+
+  /* Prevent long inline math from overflowing the container */
+  .prose-chat .katex-html {
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .prose-chat a {
@@ -322,8 +340,7 @@
     text-decoration-line: underline;
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.22em;
-    text-decoration-color: currentColor;
-    text-decoration-skip-ink: none;
+    text-decoration-skip-ink: auto;
   }
 
   /* Some model outputs wrap citation links in ~...~; keep links readable */
@@ -338,7 +355,7 @@
   .prose-chat blockquote {
     margin: 0.75rem 0;
     padding-left: 1rem;
-    border-left: 2px solid var(--color-border);
+    border-left: 3px solid theme('colors.accent.DEFAULT / 40%');
     color: theme('colors.text.secondary');
   }
 
@@ -363,6 +380,12 @@
   /* Code block */
   .code-block {
     @apply bg-surface-muted rounded-xl p-4 font-mono text-sm overflow-x-auto border border-border-subtle;
+  }
+
+  /* Override hljs theme background to use our code-block background */
+  .code-block .hljs,
+  .code-block code {
+    background: transparent;
   }
 
   /* Tool name wrapping - force break on any character */

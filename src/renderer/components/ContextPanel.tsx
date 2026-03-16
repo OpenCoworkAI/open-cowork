@@ -58,7 +58,13 @@ export function ContextPanel() {
 
   const handleCopyPath = async (path: string) => {
     try {
-      await navigator.clipboard.writeText(path);
+      // Escape spaces for shell usage so the path can be pasted into terminal
+      let shellPath = path;
+      if (path.includes(' ')) {
+        const isWindows = window.electronAPI?.platform === 'win32';
+        shellPath = isWindows ? `"${path}"` : path.replace(/ /g, '\\ ');
+      }
+      await navigator.clipboard.writeText(shellPath);
       setCopiedPath(true);
       setTimeout(() => setCopiedPath(false), 2000);
     } catch (err) {
@@ -388,7 +394,11 @@ export function ContextPanel() {
           </p>
           <div className="flex items-center gap-1.5 min-w-0">
             <FolderOpen className="w-3.5 h-3.5 text-text-muted shrink-0" />
-            <span className="text-xs text-text-primary truncate flex-1" title={currentWorkingDir || ''}>
+            <span
+              className={`text-xs truncate flex-1 ${currentWorkingDir ? 'text-text-primary cursor-pointer hover:text-accent-primary transition-colors' : 'text-text-muted'}`}
+              title={currentWorkingDir ? t('context.openInFileManager') : ''}
+              onClick={() => currentWorkingDir && window.electronAPI?.showItemInFolder(currentWorkingDir)}
+            >
               {currentWorkingDir ? formatPath(currentWorkingDir) : t('context.noFolderSelected')}
             </span>
             {currentWorkingDir && (

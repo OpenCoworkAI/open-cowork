@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { isUncPath, isWindowsDrivePath } from './local-file-path';
 
 export function resolvePathAgainstWorkspace(
@@ -29,10 +28,31 @@ export function resolvePathAgainstWorkspace(
   return joinRelativePath(workspacePath, pathValue);
 }
 
+/**
+ * Join base + relative path without Node.js `path` module (browser-safe).
+ * Handles `.` and `..` segment normalization.
+ */
 function joinRelativePath(basePath: string, relativePath: string): string {
-  if (isWindowsDrivePath(basePath) || isUncPath(basePath)) {
-    return path.win32.resolve(basePath, relativePath);
+  const isWin = isWindowsDrivePath(basePath) || isUncPath(basePath);
+  const sep = isWin ? '\\' : '/';
+
+  const base = basePath.replace(/[/\\]+$/, '');
+  const rel = relativePath.replace(/^[/\\]+/, '');
+  const joined = `${base}${sep}${rel}`;
+
+  // Normalize separators then resolve `.` / `..` segments
+  const normalized = joined.replace(/[/\\]+/g, sep);
+  const parts = normalized.split(sep);
+  const resolved: string[] = [];
+
+  for (const part of parts) {
+    if (part === '.') continue;
+    if (part === '..' && resolved.length > 1) {
+      resolved.pop();
+    } else {
+      resolved.push(part);
+    }
   }
 
-  return path.posix.resolve(basePath.replace(/\\/g, '/'), relativePath.replace(/\\/g, '/'));
+  return resolved.join(sep);
 }

@@ -745,6 +745,37 @@ ${hints.join('\n')}
   }
 
   /**
+   * Wrap the bash tool to inject a default timeout when the model omits one.
+   * The pi-coding-agent SDK's bash tool has no default timeout, which means
+   * commands can run indefinitely if the model doesn't specify a timeout.
+   */
+  private static wrapBashToolWithDefaultTimeout(tools: ToolDefinition[]): ToolDefinition[] {
+    const DEFAULT_BASH_TIMEOUT_SECONDS = 120;
+
+    return tools.map((tool) => {
+      if (tool.name !== 'bash') return tool;
+
+      const originalExecute = tool.execute;
+      return {
+        ...tool,
+        execute: async (
+          toolCallId: string,
+          params: { command: string; timeout?: number },
+          signal: AbortSignal | undefined,
+          onUpdate: ((update: unknown) => void) | undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ctx: any
+        ) => {
+          const effectiveParams = params.timeout != null
+            ? params
+            : { ...params, timeout: DEFAULT_BASH_TIMEOUT_SECONDS };
+          return originalExecute(toolCallId, effectiveParams, signal, onUpdate, ctx);
+        },
+      } as ToolDefinition;
+    });
+  }
+
+  /**
    * Resolve current model string from runtime config.
    */
   private getCurrentModelString(preferredModel?: string): string {
@@ -1466,11 +1497,14 @@ Tool routing:
 
       const codingTools = createCodingTools(effectiveCwd);
 
+      // Inject a default 120s timeout for bash commands when the model omits one
+      const withTimeout = ClaudeAgentRunner.wrapBashToolWithDefaultTimeout(codingTools as ToolDefinition[]);
+
       // Wrap the bash tool to intercept sudo commands and request passwords
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(codingTools as ToolDefinition[], session.id);
+      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id);
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[ClaudeAgentRunner] Session reuse check: cached=${!!cachedSession}`);

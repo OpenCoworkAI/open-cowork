@@ -11,7 +11,7 @@ describe('MessageCard citation link normalization', () => {
   it('normalizes citation-style ~[title](url)~ to regular markdown links before render', () => {
     expect(messageCardContent).toContain('function normalizeCitationMarkdownLinks');
     expect(messageCardContent).toContain("return markdown.replace(/~\\[(.+?)\\]\\(([^)\\s]+)\\)~/g, '[$1]($2)');");
-    expect(messageCardContent).toContain('normalizeCitationMarkdownLinks(normalizeLocalFileMarkdownLinks(text))');
+    expect(messageCardContent).toContain('normalizeLocalFileMarkdownLinks(normalizeLatexDelimiters(text))');
   });
 
   it('disables remark-gfm single-tilde strikethrough parsing for safety', () => {

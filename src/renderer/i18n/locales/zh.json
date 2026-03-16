@@ -646,6 +646,7 @@
     "changeDir": "更改目录",
     "changeDirFailed": "更改目录失败",
     "copyPath": "复制路径",
+    "openInFileManager": "在文件管理器中打开",
     "contextUsage": "上下文用量",
     "contextUsageLabel": "{{used}} / {{total}}"
   },

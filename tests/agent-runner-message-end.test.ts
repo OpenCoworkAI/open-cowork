@@ -76,4 +76,42 @@ describe('toUserFacingErrorText', () => {
       '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。',
     );
   });
+
+  it('maps 5xx server errors to upstream service hint', () => {
+    const result = toUserFacingErrorText('HTTP 502: Bad Gateway');
+    expect(result).toContain('上游服务异常');
+    expect(result).toContain('原始错误:');
+    expect(result).toContain('502');
+  });
+
+  it('maps "server error" to upstream service hint', () => {
+    const result = toUserFacingErrorText('internal server error');
+    expect(result).toContain('上游服务异常');
+  });
+
+  it('maps "overloaded" to upstream service hint', () => {
+    const result = toUserFacingErrorText('overloaded_error');
+    expect(result).toContain('上游服务异常');
+  });
+
+  it('maps "terminated" to network connection hint', () => {
+    const result = toUserFacingErrorText('terminated');
+    expect(result).toContain('网络连接中断');
+    expect(result).toContain('terminated');
+  });
+
+  it('maps "connection error" to network connection hint', () => {
+    const result = toUserFacingErrorText('connection error: ECONNRESET');
+    expect(result).toContain('网络连接中断');
+  });
+
+  it('maps "fetch failed" to network connection hint', () => {
+    const result = toUserFacingErrorText('fetch failed');
+    expect(result).toContain('网络连接中断');
+  });
+
+  it('maps "other side closed" to network connection hint', () => {
+    const result = toUserFacingErrorText('other side closed');
+    expect(result).toContain('网络连接中断');
+  });
 });

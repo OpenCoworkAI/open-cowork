@@ -2,6 +2,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
+import 'highlight.js/styles/github-dark-dimmed.min.css';
 import './i18n/config'; // Initialize i18n
 import {
   normalizeRendererLogValue,

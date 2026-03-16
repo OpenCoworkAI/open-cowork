@@ -646,6 +646,7 @@
     "changeDir": "Change directory",
     "changeDirFailed": "Failed to change directory",
     "copyPath": "Copy path",
+    "openInFileManager": "Open in file manager",
     "contextUsage": "Context Usage",
     "contextUsageLabel": "{{used}} / {{total}}"
   },
