@@ -12,10 +12,11 @@ import { LimaBridge } from './lima-bridge';
 import { configStore } from '../config/config-store';
 import type { WSLStatus, LimaStatus } from './types';
 
-export type SandboxSetupPhase = 
+export type SandboxSetupPhase =
   | 'checking'      // Checking WSL/Lima availability
+  | 'diagnosing'    // Diagnosing platform-specific issues (e.g. Ubuntu 24.04)
   | 'creating'      // Creating Lima instance (macOS only)
-  | 'starting'      // Starting Lima instance (macOS only)  
+  | 'starting'      // Starting Lima instance (macOS only)
   | 'installing_node'   // Installing Node.js
   | 'installing_python' // Installing Python
   | 'installing_pip'    // Installing pip
@@ -122,13 +123,25 @@ export class SandboxBootstrap {
    * Start sandbox bootstrap (idempotent - returns existing promise if running)
    */
   async bootstrap(): Promise<SandboxBootstrapResult> {
+    if (this.result) {
+      return this.result;
+    }
     if (this.setupPromise) {
       return this.setupPromise;
     }
 
     this.setupPromise = this._bootstrap();
-    this.result = await this.setupPromise;
-    return this.result;
+    try {
+      this.result = await this.setupPromise;
+      return this.result;
+    } catch (error) {
+      // Clear promise so next call can retry
+      this.setupPromise = null;
+      // Return native fallback instead of throwing
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.result = { mode: 'native', error: errorMsg };
+      return this.result;
+    }
   }
 
   private async _bootstrap(): Promise<SandboxBootstrapResult> {
@@ -203,6 +216,42 @@ export class SandboxBootstrap {
     }
 
     log('[SandboxBootstrap] WSL detected:', wslStatus.distro);
+
+    // Diagnose Ubuntu 24.04 known issues
+    if (wslStatus.ubuntuVersion === '24.04') {
+      log('[SandboxBootstrap] Ubuntu 24.04 detected — running diagnosis');
+      this.reportProgress({
+        phase: 'diagnosing',
+        message: 'Diagnosing Ubuntu 24.04 compatibility...',
+        detail: 'Checking AppArmor and namespace restrictions',
+        progress: 15,
+      });
+
+      if (wslStatus.diagnosisIssues && wslStatus.diagnosisIssues.length > 0) {
+        const issues = wslStatus.diagnosisIssues;
+        log('[SandboxBootstrap] Diagnosis issues found:', issues);
+
+        if (issues.includes('apparmor_not_enabled')) {
+          this.reportProgress({
+            phase: 'diagnosing',
+            message: 'Ubuntu 24.04: AppArmor not active in WSL kernel',
+            detail: 'Sandbox will work, but with reduced security. See Settings for fix instructions.',
+            progress: 18,
+          });
+        }
+
+        if (issues.includes('apparmor_userns_restricted')) {
+          this.reportProgress({
+            phase: 'diagnosing',
+            message: 'Ubuntu 24.04: User namespace restrictions detected',
+            detail: 'This may prevent sandbox process isolation. See Settings for fix instructions.',
+            progress: 18,
+          });
+        }
+      } else {
+        log('[SandboxBootstrap] Ubuntu 24.04 — no issues detected, proceeding');
+      }
+    }
 
     // Phase 2: Install Node.js if needed
     if (!wslStatus.nodeAvailable) {

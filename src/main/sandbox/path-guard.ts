@@ -7,8 +7,10 @@
  * - Only allows access to /sandbox/workspace/{sessionId}/
  */
 
+import * as pathModule from 'path';
 import { log, logError } from '../utils/logger';
 import { SandboxSync } from './sandbox-sync';
+import { LimaSync } from './lima-sync';
 import { isPathWithinRoot } from '../tools/path-containment';
 
 export interface ValidationResult {
@@ -75,10 +77,17 @@ const DANGEROUS_COMMAND_PATTERNS = [
 
 export class PathGuard {
   /**
+   * Get session from either WSL or Lima session store
+   */
+  private static getAnySession(sessionId: string) {
+    return SandboxSync.getSession(sessionId) || LimaSync.getSession(sessionId);
+  }
+
+  /**
    * Check if a path is allowed for the given session
    */
   static isPathAllowed(path: string, sessionId: string): ValidationResult {
-    const session = SandboxSync.getSession(sessionId);
+    const session = this.getAnySession(sessionId);
 
     if (!session) {
       return {
@@ -88,7 +97,7 @@ export class PathGuard {
     }
 
     // Normalize path
-    const normalizedPath = path.replace(/\\/g, '/');
+    const normalizedPath = pathModule.posix.normalize(path.replace(/\\/g, '/'));
 
     // Check if path is within sandbox
     if (isPathWithinRoot(normalizedPath, session.sandboxPath)) {
@@ -126,7 +135,7 @@ export class PathGuard {
    * Validate a Bash command for security issues
    */
   static validateCommand(command: string, sessionId: string): ValidationResult {
-    const session = SandboxSync.getSession(sessionId);
+    const session = this.getAnySession(sessionId);
 
     if (!session) {
       return {
@@ -179,8 +188,13 @@ export class PathGuard {
     sessionId: string,
     windowsWorkspacePath: string
   ): string {
-    const session = SandboxSync.getSession(sessionId);
+    const session = this.getAnySession(sessionId);
     if (!session) return command;
+
+    // Lima mode: paths are directly mounted, no conversion needed
+    if (!('windowsPath' in session)) {
+      return command;
+    }
 
     // Normalize Windows workspace path for comparison
     const normalizedWorkspace = windowsWorkspacePath.replace(/\\/g, '/').toLowerCase();
@@ -194,7 +208,7 @@ export class PathGuard {
     const windowsPathPattern = /([A-Za-z]:[\\\/][^\s;|&"'<>]*)/g;
 
     const convertWindowsPath = (originalPath: string, originalMatch: string): string => {
-      const originalFullPath = originalPath.replace(/\\/g, '/');
+      const originalFullPath = pathModule.posix.normalize(originalPath.replace(/\\/g, '/'));
       const normalizedFullPath = originalFullPath.toLowerCase();
 
       // Check if this path is within the workspace
@@ -231,7 +245,7 @@ export class PathGuard {
    * Get the sandbox working directory for a session
    */
   static getSandboxCwd(sessionId: string): string | null {
-    const session = SandboxSync.getSession(sessionId);
+    const session = this.getAnySession(sessionId);
     return session?.sandboxPath || null;
   }
 
@@ -239,7 +253,7 @@ export class PathGuard {
    * Check if sandbox mode is active for a session
    */
   static isSandboxActive(sessionId: string): boolean {
-    const session = SandboxSync.getSession(sessionId);
+    const session = this.getAnySession(sessionId);
     return session?.initialized === true;
   }
 }

@@ -109,6 +109,8 @@ class SandboxAgent {
       /wget.*\|\s*(?:ba)?sh/i,
       /sudo\s+rm/i,
       /chmod\s+777\s+\//i,
+      /\bchown\s+.*\s+\//i,
+      /\bLD_PRELOAD\s*=/i,
     ];
 
     for (const pattern of dangerousPatterns) {

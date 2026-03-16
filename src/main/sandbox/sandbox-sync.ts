@@ -14,7 +14,9 @@
  *   - App is closed/shutdown
  */
 
-import { execFileSync } from 'child_process';
+import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { log, logError } from '../utils/logger';
 import { pathConverter } from './wsl-bridge';
 import { isPathWithinRoot } from '../tools/path-containment';
@@ -296,7 +298,18 @@ export class SandboxSync {
       };
     }
 
-    const sandboxDestPath = `${session.sandboxPath}/${sandboxRelativePath}`;
+    // Validate relative path — block traversal
+    const normalized = path.posix.normalize(sandboxRelativePath);
+    if (normalized.startsWith('..') || path.posix.isAbsolute(normalized)) {
+      return { success: false, sandboxPath: '', error: 'Invalid relative path: traversal detected' };
+    }
+    const sandboxDestPath = `${session.sandboxPath}/${normalized}`;
+
+    // Double-check result is still within sandbox
+    if (!isPathWithinRoot(sandboxDestPath, session.sandboxPath)) {
+      return { success: false, sandboxPath: '', error: 'Path escapes sandbox boundary' };
+    }
+
     log(`[SandboxSync] Syncing file to sandbox: ${windowsSourcePath} -> ${sandboxDestPath}`);
 
     try {
@@ -463,13 +476,14 @@ export class SandboxSync {
     command: string,
     timeout = 60000
   ): Promise<{ stdout: string; stderr: string }> {
+    const execFileAsync = promisify(execFile);
     const bashScript = `source ~/.nvm/nvm.sh 2>/dev/null; ${command}`;
-    const result = execFileSync('wsl', ['-d', distro, '-e', 'bash', '-c', bashScript], {
+    const result = await execFileAsync('wsl', ['-d', distro, '-e', 'bash', '-c', bashScript], {
       timeout,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
     });
-    return { stdout: result, stderr: '' };
+    return { stdout: result.stdout, stderr: result.stderr };
   }
 
   /**

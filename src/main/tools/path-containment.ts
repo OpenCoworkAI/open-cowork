@@ -1,11 +1,24 @@
 export function normalizePathForContainment(pathValue: string, caseInsensitive = false): string {
-  const normalized = pathValue
+  let normalized = pathValue
     .replace(/[\\/]+/g, '/')
     .replace(/\/+$/, '');
 
   if (!normalized) {
     return '';
   }
+
+  // Resolve . and .. components to prevent path traversal
+  const parts = normalized.split('/');
+  const resolved: string[] = [];
+  for (const part of parts) {
+    if (part === '.') continue;
+    if (part === '..' && resolved.length > 0 && resolved[resolved.length - 1] !== '..') {
+      resolved.pop();
+    } else {
+      resolved.push(part);
+    }
+  }
+  normalized = resolved.join('/') || (normalized.startsWith('/') ? '/' : '.');
 
   return caseInsensitive ? normalized.toLowerCase() : normalized;
 }
