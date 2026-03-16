@@ -4,10 +4,10 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 
-interface MessageMarkdownProps {
+export interface MessageMarkdownProps {
   normalizedText: string;
   isStreaming?: boolean;
-  components: Record<string, unknown>;
+  components?: Record<string, unknown>;
 }
 
 export const MessageMarkdown = memo(function MessageMarkdown({
@@ -19,7 +19,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     <div className="prose-chat max-w-none text-text-primary">
       <ReactMarkdown
         remarkPlugins={[remarkMath, [remarkGfm, { singleTilde: false }]]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
         components={components}
       >
         {normalizedText}

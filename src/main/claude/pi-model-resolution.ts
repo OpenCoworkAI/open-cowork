@@ -38,8 +38,7 @@ function shouldDisableDeveloperRoleForEndpoint(
     return false;
   }
 
-  const effectiveProvider = options.rawProvider || options.configProvider;
-  return effectiveProvider === 'custom' || effectiveProvider === 'openai';
+  return true;
 }
 
 export function inferPiApi(protocol: string): string {
@@ -218,6 +217,7 @@ export function applyPiModelRuntimeOverrides(
       compat: {
         ...(nextModel.compat || {}),
         supportsDeveloperRole: false,
+        supportsStore: false,
       },
     } as typeof nextModel;
   }

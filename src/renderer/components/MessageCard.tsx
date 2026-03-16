@@ -11,6 +11,7 @@ import {
   normalizeLocalFileMarkdownLinks,
   resolveLocalFilePathFromHref,
 } from '../utils/markdown-local-link';
+import { normalizeLatexDelimiters } from '../utils/latex-delimiters';
 import { shouldUseScreenshotSummary } from '../utils/tool-result-summary';
 import type {
   Message,
@@ -267,7 +268,9 @@ const ContentBlockView = memo(function ContentBlockView({
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
       const text = textBlock.text || '';
-      const normalizedText = normalizeCitationMarkdownLinks(normalizeLocalFileMarkdownLinks(text));
+      const normalizedText = normalizeCitationMarkdownLinks(
+        normalizeLocalFileMarkdownLinks(normalizeLatexDelimiters(text))
+      );
 
       if (!text) {
         return <span className="text-text-muted italic">{t('messageCard.emptyText')}</span>;
@@ -287,7 +290,7 @@ const ContentBlockView = memo(function ContentBlockView({
         <Suspense
           fallback={
             <div className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words">
-              {text}
+              {normalizedText}
             </div>
           }
         >
@@ -409,16 +412,31 @@ const ContentBlockView = memo(function ContentBlockView({
                   </div>
                 );
               },
-              th({ children }: { children?: React.ReactNode }) {
+              th({
+                children,
+                style,
+              }: {
+                children?: React.ReactNode;
+                style?: React.CSSProperties;
+              }) {
                 return (
-                  <th className="border border-border px-3 py-2 text-left text-sm font-semibold text-text-primary bg-surface-muted">
+                  <th
+                    className="border border-border px-3 py-2 text-sm font-semibold text-text-primary bg-surface-muted"
+                    style={style}
+                  >
                     {children}
                   </th>
                 );
               },
-              td({ children }: { children?: React.ReactNode }) {
+              td({
+                children,
+                style,
+              }: {
+                children?: React.ReactNode;
+                style?: React.CSSProperties;
+              }) {
                 return (
-                  <td className="border border-border px-3 py-2 text-sm text-text-primary">
+                  <td className="border border-border px-3 py-2 text-sm text-text-primary" style={style}>
                     {children}
                   </td>
                 );
@@ -1080,8 +1098,14 @@ const ThinkingBlock = memo(function ThinkingBlock({
 
       {expanded && (
         <div className="border-t border-border/50 px-4 py-3 animate-fade-in">
-          <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
-            {text}
+          <div className="text-sm text-text-secondary leading-relaxed prose-chat max-w-none">
+            <Suspense
+              fallback={
+                <div className="whitespace-pre-wrap">{text}</div>
+              }
+            >
+              <MessageMarkdown normalizedText={text} />
+            </Suspense>
           </div>
         </div>
       )}

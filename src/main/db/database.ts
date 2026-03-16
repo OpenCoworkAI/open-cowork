@@ -25,6 +25,7 @@ export interface DatabaseInstance {
   // Message operations
   messages: {
     create: (message: MessageRow) => void;
+    update: (id: string, updates: Partial<Pick<MessageRow, 'execution_time_ms'>>) => void;
     getBySessionId: (sessionId: string) => MessageRow[];
     delete: (id: string) => void;
     deleteBySessionId: (sessionId: string) => void;
@@ -666,7 +667,7 @@ export function initDatabase(): DatabaseInstance {
   };
   
   log('[Database] SQLite database initialized successfully');
-  return db;
+  return db!;
 }
 
 /**

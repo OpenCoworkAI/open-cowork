@@ -84,7 +84,6 @@ mac:
   gatekeeperAssess: true
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
-  afterSign: scripts/notarize.js
   extendInfo:
     LSApplicationCategoryType: public.app-category.developer-tools
   extraResources:
@@ -133,7 +132,7 @@ dmg:
   contents:
     - x: 150
       y: 220
-      name: "Open Cowork"
+      name: "Open Cowork.app"
     - x: 450
       y: 220
       type: link

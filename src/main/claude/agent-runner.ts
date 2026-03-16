@@ -1647,7 +1647,14 @@ Tool routing:
                 id: uuidv4(),
                 sessionId: session.id,
                 role: 'assistant',
-                content: [{ type: 'text', text: `**Error**: ${resolvedPayload.errorText}\n\n_Agent is still running and may retry..._` }],
+                content: [{
+                  type: 'text',
+                  text: `**Error**: ${resolvedPayload.errorText}\n\n${
+                    /\b4\d{2}\b/.test(resolvedPayload.errorText)
+                      ? '_请检查配置后重试。_'
+                      : '_Agent is still running and may retry..._'
+                  }`,
+                }],
                 timestamp: Date.now(),
               });
               break;

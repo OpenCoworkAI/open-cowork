@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveMessageEndPayload } from '../src/main/claude/agent-runner-message-end';
+import { resolveMessageEndPayload, toUserFacingErrorText } from '../src/main/claude/agent-runner-message-end';
 
 describe('resolveMessageEndPayload', () => {
   it('falls back to accumulated streamed text when message_end content is empty', () => {
@@ -36,5 +36,44 @@ describe('resolveMessageEndPayload', () => {
     expect(result.shouldEmitMessage).toBe(false);
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe('模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。');
+  });
+});
+
+describe('toUserFacingErrorText', () => {
+  it('maps 400 / bad request to configuration hint', () => {
+    const result = toUserFacingErrorText('HTTP 400: bad request - ROLE_UNSPECIFIED');
+    expect(result).toContain('请求被上游拒绝（400）');
+    expect(result).toContain('原始错误:');
+    expect(result).toContain('ROLE_UNSPECIFIED');
+  });
+
+  it('maps invalid request to configuration hint', () => {
+    const result = toUserFacingErrorText('invalid request: unsupported parameter "store"');
+    expect(result).toContain('请求被上游拒绝（400）');
+    expect(result).toContain('原始错误:');
+  });
+
+  it('maps 401 to authentication hint', () => {
+    const result = toUserFacingErrorText('Error 401: Unauthorized');
+    expect(result).toContain('认证失败');
+    expect(result).toContain('API Key');
+    expect(result).toContain('原始错误:');
+  });
+
+  it('maps 429 / rate limit to throttle hint', () => {
+    const result = toUserFacingErrorText('429 Too Many Requests - rate limit exceeded');
+    expect(result).toContain('请求被限流（429）');
+    expect(result).toContain('原始错误:');
+  });
+
+  it('passes through unknown errors unchanged', () => {
+    const raw = 'some obscure upstream error';
+    expect(toUserFacingErrorText(raw)).toBe(raw);
+  });
+
+  it('still maps first_response_timeout correctly (regression)', () => {
+    expect(toUserFacingErrorText('first_response_timeout')).toBe(
+      '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。',
+    );
   });
 });

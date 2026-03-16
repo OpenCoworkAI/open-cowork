@@ -193,4 +193,105 @@ describe('pi model resolution helpers', () => {
     const rethinking = buildSyntheticPiModel('rethinkingai', 'custom', 'openai');
     expect(rethinking.reasoning).toBe(false);
   });
+
+  it('disables developer role for ollama with custom endpoint', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'qwen3:8b',
+        name: 'qwen3:8b',
+        api: 'openai-completions',
+        provider: 'ollama',
+        baseUrl: '',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 40960,
+        maxTokens: 8192,
+      },
+      {
+        configProvider: 'ollama',
+        rawProvider: 'ollama',
+        customBaseUrl: 'http://localhost:11434/v1',
+      },
+    );
+
+    expect(model.baseUrl).toBe('http://localhost:11434/v1');
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+  });
+
+  it('disables developer role for openrouter with custom endpoint', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'anthropic/claude-sonnet-4-6',
+        name: 'claude-sonnet-4-6',
+        api: 'openai-completions',
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        configProvider: 'openrouter',
+        rawProvider: 'openrouter',
+        customBaseUrl: 'https://openrouter.ai/api/v1',
+      },
+    );
+
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+  });
+
+  it('disables supportsStore alongside developer role for non-standard endpoints', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'kimi-k2.5',
+        name: 'kimi-k2.5',
+        api: 'openai-completions',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+      {
+        configProvider: 'openai',
+        rawProvider: 'openai',
+        customBaseUrl: 'https://api.moonshot.cn/v1',
+      },
+    );
+
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.supportsStore).toBe(false);
+  });
+
+  it('preserves existing compat fields when disabling developer role', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'custom-model',
+        name: 'custom-model',
+        api: 'openai-completions',
+        provider: 'custom',
+        baseUrl: '',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+        compat: { supportsStreaming: true } as any,
+      } as any,
+      {
+        configProvider: 'custom',
+        rawProvider: 'custom',
+        customBaseUrl: 'https://my-relay.example.com/v1',
+      },
+    );
+
+    expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.supportsStore).toBe(false);
+    expect((model.compat as any)?.supportsStreaming).toBe(true);
+  });
 });

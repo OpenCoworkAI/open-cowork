@@ -622,7 +622,7 @@ async function startSandboxBootstrap(): Promise<void> {
 
 // 发送事件到渲染进程（含远程会话拦截）
 function sendToRenderer(event: ServerEvent) {
-  const payload = event.payload as { sessionId?: string; [key: string]: any };
+  const payload = 'payload' in event ? (event.payload as { sessionId?: string; [key: string]: any }) : undefined;
   const sessionId = payload?.sessionId;
 
   // 判断是否远程会话
