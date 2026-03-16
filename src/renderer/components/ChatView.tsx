@@ -284,10 +284,14 @@ export function ChatView() {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const result = reader.result as string;
+        const result = reader.result;
+        if (typeof result !== 'string') {
+          reject(new Error('FileReader result is not a string'));
+          return;
+        }
         // Remove data URL prefix (e.g., "data:image/png;base64,")
-        const base64 = result.split(',')[1];
-        resolve(base64);
+        const parts = result.split(',');
+        resolve(parts[1] || '');
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);

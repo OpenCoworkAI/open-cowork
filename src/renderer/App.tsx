@@ -10,6 +10,7 @@ import { Titlebar } from './components/Titlebar';
 import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
+import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -146,18 +147,24 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Sidebar */}
-        <Sidebar />
-        
+        <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
+          <Sidebar />
+        </PanelErrorBoundary>
+
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
           {showSettings ? (
-            <Suspense fallback={<MainPanelFallback />}>
-              <SettingsPanel onClose={() => setShowSettings(false)} />
-            </Suspense>
+            <PanelErrorBoundary name="SettingsPanel" fallback={<MainPanelFallback />}>
+              <Suspense fallback={<MainPanelFallback />}>
+                <SettingsPanel onClose={() => setShowSettings(false)} />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : activeSessionId ? (
-            <Suspense fallback={<MainPanelFallback />}>
-              <ChatView />
-            </Suspense>
+            <PanelErrorBoundary name="ChatView" fallback={<MainPanelFallback />}>
+              <Suspense fallback={<MainPanelFallback />}>
+                <ChatView />
+              </Suspense>
+            </PanelErrorBoundary>
           ) : (
             <WelcomeView />
           )}
@@ -165,9 +172,11 @@ function App() {
 
         {/* Context Panel - only show when in session and not in settings */}
         {activeSessionId && !showSettings && (
-          <Suspense fallback={<ContextPanelFallback />}>
-            <ContextPanel />
-          </Suspense>
+          <PanelErrorBoundary name="ContextPanel" fallback={<ContextPanelFallback />}>
+            <Suspense fallback={<ContextPanelFallback />}>
+              <ContextPanel />
+            </Suspense>
+          </PanelErrorBoundary>
         )}
       </div>
       
@@ -178,16 +187,18 @@ function App() {
       {pendingSudoPassword && <SudoPasswordDialog request={pendingSudoPassword} />}
       
       {/* Config Modal */}
-      <Suspense fallback={null}>
-        <ConfigModal
-          isOpen={showConfigModal}
-          onClose={handleConfigClose}
-          onSave={handleConfigSave}
-          initialConfig={appConfig}
-          isFirstRun={!isConfigured}
-        />
-      </Suspense>
-      
+      <PanelErrorBoundary name="ConfigModal" fallback={null}>
+        <Suspense fallback={null}>
+          <ConfigModal
+            isOpen={showConfigModal}
+            onClose={handleConfigClose}
+            onSave={handleConfigSave}
+            initialConfig={appConfig}
+            isFirstRun={!isConfigured}
+          />
+        </Suspense>
+      </PanelErrorBoundary>
+
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (
         <SandboxSetupDialog 
