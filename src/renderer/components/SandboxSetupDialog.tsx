@@ -16,6 +16,7 @@ interface Props {
 // Phase display configuration
 const phaseConfig: Record<SandboxSetupPhase, { icon: string }> = {
   checking: { icon: '🔍' },
+  diagnosing: { icon: '🩺' },
   creating: { icon: '📦' },
   starting: { icon: '🚀' },
   installing_node: { icon: '💚' },

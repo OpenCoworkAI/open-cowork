@@ -273,6 +273,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('sandbox.retrySetup'),
     retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
       ipcRenderer.invoke('sandbox.retryLimaSetup'),
+    healthCheck: (): Promise<{
+      mode: string;
+      initialized: boolean;
+      healthy?: boolean;
+      checks: Array<{ name: string; ok: boolean; detail: string }>;
+    }> => ipcRenderer.invoke('sandbox.healthCheck'),
   },
 
   // Logs methods

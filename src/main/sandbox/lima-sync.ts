@@ -15,6 +15,7 @@
  */
 
 import { exec } from 'child_process';
+import * as path from 'path';
 import { promisify } from 'util';
 import { log, logError } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
@@ -275,7 +276,18 @@ export class LimaSync {
       };
     }
 
-    const sandboxDestPath = `${session.sandboxPath}/${sandboxRelativePath}`;
+    // Validate relative path — block traversal
+    const normalized = path.posix.normalize(sandboxRelativePath);
+    if (normalized.startsWith('..') || path.posix.isAbsolute(normalized)) {
+      return { success: false, sandboxPath: '', error: 'Invalid relative path: traversal detected' };
+    }
+    const sandboxDestPath = `${session.sandboxPath}/${normalized}`;
+
+    // Double-check result is still within sandbox
+    if (!isPathWithinRoot(sandboxDestPath, session.sandboxPath)) {
+      return { success: false, sandboxPath: '', error: 'Path escapes sandbox boundary' };
+    }
+
     log(`[LimaSync] Syncing file to sandbox: ${macSourcePath} -> ${sandboxDestPath}`);
 
     try {

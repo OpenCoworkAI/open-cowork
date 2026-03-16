@@ -188,6 +188,52 @@ export class WSLBridge implements SandboxExecutor {
       }
       log('[WSL] Distro is responding');
 
+      // Detect Ubuntu version (for known-issue warnings, e.g. 24.04)
+      let ubuntuVersion = '';
+      try {
+        const versionResult = await execAsync(
+          `wsl -d ${selectedDistro} -e bash -c "cat /etc/os-release | grep VERSION_ID"`,
+          { timeout: 5000, encoding: 'utf-8' }
+        );
+        const versionMatch = versionResult.stdout.match(/VERSION_ID="?(\d+\.\d+)"?/);
+        if (versionMatch) ubuntuVersion = versionMatch[1];
+        log('[WSL] Ubuntu version:', ubuntuVersion || 'unknown');
+      } catch { /* non-critical */ }
+
+      // Detect AppArmor status (critical for 24.04 sandbox compatibility)
+      let appArmorEnabled = false;
+      const diagnosisIssues: string[] = [];
+      if (ubuntuVersion === '24.04') {
+        try {
+          const lsmResult = await execAsync(
+            `wsl -d ${selectedDistro} -e bash -c "cat /sys/kernel/security/lsm 2>/dev/null"`,
+            { timeout: 5000, encoding: 'utf-8' }
+          );
+          const lsmList = lsmResult.stdout.trim();
+          appArmorEnabled = lsmList.includes('apparmor');
+          log('[WSL] LSM modules:', lsmList, '| AppArmor enabled:', appArmorEnabled);
+
+          if (appArmorEnabled) {
+            // Check if unprivileged userns is restricted
+            try {
+              const restricResult = await execAsync(
+                `wsl -d ${selectedDistro} -e bash -c "cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null"`,
+                { timeout: 5000, encoding: 'utf-8' }
+              );
+              const restricted = restricResult.stdout.trim() === '1';
+              if (restricted) {
+                diagnosisIssues.push('apparmor_userns_restricted');
+                log('[WSL] AppArmor unprivileged userns restricted — sandbox may have issues');
+              }
+            } catch { /* sysctl may not exist */ }
+          } else {
+            diagnosisIssues.push('apparmor_not_enabled');
+          }
+        } catch {
+          log('[WSL] Could not detect AppArmor status');
+        }
+      }
+
       // Check if Node.js is available in the distro
       // Use -e to execute a simple command
       let nodeAvailable = false;
@@ -278,12 +324,15 @@ export class WSLBridge implements SandboxExecutor {
       const status: WSLStatus = {
         available: true,
         distro: selectedDistro,
+        ubuntuVersion: ubuntuVersion || undefined,
         nodeAvailable,
         pythonAvailable,
         pipAvailable,
         claudeCodeAvailable,
         version: nodeVersion,
         pythonVersion,
+        appArmorEnabled: ubuntuVersion === '24.04' ? appArmorEnabled : undefined,
+        diagnosisIssues: diagnosisIssues.length > 0 ? diagnosisIssues : undefined,
       };
       
       log('[WSL] Status check complete:', JSON.stringify(status));

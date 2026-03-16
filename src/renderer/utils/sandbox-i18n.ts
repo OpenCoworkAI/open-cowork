@@ -21,6 +21,9 @@ function translateSetupMessage(t: TFunction, message: string): string {
     'Starting Lima VM...': 'sandbox.startingLima',
     'Lima VM startup failed': 'sandbox.limaStartFailedMessage',
     'Lima sandbox ready': 'sandbox.limaReadyMessage',
+    'Diagnosing Ubuntu 24.04 compatibility...': 'sandbox.diagnosingMessage',
+    'Ubuntu 24.04: AppArmor not active in WSL kernel': 'sandbox.diagnosingMessage',
+    'Ubuntu 24.04: User namespace restrictions detected': 'sandbox.diagnosingMessage',
   };
   const key = map[message];
   return key ? t(key) : message;
@@ -54,6 +57,11 @@ function translateSetupDetail(t: TFunction, detail?: string): string | undefined
     'VM startup may take a few minutes': 'sandbox.setupDetailStartLima',
     'Installing Node.js runtime in Lima VM': 'sandbox.setupDetailInstallNodeLima',
     'Installing Python runtime in Lima VM': 'sandbox.setupDetailInstallPythonLima',
+    'Checking AppArmor and namespace restrictions': 'sandbox.diagnosingAppArmor',
+    'Sandbox will work, but with reduced security. See Settings for fix instructions.':
+      'sandbox.diagnosingAppArmor',
+    'This may prevent sandbox process isolation. See Settings for fix instructions.':
+      'sandbox.diagnosingAppArmor',
   };
   const key = map[detail];
   return key ? t(key) : detail;

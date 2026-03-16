@@ -2,6 +2,7 @@
  * SandboxSyncToast - Shows sandbox sync progress as a floating toast
  * Appears when syncing files to WSL/Lima sandbox (only for new sessions)
  * Supports light/dark theme
+ * Error state persists with retry/fallback actions
  */
 
 import { useEffect, useState } from 'react';
@@ -11,6 +12,8 @@ import { getSandboxSyncDisplayText } from '../utils/sandbox-i18n';
 
 interface Props {
   status: SandboxSyncStatus | null;
+  onRetry?: () => void;
+  onFallbackToNative?: () => void;
 }
 
 // Phase display configuration
@@ -28,13 +31,17 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function SandboxSyncToast({ status }: Props) {
+export function SandboxSyncToast({ status, onRetry, onFallbackToNative }: Props) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
 
   useEffect(() => {
-    if (status && status.phase !== 'ready') {
+    if (status && status.phase === 'error') {
+      // Error state: persist (no auto-dismiss)
+      setIsVisible(true);
+      setFadeOut(false);
+    } else if (status && status.phase !== 'ready') {
       setIsVisible(true);
       setFadeOut(false);
     } else if (status?.phase === 'ready') {
@@ -69,7 +76,9 @@ export function SandboxSyncToast({ status }: Props) {
       <div className="bg-background/92 backdrop-blur-md border border-border-subtle rounded-[1.6rem] shadow-elevated max-w-sm overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className={`text-xl ${isComplete ? '' : 'animate-pulse'}`}>{config.icon}</div>
+          <div className={`text-xl ${isComplete ? '' : isError ? '' : 'animate-pulse'}`}>
+            {config.icon}
+          </div>
           <div className="flex-1 min-w-0">
             <p
               className={`font-medium text-sm ${
@@ -105,6 +114,28 @@ export function SandboxSyncToast({ status }: Props) {
               <span className="text-accent font-medium"> {t('sandbox.syncFirst')}</span>{' '}
               {t('sandbox.syncFollowup')}
             </p>
+          </div>
+        )}
+
+        {/* Error recovery actions */}
+        {isError && (onRetry || onFallbackToNative) && (
+          <div className="px-4 py-3 border-t border-border-muted flex items-center gap-2">
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="flex-1 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors"
+              >
+                {t('sandbox.syncRetry')}
+              </button>
+            )}
+            {onFallbackToNative && (
+              <button
+                onClick={onFallbackToNative}
+                className="flex-1 px-3 py-1.5 rounded-lg bg-surface-muted text-text-secondary text-xs font-medium hover:bg-surface-active transition-colors"
+              >
+                {t('sandbox.syncFallbackNative')}
+              </button>
+            )}
           </div>
         )}
       </div>

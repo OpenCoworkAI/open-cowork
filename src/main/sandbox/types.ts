@@ -49,12 +49,15 @@ export interface JSONRPCResponse {
 export interface WSLStatus {
   available: boolean;
   distro?: string;
+  ubuntuVersion?: string;
   nodeAvailable?: boolean;
   pythonAvailable?: boolean;
   pipAvailable?: boolean;
   claudeCodeAvailable?: boolean;
   version?: string;
   pythonVersion?: string;
+  appArmorEnabled?: boolean;
+  diagnosisIssues?: string[];
 }
 
 export interface LimaStatus {

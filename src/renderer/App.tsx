@@ -197,7 +197,19 @@ function App() {
       )}
       
       {/* Sandbox Sync Toast */}
-      <SandboxSyncToast status={sandboxSyncStatus} />
+      <SandboxSyncToast
+        status={sandboxSyncStatus}
+        onRetry={async () => {
+          try {
+            await window.electronAPI.sandbox.retrySetup();
+          } catch { /* handled by sync status updates */ }
+        }}
+        onFallbackToNative={async () => {
+          try {
+            await window.electronAPI.config.save({ sandboxEnabled: false });
+          } catch { /* best effort */ }
+        }}
+      />
 
       <GlobalNoticeToast
         notice={globalNotice}

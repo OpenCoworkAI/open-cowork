@@ -30,6 +30,19 @@ import type {
 
 export type SandboxMode = 'wsl' | 'lima' | 'native' | 'none';
 
+export interface SandboxHealthCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface SandboxHealthStatus {
+  mode: SandboxMode;
+  initialized: boolean;
+  healthy?: boolean;
+  checks: SandboxHealthCheck[];
+}
+
 export interface SandboxAdapterConfig extends SandboxConfig {
   /** Force native execution even on Windows (not recommended) */
   forceNative?: boolean;
@@ -59,6 +72,7 @@ export class SandboxAdapter implements SandboxExecutor {
   };
   private _config: SandboxAdapterConfig | null = null;
   private initPromise: Promise<void> | null = null;
+  private reinitPromise: Promise<void> | null = null;
 
   /**
    * Get current sandbox mode
@@ -583,13 +597,25 @@ export class SandboxAdapter implements SandboxExecutor {
    * Call this when sandbox settings change
    */
   async reinitialize(config?: SandboxAdapterConfig): Promise<void> {
+    if (this.reinitPromise) {
+      return this.reinitPromise;
+    }
+    this.reinitPromise = this._reinitialize(config);
+    try {
+      await this.reinitPromise;
+    } finally {
+      this.reinitPromise = null;
+    }
+  }
+
+  private async _reinitialize(config?: SandboxAdapterConfig): Promise<void> {
     log('[SandboxAdapter] Reinitializing...');
     await this.shutdown();
-    
+
     // Also reset bootstrap cache so it will re-check WSL/Lima status
     const bootstrap = getSandboxBootstrap();
     bootstrap.reset();
-    
+
     const initConfig = config || this._config || { workspacePath: this.state.workspacePath };
     await this.initialize(initConfig);
     log('[SandboxAdapter] Reinitialized with mode:', this.state.mode);
@@ -666,6 +692,102 @@ export class SandboxAdapter implements SandboxExecutor {
     // For native mode, we need to spawn claude-code directly
     // This is a simplified implementation - full streaming would be more complex
     throw new Error('Claude Code execution is only supported in WSL/Lima mode');
+  }
+
+  // ==================== Health Check ====================
+
+  /**
+   * Run a health check on the sandbox environment
+   * Returns a structured result describing what's working and what's not
+   */
+  async healthCheck(): Promise<SandboxHealthStatus> {
+    const result: SandboxHealthStatus = {
+      mode: this.state.mode,
+      initialized: this.state.initialized,
+      checks: [],
+    };
+
+    if (this.state.mode === 'native' || this.state.mode === 'none') {
+      result.checks.push({ name: 'mode', ok: true, detail: 'Native execution mode' });
+      result.healthy = true;
+      return result;
+    }
+
+    // Check WSL/Lima availability
+    if (this.state.mode === 'wsl') {
+      try {
+        const wslStatus = await WSLBridge.checkWSLStatus();
+        result.checks.push({
+          name: 'wsl_available',
+          ok: wslStatus.available,
+          detail: wslStatus.available ? `Distro: ${wslStatus.distro}` : 'WSL not available',
+        });
+        if (wslStatus.available) {
+          result.checks.push({
+            name: 'node_available',
+            ok: !!wslStatus.nodeAvailable,
+            detail: wslStatus.nodeAvailable ? `Node ${wslStatus.version}` : 'Node.js not found',
+          });
+          // Check rsync
+          try {
+            const exec = await import('child_process');
+            const { promisify } = await import('util');
+            const execAsync = promisify(exec.exec);
+            await execAsync(`wsl -d ${wslStatus.distro} -e which rsync`, {
+              timeout: 5000,
+              encoding: 'utf-8',
+            });
+            result.checks.push({ name: 'rsync_available', ok: true, detail: 'rsync found' });
+          } catch {
+            result.checks.push({ name: 'rsync_available', ok: false, detail: 'rsync not found' });
+          }
+          // Report 24.04 diagnosis
+          if (wslStatus.diagnosisIssues && wslStatus.diagnosisIssues.length > 0) {
+            result.checks.push({
+              name: 'ubuntu_2404',
+              ok: false,
+              detail: `Issues: ${wslStatus.diagnosisIssues.join(', ')}`,
+            });
+          }
+        }
+      } catch (err) {
+        result.checks.push({
+          name: 'wsl_available',
+          ok: false,
+          detail: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    } else if (this.state.mode === 'lima') {
+      try {
+        const limaStatus = await LimaBridge.checkLimaStatus();
+        result.checks.push({
+          name: 'lima_available',
+          ok: limaStatus.available,
+          detail: limaStatus.available ? 'Lima installed' : 'Lima not available',
+        });
+        if (limaStatus.available) {
+          result.checks.push({
+            name: 'instance_running',
+            ok: !!limaStatus.instanceRunning,
+            detail: limaStatus.instanceRunning ? `Instance: ${limaStatus.instanceName}` : 'Instance not running',
+          });
+          result.checks.push({
+            name: 'node_available',
+            ok: !!limaStatus.nodeAvailable,
+            detail: limaStatus.nodeAvailable ? `Node ${limaStatus.version}` : 'Node.js not found',
+          });
+        }
+      } catch (err) {
+        result.checks.push({
+          name: 'lima_available',
+          ok: false,
+          detail: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+
+    result.healthy = result.checks.every((c) => c.ok);
+    return result;
   }
 }
 

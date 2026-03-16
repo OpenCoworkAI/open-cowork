@@ -332,10 +332,11 @@ export type ClientEvent =
   | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } };
 
 // Sandbox setup types (app startup)
-export type SandboxSetupPhase = 
+export type SandboxSetupPhase =
   | 'checking'      // Checking WSL/Lima availability
+  | 'diagnosing'    // Diagnosing platform-specific issues (e.g. Ubuntu 24.04)
   | 'creating'      // Creating Lima instance (macOS only)
-  | 'starting'      // Starting Lima instance (macOS only)  
+  | 'starting'      // Starting Lima instance (macOS only)
   | 'installing_node'   // Installing Node.js
   | 'installing_python' // Installing Python
   | 'installing_pip'    // Installing pip
@@ -367,6 +368,7 @@ export interface SandboxSyncStatus {
   detail?: string;
   fileCount?: number;
   totalSize?: number;
+  error?: string;
 }
 
 export type ServerEvent =

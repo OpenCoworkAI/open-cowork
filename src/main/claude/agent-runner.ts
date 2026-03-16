@@ -1854,6 +1854,15 @@ Tool routing:
             log('[ClaudeAgentRunner] Sync completed successfully');
           } else {
             logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
+            this.sendToRenderer({
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'error',
+                message: 'File sync failed',
+                error: syncResult.error,
+              },
+            });
           }
         } else if (sandbox.isLima) {
           log('[ClaudeAgentRunner] Syncing sandbox changes to macOS...');
@@ -1863,6 +1872,15 @@ Tool routing:
             log('[ClaudeAgentRunner] Sync completed successfully');
           } else {
             logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
+            this.sendToRenderer({
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'error',
+                message: 'File sync failed',
+                error: syncResult.error,
+              },
+            });
           }
         }
       }

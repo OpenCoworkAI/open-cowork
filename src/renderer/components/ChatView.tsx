@@ -4,7 +4,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
-import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
+import { Send, Square, Plus, Loader2, Plug, X, Clock, Shield, ShieldOff } from 'lucide-react';
 
 type AttachedFile = {
   name: string;
@@ -796,6 +796,23 @@ export function ChatView() {
               />
 
               <div className="flex items-center gap-2">
+                {/* Sandbox status badge */}
+                {appConfig?.sandboxEnabled && (
+                  <span
+                    className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full border border-success/30 bg-success/5 text-xs text-success"
+                    title={t('sandbox.isolatedMode')}
+                  >
+                    <Shield className="w-3 h-3" />
+                  </span>
+                )}
+                {appConfig && !appConfig.sandboxEnabled && (
+                  <span
+                    className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted"
+                    title={t('sandbox.nativeMode')}
+                  >
+                    <ShieldOff className="w-3 h-3" />
+                  </span>
+                )}
                 {/* Model display */}
                 <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
                   {appConfig?.model || t('chat.noModel')}

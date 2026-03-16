@@ -898,6 +898,11 @@ function SandboxTab() {
   const [error, setError] = useState<LocalizedBanner | null>(null);
   const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [healthResult, setHealthResult] = useState<{
+    healthy?: boolean;
+    checks: Array<{ name: string; ok: boolean; detail: string }>;
+  } | null>(null);
+  const [isHealthChecking, setIsHealthChecking] = useState(false);
 
   const platform = window.electronAPI?.platform || 'unknown';
   const isWindows = platform === 'win32';
@@ -956,28 +961,26 @@ function SandboxTab() {
     }
   }
 
-  // TODO: Re-enable when sandbox debugging is complete
-  // async function handleToggleSandbox() {
-  //   const newEnabled = !sandboxEnabled;
-  //
-  //   // Optimistically update UI
-  //   setSandboxEnabled(newEnabled);
-  //   setError('');
-  //   setSuccess('');
-  //
-  //   try {
-  //     await window.electronAPI.config.save({ sandboxEnabled: newEnabled });
-  //     setSuccess(newEnabled ? t('sandbox.enabledWillSetup') : t('sandbox.disabled'));
-  //
-  //     // Clear success message after delay
-  //     const timer = setTimeout(() => setSuccess(''), 3000);
-  //     return () => clearTimeout(timer);
-  //   } catch (err) {
-  //     // Revert on error
-  //     setSandboxEnabled(!newEnabled);
-  //     setError(err instanceof Error ? err.message : t('sandbox.failedToSave'));
-  //   }
-  // }
+  async function handleToggleSandbox() {
+    const newEnabled = !sandboxEnabled;
+
+    // Optimistically update UI
+    setSandboxEnabled(newEnabled);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await window.electronAPI.config.save({ sandboxEnabled: newEnabled });
+      setSuccess({ text: newEnabled ? t('sandbox.enabledWillSetup') : t('sandbox.disabled') });
+
+      // Clear success message after delay
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      // Revert on error
+      setSandboxEnabled(!newEnabled);
+      setError({ text: err instanceof Error ? err.message : t('sandbox.failedToSave') });
+    }
+  }
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
@@ -1092,6 +1095,26 @@ function SandboxTab() {
     }
   }
 
+  async function handleHealthCheck() {
+    if (isHealthChecking) return;
+    setIsHealthChecking(true);
+    setHealthResult(null);
+    setError(null);
+
+    try {
+      const result = await (window.electronAPI.sandbox as Record<string, Function>).healthCheck();
+      setHealthResult(result);
+      if (result.healthy) {
+        setSuccess({ text: t('sandbox.healthCheckPassed') });
+        setTimeout(() => setSuccess(null), 3000);
+      }
+    } catch (err) {
+      setError({ text: err instanceof Error ? err.message : t('sandbox.healthCheckFailed') });
+    } finally {
+      setIsHealthChecking(false);
+    }
+  }
+
   async function handleStartLima() {
     if (isInstalling) return;
     setIsInstalling('start');
@@ -1177,34 +1200,48 @@ function SandboxTab() {
         </div>
       )}
 
-      {/* Enable/Disable Toggle - Temporarily Disabled */}
-      <div className="p-6 rounded-lg bg-surface border border-border text-center space-y-4">
-        <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto bg-surface-muted text-text-muted">
-          <Shield className="w-8 h-8" />
+      {/* Enable/Disable Toggle */}
+      <div className="p-6 rounded-lg bg-surface border border-border space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-surface-muted text-text-muted">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('sandbox.enableSandbox')}
+              </h3>
+              <p className="text-xs text-text-muted mt-0.5">
+                {isWindows
+                  ? t('sandbox.wslDesc')
+                  : isMac
+                    ? t('sandbox.limaDesc')
+                    : t('sandbox.nativeDesc')}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleToggleSandbox}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50 ${
+              sandboxEnabled ? 'bg-accent' : 'bg-surface-muted'
+            }`}
+            role="switch"
+            aria-checked={sandboxEnabled}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                sandboxEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
-        <div>
-          <h3 className="text-base font-semibold text-text-primary">
-            {t('sandbox.enableSandbox')}
-          </h3>
-          <p className="text-sm text-text-muted mt-1">
-            {isWindows
-              ? t('sandbox.wslDesc')
-              : isMac
-                ? t('sandbox.limaDesc')
-                : t('sandbox.nativeDesc')}
-          </p>
-        </div>
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-warning/10 text-warning text-xs font-medium">
-          <span>🚧</span>
-          <span>{t('sandbox.comingSoon')}</span>
-        </div>
-        <p className="text-xs text-text-muted max-w-sm mx-auto">
+        <p className="text-xs text-text-muted">
           {t('sandbox.helpText1')} {t('sandbox.helpText2')}
         </p>
       </div>
 
-      {/* Status Details - Hidden while sandbox is disabled for debugging */}
-      {false && sandboxEnabled && (
+      {/* Status Details */}
+      {sandboxEnabled && (
         <div className="p-4 rounded-lg bg-surface border border-border space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-text-primary">
@@ -1407,6 +1444,54 @@ function SandboxTab() {
             </>
           )}
         </button>
+      )}
+
+      {/* Health Check */}
+      {sandboxEnabled && (
+        <div className="space-y-3">
+          <button
+            onClick={handleHealthCheck}
+            disabled={isHealthChecking}
+            className="w-full py-2.5 px-4 rounded-lg bg-surface border border-border text-text-secondary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm"
+          >
+            {isHealthChecking ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {t('sandbox.healthChecking')}
+              </>
+            ) : (
+              <>
+                <Settings className="w-4 h-4" />
+                {t('sandbox.runHealthCheck')}
+              </>
+            )}
+          </button>
+
+          {/* Health Check Results */}
+          {healthResult && (
+            <div className="p-3 rounded-lg bg-surface border border-border space-y-2">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${healthResult.healthy ? 'bg-success' : 'bg-error'}`} />
+                <span className="text-xs font-medium text-text-primary">
+                  {healthResult.healthy ? t('sandbox.healthCheckPassed') : t('sandbox.healthCheckIssues')}
+                </span>
+              </div>
+              {healthResult.checks.map((check, i) => (
+                <div key={i} className="flex items-center justify-between py-1 px-2 rounded bg-background text-xs">
+                  <div className="flex items-center gap-2">
+                    {check.ok ? (
+                      <CheckCircle className="w-3 h-3 text-success" />
+                    ) : (
+                      <AlertCircle className="w-3 h-3 text-error" />
+                    )}
+                    <span className="text-text-primary">{check.name}</span>
+                  </div>
+                  <span className="text-text-muted">{check.detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Help Text - moved into card above */}

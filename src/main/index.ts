@@ -2466,6 +2466,24 @@ ipcMain.handle('sandbox.retrySetup', async () => {
   }
 });
 
+ipcMain.handle('sandbox.healthCheck', async () => {
+  try {
+    const adapter = getSandboxAdapter();
+    if (!adapter) {
+      return { healthy: false, mode: 'none', initialized: false, checks: [] };
+    }
+    return await adapter.healthCheck();
+  } catch (error) {
+    logError('[Sandbox] Health check error:', error);
+    return {
+      healthy: false,
+      mode: 'unknown',
+      initialized: false,
+      checks: [{ name: 'error', ok: false, detail: error instanceof Error ? error.message : 'Unknown error' }],
+    };
+  }
+});
+
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   // Check if configured before starting sessions
   if (event.type === 'session.start' && !configStore.hasUsableCredentialsForActiveSet()) {
