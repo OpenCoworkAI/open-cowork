@@ -11,7 +11,7 @@ import {
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
 import { getSharedAuthStorage } from './shared-auth';
-import { buildSyntheticPiModel, inferPiApi, resolvePiModelString, resolvePiRegistryModel } from './pi-model-resolution';
+import { applyPiModelRuntimeOverrides, buildSyntheticPiModel, inferPiApi, resolvePiModelString, resolvePiRegistryModel } from './pi-model-resolution';
 
 const NETWORK_ERROR_RE = /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
 const AUTH_ERROR_RE = /authentication[_\s-]?failed|unauthorized|invalid[_\s-]?api[_\s-]?key|forbidden|401|403/i;
@@ -166,6 +166,12 @@ async function runPiAiOneShot(
     const effectiveProtocol = resolveCustomProtocol(config.provider, config.customProtocol);
     const api = config.baseUrl?.trim() ? inferPiApi(effectiveProtocol) : undefined;
     piModel = buildSyntheticPiModel(modelId, provider, effectiveProtocol, config.baseUrl?.trim() || '', api);
+    piModel = applyPiModelRuntimeOverrides(piModel, {
+      configProvider: keyProvider,
+      customBaseUrl: config.baseUrl?.trim() || undefined,
+      rawProvider: config.provider || 'anthropic',
+      customProtocol: config.customProtocol,
+    });
     logWarn('[OneShot] Model not in pi-ai registry, using synthetic model:', modelString, '→', api);
   }
 

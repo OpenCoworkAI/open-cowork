@@ -44,7 +44,7 @@ import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { configStore } from '../config/config-store';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
-import { buildSyntheticPiModel, resolvePiRegistryModel } from './pi-model-resolution';
+import { applyPiModelRuntimeOverrides, buildSyntheticPiModel, resolvePiRegistryModel } from './pi-model-resolution';
 import { ThinkTagStreamParser } from './think-tag-parser';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -1104,6 +1104,14 @@ ${hints.join('\n')}
         const syntheticId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
         const syntheticProvider = parts.length >= 2 ? parts[0] : (configProtocol === 'custom' ? 'anthropic' : configProtocol);
         piModel = buildSyntheticPiModel(syntheticId, syntheticProvider, configProtocol, runtimeConfig.baseUrl?.trim() || undefined, undefined, undefined, runtimeConfig.contextWindow, runtimeConfig.maxTokens);
+        // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
+        // that resolvePiRegistryModel applies to registry models
+        piModel = applyPiModelRuntimeOverrides(piModel, {
+          configProvider: configProtocol,
+          customBaseUrl: runtimeConfig.baseUrl?.trim() || undefined,
+          rawProvider: runtimeConfig.provider,
+          customProtocol: runtimeConfig.customProtocol,
+        });
         logCtxWarn('[ClaudeAgentRunner] Model not in pi-ai registry, using synthetic model:', modelString, '→', piModel.api);
       }
       logCtx('[ClaudeAgentRunner] Resolved pi-ai model:', piModel.provider, piModel.id);
