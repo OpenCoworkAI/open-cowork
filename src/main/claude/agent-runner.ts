@@ -44,7 +44,14 @@ import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { configStore } from '../config/config-store';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
-import { applyPiModelRuntimeOverrides, buildSyntheticPiModel, resolvePiRegistryModel } from './pi-model-resolution';
+import {
+  applyPiModelRuntimeOverrides,
+  buildSyntheticPiModel,
+  resolvePiRegistryModel,
+  resolvePiRouteProtocol,
+  resolveSyntheticPiModelFallback,
+} from './pi-model-resolution';
+import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { ThinkTagStreamParser } from './think-tag-parser';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -334,6 +341,13 @@ interface AgentRunnerOptions {
   requestSudoPassword?: (sessionId: string, toolUseId: string, command: string) => Promise<string | null>;
 }
 
+interface CachedPiSession {
+  session: PiAgentSession;
+  modelId: string;
+  thinkingLevel: string;
+  runtimeSignature: string;
+}
+
 /**
  * ClaudeAgentRunner - Uses @anthropic-ai/claude-agent-sdk with allowedTools
  * 
@@ -352,7 +366,7 @@ export class ClaudeAgentRunner {
   private _pluginRuntimeService?: PluginRuntimeService;
   private _skillsAdapter?: SkillsAdapter;
   private activeControllers: Map<string, AbortController> = new Map();
-  private piSessions: Map<string, { session: PiAgentSession; modelId: string; thinkingLevel: string }> = new Map();
+  private piSessions: Map<string, CachedPiSession> = new Map();
 
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
@@ -1122,7 +1136,10 @@ ${hints.join('\n')}
       // Resolve model via pi-ai
       const runtimeConfig = configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
-      const configProtocol = runtimeConfig.customProtocol || runtimeConfig.provider || 'anthropic';
+      const configProtocol = resolvePiRouteProtocol(
+        runtimeConfig.provider,
+        runtimeConfig.customProtocol,
+      );
       let piModel = resolvePiRegistryModel(modelString, {
         configProvider: configProtocol,
         customBaseUrl: runtimeConfig.baseUrl?.trim() || undefined,
@@ -1132,10 +1149,23 @@ ${hints.join('\n')}
 
       if (!piModel) {
         // Synthetic fallback: construct a Model for unknown/custom models
-        const parts = modelString.split('/');
-        const syntheticId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
-        const syntheticProvider = parts.length >= 2 ? parts[0] : (configProtocol === 'custom' ? 'anthropic' : configProtocol);
-        piModel = buildSyntheticPiModel(syntheticId, syntheticProvider, configProtocol, runtimeConfig.baseUrl?.trim() || undefined, undefined, undefined, runtimeConfig.contextWindow, runtimeConfig.maxTokens);
+        const synthetic = resolveSyntheticPiModelFallback({
+          rawModel: runtimeConfig.model,
+          resolvedModelString: modelString,
+          rawProvider: runtimeConfig.provider,
+          routeProtocol: configProtocol,
+          baseUrl: runtimeConfig.baseUrl?.trim() || undefined,
+        });
+        piModel = buildSyntheticPiModel(
+          synthetic.modelId,
+          synthetic.provider,
+          configProtocol,
+          runtimeConfig.baseUrl?.trim() || undefined,
+          undefined,
+          undefined,
+          runtimeConfig.contextWindow,
+          runtimeConfig.maxTokens,
+        );
         // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
         // that resolvePiRegistryModel applies to registry models
         piModel = applyPiModelRuntimeOverrides(piModel, {
@@ -1182,6 +1212,7 @@ ${hints.join('\n')}
 
       // pi-coding-agent handles path sandboxing via its own tools
       const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
@@ -1247,12 +1278,31 @@ ${hints.join('\n')}
       logCtx('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
       type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
       const thinkingLevel: PiThinkingLevel = enableThinking ? 'medium' : 'off';
+      const sessionRuntimeSignature = buildPiSessionRuntimeSignature({
+        configProvider: runtimeConfig.provider,
+        customProtocol: runtimeConfig.customProtocol,
+        modelProvider: piModel.provider,
+        modelApi: piModel.api,
+        modelBaseUrl: piModel.baseUrl,
+        effectiveCwd,
+        apiKey,
+      });
 
       // Build contextual prompt — if reusing an existing SDK session, the SDK
       // already has conversation history so we only pass the new prompt.
       // For cold starts (new SDK session with existing DB history), we inject
       // a token-budgeted summary of recent history as a preamble.
-      const cachedSession = this.piSessions.get(session.id);
+      let cachedSession = this.piSessions.get(session.id);
+      if (cachedSession && cachedSession.runtimeSignature !== sessionRuntimeSignature) {
+        logCtx('[ClaudeAgentRunner] Runtime changed, recreating cached pi session:', session.id);
+        try {
+          cachedSession.session.dispose();
+        } catch (disposeError) {
+          logWarn('[ClaudeAgentRunner] dispose error while recreating pi session:', disposeError);
+        }
+        this.piSessions.delete(session.id);
+        cachedSession = undefined;
+      }
 
       let contextualPrompt = prompt;
       if (!cachedSession) {
@@ -1475,7 +1525,6 @@ Tool routing:
       logTiming('before pi-coding-agent session creation', runStartTime);
 
       // Create or reuse pi-coding-agent session
-      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
 
       // Collect skill directories for pi's native skill discovery.
       // SkillsAdapter handles path resolution, disabled skill filtering,
@@ -1563,7 +1612,12 @@ Tool routing:
         piSession = newPiSession;
 
         // Store session for reuse
-        this.piSessions.set(session.id, { session: piSession, modelId: piModel.id, thinkingLevel });
+        this.piSessions.set(session.id, {
+          session: piSession,
+          modelId: piModel.id,
+          thinkingLevel,
+          runtimeSignature: sessionRuntimeSignature,
+        });
         logTiming('pi-coding-agent session created', runStartTime);
       }
 

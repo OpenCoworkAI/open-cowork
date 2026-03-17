@@ -44,6 +44,20 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     expect(agentRunnerContent).not.toContain('systemPromptOverride');
   });
 
+  it('recreates cached pi sessions when the runtime signature changes', () => {
+    expect(agentRunnerContent).toContain("import { buildPiSessionRuntimeSignature } from './pi-session-runtime'");
+    expect(agentRunnerContent).toContain('const sessionRuntimeSignature = buildPiSessionRuntimeSignature({');
+    expect(agentRunnerContent).toContain('cachedSession.runtimeSignature !== sessionRuntimeSignature');
+    expect(agentRunnerContent).toContain('Runtime changed, recreating cached pi session:');
+    expect(agentRunnerContent).toContain('runtimeSignature: sessionRuntimeSignature');
+  });
+
+  it('uses the normalized route protocol so openrouter follows the openai-compatible path', () => {
+    expect(agentRunnerContent).toContain('resolvePiRouteProtocol');
+    expect(agentRunnerContent).toContain('const configProtocol = resolvePiRouteProtocol(');
+    expect(agentRunnerContent).toContain('resolveSyntheticPiModelFallback');
+  });
+
   it('nudges the model to proceed with reasonable assumptions', () => {
     expect(agentRunnerContent).toContain('proceed immediately with reasonable assumptions');
     expect(agentRunnerContent).toContain('within two days');

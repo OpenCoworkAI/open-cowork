@@ -25,6 +25,36 @@ export interface PiModelLookupCandidate {
   model: string;
 }
 
+export interface SyntheticPiModelFallbackInput {
+  rawModel?: string;
+  resolvedModelString: string;
+  rawProvider?: string;
+  routeProtocol: string;
+  baseUrl?: string;
+}
+
+export interface SyntheticPiModelFallback {
+  provider: string;
+  modelId: string;
+}
+
+export function resolvePiRouteProtocol(
+  provider?: string,
+  customProtocol?: string,
+): string {
+  if (provider === 'custom') {
+    if (customProtocol === 'openai' || customProtocol === 'gemini') {
+      return customProtocol;
+    }
+    return 'anthropic';
+  }
+  if (provider === 'ollama') return 'openai';
+  if (provider === 'openai') return 'openai';
+  if (provider === 'openrouter') return 'openai';
+  if (provider === 'gemini') return 'gemini';
+  return provider || 'anthropic';
+}
+
 function shouldDisableDeveloperRoleForEndpoint(
   model: Model<Api>,
   options: PiModelLookupOptions,
@@ -114,6 +144,41 @@ export function buildSyntheticPiModel(
     contextWindow: contextWindow || knownSpecs?.contextWindow || 128000,
     maxTokens: maxTokens || knownSpecs?.maxTokens || 16384,
   } as Model<Api>;
+}
+
+export function resolveSyntheticPiModelFallback(
+  input: SyntheticPiModelFallbackInput,
+): SyntheticPiModelFallback {
+  const rawModel = input.rawModel?.trim() || '';
+  const modelString = input.resolvedModelString.trim();
+  const parts = modelString.split('/');
+  const parsedProvider = parts.length >= 2 ? parts[0] : '';
+  const strippedModelId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
+  const baseUrl = input.baseUrl?.trim() || '';
+  const preservesExplicitPrefixedId =
+    rawModel.includes('/')
+    && (
+      input.rawProvider === 'openrouter'
+      || input.rawProvider === 'custom'
+      || (input.rawProvider === 'openai' && !!baseUrl && !isOfficialOpenAIBaseUrl(baseUrl))
+    )
+    && input.routeProtocol === 'openai';
+
+  if (input.rawProvider === 'openrouter') {
+    return {
+      provider: 'openrouter',
+      modelId: preservesExplicitPrefixedId ? modelString : strippedModelId,
+    };
+  }
+
+  const fallbackProvider = input.rawProvider === 'custom'
+    ? (input.routeProtocol || 'anthropic')
+    : (parsedProvider || input.rawProvider || input.routeProtocol || 'anthropic');
+
+  return {
+    provider: preservesExplicitPrefixedId ? (parsedProvider || fallbackProvider) : fallbackProvider,
+    modelId: preservesExplicitPrefixedId ? modelString : strippedModelId,
+  };
 }
 
 export function resolvePiModelString(input: PiModelStringInput): string {

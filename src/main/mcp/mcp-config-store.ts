@@ -63,12 +63,15 @@ class MCPConfigStore {
   private store: Store<{ servers: MCPServerConfig[] }>;
 
   constructor() {
-    this.store = new Store<{ servers: MCPServerConfig[] }>({
+    const storeOptions: any = {
       name: 'mcp-config',
+      projectName: 'open-cowork',
       defaults: {
         servers: [],
       },
-    });
+    };
+
+    this.store = new Store<{ servers: MCPServerConfig[] }>(storeOptions);
   }
 
   /**

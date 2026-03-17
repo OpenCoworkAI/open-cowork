@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
 import type {
+  AppConfig,
   ClientEvent,
   ServerEvent,
   PermissionResult,
@@ -103,6 +104,17 @@ export function useIPC() {
       pendingTraces.push(action);
       if (traceRafId === null) {
         traceRafId = requestAnimationFrame(flushTraces);
+      }
+    };
+
+    const applyConfigSnapshot = (config: AppConfig, isConfigured: boolean) => {
+      const store = storeRef.current;
+      const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
+      store.setIsConfigured(isConfigured);
+      store.setAppConfig(config);
+      store.setSettings({ theme: config.theme || 'light' });
+      if (isInitialConfigStatus) {
+        store.markInitialConfigStatusSeen();
       }
     };
 
@@ -209,14 +221,7 @@ export function useIPC() {
 
         case 'config.status': {
           console.log('[useIPC] config.status received:', event.payload.isConfigured);
-          const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
-          store.setIsConfigured(event.payload.isConfigured);
-          store.setAppConfig(event.payload.config);
-          if (isInitialConfigStatus) {
-            store.markInitialConfigStatusSeen();
-          }
-          // No longer auto-show ConfigModal on first run;
-          // WelcomeView guides users to Settings instead.
+          applyConfigSnapshot(event.payload.config, event.payload.isConfigured);
           break;
         }
 
@@ -301,8 +306,28 @@ export function useIPC() {
       }
     });
 
+    let disposed = false;
+    void (async () => {
+      try {
+        const [config, isConfigured, systemTheme] = await Promise.all([
+          window.electronAPI.config.get(),
+          window.electronAPI.config.isConfigured(),
+          window.electronAPI.getSystemTheme(),
+        ]);
+        if (disposed) {
+          return;
+        }
+        const store = storeRef.current;
+        store.setSystemDarkMode(Boolean(systemTheme?.shouldUseDarkColors));
+        applyConfigSnapshot(config, Boolean(isConfigured));
+      } catch (error) {
+        console.error('[useIPC] Failed to bootstrap config/theme state:', error);
+      }
+    })();
+
     // Cleanup on unmount only
     return () => {
+      disposed = true;
       console.log('[useIPC] Cleaning up IPC listener');
       if (partialRafId !== null) cancelAnimationFrame(partialRafId);
       if (thinkingRafId !== null) cancelAnimationFrame(thinkingRafId);

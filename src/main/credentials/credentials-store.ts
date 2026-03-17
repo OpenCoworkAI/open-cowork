@@ -34,12 +34,15 @@ class CredentialsStore {
   private store: Store<{ credentials: StoredCredential[] }>;
 
   constructor() {
-    this.store = new Store<{ credentials: StoredCredential[] }>({
+    const storeOptions: any = {
       name: 'credentials',
+      projectName: 'open-cowork',
       defaults: {
         credentials: [],
       },
-    });
+    };
+
+    this.store = new Store<{ credentials: StoredCredential[] }>(storeOptions);
   }
 
   /**

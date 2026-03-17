@@ -173,4 +173,20 @@ describe('ConfigStore config sets', () => {
     expect(blankSet?.profiles.gemini?.baseUrl).toBe('https://generativelanguage.googleapis.com');
     expect(blankSet?.profiles.gemini?.model).toBe('gemini-2.5-flash');
   });
+
+  it('persists theme preference across config mutations', () => {
+    mocks.seed = {
+      theme: 'dark',
+      isConfigured: true,
+    };
+
+    const store = new ConfigStore();
+    expect(store.get('theme')).toBe('dark');
+
+    store.update({ theme: 'system' });
+    expect(store.get('theme')).toBe('system');
+
+    const created = store.createSet({ name: 'Theme Carry', mode: 'clone' });
+    expect(created.theme).toBe('system');
+  });
 });

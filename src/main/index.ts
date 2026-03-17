@@ -26,6 +26,7 @@ import {
   configStore,
   getPiAiModelPresets,
   type AppConfig,
+  type AppTheme,
   type CreateConfigSetPayload,
 } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
@@ -337,13 +338,37 @@ function setupTray() {
   });
 }
 
+function getSavedThemePreference(): AppTheme {
+  const theme = configStore.get('theme');
+  return theme === 'dark' || theme === 'system' ? theme : 'light';
+}
+
+function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
+  if (theme === 'system') {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  }
+  return theme;
+}
+
+function applyNativeThemePreference(theme: AppTheme): void {
+  nativeTheme.themeSource = theme;
+}
+
 function createWindow() {
-  // Theme colors (warm cream theme)
-  const THEME = {
-    background: '#f5f3ee',
-    titleBar: '#f5f3ee',
-    titleBarSymbol: '#1a1a1a',
-  };
+  const savedTheme = getSavedThemePreference();
+  applyNativeThemePreference(savedTheme);
+  const effectiveTheme = resolveEffectiveTheme(savedTheme);
+  const THEME = effectiveTheme === 'dark'
+    ? {
+        background: '#171614',
+        titleBar: '#171614',
+        titleBarSymbol: '#f1ece4',
+      }
+    : {
+        background: '#f5f3ee',
+        titleBar: '#f5f3ee',
+        titleBarSymbol: '#1a1a1a',
+      };
 
   // Platform-specific window configuration
   const isMac = process.platform === 'darwin';
@@ -2587,7 +2612,28 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'settings.update':
-      // TODO: Implement settings update
+      if (
+        event.payload.theme === 'dark'
+        || event.payload.theme === 'light'
+        || event.payload.theme === 'system'
+      ) {
+        const nextTheme = event.payload.theme as AppTheme;
+        configStore.update({ theme: nextTheme });
+        applyNativeThemePreference(nextTheme);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const effectiveTheme = resolveEffectiveTheme(nextTheme);
+          mainWindow.setBackgroundColor(
+            effectiveTheme === 'dark' ? '#171614' : '#f5f3ee'
+          );
+        }
+        sendToRenderer({
+          type: 'config.status',
+          payload: {
+            isConfigured: configStore.isConfigured(),
+            config: configStore.getAll(),
+          },
+        });
+      }
       return null;
 
     default:

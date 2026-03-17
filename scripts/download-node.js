@@ -21,6 +21,7 @@ const PLATFORMS = {
 
 const BASE_URL = 'https://nodejs.org/dist';
 const OUTPUT_DIR = path.join(__dirname, '..', 'resources', 'node');
+const DOWNLOAD_ALL_PLATFORMS = process.env.OPEN_COWORK_DOWNLOAD_ALL_NODE_BINARIES === '1';
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
@@ -123,10 +124,21 @@ async function downloadAndExtract(platform, arch) {
 async function main() {
   console.log('Downloading Node.js binaries...\n');
 
-  // Download for all platforms
   const downloads = [];
-  for (const [platform, arches] of Object.entries(PLATFORMS)) {
-    for (const arch of Object.keys(arches)) {
+  const platformsToDownload = DOWNLOAD_ALL_PLATFORMS
+    ? Object.entries(PLATFORMS)
+    : [[process.platform, PLATFORMS[process.platform] || {}]];
+
+  if (!DOWNLOAD_ALL_PLATFORMS) {
+    console.log(`Current platform only: ${process.platform}-${process.arch}`);
+  }
+
+  for (const [platform, arches] of platformsToDownload) {
+    const archList = DOWNLOAD_ALL_PLATFORMS
+      ? Object.keys(arches)
+      : [process.arch];
+
+    for (const arch of archList) {
       downloads.push(downloadAndExtract(platform, arch));
     }
   }

@@ -81,7 +81,8 @@ function cleanInvalidElectronCache(electronCacheDir) {
 
 function main() {
   if (process.platform !== 'win32') {
-    console.warn('[build:win] This helper is intended for Windows hosts.');
+    console.warn('[build:win] This helper is intended for Windows hosts. Skipping build.');
+    process.exit(0);
   }
 
   Object.values(DIRS).forEach(ensureDir);

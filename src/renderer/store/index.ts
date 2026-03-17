@@ -128,6 +128,7 @@ interface AppState {
 
   setPendingSudoPassword: (request: SudoPasswordRequest | null) => void;
 
+  setSettings: (updates: Partial<Settings>) => void;
   updateSettings: (updates: Partial<Settings>) => void;
 
   // Config actions
@@ -603,10 +604,22 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSudoPassword: (request) => set({ pendingSudoPassword: request }),
 
   // Settings actions
-  updateSettings: (updates) =>
+  setSettings: (updates) =>
     set((state) => ({
       settings: { ...state.settings, ...updates },
     })),
+  updateSettings: (updates) =>
+    set((state) => {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        window.electronAPI.send({
+          type: 'settings.update',
+          payload: updates as Record<string, unknown>,
+        });
+      }
+      return {
+        settings: { ...state.settings, ...updates },
+      };
+    }),
 
   // Config actions
   setAppConfig: (config) => set({ appConfig: config }),

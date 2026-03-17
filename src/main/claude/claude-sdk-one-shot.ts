@@ -11,7 +11,15 @@ import {
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
 import { getSharedAuthStorage } from './shared-auth';
-import { applyPiModelRuntimeOverrides, buildSyntheticPiModel, inferPiApi, resolvePiModelString, resolvePiRegistryModel } from './pi-model-resolution';
+import {
+  applyPiModelRuntimeOverrides,
+  buildSyntheticPiModel,
+  inferPiApi,
+  resolvePiModelString,
+  resolvePiRegistryModel,
+  resolvePiRouteProtocol,
+  resolveSyntheticPiModelFallback,
+} from './pi-model-resolution';
 
 const NETWORK_ERROR_RE = /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
 const AUTH_ERROR_RE = /authentication[_\s-]?failed|unauthorized|invalid[_\s-]?api[_\s-]?key|forbidden|401|403/i;
@@ -20,20 +28,6 @@ const SERVER_ERROR_RE = /server[_\s-]?error|internal\s+server\s+error|5\d\d/i;
 const PROBE_ACK = 'sdk_probe_ok';
 const LOCAL_ANTHROPIC_PLACEHOLDER_KEY = 'sk-ant-local-proxy';
 const LOCAL_GEMINI_PLACEHOLDER_KEY = 'sk-gemini-local-proxy';
-
-function resolveCustomProtocol(provider: AppConfig['provider'], customProtocol?: CustomProtocolType): CustomProtocolType {
-  if (provider === 'custom') {
-    if (customProtocol === 'openai' || customProtocol === 'gemini') {
-      return customProtocol;
-    }
-    return 'anthropic';
-  }
-  if (provider === 'ollama') return 'openai';
-  if (provider === 'openai') return 'openai';
-  if (provider === 'openrouter') return 'openai';
-  if (provider === 'gemini') return 'gemini';
-  return 'anthropic';
-}
 
 function resolveProbeBaseUrl(input: ApiTestInput): string | undefined {
   const configured = input.baseUrl?.trim();
@@ -100,7 +94,7 @@ function resolveProbeApiKey(
 function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
   const resolvedBaseUrl = resolveProbeBaseUrl(input);
   const normalizedInputApiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : undefined;
-  const resolvedCustomProtocol = resolveCustomProtocol(input.provider, input.customProtocol);
+  const resolvedCustomProtocol = resolvePiRouteProtocol(input.provider, input.customProtocol) as CustomProtocolType;
   const effectiveRawBaseUrl = resolvedBaseUrl || '';
   const effectiveBaseUrl = resolvedCustomProtocol === 'openai' || resolvedCustomProtocol === 'gemini'
     ? effectiveRawBaseUrl
@@ -160,7 +154,6 @@ async function runPiAiOneShot(
   const keyProvider = config.customProtocol || config.provider || 'anthropic';
   const parts = modelString.split('/');
   const provider = parts.length >= 2 ? parts[0] : (keyProvider || 'anthropic');
-  const modelId = parts.length >= 2 ? parts.slice(1).join('/') : parts[0];
   let piModel = resolvePiRegistryModel(modelString, {
     configProvider: keyProvider,
     customBaseUrl: config.baseUrl?.trim() || undefined,
@@ -170,9 +163,22 @@ async function runPiAiOneShot(
 
   if (!piModel) {
     // Synthetic fallback for unknown/custom models
-    const effectiveProtocol = resolveCustomProtocol(config.provider, config.customProtocol);
+    const effectiveProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol) as CustomProtocolType;
     const api = config.baseUrl?.trim() ? inferPiApi(effectiveProtocol) : undefined;
-    piModel = buildSyntheticPiModel(modelId, provider, effectiveProtocol, config.baseUrl?.trim() || '', api);
+    const synthetic = resolveSyntheticPiModelFallback({
+      rawModel: config.model,
+      resolvedModelString: modelString,
+      rawProvider: config.provider,
+      routeProtocol: effectiveProtocol,
+      baseUrl: config.baseUrl?.trim() || undefined,
+    });
+    piModel = buildSyntheticPiModel(
+      synthetic.modelId,
+      synthetic.provider,
+      effectiveProtocol,
+      config.baseUrl?.trim() || '',
+      api,
+    );
     piModel = applyPiModelRuntimeOverrides(piModel, {
       configProvider: keyProvider,
       customBaseUrl: config.baseUrl?.trim() || undefined,

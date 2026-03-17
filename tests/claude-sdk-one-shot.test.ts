@@ -19,6 +19,21 @@ vi.mock('../src/main/claude/shared-auth', () => ({
 }));
 
 vi.mock('../src/main/claude/pi-model-resolution', () => ({
+  resolvePiRouteProtocol: (provider?: string, customProtocol?: string) => {
+    if (provider === 'custom') {
+      if (customProtocol === 'openai' || customProtocol === 'gemini') {
+        return customProtocol;
+      }
+      return 'anthropic';
+    }
+    if (provider === 'ollama' || provider === 'openai' || provider === 'openrouter') {
+      return 'openai';
+    }
+    if (provider === 'gemini') {
+      return 'gemini';
+    }
+    return provider || 'anthropic';
+  },
   resolvePiModelString: ({ model, customProtocol, provider }: { model?: string; customProtocol?: string; provider?: string }) => {
     const value = model?.trim() || 'claude-sonnet-4-6';
     if (value.includes('/')) {
@@ -28,6 +43,31 @@ vi.mock('../src/main/claude/pi-model-resolution', () => ({
   },
   resolvePiRegistryModel: mocks.resolvePiRegistryModel,
   buildSyntheticPiModel: mocks.buildSyntheticPiModel,
+  applyPiModelRuntimeOverrides: (model: unknown) => model,
+  resolveSyntheticPiModelFallback: ({
+    rawModel,
+    resolvedModelString,
+    rawProvider,
+    routeProtocol,
+    baseUrl,
+  }: {
+    rawModel?: string;
+    resolvedModelString: string;
+    rawProvider?: string;
+    routeProtocol: string;
+    baseUrl?: string;
+  }) => {
+    const raw = rawModel?.trim() || '';
+    const resolved = resolvedModelString.trim();
+    const parts = resolved.split('/');
+    const strippedModelId = parts.length >= 2 ? parts.slice(1).join('/') : resolved;
+    const preserve = rawProvider === 'openrouter' && routeProtocol === 'openai' && raw.includes('/');
+    return {
+      provider: rawProvider === 'openrouter' ? 'openrouter' : (parts[0] || rawProvider || routeProtocol),
+      modelId: preserve ? resolved : strippedModelId,
+      baseUrl,
+    };
+  },
   inferPiApi: (protocol: string) => {
     if (protocol === 'anthropic') return 'anthropic-messages';
     if (protocol === 'gemini' || protocol === 'google') return 'google-generative-ai';
@@ -273,5 +313,41 @@ describe('probeWithClaudeSdk', () => {
 
     expect(result.ok).toBe(false);
     expect(result.errorType).toBe('network_error');
+  });
+
+  it('keeps explicit openrouter model namespaces for synthetic fallback models', async () => {
+    mocks.resolvePiRegistryModel.mockReturnValue(undefined);
+    mocks.buildSyntheticPiModel.mockReturnValue({
+      id: 'z-ai/glm-5-turbo',
+      provider: 'openrouter',
+      api: 'openai-completions',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    });
+
+    const result = await probeWithClaudeSdk(
+      {
+        provider: 'openrouter',
+        apiKey: 'sk-or-test',
+        model: 'z-ai/glm-5-turbo',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      },
+      createConfig({
+        provider: 'openrouter',
+        apiKey: 'sk-or-test',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        customProtocol: 'anthropic',
+        model: 'z-ai/glm-5-turbo',
+        activeProfileKey: 'openrouter',
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.buildSyntheticPiModel).toHaveBeenCalledWith(
+      'z-ai/glm-5-turbo',
+      'openrouter',
+      'openai',
+      'https://openrouter.ai/api/v1',
+      'openai-completions',
+    );
   });
 });
