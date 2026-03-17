@@ -4619,6 +4619,7 @@ function GeneralTab() {
   const languages = [
     { code: 'en', nativeName: 'English' },
     { code: 'zh', nativeName: '中文' },
+    { code: 'ru', nativeName: 'Русский' },
   ];
 
   const themeOptions = [
