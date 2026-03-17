@@ -11,6 +11,7 @@ import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
+import { ResizeHandle } from './components/ResizeHandle';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -42,6 +43,8 @@ function App() {
   const showConfigModal = useAppStore((s) => s.showConfigModal);
   const showSettings = useAppStore((s) => s.showSettings);
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const sidebarWidth = useAppStore((s) => s.sidebarWidth);
+  const contextPanelWidth = useAppStore((s) => s.contextPanelWidth);
   const isConfigured = useAppStore((s) => s.isConfigured);
   const appConfig = useAppStore((s) => s.appConfig);
   const globalNotice = useAppStore((s) => s.globalNotice);
@@ -56,6 +59,8 @@ function App() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
+  const setSidebarWidth = useAppStore((s) => s.setSidebarWidth);
+  const setContextPanelWidth = useAppStore((s) => s.setContextPanelWidth);
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
   const initialized = useRef(false);
@@ -139,6 +144,18 @@ function App() {
   // Show if there's progress and setup is not complete
   const showSandboxSetup = sandboxSetupProgress && !isSandboxSetupComplete;
 
+  // Resize handlers
+  const handleSidebarResize = useCallback((delta: number) => {
+    const newWidth = Math.max(200, Math.min(400, sidebarWidth + delta));
+    setSidebarWidth(newWidth);
+  }, [sidebarWidth, setSidebarWidth]);
+
+  const handleContextPanelResize = useCallback((delta: number) => {
+    // Negative delta because dragging left should expand the right panel
+    const newWidth = Math.max(200, Math.min(500, contextPanelWidth - delta));
+    setContextPanelWidth(newWidth);
+  }, [contextPanelWidth, setContextPanelWidth]);
+
   return (
     <div className="h-full w-full min-h-0 flex flex-col overflow-hidden bg-background">
       {/* Titlebar - draggable region */}
@@ -148,8 +165,13 @@ function App() {
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Sidebar */}
         <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
-          <Sidebar />
+          <Sidebar width={sidebarWidth} />
         </PanelErrorBoundary>
+
+        {/* Sidebar Resize Handle */}
+        {!sidebarCollapsed && !showSettings && (
+          <ResizeHandle direction="horizontal" onResize={handleSidebarResize} />
+        )}
 
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
@@ -172,11 +194,15 @@ function App() {
 
         {/* Context Panel - only show when in session and not in settings */}
         {activeSessionId && !showSettings && (
-          <PanelErrorBoundary name="ContextPanel" fallback={<ContextPanelFallback />}>
-            <Suspense fallback={<ContextPanelFallback />}>
-              <ContextPanel />
-            </Suspense>
-          </PanelErrorBoundary>
+          <>
+            {/* Context Panel Resize Handle */}
+            <ResizeHandle direction="horizontal" onResize={handleContextPanelResize} />
+            <PanelErrorBoundary name="ContextPanel" fallback={<ContextPanelFallback />}>
+              <Suspense fallback={<ContextPanelFallback />}>
+                <ContextPanel width={contextPanelWidth} />
+              </Suspense>
+            </PanelErrorBoundary>
+          </>
         )}
       </div>
       

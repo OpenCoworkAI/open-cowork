@@ -25,7 +25,11 @@ type SessionGroup = {
   sessions: Session[];
 };
 
-export function Sidebar() {
+interface SidebarProps {
+  width?: number;
+}
+
+export function Sidebar({ width = 280 }: SidebarProps) {
   const { t } = useTranslation();
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -262,7 +266,10 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-[17.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
+    <aside
+      className="bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden"
+      style={{ width: `${width}px` }}
+    >
       <div className="px-4 pt-5 pb-4 border-b border-border-muted">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">

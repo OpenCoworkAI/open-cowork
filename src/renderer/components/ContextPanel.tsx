@@ -32,7 +32,11 @@ import {
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo } from '../types';
 
-export function ContextPanel() {
+interface ContextPanelProps {
+  width?: number;
+}
+
+export function ContextPanel({ width = 296 }: ContextPanelProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
@@ -242,7 +246,10 @@ export function ContextPanel() {
   }
 
   return (
-    <div className="w-72 bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
+    <div
+      className="bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm"
+      style={{ width: `${width}px` }}
+    >
       {/* Header */}
       <div className="px-3 h-10 flex items-center gap-2 border-b border-border-muted shrink-0">
         <button

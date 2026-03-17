@@ -51,6 +51,9 @@ interface AppState {
   isLoading: boolean;
   sidebarCollapsed: boolean;
   contextPanelCollapsed: boolean;
+  sidebarWidth: number;
+  contextPanelWidth: number;
+  chatInputHeight: number;
   showSettings: boolean;
   settingsTab: string | null;
 
@@ -121,6 +124,9 @@ interface AppState {
   toggleContextPanel: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setContextPanelCollapsed: (collapsed: boolean) => void;
+  setSidebarWidth: (width: number) => void;
+  setContextPanelWidth: (width: number) => void;
+  setChatInputHeight: (height: number) => void;
   setShowSettings: (show: boolean) => void;
   setSettingsTab: (tab: string | null) => void;
 
@@ -199,6 +205,9 @@ export const useAppStore = create<AppState>((set) => ({
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
+  sidebarWidth: 280,
+  contextPanelWidth: 296,
+  chatInputHeight: 160,
   showSettings: false,
   settingsTab: null,
   pendingPermission: null,
@@ -593,6 +602,9 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ contextPanelCollapsed: !state.contextPanelCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setContextPanelCollapsed: (collapsed) => set({ contextPanelCollapsed: collapsed }),
+  setSidebarWidth: (width) => set({ sidebarWidth: width }),
+  setContextPanelWidth: (width) => set({ contextPanelWidth: width }),
+  setChatInputHeight: (height) => set({ chatInputHeight: height }),
   setShowSettings: (show) => set({ showSettings: show }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
 

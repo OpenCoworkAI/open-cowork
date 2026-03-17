@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
+import { ResizeHandle } from './ResizeHandle';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock, Shield, ShieldOff } from 'lucide-react';
 
@@ -25,6 +26,8 @@ export function ChatView() {
   const pendingTurnsBySession = useAppStore((s) => s.pendingTurnsBySession);
   const executionClockBySession = useAppStore((s) => s.executionClockBySession);
   const appConfig = useAppStore((s) => s.appConfig);
+  const chatInputHeight = useAppStore((s) => s.chatInputHeight);
+  const setChatInputHeight = useAppStore((s) => s.setChatInputHeight);
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -602,6 +605,12 @@ export function ChatView() {
     }
   };
 
+  const handleInputResize = useCallback((delta: number) => {
+    // Negative delta because dragging up should expand the input area
+    const newHeight = Math.max(100, Math.min(400, chatInputHeight - delta));
+    setChatInputHeight(newHeight);
+  }, [chatInputHeight, setChatInputHeight]);
+
   if (!activeSession) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted">
@@ -703,15 +712,21 @@ export function ChatView() {
         </div>
       </div>
 
+      {/* Input Resize Handle */}
+      <ResizeHandle direction="vertical" onResize={handleInputResize} />
+
       {/* Input */}
-      <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
-        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
+      <div
+        className="border-t border-border-muted bg-background/92 backdrop-blur-md flex-shrink-0 overflow-hidden"
+        style={{ height: `${chatInputHeight}px` }}
+      >
+        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-4 h-full flex flex-col">
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className="relative w-full"
+            className="relative w-full h-full flex flex-col"
           >
             {/* Image previews */}
             {pastedImages.length > 0 && (
@@ -759,19 +774,10 @@ export function ChatView() {
             )}
 
             <div
-              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
+              className={`flex flex-col flex-1 min-h-0 gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
             >
-              <button
-                type="button"
-                onClick={handleFileSelect}
-                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                title={t('welcome.attachFiles')}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-
               <textarea
                 ref={textareaRef}
                 value={prompt}
@@ -795,12 +801,21 @@ export function ChatView() {
                 }}
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
-                rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
+                className="flex-1 min-h-0 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px]"
               />
 
-              <div className="flex items-center gap-2">
-                {/* Sandbox status badge */}
+              <div className="flex items-center justify-between gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={handleFileSelect}
+                  className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                  title={t('welcome.attachFiles')}
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+
+                <div className="flex items-center gap-2">
+                  {/* Sandbox status badge */}
                 {appConfig?.sandboxEnabled && (
                   <span
                     className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full border border-success/30 bg-success/5 text-xs text-success"
@@ -846,6 +861,7 @@ export function ChatView() {
                 >
                   <Send className="w-4 h-4" />
                 </button>
+                </div>
               </div>
             </div>
 
