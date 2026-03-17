@@ -214,9 +214,8 @@ export function useIPC() {
           if (isInitialConfigStatus) {
             store.markInitialConfigStatusSeen();
           }
-          if (isInitialConfigStatus && !event.payload.isConfigured) {
-            store.setShowConfigModal(true);
-          }
+          // No longer auto-show ConfigModal on first run;
+          // WelcomeView guides users to Settings instead.
           break;
         }
 

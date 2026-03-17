@@ -41,6 +41,9 @@ export function WelcomeView() {
   const { startSession, changeWorkingDir, isElectron } = useIPC();
   const workingDir = useAppStore((state) => state.workingDir);
   const setGlobalNotice = useAppStore((state) => state.setGlobalNotice);
+  const isConfigured = useAppStore((state) => state.isConfigured);
+  const setShowSettings = useAppStore((state) => state.setShowSettings);
+  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
 
   const handleSelectFolder = async () => {
@@ -455,6 +458,24 @@ export function WelcomeView() {
             {t('welcome.title')}
           </p>
         </div>
+
+        {/* API Not Configured Hint */}
+        {!isConfigured && (
+          <p className="text-sm text-text-muted text-center">
+            {t('welcome.apiNotConfigured')}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsTab('api');
+                setShowSettings(true);
+              }}
+              className="inline-flex items-center gap-1 text-accent hover:text-accent-hover transition-colors"
+            >
+              {t('welcome.goToSettings')}
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </p>
+        )}
 
         {/* Quick Action Tags */}
         <div className="flex flex-wrap gap-2 justify-center px-3">
