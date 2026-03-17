@@ -607,7 +607,7 @@ export function ChatView() {
 
   const handleInputResize = useCallback((delta: number) => {
     // Negative delta because dragging up should expand the input area
-    const newHeight = Math.max(100, Math.min(400, chatInputHeight - delta));
+    const newHeight = Math.max(160, Math.min(450, chatInputHeight - delta));
     setChatInputHeight(newHeight);
   }, [chatInputHeight, setChatInputHeight]);
 
