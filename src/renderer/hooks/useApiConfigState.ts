@@ -560,6 +560,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const { t } = useTranslation();
   const { enabled = true, initialConfig, onSave } = options;
   const setAppConfig = useAppStore((s) => s.setAppConfig);
+  const setIsConfigured = useAppStore((s) => s.setIsConfigured);
   const initialBootstrapRef = useRef<ApiConfigBootstrap | null>(null);
   if (!initialBootstrapRef.current) {
     initialBootstrapRef.current = buildApiConfigBootstrap(initialConfig, FALLBACK_PROVIDER_PRESETS);
@@ -894,6 +895,15 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       );
     },
     []
+  );
+
+  const applyPersistedConfigToStore = useCallback(
+    (config: AppConfig, loadedPresets: ProviderPresets) => {
+      applyLoadedState(config, loadedPresets);
+      setAppConfig(config);
+      setIsConfigured(Boolean(config.isConfigured));
+    },
+    [applyLoadedState, setAppConfig, setIsConfigured]
   );
 
   const updateActiveProfile = useCallback(
@@ -1487,8 +1497,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           await onSave(payload);
         } else {
           const result = await window.electronAPI.config.save(payload);
-          applyLoadedState(result.config, presets);
-          setAppConfig(result.config);
+          applyPersistedConfigToStore(result.config, presets);
         }
 
         setSavedDraftSignature(currentDraftSignature);
@@ -1513,7 +1522,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       activeConfigSetId,
       activeProfileKey,
       apiKey,
-      applyLoadedState,
+      applyPersistedConfigToStore,
       baseUrl,
       currentDraftSignature,
       currentPreset.baseUrl,
@@ -1526,7 +1535,6 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       profiles,
       provider,
       requiresApiKey,
-      setAppConfig,
       clearError,
       clearSuccessMessage,
       showErrorKey,
@@ -1547,8 +1555,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       clearError();
       try {
         const result = await window.electronAPI.config.switchSet({ id: setId });
-        applyLoadedState(result.config, presets);
-        setAppConfig(result.config);
+        applyPersistedConfigToStore(result.config, presets);
         if (!options?.silentSuccess) {
           showSuccessKey('api.configSetSwitched');
           setTimeout(() => clearSuccessMessage(), 1500);
@@ -1566,11 +1573,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       }
     },
     [
-      applyLoadedState,
+      applyPersistedConfigToStore,
       clearError,
       clearSuccessMessage,
       presets,
-      setAppConfig,
       showErrorKey,
       showErrorText,
       showSuccessKey,
@@ -1603,8 +1609,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           mode: payload.mode,
           fromSetId: payload.mode === 'clone' ? activeConfigSetId : undefined,
         });
-        applyLoadedState(result.config, presets);
-        setAppConfig(result.config);
+        applyPersistedConfigToStore(result.config, presets);
         showSuccessKey('api.configSetCreated');
         setTimeout(() => clearSuccessMessage(), 1500);
         return true;
@@ -1621,12 +1626,11 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     },
     [
       activeConfigSetId,
-      applyLoadedState,
+      applyPersistedConfigToStore,
       clearError,
       clearSuccessMessage,
       configSets.length,
       presets,
-      setAppConfig,
       showErrorKey,
       showErrorText,
       showSuccessKey,
@@ -1717,8 +1721,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       clearError();
       try {
         const result = await window.electronAPI.config.renameSet({ id, name: trimmed });
-        applyLoadedState(result.config, presets);
-        setAppConfig(result.config);
+        applyPersistedConfigToStore(result.config, presets);
         showSuccessKey('api.configSetRenamed');
         setTimeout(() => clearSuccessMessage(), 1500);
         return true;
@@ -1734,11 +1737,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       }
     },
     [
-      applyLoadedState,
+      applyPersistedConfigToStore,
       clearError,
       clearSuccessMessage,
       presets,
-      setAppConfig,
       showErrorKey,
       showErrorText,
       showSuccessKey,
@@ -1756,8 +1758,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       clearError();
       try {
         const result = await window.electronAPI.config.deleteSet({ id });
-        applyLoadedState(result.config, presets);
-        setAppConfig(result.config);
+        applyPersistedConfigToStore(result.config, presets);
         showSuccessKey('api.configSetDeleted');
         setTimeout(() => clearSuccessMessage(), 1500);
         return true;
@@ -1773,11 +1774,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       }
     },
     [
-      applyLoadedState,
+      applyPersistedConfigToStore,
       clearError,
       clearSuccessMessage,
       presets,
-      setAppConfig,
       showErrorKey,
       showErrorText,
       showSuccessKey,
