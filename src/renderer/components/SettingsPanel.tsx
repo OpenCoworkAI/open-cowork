@@ -1565,7 +1565,7 @@ function StatusItem({
 function CredentialsTab() {
   const { t } = useTranslation();
   const tRef = useRef(t);
-  useEffect(() => { tRef.current = t; });
+  useEffect(() => { tRef.current = t; }, [t]);
   const [credentials, setCredentials] = useState<UserCredential[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1937,7 +1937,7 @@ function CredentialForm({
 function ConnectorsTab({ isActive }: { isActive: boolean }) {
   const { t } = useTranslation();
   const tRef = useRef(t);
-  useEffect(() => { tRef.current = t; });
+  useEffect(() => { tRef.current = t; }, [t]);
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [statuses, setStatuses] = useState<MCPServerStatus[]>([]);
   const [tools, setTools] = useState<MCPToolInfo[]>([]);
@@ -3653,7 +3653,7 @@ function ScheduleTab({ isActive }: { isActive: boolean }) {
     if (!cwd) {
       setCwd(workingDir || '');
     }
-  }, [workingDir, cwd]);
+  }, [workingDir]);
 
   const loadTasks = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!isElectron) return;

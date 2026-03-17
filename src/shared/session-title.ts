@@ -3,7 +3,7 @@ const MAX_SESSION_TITLE_LENGTH = 50;
 
 function truncateSessionTitle(value: string): string {
   return value.length > MAX_SESSION_TITLE_LENGTH
-    ? `${value.slice(0, MAX_SESSION_TITLE_LENGTH)}...`
+    ? `${value.slice(0, Math.max(1, MAX_SESSION_TITLE_LENGTH - 3))}...`
     : value;
 }
 

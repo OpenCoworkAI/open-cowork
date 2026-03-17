@@ -12,6 +12,8 @@
  * Dependencies: electron-store, auth-utils, api-model-presets
  */
 import Store from 'electron-store';
+import * as crypto from 'crypto';
+import * as os from 'os';
 import { log, logWarn } from '../utils/logger';
 import {
   isOpenAIProvider,
@@ -349,12 +351,17 @@ function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType 
 export class ConfigStore {
   private store: Store<AppConfig>;
 
+  private static getConfigKey(): Buffer {
+    const seed = `${os.hostname()}:${__dirname}:open-cowork-config-v1`;
+    return crypto.scryptSync(seed, 'open-cowork-config-salt', 32);
+  }
+
   constructor() {
     const storeOptions: any = {
       name: 'config',
       defaults: defaultConfig,
-      // Encrypt the API key for basic security
-      encryptionKey: 'open-cowork-config-v1',
+      // Encrypt the API key using a per-installation derived key
+      encryptionKey: ConfigStore.getConfigKey().toString('hex'),
     };
 
     // Add projectName for non-Electron environments (e.g., MCP servers)

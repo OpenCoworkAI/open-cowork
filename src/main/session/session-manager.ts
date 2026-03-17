@@ -59,6 +59,8 @@ export class SessionManager {
   private sessionTitleAttempts: Set<string> = new Set();
   private titleGenerationTokens: Map<string, symbol> = new Map();
   private messageCache: Map<string, Message[]> = new Map();
+  private static readonly MAX_CACHE_SIZE = 100;
+  private isProcessingQueue = false;
 
   constructor(
     db: DatabaseInstance,
@@ -280,6 +282,22 @@ export class SessionManager {
     const row = this.db.sessions.get(sessionId);
     if (!row) return null;
 
+    let mountedPaths;
+    try {
+      mountedPaths = JSON.parse(row.mounted_paths);
+    } catch (e) {
+      logError('[SessionManager] Failed to parse mounted_paths:', e);
+      mountedPaths = [];
+    }
+
+    let allowedTools;
+    try {
+      allowedTools = JSON.parse(row.allowed_tools);
+    } catch (e) {
+      logError('[SessionManager] Failed to parse allowed_tools:', e);
+      allowedTools = [];
+    }
+
     return {
       id: row.id,
       title: row.title,
@@ -287,8 +305,8 @@ export class SessionManager {
       openaiThreadId: row.openai_thread_id || undefined,
       status: row.status as Session['status'],
       cwd: row.cwd || undefined,
-      mountedPaths: JSON.parse(row.mounted_paths),
-      allowedTools: JSON.parse(row.allowed_tools),
+      mountedPaths,
+      allowedTools,
       memoryEnabled: row.memory_enabled === 1,
       model: row.model || undefined,
       createdAt: row.created_at,
@@ -300,20 +318,38 @@ export class SessionManager {
   listSessions(): Session[] {
     const rows = this.db.sessions.getAll();
 
-    return rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      claudeSessionId: row.claude_session_id || undefined,
-      openaiThreadId: row.openai_thread_id || undefined,
-      status: row.status as Session['status'],
-      cwd: row.cwd || undefined,
-      mountedPaths: JSON.parse(row.mounted_paths),
-      allowedTools: JSON.parse(row.allowed_tools),
-      memoryEnabled: row.memory_enabled === 1,
-      model: row.model || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return rows.map((row) => {
+      let mountedPaths;
+      try {
+        mountedPaths = JSON.parse(row.mounted_paths);
+      } catch (e) {
+        logError('[SessionManager] Failed to parse mounted_paths:', e);
+        mountedPaths = [];
+      }
+
+      let allowedTools;
+      try {
+        allowedTools = JSON.parse(row.allowed_tools);
+      } catch (e) {
+        logError('[SessionManager] Failed to parse allowed_tools:', e);
+        allowedTools = [];
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        claudeSessionId: row.claude_session_id || undefined,
+        openaiThreadId: row.openai_thread_id || undefined,
+        status: row.status as Session['status'],
+        cwd: row.cwd || undefined,
+        mountedPaths,
+        allowedTools,
+        memoryEnabled: row.memory_enabled === 1,
+        model: row.model || undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
   }
 
   // Continue an existing session
@@ -659,7 +695,9 @@ export class SessionManager {
     this.promptQueues.set(session.id, queue);
 
     if (!this.activeSessions.has(session.id)) {
-      void this.processQueue(session);
+      this.processQueue(session).catch(err => {
+        logError('[SessionManager] Queue processing error:', err);
+      });
     } else {
       log('[SessionManager] Session running, queued prompt:', session.id);
     }
@@ -667,6 +705,8 @@ export class SessionManager {
 
   private async processQueue(session: Session): Promise<void> {
     if (this.activeSessions.has(session.id)) return;
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
 
     const controller = new AbortController();
     this.activeSessions.set(session.id, controller);
@@ -691,6 +731,7 @@ export class SessionManager {
         if (controller.signal.aborted) break;
       }
     } finally {
+      this.isProcessingQueue = false;
       this.activeSessions.delete(session.id);
       const queue = this.promptQueues.get(session.id);
       if (queue && queue.length === 0) {
@@ -702,7 +743,9 @@ export class SessionManager {
         const latestSession = this.loadSession(session.id);
         if (latestSession) {
           log('[SessionManager] Restarting queued prompts after stop/drain:', session.id);
-          void this.processQueue(latestSession);
+          this.processQueue(latestSession).catch(err => {
+            logError('[SessionManager] Queue processing error:', err);
+          });
         } else {
           this.promptQueues.delete(session.id);
         }
@@ -729,6 +772,7 @@ export class SessionManager {
       controller.abort();
     }
     this.promptQueues.delete(sessionId);
+    this.messageCache.delete(sessionId);
     this.updateSessionStatus(sessionId, 'idle');
   }
 
@@ -831,6 +875,11 @@ export class SessionManager {
     const cached = this.messageCache.get(message.sessionId);
     if (cached) {
       cached.push(message);
+    }
+    if (this.messageCache.size > SessionManager.MAX_CACHE_SIZE) {
+      // Remove oldest entry (first key in Map)
+      const firstKey = this.messageCache.keys().next().value;
+      if (firstKey) this.messageCache.delete(firstKey);
     }
     
     log('[SessionManager] Message saved:', message.id, 'role:', message.role);

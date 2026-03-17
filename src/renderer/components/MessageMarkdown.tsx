@@ -2,6 +2,7 @@ import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
+import rehypeSanitize from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 
 export interface MessageMarkdownProps {
@@ -19,7 +20,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     <div className="prose-chat max-w-none text-text-primary">
       <ReactMarkdown
         remarkPlugins={[remarkMath, [remarkGfm, { singleTilde: false }]]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+        rehypePlugins={[rehypeSanitize, [rehypeKatex, { throwOnError: false, strict: false }]]}
         components={components}
       >
         {normalizedText}

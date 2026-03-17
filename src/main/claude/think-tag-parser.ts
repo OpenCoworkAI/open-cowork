@@ -62,6 +62,7 @@ export class ThinkTagStreamParser {
             text += this.buffer;
             this.buffer = '';
             this.state = 'text';
+            i--; // Reprocess current character
           }
           break;
         }
@@ -89,6 +90,7 @@ export class ThinkTagStreamParser {
             thinking += this.buffer;
             this.buffer = '';
             this.state = 'think';
+            i--; // Reprocess current character
           }
           break;
         }

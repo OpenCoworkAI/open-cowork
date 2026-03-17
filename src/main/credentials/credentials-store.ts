@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { log } from '../utils/logger';
 
 /**
@@ -31,7 +32,6 @@ interface StoredCredential extends Omit<UserCredential, 'password'> {
  */
 class CredentialsStore {
   private store: Store<{ credentials: StoredCredential[] }>;
-  private encryptionKey: Buffer;
 
   constructor() {
     this.store = new Store<{ credentials: StoredCredential[] }>({
@@ -40,27 +40,16 @@ class CredentialsStore {
         credentials: [],
       },
     });
-
-    // Generate or retrieve encryption key
-    // In production, this should be derived from a master password or system keychain
-    this.encryptionKey = this.getOrCreateEncryptionKey();
   }
 
   /**
-   * Get or create encryption key
-   * Stored separately from credentials for security
+   * Derive encryption key from machine-specific seed.
+   * This avoids storing a plaintext key on disk — the key is deterministically
+   * regenerated from values unique to this installation.
    */
-  private getOrCreateEncryptionKey(): Buffer {
-    const keyStore = new Store<{ key: string }>({ name: 'credentials-key' });
-    let key = keyStore.get('key');
-    
-    if (!key) {
-      // Generate a new 256-bit key
-      key = crypto.randomBytes(32).toString('hex');
-      keyStore.set('key', key);
-    }
-    
-    return Buffer.from(key, 'hex');
+  private static getDerivedKey(): Buffer {
+    const seed = `${os.hostname()}:${__dirname}:open-cowork-credentials`;
+    return crypto.scryptSync(seed, 'open-cowork-salt', 32);
   }
 
   /**
@@ -68,7 +57,7 @@ class CredentialsStore {
    */
   private encrypt(text: string): { encrypted: string; iv: string } {
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv('aes-256-cbc', this.encryptionKey, iv);
+    const cipher = crypto.createCipheriv('aes-256-cbc', CredentialsStore.getDerivedKey(), iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     return {
@@ -83,7 +72,7 @@ class CredentialsStore {
   private decrypt(encrypted: string, iv: string): string {
     const decipher = crypto.createDecipheriv(
       'aes-256-cbc',
-      this.encryptionKey,
+      CredentialsStore.getDerivedKey(),
       Buffer.from(iv, 'hex')
     );
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');

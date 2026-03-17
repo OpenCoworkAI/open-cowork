@@ -27,7 +27,7 @@ export class MemoryManager {
   /**
    * Save a message to the database
    */
-  async saveMessage(sessionId: string, message: Message): Promise<void> {
+  saveMessage(sessionId: string, message: Message): void {
     const stmt = this.db.prepare(`
       INSERT INTO messages (id, session_id, role, content, timestamp, token_usage)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -46,31 +46,49 @@ export class MemoryManager {
   /**
    * Get message history for a session
    */
-  async getMessageHistory(sessionId: string, limit?: number): Promise<Message[]> {
+  getMessageHistory(sessionId: string, limit?: number): Message[] {
     let query = 'SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC';
+    const params: (string | number)[] = [sessionId];
     if (limit) {
-      query += ` LIMIT ${limit}`;
+      query += ' LIMIT ?';
+      params.push(limit);
     }
 
     const stmt = this.db.prepare(query);
-    const rows = stmt.all(sessionId) as Record<string, unknown>[];
+    const rows = stmt.all(...params) as Record<string, unknown>[];
 
-    return rows.map((row) => ({
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      role: row.role as Message['role'],
-      content: JSON.parse(row.content as string) as ContentBlock[],
-      timestamp: row.timestamp as number,
-      tokenUsage: row.token_usage ? JSON.parse(row.token_usage as string) : undefined,
-    }));
+    return rows.map((row) => {
+      let content: ContentBlock[];
+      try {
+        content = JSON.parse(row.content as string) as ContentBlock[];
+      } catch {
+        content = [{ type: 'text', text: row.content as string } as ContentBlock];
+      }
+
+      let tokenUsage;
+      try {
+        tokenUsage = row.token_usage ? JSON.parse(row.token_usage as string) : undefined;
+      } catch {
+        tokenUsage = undefined;
+      }
+
+      return {
+        id: row.id as string,
+        sessionId: row.session_id as string,
+        role: row.role as Message['role'],
+        content,
+        timestamp: row.timestamp as number,
+        tokenUsage,
+      };
+    });
   }
 
   /**
    * Search messages using full-text search
    */
-  async searchMessages(sessionId: string, query: string): Promise<Message[]> {
+  searchMessages(sessionId: string, query: string): Message[] {
     // First get all messages for the session
-    const messages = await this.getMessageHistory(sessionId);
+    const messages = this.getMessageHistory(sessionId);
 
     // Simple text search (FTS5 would be more efficient for large datasets)
     const queryLower = query.toLowerCase();
@@ -88,8 +106,8 @@ export class MemoryManager {
   /**
    * Manage context for a session - determine best strategy based on token usage
    */
-  async manageContext(sessionId: string): Promise<ContextStrategy> {
-    const messages = await this.getMessageHistory(sessionId);
+  manageContext(sessionId: string): ContextStrategy {
+    const messages = this.getMessageHistory(sessionId);
     const tokenCount = this.estimateTokens(messages);
 
     // If within limits, return full context
@@ -107,7 +125,7 @@ export class MemoryManager {
   /**
    * Compress context by summarizing older messages
    */
-  async compressContext(messages: Message[]): Promise<ContextStrategy> {
+  compressContext(messages: Message[]): ContextStrategy {
     const recentCount = 20; // Keep last 20 messages
     
     if (messages.length <= recentCount) {
@@ -133,11 +151,11 @@ export class MemoryManager {
   /**
    * Get relevant context based on current prompt (for retrieval)
    */
-  async getRelevantContext(
+  getRelevantContext(
     sessionId: string,
     currentPrompt: string
-  ): Promise<Message[]> {
-    const messages = await this.getMessageHistory(sessionId);
+  ): Message[] {
+    const messages = this.getMessageHistory(sessionId);
     
     // Simple relevance scoring based on keyword overlap
     const promptWords = new Set(
@@ -217,11 +235,11 @@ export class MemoryManager {
   /**
    * Save a memory entry (for explicit memory storage)
    */
-  async saveMemoryEntry(
+  saveMemoryEntry(
     sessionId: string,
     content: string,
     metadata: { source: string; tags: string[] }
-  ): Promise<MemoryEntry> {
+  ): MemoryEntry {
     const entry: MemoryEntry = {
       id: uuidv4(),
       sessionId,
@@ -259,7 +277,7 @@ export class MemoryManager {
   /**
    * Search memory entries using FTS
    */
-  async searchMemory(sessionId: string, query: string): Promise<MemoryEntry[]> {
+  searchMemory(sessionId: string, query: string): MemoryEntry[] {
     const stmt = this.db.prepare(`
       SELECT me.* FROM memory_entries me
       JOIN memory_fts fts ON me.rowid = fts.rowid
@@ -270,19 +288,28 @@ export class MemoryManager {
 
     const rows = stmt.all(sessionId, query) as Record<string, unknown>[];
 
-    return rows.map((row) => ({
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      content: row.content as string,
-      metadata: JSON.parse(row.metadata as string),
-      createdAt: row.created_at as number,
-    }));
+    return rows.map((row) => {
+      let metadata;
+      try {
+        metadata = JSON.parse(row.metadata as string);
+      } catch {
+        metadata = row.metadata;
+      }
+
+      return {
+        id: row.id as string,
+        sessionId: row.session_id as string,
+        content: row.content as string,
+        metadata,
+        createdAt: row.created_at as number,
+      };
+    });
   }
 
   /**
    * Delete messages for a session
    */
-  async deleteSessionMessages(sessionId: string): Promise<void> {
+  deleteSessionMessages(sessionId: string): void {
     const stmt = this.db.prepare('DELETE FROM messages WHERE session_id = ?');
     stmt.run(sessionId);
   }
@@ -290,7 +317,7 @@ export class MemoryManager {
   /**
    * Delete memory entries for a session
    */
-  async deleteSessionMemory(sessionId: string): Promise<void> {
+  deleteSessionMemory(sessionId: string): void {
     const stmt = this.db.prepare('DELETE FROM memory_entries WHERE session_id = ?');
     stmt.run(sessionId);
   }

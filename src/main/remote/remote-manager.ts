@@ -88,6 +88,9 @@ export class RemoteManager extends EventEmitter {
   // Debounce timers for sending buffered responses
   private sendTimers: Map<string, NodeJS.Timeout> = new Map();
 
+  // Lock for synchronizing pendingInteractions access
+  private interactionLock = false;
+
   // 远程默认工作目录（用于未指定 cwd 的会话）
   private defaultWorkingDirectory?: string;
   
@@ -444,8 +447,10 @@ export class RemoteManager extends EventEmitter {
       createdAt: Date.now(),
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes timeout
     };
-    this.pendingInteractions.set(questionId, interaction);
-    
+    await this.withInteractionLock(async () => {
+      this.pendingInteractions.set(questionId, interaction);
+    });
+
     // Send to channel
     try {
       await this.gateway.sendResponse({
@@ -545,8 +550,10 @@ export class RemoteManager extends EventEmitter {
       createdAt: Date.now(),
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes timeout
     };
-    this.pendingInteractions.set(toolUseId, interaction);
-    
+    await this.withInteractionLock(async () => {
+      this.pendingInteractions.set(toolUseId, interaction);
+    });
+
     // Send to channel
     try {
       await this.gateway.sendResponse({
@@ -587,7 +594,19 @@ export class RemoteManager extends EventEmitter {
       }, 5 * 60 * 1000);
     });
   }
-  
+
+  private async withInteractionLock<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.interactionLock) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    this.interactionLock = true;
+    try {
+      return await fn();
+    } finally {
+      this.interactionLock = false;
+    }
+  }
+
   /**
    * Handle incoming message that might be a response to pending interaction
    * Returns true if the message was consumed as an interaction response
@@ -599,21 +618,22 @@ export class RemoteManager extends EventEmitter {
     messageText: string
   ): boolean {
     // Find any pending interaction for this user
+    let found = false;
     for (const [id, interaction] of this.pendingInteractions) {
       const channelInfo = this.sessionChannelMapping.get(interaction.remoteSessionId);
       if (!channelInfo) continue;
-      
+
       if (channelInfo.channelType === channelType && channelInfo.channelId === channelId) {
         log('[RemoteManager] Found pending interaction:', id);
-        
+
         // Remove from pending
         this.pendingInteractions.delete(id);
-        
+
         // Resolve the interaction
         const resolver = this.interactionResolvers.get(id);
         if (resolver) {
           this.interactionResolvers.delete(id);
-          
+
           if (interaction.type === 'question') {
             // Parse question response
             const response = this.parseQuestionResponse(messageText, interaction.questions || []);
@@ -623,12 +643,13 @@ export class RemoteManager extends EventEmitter {
             resolver(messageText);
           }
         }
-        
-        return true; // Message consumed
+
+        found = true;
+        break; // Only handle one interaction per message
       }
     }
-    
-    return false; // Not an interaction response
+
+    return found;
   }
   
   /**
@@ -867,7 +888,7 @@ export class RemoteManager extends EventEmitter {
   async clearSessionBuffer(actualSessionId: string): Promise<void> {
     // First flush any pending messages
     await this.flushResponseBuffer(actualSessionId);
-    
+
     // Then clear the buffer
     this.responseBuffers.delete(actualSessionId);
     this.sentMessageHashes.delete(actualSessionId);
@@ -875,6 +896,19 @@ export class RemoteManager extends EventEmitter {
     if (timer) {
       clearTimeout(timer);
       this.sendTimers.delete(actualSessionId);
+    }
+
+    // Clean up session mappings
+    const sessionId = this.sessionIdMapping.get(actualSessionId);
+    this.sessionIdMapping.delete(actualSessionId);
+    if (sessionId) {
+      for (const [key, value] of this.reverseSessionIdMapping) {
+        if (value === actualSessionId) {
+          this.reverseSessionIdMapping.delete(key);
+          break;
+        }
+      }
+      this.sessionChannelMapping.delete(sessionId);
     }
   }
   

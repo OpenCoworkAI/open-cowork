@@ -14,13 +14,9 @@
  *   - App is closed/shutdown
  */
 
-import { exec } from 'child_process';
 import * as path from 'path';
-import { promisify } from 'util';
 import { log, logError } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
-
-const execAsync = promisify(exec);
 
 const LIMA_INSTANCE_NAME = 'claude-sandbox';
 
@@ -445,21 +441,26 @@ export class LimaSync {
     command: string,
     timeout: number = 60000
   ): Promise<{ stdout: string; stderr: string }> {
-    const wrappedCommand = `limactl shell ${LIMA_INSTANCE_NAME} -- bash -c '${command.replace(/'/g, "'\\''")}'`;
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
 
     try {
-      const result = await execAsync(wrappedCommand, {
-        encoding: 'utf-8',
-        timeout,
-        maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large outputs
-      });
+      const result = await execFileAsync(
+        'limactl',
+        ['shell', LIMA_INSTANCE_NAME, '--', 'bash', '-c', command],
+        {
+          encoding: 'utf-8',
+          timeout,
+          maxBuffer: 50 * 1024 * 1024,
+        }
+      );
 
       return {
         stdout: result.stdout || '',
         stderr: result.stderr || '',
       };
     } catch (error: any) {
-      // If command failed, error contains stdout/stderr
       throw new Error(error.message || String(error));
     }
   }

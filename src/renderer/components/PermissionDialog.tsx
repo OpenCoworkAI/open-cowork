@@ -109,7 +109,19 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
 
         {/* Always Allow option */}
         <button
-          onClick={() => respondToPermission(permission.toolUseId, 'allow_always')}
+          onClick={() => {
+            const dangerousTools = ['bash', 'write', 'edit', 'execute_command'];
+            const isDangerous = dangerousTools.some(t => permission.toolName?.toLowerCase().includes(t));
+
+            if (isDangerous) {
+              const confirmed = window.confirm(
+                `Are you sure you want to always allow "${permission.toolName}"? This tool can modify your system.`
+              );
+              if (!confirmed) return;
+            }
+
+            respondToPermission(permission.toolUseId, 'allow_always');
+          }}
           className="w-full mt-2 btn btn-ghost text-sm"
         >
           {t('permission.alwaysAllow')}

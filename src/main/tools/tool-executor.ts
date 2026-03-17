@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { glob } from 'glob';
@@ -357,7 +358,11 @@ export class ToolExecutor {
       const isWindows = process.platform === 'win32';
       const shell = isWindows ? 'powershell.exe' : '/bin/bash';
       const args = isWindows
-        ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', `chcp 65001 > $null; ${command}`]
+        ? (() => {
+            const scriptPath = path.join(os.tmpdir(), `oc-exec-${Date.now()}.ps1`);
+            fs.writeFileSync(scriptPath, `chcp 65001 > $null; ${command}`, 'utf-8');
+            return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+          })()
         : ['-c', command];
 
       const proc = spawn(shell, args, {
@@ -382,6 +387,7 @@ export class ToolExecutor {
       });
 
       proc.on('close', (code) => {
+        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) { try { fs.unlinkSync(args[args.length - 1]); } catch {} }
         if (code === 0) {
           resolve(stdout || 'Command completed successfully');
         } else {
@@ -793,7 +799,11 @@ export class ToolExecutor {
       const isWindows = process.platform === 'win32';
       const shell = isWindows ? 'powershell.exe' : '/bin/bash';
       const args = isWindows
-        ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', `chcp 65001 > $null; ${command}`]
+        ? (() => {
+            const scriptPath = path.join(os.tmpdir(), `oc-exec-${Date.now()}.ps1`);
+            fs.writeFileSync(scriptPath, `chcp 65001 > $null; ${command}`, 'utf-8');
+            return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+          })()
         : ['-c', command];
 
       const proc = spawn(shell, args, {
@@ -818,6 +828,7 @@ export class ToolExecutor {
       });
 
       proc.on('close', (code) => {
+        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) { try { fs.unlinkSync(args[args.length - 1]); } catch {} }
         if (code === 0) {
           resolve({ success: true, output: stdout || 'Command completed' });
         } else {

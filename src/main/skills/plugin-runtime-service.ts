@@ -13,6 +13,7 @@ import type {
   PluginToggleResult,
 } from '../../renderer/types';
 import { log, logError } from '../utils/logger';
+import { isPathWithinRoot } from '../tools/path-containment';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { pluginRegistryStore } from './plugin-registry-store';
 import { PluginCatalogService } from './plugin-catalog-service';
@@ -649,6 +650,10 @@ export class PluginRuntimeService {
   }
 
   private resolveSafePath(rootPath: string, relativePath: string): string | null {
+    // Check for path traversal variants
+    if (/(\.\.[\/\\]|%2e%2e)/i.test(relativePath)) {
+      throw new Error('Path traversal detected');
+    }
     const normalized = relativePath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
     if (!normalized || normalized.startsWith('/') || normalized.startsWith('../') || normalized.includes('/../')) {
       return null;
@@ -693,7 +698,12 @@ export class PluginRuntimeService {
       if (entry.isDirectory()) {
         this.copyDirectory(sourceEntryPath, targetEntryPath);
       } else if (entry.isSymbolicLink()) {
+        // Validate symlink target is within allowed directory
         const linkTarget = fs.readlinkSync(sourceEntryPath);
+        const resolvedTarget = path.resolve(path.dirname(sourceEntryPath), linkTarget);
+        if (!isPathWithinRoot(resolvedTarget, sourcePath)) {
+          throw new Error(`Symlink target outside allowed directory: ${resolvedTarget}`);
+        }
         fs.symlinkSync(linkTarget, targetEntryPath);
       } else {
         fs.copyFileSync(sourceEntryPath, targetEntryPath);

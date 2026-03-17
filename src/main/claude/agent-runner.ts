@@ -169,8 +169,9 @@ async function enrichProcessPathForBuild(): Promise<void> {
         shellPaths = output.split(':').filter((p: string) => p.trim());
         log(`[ClaudeAgentRunner] Restored ${shellPaths.length} paths from login shell`);
       }
-    } catch (err: any) {
-      logWarn(`[ClaudeAgentRunner] Could not restore shell PATH: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarn(`[ClaudeAgentRunner] Could not restore shell PATH: ${message}`);
     }
   } else if (platform === 'win32') {
     try {
@@ -182,8 +183,9 @@ async function enrichProcessPathForBuild(): Promise<void> {
         shellPaths = output.split(';').filter((p: string) => p.trim());
         log(`[ClaudeAgentRunner] Restored ${shellPaths.length} paths from Windows registry`);
       }
-    } catch (err: any) {
-      logWarn(`[ClaudeAgentRunner] Could not restore Windows PATH: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarn(`[ClaudeAgentRunner] Could not restore Windows PATH: ${message}`);
     }
   }
 
@@ -255,7 +257,7 @@ function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
             content: [{ type: 'text' as const, text: textParts.join('\n') }],
             details: undefined as unknown,
           };
-        } catch (err: any) {
+        } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
           logError(`[ClaudeAgentRunner] MCP tool ${mcpTool.name} failed:`, err);
           return {
@@ -402,11 +404,13 @@ export class ClaudeAgentRunner {
       const apiCredentials = credentials.filter(c => c.type === 'api');
       const otherCredentials = credentials.filter(c => c.type === 'other');
 
-      // Format credentials with actual password for agent use
+      // Format credentials with masked password for system prompt.
+      // Credentials should be passed through a secure channel (e.g., MCP tool
+      // call or secure IPC), not embedded as plaintext in the prompt.
       const formatCredential = (c: UserCredential) => {
         const lines = [`- **${c.name}**${c.service ? ` (${c.service})` : ''}`];
         lines.push(`  - Username/Email: \`${c.username}\``);
-        lines.push(`  - Password: \`${c.password}\``);
+        lines.push(`  - Password: \`****\``);
         if (c.url) lines.push(`  - URL: ${c.url}`);
         if (c.notes) lines.push(`  - Notes: ${c.notes}`);
         return lines.join('\n');

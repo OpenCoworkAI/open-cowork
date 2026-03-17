@@ -70,12 +70,16 @@ function normalizeError(error: unknown): ApiTestResult {
   return { ok: false, errorType: 'unknown', details: message };
 }
 
-async function parseJsonResponse(response: Response): Promise<any> {
+async function parseJsonResponse(response: Response): Promise<Record<string, unknown>> {
   const text = await response.text();
   if (!response.ok) {
     throw new Error(text || `HTTP ${response.status}`);
   }
-  return text ? JSON.parse(text) : {};
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Failed to parse Ollama API response: ${text.substring(0, 200)}`);
+  }
 }
 
 export async function listOllamaModels(input: {

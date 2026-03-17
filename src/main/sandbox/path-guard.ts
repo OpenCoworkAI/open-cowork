@@ -109,9 +109,15 @@ export class PathGuard {
       return { allowed: true };
     }
 
-    // Allow global npm modules
+    // Allow global npm modules only within sandbox or system paths
     if (normalizedPath.includes('/node_modules/')) {
-      return { allowed: true };
+      if (isPathWithinRoot(normalizedPath, session.sandboxPath) ||
+          normalizedPath.startsWith('/root/.nvm/') ||
+          normalizedPath.startsWith('/usr/lib/node_modules/') ||
+          normalizedPath.startsWith('/usr/local/lib/node_modules/')) {
+        return { allowed: true };
+      }
+      // node_modules outside of known safe paths is not auto-allowed
     }
 
     // Check forbidden patterns
@@ -170,8 +176,8 @@ export class PathGuard {
       log(`[PathGuard] Windows path detected in command, needs conversion`);
     }
 
-    // Wrap the command to ensure it runs in the sandbox directory
-    const sanitizedCommand = `cd "${session.sandboxPath}" && ${command}`;
+    // The caller should use `cwd` option in `spawn` instead of `cd`
+    const sanitizedCommand = command;
 
     return {
       allowed: true,

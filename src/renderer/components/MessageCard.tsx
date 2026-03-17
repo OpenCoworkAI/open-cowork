@@ -126,7 +126,7 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
             ) : (
               contentBlocks.map((block, index) => (
                 <ContentBlockView
-                  key={index}
+                  key={(block as any).id || `block-${block.type}-${index}`}
                   block={block}
                   isUser={isUser}
                   isStreaming={isStreaming}
@@ -159,7 +159,7 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
             }
             return (
               <ContentBlockView
-                key={index}
+                key={(block as any).id || `block-${block.type}-${index}`}
                 block={block}
                 isUser={isUser}
                 isStreaming={isStreaming}
@@ -266,6 +266,171 @@ const ContentBlockView = memo(function ContentBlockView({
     return renderFileMentionParts(parts, keyPrefix);
   };
 
+  const markdownComponents = useMemo(() => ({
+    a({ children, href }: { children?: React.ReactNode; href?: string }) {
+      const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);
+      if (localFilePath) {
+        return (
+          <button
+            type="button"
+            onClick={async () => {
+              if (
+                typeof window === 'undefined' ||
+                !window.electronAPI?.showItemInFolder
+              ) {
+                return;
+              }
+              try {
+                const revealed = await window.electronAPI.showItemInFolder(
+                  localFilePath,
+                  currentWorkingDir ?? undefined
+                );
+                if (!revealed) {
+                  setGlobalNotice({
+                    id: `message-card-reveal-failed-${Date.now()}`,
+                    type: 'warning',
+                    message: t('context.revealFailed'),
+                  });
+                }
+              } catch (error) {
+                setGlobalNotice({
+                  id: `message-card-reveal-failed-${Date.now()}`,
+                  type: 'warning',
+                  message:
+                    error instanceof Error && error.message
+                      ? error.message
+                      : t('context.revealFailed'),
+                });
+              }
+            }}
+            className={getFileLinkButtonClassName()}
+            title={t('messageCard.revealInFolder')}
+          >
+            {children}
+          </button>
+        );
+      }
+
+      const safeHref =
+        href && /^(?:https?:|mailto:|#|file:)/i.test(href) ? href : undefined;
+      return (
+        <a
+          href={safeHref}
+          rel="noreferrer"
+          onClick={(event) => {
+            event.preventDefault();
+            if (!href) {
+              return;
+            }
+            if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+              void window.electronAPI.openExternal(href);
+            }
+          }}
+          className="text-accent hover:text-accent-hover"
+        >
+          {children}
+        </a>
+      );
+    },
+    blockquote({ children }: { children?: React.ReactNode }) {
+      return (
+        <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
+          {children}
+        </blockquote>
+      );
+    },
+    code({
+      className,
+      children,
+      ...props
+    }: {
+      className?: string;
+      children?: React.ReactNode;
+    }) {
+      const match = /language-([\w+#.-]+)/.exec(className || '');
+      const isInline = !match;
+
+      if (isInline) {
+        const raw = String(children);
+        const parts = splitTextByFileMentions(raw);
+        if (parts.length === 1 && parts[0]?.type === 'file') {
+          return renderFileButton(parts[0].value);
+        }
+        return (
+          <code
+            className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm"
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      }
+
+      return (
+        <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>
+      );
+    },
+    p({ children }: { children?: React.ReactNode }) {
+      return <p className="text-left">{renderChildrenWithFileLinks(children, 'p')}</p>;
+    },
+    li({ children }: { children?: React.ReactNode }) {
+      return <li className="text-left">{renderChildrenWithFileLinks(children, 'li')}</li>;
+    },
+    table({ children }: { children?: React.ReactNode }) {
+      return (
+        <div className="overflow-x-auto my-3">
+          <table className="min-w-full border-collapse">{children}</table>
+        </div>
+      );
+    },
+    th({
+      children,
+      style,
+    }: {
+      children?: React.ReactNode;
+      style?: React.CSSProperties;
+    }) {
+      return (
+        <th
+          className="border border-border px-3 py-2 text-sm font-semibold text-text-primary bg-surface-muted"
+          style={style}
+        >
+          {children}
+        </th>
+      );
+    },
+    td({
+      children,
+      style,
+    }: {
+      children?: React.ReactNode;
+      style?: React.CSSProperties;
+    }) {
+      return (
+        <td className="border border-border px-3 py-2 text-sm text-text-primary" style={style}>
+          {children}
+        </td>
+      );
+    },
+    input({ checked, ...props }: { checked?: boolean }) {
+      return (
+        <input
+          type="checkbox"
+          checked={checked}
+          readOnly
+          className="mr-2 accent-accent"
+          {...props}
+        />
+      );
+    },
+    strong({ children }: { children?: React.ReactNode }) {
+      return <strong>{renderChildrenWithFileLinks(children, 'strong')}</strong>;
+    },
+    em({ children }: { children?: React.ReactNode }) {
+      return <em>{renderChildrenWithFileLinks(children, 'em')}</em>;
+    },
+  }), [currentWorkingDir, setGlobalNotice, t]);
+
   switch (block.type) {
     case 'text': {
       const textBlock = block as { type: 'text'; text: string };
@@ -307,171 +472,8 @@ const ContentBlockView = memo(function ContentBlockView({
             <MessageMarkdown
               normalizedText={normalizedText}
               isStreaming={isStreaming}
-              components={{
-                a({ children, href }: { children?: React.ReactNode; href?: string }) {
-                  const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);
-                if (localFilePath) {
-                  return (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (
-                          typeof window === 'undefined' ||
-                          !window.electronAPI?.showItemInFolder
-                        ) {
-                          return;
-                        }
-                        try {
-                          const revealed = await window.electronAPI.showItemInFolder(
-                            localFilePath,
-                            currentWorkingDir ?? undefined
-                          );
-                          if (!revealed) {
-                            setGlobalNotice({
-                              id: `message-card-reveal-failed-${Date.now()}`,
-                              type: 'warning',
-                              message: t('context.revealFailed'),
-                            });
-                          }
-                        } catch (error) {
-                          setGlobalNotice({
-                            id: `message-card-reveal-failed-${Date.now()}`,
-                            type: 'warning',
-                            message:
-                              error instanceof Error && error.message
-                                ? error.message
-                                : t('context.revealFailed'),
-                          });
-                        }
-                      }}
-                      className={getFileLinkButtonClassName()}
-                      title={t('messageCard.revealInFolder')}
-                    >
-                      {children}
-                    </button>
-                  );
-                }
-
-                const safeHref =
-                  href && /^(?:https?:|mailto:|#|file:)/i.test(href) ? href : undefined;
-                return (
-                  <a
-                    href={safeHref}
-                    rel="noreferrer"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      if (!href) {
-                        return;
-                      }
-                      if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
-                        void window.electronAPI.openExternal(href);
-                      }
-                    }}
-                    className="text-accent hover:text-accent-hover"
-                  >
-                    {children}
-                  </a>
-                );
-              },
-              blockquote({ children }: { children?: React.ReactNode }) {
-                return (
-                  <blockquote className="border-l-2 border-accent/40 pl-4 text-text-muted">
-                    {children}
-                  </blockquote>
-                );
-              },
-              code({
-                className,
-                children,
-                ...props
-              }: {
-                className?: string;
-                children?: React.ReactNode;
-              }) {
-                const match = /language-([\w+#.-]+)/.exec(className || '');
-                const isInline = !match;
-
-                if (isInline) {
-                  const raw = String(children);
-                  const parts = splitTextByFileMentions(raw);
-                  if (parts.length === 1 && parts[0]?.type === 'file') {
-                    return renderFileButton(parts[0].value);
-                  }
-                  return (
-                    <code
-                      className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm"
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  );
-                }
-
-                return (
-                  <CodeBlock language={match[1]}>{String(children).replace(/\n$/, '')}</CodeBlock>
-                );
-              },
-              p({ children }: { children?: React.ReactNode }) {
-                return <p className="text-left">{renderChildrenWithFileLinks(children, 'p')}</p>;
-              },
-              li({ children }: { children?: React.ReactNode }) {
-                return <li className="text-left">{renderChildrenWithFileLinks(children, 'li')}</li>;
-              },
-              table({ children }: { children?: React.ReactNode }) {
-                return (
-                  <div className="overflow-x-auto my-3">
-                    <table className="min-w-full border-collapse">{children}</table>
-                  </div>
-                );
-              },
-              th({
-                children,
-                style,
-              }: {
-                children?: React.ReactNode;
-                style?: React.CSSProperties;
-              }) {
-                return (
-                  <th
-                    className="border border-border px-3 py-2 text-sm font-semibold text-text-primary bg-surface-muted"
-                    style={style}
-                  >
-                    {children}
-                  </th>
-                );
-              },
-              td({
-                children,
-                style,
-              }: {
-                children?: React.ReactNode;
-                style?: React.CSSProperties;
-              }) {
-                return (
-                  <td className="border border-border px-3 py-2 text-sm text-text-primary" style={style}>
-                    {children}
-                  </td>
-                );
-              },
-              input({ checked, ...props }: { checked?: boolean }) {
-                return (
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    readOnly
-                    className="mr-2 accent-accent"
-                    {...props}
-                  />
-                );
-              },
-              strong({ children }: { children?: React.ReactNode }) {
-                return <strong>{renderChildrenWithFileLinks(children, 'strong')}</strong>;
-              },
-              em({ children }: { children?: React.ReactNode }) {
-                return <em>{renderChildrenWithFileLinks(children, 'em')}</em>;
-              },
-            }}
-          />
+              components={markdownComponents}
+            />
         </Suspense>
         </PanelErrorBoundary>
       );
@@ -1138,6 +1140,14 @@ const ThinkingBlock = memo(function ThinkingBlock({
   );
 });
 
+// Sanitize highlight.js output - only allow highlight span tags
+const sanitizeHighlight = (html: string): string => {
+  // Allow only <span class="hljs-..."> tags from highlight.js
+  return html.replace(/<(?!\/?span\s*(?:class="hljs-[^"]*")?\s*>)[^>]*>/g, (match) => {
+    return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  });
+};
+
 const CodeBlock = memo(function CodeBlock({
   language,
   children,
@@ -1150,10 +1160,13 @@ const CodeBlock = memo(function CodeBlock({
   const highlightedHtml = useMemo(() => {
     try {
       const lang = language.toLowerCase();
+      let result: string;
       if (hljs.getLanguage(lang)) {
-        return hljs.highlight(children, { language: lang }).value;
+        result = hljs.highlight(children, { language: lang }).value;
+      } else {
+        result = hljs.highlightAuto(children).value;
       }
-      return hljs.highlightAuto(children).value;
+      return sanitizeHighlight(result);
     } catch {
       return null;
     }

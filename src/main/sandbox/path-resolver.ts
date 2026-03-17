@@ -112,12 +112,26 @@ export class PathResolver {
         return false;
       }
 
-      // 3. Check for symlink escapes (if path exists)
+      // 3. Check for symlink escapes
       if (fs.existsSync(normalized)) {
         const realPath = fs.realpathSync(normalized);
         if (!isPathWithinRoot(realPath, normalizedMount)) {
           logWarn(`Symlink escape attempt: ${normalized} -> ${realPath}`);
           return false;
+        }
+      } else {
+        // For non-existent paths, validate all existing parent components
+        let current = normalized;
+        while (current !== path.dirname(current)) {
+          current = path.dirname(current);
+          if (fs.existsSync(current)) {
+            const realParent = fs.realpathSync(current);
+            if (!isPathWithinRoot(realParent, normalizedMount)) {
+              logWarn(`Symlink escape via parent: ${current} -> ${realParent}`);
+              return false;
+            }
+            break;
+          }
         }
       }
 
