@@ -8,6 +8,42 @@ const mocks = vi.hoisted(() => ({
   buildSyntheticPiModel: vi.fn(),
 }));
 
+vi.mock('electron-store', () => {
+  class MockStore<T extends Record<string, unknown>> {
+    public store: Record<string, unknown>;
+    public path = '/tmp/mock-claude-sdk-one-shot-config.json';
+
+    constructor(options: { defaults?: Record<string, unknown> }) {
+      this.store = {
+        ...(options?.defaults || {}),
+      };
+    }
+
+    get<K extends keyof T>(key: K): T[K] {
+      return this.store[key as string] as T[K];
+    }
+
+    set(key: string | Record<string, unknown>, value?: unknown): void {
+      if (typeof key === 'string') {
+        this.store[key] = value;
+        return;
+      }
+      this.store = {
+        ...this.store,
+        ...key,
+      };
+    }
+
+    clear(): void {
+      this.store = {};
+    }
+  }
+
+  return {
+    default: MockStore,
+  };
+});
+
 vi.mock('@mariozechner/pi-ai', () => ({
   completeSimple: mocks.completeSimple,
 }));
