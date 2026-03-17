@@ -21,7 +21,8 @@ export function SudoPasswordDialog({ request }: SudoPasswordDialogProps) {
   const handleSubmit = () => {
     if (!password) return;
     respondToSudoPassword(request.toolUseId, password);
-    setPassword('');
+    // Clear password from memory immediately after sending
+    setTimeout(() => setPassword(''), 0);
   };
 
   const handleCancel = () => {

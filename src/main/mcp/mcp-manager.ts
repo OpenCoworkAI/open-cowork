@@ -65,6 +65,7 @@ export class MCPManager {
   private lastConfigFingerprint: string | null = null;
   // Cached base environment (shell env + PATH). Resolved once, reused for all MCP server spawns.
   private cachedBaseEnv: Record<string, string> | null = null;
+  private initializingServers = false;
 
   /**
    * Get bundled Node.js path
@@ -281,6 +282,9 @@ export class MCPManager {
    * Initialize MCP servers from configuration
    */
   async initializeServers(configs: MCPServerConfig[]): Promise<void> {
+    if (this.initializingServers) return;
+    this.initializingServers = true;
+    try {
     const fingerprint = JSON.stringify(configs.map(c => ({ id: c.id, enabled: c.enabled, command: c.command, args: c.args, url: c.url, env: c.env })));
     if (fingerprint === this.lastConfigFingerprint) {
       log('[MCPManager] Config unchanged, skipping re-initialization');
@@ -313,6 +317,9 @@ export class MCPManager {
 
     // Refresh tools from all connected servers
     await this.refreshTools();
+    } finally {
+      this.initializingServers = false;
+    }
   }
 
   /**
@@ -601,7 +608,10 @@ export class MCPManager {
         if (transportAny._process) {
           const process = transportAny._process;
           log(`[MCPManager] MCP server process spawned with PID: ${process.pid}`);
-          
+
+          // Unref so this child process doesn't prevent parent exit
+          process.unref();
+
           // Capture stdout for debugging
           if (process.stdout) {
             process.stdout.on('data', (data: Buffer) => {
@@ -694,13 +704,14 @@ export class MCPManager {
     } catch (error: any) {
       logError(`[MCPManager] Client.connect() failed:`, error);
       logError(`[MCPManager] Error details - code: ${error.code}, name: ${error.name}, message: ${error.message}`);
-      
+
       // Try to get more details from the transport
       if (config.type === 'stdio' && commandForLogging) {
         logError(`[MCPManager] STDIO transport may have failed to spawn process or communicate`);
         logError(`[MCPManager] Command was: ${commandForLogging} ${argsForLogging.join(' ')}`);
       }
-      
+
+      try { await transport.close(); } catch {}
       throw error;
     }
 
@@ -871,79 +882,47 @@ export class MCPManager {
    * 2. Must use --remote-debugging-port=9222
    */
   private async startChromeWithDebugging(): Promise<void> {
-    const { exec } = await import('child_process');
+    const { spawn } = await import('child_process');
     const os = await import('os');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-    
+
     const platform = os.platform();
     const userDataDir = this.getChromeUserDataDir();
-    let startupCommand: string;
-    
+
     log(`[MCPManager] Platform: ${platform}`);
     log(`[MCPManager] User data dir: ${userDataDir}`);
-    
+
     // Chrome 136+ requires --user-data-dir for remote debugging
     // Without it, --remote-debugging-port may be ignored
-    
+
+    const chromeArgs = [
+      '--remote-debugging-port=9222',
+      '--user-data-dir=' + userDataDir,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--new-window',
+      'about:blank',
+    ];
+
+    let chromePath: string;
     if (platform === 'darwin') {
-      // macOS: Start Chrome with dedicated profile
-      const escapedPath = userDataDir.replace(/'/g, "'\\''");
-      startupCommand = `
-        /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome \
-          --remote-debugging-port=9222 \
-          --user-data-dir='${escapedPath}' \
-          --no-first-run \
-          --no-default-browser-check \
-          --new-window \
-          about:blank \
-          > /dev/null 2>&1 &
-      `.replace(/\s+/g, ' ').trim();
+      chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     } else if (platform === 'win32') {
-      // Windows: Start Chrome with dedicated profile
-      const winPath = userDataDir.replace(/\\/g, '\\\\');
-      startupCommand = `
-        start "" "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" 
-          --remote-debugging-port=9222 
-          --user-data-dir="${winPath}" 
-          --no-first-run 
-          --no-default-browser-check 
-          --new-window 
-          about:blank
-      `.replace(/\s+/g, ' ').trim();
+      chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     } else {
-      // Linux: Start Chrome with dedicated profile
-      const escapedPath = userDataDir.replace(/'/g, "'\\''");
-      startupCommand = `
-        google-chrome \
-          --remote-debugging-port=9222 \
-          --user-data-dir='${escapedPath}' \
-          --no-first-run \
-          --no-default-browser-check \
-          --new-window \
-          about:blank \
-          > /dev/null 2>&1 &
-      `.replace(/\s+/g, ' ').trim();
+      chromePath = 'google-chrome';
     }
 
-    log(`[MCPManager] Chrome startup command: ${startupCommand}`);
+    log(`[MCPManager] Chrome path: ${chromePath}`);
+    log(`[MCPManager] Chrome args: ${JSON.stringify(chromeArgs)}`);
 
     try {
-      const shellPath = platform === 'win32' ? process.env.COMSPEC || 'cmd.exe' : '/bin/sh';
-      log(`[MCPManager] Using shell: ${shellPath}`);
-      
-      const result = await execAsync(startupCommand, {
-        shell: shellPath,
-        timeout: 10000,
+      const chromeProcess = spawn(chromePath, chromeArgs, {
+        detached: true,
+        stdio: 'ignore',
       });
-      
-      log(`[MCPManager] Chrome command executed successfully`);
-      if (result.stdout) {
-        log(`[MCPManager] stdout: ${result.stdout}`);
-      }
-      if (result.stderr) {
-        log(`[MCPManager] stderr: ${result.stderr}`);
-      }
+      chromeProcess.unref();
+
+      log(`[MCPManager] Chrome spawned successfully`);
     } catch (error: any) {
       logWarn(`[MCPManager] Chrome startup command completed with warning`);
       logWarn(`[MCPManager] Error message: ${error.message}`);
@@ -954,6 +933,22 @@ export class MCPManager {
         log(`[MCPManager] stderr: ${error.stderr}`);
       }
     }
+  }
+
+  /**
+   * Gracefully kill a child process: SIGTERM first, then SIGKILL after timeout
+   */
+  private async gracefulKill(proc: any, timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve) => {
+      proc.once('exit', () => resolve());
+      proc.kill('SIGTERM');
+      setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill('SIGKILL');
+        }
+        resolve();
+      }, timeoutMs);
+    });
   }
 
   /**
@@ -985,7 +980,7 @@ export class MCPManager {
     // Kill process if we're managing it (for legacy compatibility)
     if (process) {
       try {
-        process.kill();
+        await this.gracefulKill(process);
       } catch (error) {
         // Process may already be terminated
       }
@@ -1021,7 +1016,7 @@ export class MCPManager {
    */
   async refreshTools(): Promise<void> {
     log('[MCPManager] Refreshing tools from all servers');
-    this.tools.clear();
+    const newTools = new Map<string, MCPTool>();
 
     for (const [serverId, client] of this.clients.entries()) {
       try {
@@ -1031,23 +1026,31 @@ export class MCPManager {
         // Add timeout for listTools call to prevent hanging
         const timeoutMs = 10000; // 10 second timeout
         const listToolsPromise = client.listTools();
+        let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
+          timeoutId = setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
         });
 
         log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
-        
-        const listToolsResult = await Promise.race([listToolsPromise, timeoutPromise]);
-        
+
+        let listToolsResult;
+        try {
+          listToolsResult = await Promise.race([listToolsPromise, timeoutPromise]);
+          clearTimeout(timeoutId!);
+        } catch (error) {
+          clearTimeout(timeoutId!);
+          throw error;
+        }
+
         log(`[MCPManager] Raw tools from ${config.name}:`, listToolsResult);
-        
+
         for (const tool of listToolsResult.tools) {
           // Prefix tool name with server name to avoid conflicts
           // Format: mcp__<ServerName>__<toolName> (double underscores, preserve case)
           const serverKey = config.name.replace(/\s+/g, '_');
           const prefixedName = `mcp__${serverKey}__${tool.name}`;
-          
-          this.tools.set(prefixedName, {
+
+          newTools.set(prefixedName, {
             name: prefixedName,
             description: tool.description || '',
             inputSchema: {
@@ -1070,6 +1073,8 @@ export class MCPManager {
         }
       }
     }
+
+    this.tools = newTools; // atomic swap
 
     log(`[MCPManager] Total tools available: ${this.tools.size}`);
   }

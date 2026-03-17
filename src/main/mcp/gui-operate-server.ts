@@ -30,14 +30,14 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 writeMCPLog('Imported MCP SDK modules', 'Bootstrap');
 
-import { exec, spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 writeMCPLog('Imported Node.js built-in modules', 'Bootstrap');
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Detect platform
 const PLATFORM = os.platform(); // 'darwin' for macOS, 'win32' for Windows
@@ -1367,17 +1367,39 @@ async function macWriteClipboardBytes(bytes: Buffer, timeoutMs: number = 5000): 
 }
 
 /**
- * Execute a shell command with timeout
+ * Execute a command with timeout using execFile (no shell interpolation).
+ * The command string is parsed into executable + arguments respecting quotes.
  */
 async function executeCommand(
   command: string,
   timeout: number = 10000
 ): Promise<{ stdout: string; stderr: string }> {
+  // Parse command into executable and arguments, respecting quotes
+  const tokens: string[] = [];
+  let current = '';
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+    } else if (ch === ' ' && !inSingle && !inDouble) {
+      if (current) { tokens.push(current); current = ''; }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) tokens.push(current);
+
+  const [executable, ...args] = tokens;
+
   try {
-    const result = await execAsync(command, { timeout });
+    const result = await execFileAsync(executable, args, { timeout });
     return {
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: typeof result.stdout === 'string' ? result.stdout : '',
+      stderr: typeof result.stderr === 'string' ? result.stderr : '',
     };
   } catch (error: any) {
     throw new Error(`Command execution failed: ${error.message}`);
@@ -1394,7 +1416,8 @@ async function getFrontmostMacApplicationName(): Promise<string | null> {
     );
     const name = stdout.trim();
     return name || null;
-  } catch {
+  } catch (error) {
+    writeMCPLog(`[GuiOperateServer] Error getting frontmost app: ${error}`, 'getFrontmostMacApplicationName');
     return null;
   }
 }
@@ -3882,7 +3905,7 @@ async function callVisionAPIWithTimeout(
     const isHttps = urlObj.protocol === 'https:';
     const httpModule = isHttps ? https : http;
     
-    const requestBodyObj: any = {
+    const requestBodyObj: Record<string, unknown> = {
       model: model,
       messages: [
         {

@@ -717,7 +717,7 @@ export function ChatView() {
             {pastedImages.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
                 {pastedImages.map((img, index) => (
-                  <div key={index} className="relative group">
+                  <div key={img.url || `pasted-image-${index}`} className="relative group">
                     <img
                       src={img.url}
                       alt={t('common.pastedImageAlt', { index: index + 1 })}
@@ -740,7 +740,7 @@ export function ChatView() {
               <div className="space-y-2 mb-3">
                 {attachedFiles.map((file, index) => (
                   <div
-                    key={index}
+                    key={file.path || `attached-file-${index}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
                   >
                     <div className="flex-1 min-w-0">

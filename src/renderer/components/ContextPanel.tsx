@@ -360,7 +360,7 @@ export function ContextPanel() {
 
                   return (
                     <div
-                      key={index}
+                      key={artifact.path || artifact.label || `artifact-${index}`}
                       className={`flex items-center gap-2 px-4 py-1.5 transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
                       onClick={async () => {
                         if (!canClick) return;

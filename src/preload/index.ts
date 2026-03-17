@@ -137,16 +137,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcp: {
     getServers: (): Promise<any[]> => ipcRenderer.invoke('mcp.getServers'),
     getServer: (serverId: string): Promise<any> => ipcRenderer.invoke('mcp.getServer', serverId),
-    saveServer: (config: any): Promise<{ success: boolean }> => 
+    saveServer: (config: any): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('mcp.saveServer', config),
-    deleteServer: (serverId: string): Promise<{ success: boolean }> => 
+    deleteServer: (serverId: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('mcp.deleteServer', serverId),
     getTools: (): Promise<any[]> => ipcRenderer.invoke('mcp.getTools'),
     getServerStatus: (): Promise<any[]> => ipcRenderer.invoke('mcp.getServerStatus'),
-    getPresets: (): Promise<Record<string, any>> => ipcRenderer.invoke('mcp.getPresets'),
+    getPresets: (): Promise<any> => ipcRenderer.invoke('mcp.getPresets'),
   },
 
   // Credentials methods
+  // Security: getById, getByType, and getByService intentionally do NOT return
+  // the password field. Passwords are stripped by the main process IPC handlers
+  // so the renderer process never has access to plaintext passwords.
   credentials: {
     getAll: (): Promise<any[]> => ipcRenderer.invoke('credentials.getAll'),
     getById: (id: string): Promise<any> => ipcRenderer.invoke('credentials.getById', id),
@@ -397,7 +400,7 @@ declare global {
         deleteServer: (serverId: string) => Promise<{ success: boolean }>;
         getTools: () => Promise<any[]>;
         getServerStatus: () => Promise<any[]>;
-        getPresets: () => Promise<Record<string, any>>;
+        getPresets: () => Promise<any>;
       };
       credentials: {
         getAll: () => Promise<any[]>;

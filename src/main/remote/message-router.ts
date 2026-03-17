@@ -62,8 +62,26 @@ export class MessageRouter {
   
   // Default working directory for new sessions
   private defaultWorkingDirectory?: string;
-  
-  constructor() {}
+
+  // Periodic cleanup timer
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.startPeriodicCleanup();
+  }
+
+  startPeriodicCleanup(): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleSessions();
+    }, 30 * 60 * 1000); // Every 30 minutes
+  }
+
+  stopPeriodicCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
   
   /**
    * Set default working directory for remote sessions

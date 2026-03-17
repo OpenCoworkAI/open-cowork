@@ -4,6 +4,8 @@
  */
 
 import Store from 'electron-store';
+import * as crypto from 'crypto';
+import * as os from 'os';
 import { log } from '../utils/logger';
 import type {
   RemoteConfig,
@@ -19,7 +21,12 @@ import { DEFAULT_REMOTE_CONFIG } from './types';
 
 class RemoteConfigStore {
   private store: Store<RemoteConfig & { pairedUsers: PairedUser[] }>;
-  
+
+  private static getRemoteKey(): Buffer {
+    const seed = `${os.hostname()}:${__dirname}:open-cowork-remote-v1`;
+    return crypto.scryptSync(seed, 'open-cowork-remote-salt', 32);
+  }
+
   constructor() {
     this.store = new Store<RemoteConfig & { pairedUsers: PairedUser[] }>({
       name: 'remote-config',
@@ -27,7 +34,7 @@ class RemoteConfigStore {
         ...DEFAULT_REMOTE_CONFIG,
         pairedUsers: [],
       },
-      encryptionKey: 'open-cowork-remote-v1',
+      encryptionKey: RemoteConfigStore.getRemoteKey().toString('hex'),
     });
     
     // Migrate: change pairing mode to allowlist (allow everyone by default)
@@ -67,11 +74,22 @@ class RemoteConfigStore {
   }
   
   /**
+   * Filter prototype pollution keys from user-controlled objects
+   */
+  private filterProtoPollution(obj: Record<string, unknown>): Record<string, unknown> {
+    const filtered = { ...obj };
+    delete filtered['__proto__'];
+    delete filtered['constructor'];
+    delete filtered['prototype'];
+    return filtered;
+  }
+
+  /**
    * Update gateway config
    */
   setGatewayConfig(config: Partial<GatewayConfig>): void {
     const current = this.getGatewayConfig();
-    this.store.set('gateway', { ...current, ...config });
+    this.store.set('gateway', { ...current, ...this.filterProtoPollution(config as Record<string, unknown>) });
     log('[RemoteConfig] Gateway config updated');
   }
   

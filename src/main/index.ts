@@ -1490,7 +1490,11 @@ ipcMain.handle('credentials.getAll', () => {
 
 ipcMain.handle('credentials.getById', (_event, id: string) => {
   try {
-    return credentialsStore.getById(id);
+    const cred = credentialsStore.getById(id);
+    if (!cred) return undefined;
+    // Strip password field before sending to renderer
+    const safeCred = { ...cred, password: undefined };
+    return safeCred;
   } catch (error) {
     logError('[Credentials] Error getting credential:', error);
     return undefined;
@@ -1499,7 +1503,9 @@ ipcMain.handle('credentials.getById', (_event, id: string) => {
 
 ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) => {
   try {
-    return credentialsStore.getByType(type);
+    const creds = credentialsStore.getByType(type);
+    // Strip password field before sending to renderer
+    return creds.map(c => ({ ...c, password: undefined }));
   } catch (error) {
     logError('[Credentials] Error getting credentials by type:', error);
     return [];
@@ -1508,7 +1514,9 @@ ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) =
 
 ipcMain.handle('credentials.getByService', (_event, service: string) => {
   try {
-    return credentialsStore.getByService(service);
+    const creds = credentialsStore.getByService(service);
+    // Strip password field before sending to renderer
+    return creds.map(c => ({ ...c, password: undefined }));
   } catch (error) {
     logError('[Credentials] Error getting credentials by service:', error);
     return [];

@@ -3,6 +3,7 @@
  * 实现飞书机器人的消息接收和发送
  */
 
+import * as crypto from 'crypto';
 import { ChannelBase, withRetry } from '../channel-base';
 import { log, logError, logWarn } from '../../../utils/logger';
 import type {
@@ -135,11 +136,35 @@ export class FeishuChannel extends ChannelBase {
   }
   
   /**
+   * Verify webhook signature from X-Lark-Signature header
+   */
+  private verifyWebhookSignature(timestamp: string, nonce: string, body: string, signature: string): boolean {
+    const verificationToken = this.config?.verificationToken;
+    if (!verificationToken) return true; // Skip if not configured
+
+    const content = timestamp + nonce + verificationToken + body;
+    const computedSignature = crypto.createHmac('sha256', '').update(content).digest('hex');
+    return crypto.timingSafeEqual(
+      Buffer.from(computedSignature, 'hex'),
+      Buffer.from(signature, 'hex')
+    );
+  }
+
+  /**
    * Handle incoming webhook request
    */
   handleWebhook(_headers: Record<string, string>, body: string): { status: number; data: any } {
     log('[Feishu] Received webhook request');
-    
+
+    // Verify webhook signature if present
+    const signature = _headers['x-lark-signature'];
+    const timestamp = _headers['x-lark-request-timestamp'] || '';
+    const nonce = _headers['x-lark-request-nonce'] || '';
+    if (signature && !this.verifyWebhookSignature(timestamp, nonce, body, signature)) {
+      logWarn('[Feishu] Webhook signature verification failed');
+      return { status: 403, data: { error: 'Invalid signature' } };
+    }
+
     try {
       const data = JSON.parse(body);
       log('[Feishu] Webhook data:', JSON.stringify(data, null, 2));

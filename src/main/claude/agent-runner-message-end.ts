@@ -37,7 +37,7 @@ export function toUserFacingErrorText(errorText: string): string {
   if (/\b(5\d{2})\b/.test(errorText) || lower.includes('server error') || lower.includes('internal error') || lower.includes('service unavailable') || lower.includes('overloaded')) {
     return `上游服务异常，可能是模型服务过载或临时故障，SDK 将自动重试。\n原始错误: ${errorText}`;
   }
-  if (lower.includes('terminated') || lower.includes('connection') || lower.includes('fetch failed') || lower.includes('other side closed') || lower.includes('reset before headers') || lower.includes('upstream connect')) {
+  if (lower.includes('stream terminated') || lower.includes('connection terminated') || lower.includes('connection reset') || lower.includes('connection closed') || lower.includes('connection refused') || lower.includes('connection error') || lower.includes('fetch failed') || lower.includes('other side closed') || lower.includes('reset before headers') || lower.includes('upstream connect')) {
     return `网络连接中断（${errorText}），可能是代理/网关不稳定，SDK 将自动重试。`;
   }
   return errorText;

@@ -1431,8 +1431,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       void refreshModelOptions();
     }, 800);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, baseUrl]);
+  }, [provider, baseUrl, refreshModelOptions]);
 
   useEffect(() => {
     if (!isElectron || provider !== 'ollama') {

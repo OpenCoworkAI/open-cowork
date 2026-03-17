@@ -90,7 +90,7 @@ async function testOpenAICredentials(
   });
 
   if (useLiveRequest) {
-    const model = modelInput || 'gpt-5-mini';
+    const model = modelInput || 'gpt-4o-mini';
     try {
       await client.responses.create({
         model,

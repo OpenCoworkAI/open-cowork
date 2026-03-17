@@ -321,19 +321,27 @@ export class ScheduledTaskManager {
   private async executeAndRecord(task: ScheduledTask): Promise<ScheduledTaskExecutionRecord> {
     try {
       const result = await this.executeTask(task);
-      this.store.update(task.id, {
-        lastRunAt: this.now(),
-        lastRunSessionId: result.sessionId,
-        lastError: null,
-      });
+      try {
+        this.store.update(task.id, {
+          lastRunAt: this.now(),
+          lastRunSessionId: result.sessionId,
+          lastError: null,
+        });
+      } catch (error) {
+        logError('[ScheduledTaskManager] Failed to update store:', error);
+      }
       return { success: true, sessionId: result.sessionId };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.store.update(task.id, {
-        lastRunAt: this.now(),
-        lastRunSessionId: null,
-        lastError: message,
-      });
+      try {
+        this.store.update(task.id, {
+          lastRunAt: this.now(),
+          lastRunSessionId: null,
+          lastError: message,
+        });
+      } catch (updateError) {
+        logError('[ScheduledTaskManager] Failed to update store:', updateError);
+      }
       return { success: false, error: message };
     }
   }

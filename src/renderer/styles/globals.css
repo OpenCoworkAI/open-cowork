@@ -27,6 +27,9 @@
     --color-text-primary: #f1ece4;
     --color-text-secondary: #b6ada2;
     --color-text-muted: #8c8378;
+    --color-success: #22c55e;
+    --color-warning: #eab308;
+    --color-error: #ef4444;
   }
 
   /* Light theme override — Claude warm cream */
@@ -50,6 +53,9 @@
     --color-text-primary: #1a1a1a;
     --color-text-secondary: #5c5c5c;
     --color-text-muted: #8c8c8c;
+    --color-success: #16a34a;
+    --color-warning: #ca8a04;
+    --color-error: #dc2626;
   }
 
   * {

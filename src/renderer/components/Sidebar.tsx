@@ -47,10 +47,12 @@ export function Sidebar() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredSessions = normalizedQuery
-    ? sessions.filter((session) => session.title.toLowerCase().includes(normalizedQuery))
-    : sessions;
+  const normalizedQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
+  const filteredSessions = useMemo(() => {
+    return normalizedQuery
+      ? sessions.filter((session) => session.title.toLowerCase().includes(normalizedQuery))
+      : sessions;
+  }, [sessions, normalizedQuery]);
 
   const groupedSessions = useMemo(
     () => groupSessionsByDate(filteredSessions, t),

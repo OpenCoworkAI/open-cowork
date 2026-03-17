@@ -351,12 +351,21 @@ function initializeSchema(database: Database.Database): void {
   }
 }
 
+function validateIdentifier(name: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid SQL identifier: ${name}`);
+  }
+  return name;
+}
+
 function ensureColumn(
   database: Database.Database,
   table: string,
   column: string,
   definition: string
 ): void {
+  validateIdentifier(table);
+  validateIdentifier(column);
   const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   const exists = rows.some((row) => row.name === column);
   if (exists) {
@@ -492,21 +501,22 @@ export function initDatabase(): DatabaseInstance {
         // Build dynamic update query
         const setClauses: string[] = [];
         const values: unknown[] = [];
-        
+
         for (const [key, value] of Object.entries(updates)) {
           if (value !== undefined) {
+            validateIdentifier(key);
             setClauses.push(`${key} = ?`);
             values.push(value);
           }
         }
-        
+
         if (setClauses.length === 0) return;
-        
+
         // Always update updated_at
         setClauses.push('updated_at = ?');
         values.push(Date.now());
         values.push(id);
-        
+
         const sql = `UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ?`;
         rawDb.prepare(sql).run(...values);
       },
@@ -581,6 +591,7 @@ export function initDatabase(): DatabaseInstance {
 
         for (const [key, value] of Object.entries(updates)) {
           if (value !== undefined) {
+            validateIdentifier(key);
             setClauses.push(`${key} = ?`);
             values.push(value);
           }
@@ -629,6 +640,7 @@ export function initDatabase(): DatabaseInstance {
 
         for (const [key, value] of Object.entries(updates)) {
           if (value !== undefined) {
+            validateIdentifier(key);
             setClauses.push(`${key} = ?`);
             values.push(value);
           }

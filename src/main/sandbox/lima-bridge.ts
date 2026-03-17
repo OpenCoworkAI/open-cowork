@@ -671,6 +671,10 @@ export class LimaBridge implements SandboxExecutor {
 
     // Start agent inside Lima VM
     // Need to source nvm.sh first since node is installed via nvm
+    // Validate agentPath doesn't contain shell metacharacters
+    if (/[;&|`$(){}]/.test(agentPath)) {
+      throw new Error(`Invalid agent path: ${agentPath}`);
+    }
     const nodeCommand = `source ~/.nvm/nvm.sh 2>/dev/null; node "${agentPath}"`;
 
     this.limaProcess = spawn(

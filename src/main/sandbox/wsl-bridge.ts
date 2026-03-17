@@ -91,6 +91,14 @@ export const pathConverter: PathConverter = {
  * WSL Bridge - Manages communication with WSL2
  */
 export class WSLBridge implements SandboxExecutor {
+  /** Validate WSL distro name to prevent command injection */
+  private static validateDistroName(distro: string): string {
+    if (!/^[a-zA-Z0-9\-_.]+$/.test(distro)) {
+      throw new Error(`Invalid WSL distro name: ${distro}`);
+    }
+    return distro;
+  }
+
   private wslProcess: ChildProcess | null = null;
   private pendingRequests: Map<string, {
     resolve: (value: unknown) => void;
@@ -177,6 +185,7 @@ export class WSLBridge implements SandboxExecutor {
       // Prefer Ubuntu, otherwise use first available
       const ubuntu = distros.find(d => d.toLowerCase().includes('ubuntu'));
       const selectedDistro = ubuntu || distros[0];
+      WSLBridge.validateDistroName(selectedDistro);
       log('[WSL] Selected distro:', selectedDistro);
 
       // Test if the distro actually works (WSL service might be broken)
@@ -299,6 +308,7 @@ export class WSLBridge implements SandboxExecutor {
    */
   static async testDistro(distro: string): Promise<boolean> {
     try {
+      WSLBridge.validateDistroName(distro);
       const { stdout } = await execAsync(`wsl -d ${distro} -e echo "OK"`, {
         timeout: 10000,
         encoding: 'utf-8',

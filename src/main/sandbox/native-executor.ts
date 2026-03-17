@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { log } from '../utils/logger';
@@ -138,7 +139,11 @@ export class NativeExecutor implements SandboxExecutor {
       const isWindows = process.platform === 'win32';
       const shell = isWindows ? 'powershell.exe' : '/bin/bash';
       const args = isWindows
-        ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command]
+        ? (() => {
+            const scriptPath = path.join(os.tmpdir(), `oc-cmd-${Date.now()}.ps1`);
+            fs.writeFileSync(scriptPath, command, 'utf-8');
+            return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+          })()
         : ['-c', command];
 
       const proc = spawn(shell, args, {
@@ -172,6 +177,7 @@ export class NativeExecutor implements SandboxExecutor {
       });
 
       proc.on('close', (code: number | null) => {
+        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) { try { fs.unlinkSync(args[args.length - 1]); } catch {} }
         resolve({
           success: code === 0,
           stdout,

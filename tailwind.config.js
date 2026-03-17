@@ -37,9 +37,9 @@ module.exports = {
           secondary: 'var(--color-text-secondary)',
           muted: 'var(--color-text-muted)',
         },
-        success: '#6b9b76',
-        warning: '#c9952a',
-        error: '#c9584f',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        error: 'var(--color-error)',
       },
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],

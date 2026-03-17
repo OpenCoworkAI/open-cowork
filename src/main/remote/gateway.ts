@@ -3,6 +3,7 @@
  * WebSocket 控制平面，管理远程连接和消息路由
  */
 
+import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, Server as HttpServer, IncomingMessage } from 'http';
@@ -27,6 +28,7 @@ interface WSClient {
   authenticated: boolean;
   userId?: string;
   connectedAt: number;
+  ip: string;
 }
 
 // WebSocket message protocol
@@ -49,6 +51,9 @@ export class RemoteGateway extends EventEmitter {
   private pairedUsers: Map<string, PairedUser> = new Map();
   
   private _running: boolean = false;
+
+  // Rate limiting for WebSocket auth
+  private authAttempts: Map<string, { count: number; resetTime: number }> = new Map();
   
   constructor(config: GatewayConfig, messageRouter: MessageRouter) {
     super();
@@ -528,7 +533,7 @@ export class RemoteGateway extends EventEmitter {
    * Generate 6-digit pairing code
    */
   private generatePairingCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 999999).toString();
   }
   
   // ============================================================================
@@ -615,12 +620,14 @@ export class RemoteGateway extends EventEmitter {
   
   private handleWSConnection(ws: WebSocket, _req: IncomingMessage): void {
     const clientId = this.generateClientId();
-    
+    const ip = _req.socket.remoteAddress || 'unknown';
+
     const client: WSClient = {
       id: clientId,
       ws,
       authenticated: false,
       connectedAt: Date.now(),
+      ip,
     };
     
     this.wsClients.set(clientId, client);
@@ -671,7 +678,28 @@ export class RemoteGateway extends EventEmitter {
     }
   }
   
+  private checkAuthRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const attempt = this.authAttempts.get(ip);
+    if (!attempt || now > attempt.resetTime) {
+      this.authAttempts.set(ip, { count: 1, resetTime: now + 60000 });
+      return true;
+    }
+    attempt.count++;
+    return attempt.count <= 5;
+  }
+
   private handleWSAuth(client: WSClient, message: WSMessage): void {
+    // Rate limit auth attempts by IP
+    if (!this.checkAuthRateLimit(client.ip)) {
+      this.sendWSMessage(client.ws, {
+        type: 'auth_result',
+        payload: { success: false, error: 'Too many auth attempts. Try again later.' },
+        requestId: message.requestId,
+      });
+      return;
+    }
+
     const { token } = message.payload as { token?: string };
     
     if (this.config.auth.mode === 'token') {
@@ -753,11 +781,11 @@ export class RemoteGateway extends EventEmitter {
   }
   
   private generateClientId(): string {
-    return `ws-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return `ws-${Date.now()}-${crypto.randomUUID()}`;
   }
-  
+
   private generateMessageId(): string {
-    return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return `msg-${Date.now()}-${crypto.randomUUID()}`;
   }
   
   private emitEvent(type: string, data: unknown): void {
