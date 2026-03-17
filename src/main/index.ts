@@ -211,6 +211,8 @@ if (!hasSingleInstanceLock) {
 
 // Tray instance (kept alive to prevent GC)
 let tray: Tray | null = null;
+const DARK_BG = '#171614';
+const LIGHT_BG = '#f5f3ee';
 
 function buildMacMenu() {
   if (process.platform !== 'darwin') return;
@@ -360,13 +362,13 @@ function createWindow() {
   const effectiveTheme = resolveEffectiveTheme(savedTheme);
   const THEME = effectiveTheme === 'dark'
     ? {
-        background: '#171614',
-        titleBar: '#171614',
+        background: DARK_BG,
+        titleBar: DARK_BG,
         titleBarSymbol: '#f1ece4',
       }
     : {
-        background: '#f5f3ee',
-        titleBar: '#f5f3ee',
+        background: LIGHT_BG,
+        titleBar: LIGHT_BG,
         titleBarSymbol: '#1a1a1a',
       };
 
@@ -840,6 +842,15 @@ app
         type: 'native-theme.changed',
         payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
       });
+      if (
+        getSavedThemePreference() === 'system'
+        && mainWindow
+        && !mainWindow.isDestroyed()
+      ) {
+        mainWindow.setBackgroundColor(
+          nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG
+        );
+      }
     });
 
     // Auto-updater: check for updates in production
@@ -2623,7 +2634,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         if (mainWindow && !mainWindow.isDestroyed()) {
           const effectiveTheme = resolveEffectiveTheme(nextTheme);
           mainWindow.setBackgroundColor(
-            effectiveTheme === 'dark' ? '#171614' : '#f5f3ee'
+            effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG
           );
         }
         sendToRenderer({

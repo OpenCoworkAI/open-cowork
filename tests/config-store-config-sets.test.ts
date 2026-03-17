@@ -189,4 +189,22 @@ describe('ConfigStore config sets', () => {
     const created = store.createSet({ name: 'Theme Carry', mode: 'clone' });
     expect(created.theme).toBe('system');
   });
+
+  it('accepts light theme and falls back to default for invalid theme values', () => {
+    mocks.seed = {
+      theme: 'light',
+      isConfigured: true,
+    };
+
+    const lightStore = new ConfigStore();
+    expect(lightStore.get('theme')).toBe('light');
+
+    mocks.seed = {
+      theme: 'sepia',
+      isConfigured: true,
+    };
+
+    const invalidStore = new ConfigStore();
+    expect(invalidStore.get('theme')).toBe('light');
+  });
 });

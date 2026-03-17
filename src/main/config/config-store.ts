@@ -273,6 +273,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
+const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return value === 'openrouter' || value === 'anthropic' || value === 'custom' || value === 'openai' || value === 'gemini' || value === 'ollama';
@@ -284,6 +285,10 @@ function isCustomProtocol(value: unknown): value is CustomProtocolType {
 
 function isProfileKey(value: unknown): value is ProviderProfileKey {
   return typeof value === 'string' && PROFILE_KEYS.includes(value as ProviderProfileKey);
+}
+
+function isAppTheme(value: unknown): value is AppTheme {
+  return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
 }
 
 function profileKeyFromProvider(provider: ProviderType, customProtocol: CustomProtocolType = 'anthropic'): ProviderProfileKey {
@@ -781,7 +786,7 @@ export class ConfigStore {
       defaultWorkdir: typeof raw.defaultWorkdir === 'string' ? raw.defaultWorkdir : defaultConfig.defaultWorkdir,
       globalSkillsPath: typeof raw.globalSkillsPath === 'string' ? raw.globalSkillsPath : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
-      theme: raw.theme === 'dark' || raw.theme === 'system' ? raw.theme : defaultConfig.theme,
+      theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
