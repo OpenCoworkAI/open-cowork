@@ -836,6 +836,7 @@ ${hints.join('\n')}
     logCtx('[ClaudeAgentRunner] run() started');
 
     const controller = new AbortController();
+    let abortedByTimeout = false;
     try {
       // SDK 会在同一 AbortSignal 上挂载较多监听器，放开上限避免无意义告警干扰排错。
       setMaxListeners(0, controller.signal);
