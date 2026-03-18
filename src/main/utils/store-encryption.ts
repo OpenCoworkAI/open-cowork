@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { app } from 'electron';
 import Store, { type Options as StoreOptions } from 'electron-store';
 
 type Logger = (...args: unknown[]) => void;
@@ -55,6 +56,47 @@ function isLikelyKeyMismatch(error: unknown): boolean {
 function buildBackupPath(storePath: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `${storePath}.pre-key-rotation-${timestamp}.bak`;
+}
+
+function resolveStorePath<T extends Record<string, any>>(
+  storeOptions: StoreOptions<T> & { projectName?: string }
+): string | null {
+  const explicitCwd = (storeOptions as { cwd?: string }).cwd;
+  if (typeof explicitCwd === 'string' && explicitCwd.trim()) {
+    const name = typeof storeOptions.name === 'string' && storeOptions.name.trim()
+      ? storeOptions.name.trim()
+      : 'config';
+    return path.join(path.resolve(explicitCwd), `${name}.json`);
+  }
+
+  try {
+    if (app && typeof app.getPath === 'function') {
+      const userDataPath = app.getPath('userData');
+      if (userDataPath?.trim()) {
+        const name = typeof storeOptions.name === 'string' && storeOptions.name.trim()
+          ? storeOptions.name.trim()
+          : 'config';
+        return path.join(userDataPath, `${name}.json`);
+      }
+    }
+  } catch {
+    // Fall back to letting electron-store resolve the path itself.
+  }
+
+  return null;
+}
+
+function moveUnreadableStoreToBackup(storePath: string): string {
+  const backupPath = buildBackupPath(storePath);
+
+  try {
+    fs.renameSync(storePath, backupPath);
+    return backupPath;
+  } catch {
+    fs.copyFileSync(storePath, backupPath);
+    fs.unlinkSync(storePath);
+    return backupPath;
+  }
 }
 
 export function getLegacyDerivedKeyHexes(options: KeyMaterialOptions): string[] {
@@ -119,6 +161,20 @@ export function createEncryptedStoreWithKeyRotation<T extends Record<string, any
           throw legacyError;
         }
       }
+    }
+
+    const storePath = resolveStorePath(options.storeOptions);
+    if (storePath && fs.existsSync(storePath)) {
+      const backupPath = moveUnreadableStoreToBackup(storePath);
+      options.warn?.(
+        `${options.logPrefix} Backed up unreadable encrypted store and recreated defaults`,
+        { storePath, backupPath }
+      );
+
+      return new Store<T>({
+        ...(options.storeOptions as StoreOptions<T>),
+        encryptionKey: stableKey,
+      });
     }
 
     options.warn?.(
