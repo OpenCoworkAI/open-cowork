@@ -817,7 +817,7 @@ app
     createWindow();
 
     // macOS: dock menu
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && app.dock) {
       const dockMenu = Menu.buildFromTemplate([
         {
           label: 'New Session',
