@@ -1639,6 +1639,7 @@ Tool routing:
       let compactionStepId: string | undefined;
       let hasEmittedError = false;
       let terminalErrorText: string | undefined;
+      let abortedByTimeout = false;
       const thinkParser = new ThinkTagStreamParser();
       const promptStartedAt = Date.now();
 
@@ -1688,6 +1689,7 @@ Tool routing:
         if (activityTimeoutId) clearTimeout(activityTimeoutId);
         activityTimeoutId = setTimeout(() => {
           logWarn('[ClaudeAgentRunner] Prompt timed out (no activity for 5 min), aborting');
+          abortedByTimeout = true;
           controller.abort();
         }, PROMPT_TIMEOUT_MS);
       };
@@ -2017,16 +2019,32 @@ Tool routing:
 
       logTiming('pi-coding-agent prompt completed', runStartTime);
 
-      // Complete - update the initial thinking step
-      this.sendTraceUpdate(session.id, thinkingStepId, {
-        status: terminalErrorText ? 'error' : 'completed',
-        title: terminalErrorText ? 'Request failed' : 'Task completed',
-      });
+      // If the SDK swallowed the AbortError and returned void, detect timeout here
+      if (controller.signal.aborted && abortedByTimeout) {
+        logCtx('[ClaudeAgentRunner] Aborted due to timeout (detected after prompt returned)');
+        const errorMsg: Message = {
+          id: uuidv4(),
+          sessionId: session.id,
+          role: 'assistant',
+          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          timestamp: Date.now(),
+        };
+        this.sendMessage(session.id, errorMsg);
+        this.sendTraceUpdate(session.id, thinkingStepId, {
+          status: 'error',
+          title: 'Request timed out',
+        });
+      } else {
+        // Complete - update the initial thinking step
+        this.sendTraceUpdate(session.id, thinkingStepId, {
+          status: terminalErrorText ? 'error' : 'completed',
+          title: terminalErrorText ? 'Request failed' : 'Task completed',
+        });
+      }
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        const isTimeout = error.message?.toLowerCase().includes('timeout');
-        if (isTimeout) {
+        if (abortedByTimeout) {
           logCtx('[ClaudeAgentRunner] Aborted due to timeout');
           const errorMsg: Message = {
             id: uuidv4(),
