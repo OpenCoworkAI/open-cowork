@@ -1,6 +1,7 @@
 import type { ApiTestInput, ApiTestResult, ProviderModelInfo } from '../../renderer/types';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
 import { normalizeOllamaBaseUrl } from './auth-utils';
+import { ollamaNativeBaseUrl } from '../../shared/ollama-base-url';
 
 export const REQUEST_TIMEOUT_MS = 120000;
 export const OLLAMA_MODELS_TIMEOUT_LOCAL_MS = 5000;
@@ -211,5 +212,76 @@ export async function testOllamaConnection(input: ApiTestInput): Promise<ApiTest
       ...normalizeError(error),
       latencyMs: Date.now() - start,
     };
+  }
+}
+
+// --- Ollama model info (native /api/show endpoint) ---
+
+export interface OllamaModelInfo {
+  contextWindow: number | undefined;
+  parameterSize: string | undefined;
+}
+
+const MODEL_INFO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const modelInfoCache = new Map<string, { expiresAt: number; result: OllamaModelInfo }>();
+
+export function resetOllamaModelInfoCache(): void {
+  modelInfoCache.clear();
+}
+
+export async function fetchOllamaModelInfo(input: {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}): Promise<OllamaModelInfo> {
+  const nativeBase = ollamaNativeBaseUrl(input.baseUrl);
+  const cacheKey = `${nativeBase}::${input.model}`;
+  const now = Date.now();
+  const cached = modelInfoCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
+  }
+
+  try {
+    const response = await fetch(`${nativeBase}/api/show`, {
+      method: 'POST',
+      headers: buildHeaders(input.apiKey),
+      body: JSON.stringify({ name: input.model }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await parseJsonResponse(response);
+
+    let contextWindow: number | undefined;
+
+    // Try model_info.context_length (newer Ollama versions)
+    const modelInfo = data.model_info as Record<string, unknown> | undefined;
+    if (modelInfo) {
+      // The key varies by architecture, e.g. "llama.context_length", "qwen2.context_length"
+      for (const key of Object.keys(modelInfo)) {
+        if (key.endsWith('.context_length') && typeof modelInfo[key] === 'number') {
+          contextWindow = modelInfo[key] as number;
+          break;
+        }
+      }
+    }
+
+    // Fallback: parse num_ctx from Modelfile-style parameters string
+    if (!contextWindow && typeof data.parameters === 'string') {
+      const match = (data.parameters as string).match(/num_ctx\s+(\d+)/);
+      if (match) {
+        contextWindow = parseInt(match[1], 10);
+      }
+    }
+
+    const parameterSize = typeof data.details === 'object' && data.details !== null
+      ? (data.details as Record<string, unknown>).parameter_size as string | undefined
+      : undefined;
+
+    const result: OllamaModelInfo = { contextWindow, parameterSize };
+    modelInfoCache.set(cacheKey, { expiresAt: now + MODEL_INFO_CACHE_TTL_MS, result });
+    return result;
+  } catch {
+    // Silently degrade — don't break the normal flow
+    return { contextWindow: undefined, parameterSize: undefined };
   }
 }

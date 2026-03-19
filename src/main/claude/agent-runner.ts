@@ -53,9 +53,22 @@ import {
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { ThinkTagStreamParser } from './think-tag-parser';
+import { fetchOllamaModelInfo } from '../config/ollama-api';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
+
+/**
+ * Estimate chars-per-token ratio based on content language.
+ * CJK characters tokenize at ~1.5 chars/token vs ~4 for English.
+ */
+function estimateCharsPerToken(sampleText: string): number {
+  if (!sampleText || sampleText.length === 0) return 4;
+  const sample = sampleText.substring(0, 500);
+  const cjkCount = (sample.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []).length;
+  const cjkRatio = cjkCount / sample.length;
+  return 4 - (cjkRatio * 2.5); // Range: 1.5 (pure CJK) ~ 4 (pure English)
+}
 
 // Bundled node/npx paths never change at runtime — resolve once.
 let cachedBundledNodePaths: { node: string; npx: string } | null | undefined = undefined;
@@ -374,6 +387,7 @@ interface CachedPiSession {
   modelId: string;
   thinkingLevel: string;
   runtimeSignature: string;
+  ollamaNumCtx?: { value: number };
 }
 
 /**
@@ -857,7 +871,6 @@ ${hints.join('\n')}
     };
 
     const thinkingStepId = uuidv4();
-    let abortedByTimeout = false;
 
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
@@ -1210,6 +1223,22 @@ ${hints.join('\n')}
       }
       logCtx('[ClaudeAgentRunner] Resolved pi-ai model:', piModel.provider, piModel.id);
 
+      // For Ollama: query actual context window from /api/show if user hasn't configured one
+      const provider = runtimeConfig.provider || 'anthropic';
+      if (provider === 'ollama' && !runtimeConfig.contextWindow) {
+        const ollamaBaseUrl = piModel.baseUrl || runtimeConfig.baseUrl || 'http://localhost:11434/v1';
+        const ollamaInfo = await fetchOllamaModelInfo({
+          baseUrl: ollamaBaseUrl,
+          model: piModel.id,
+          apiKey: runtimeConfig.apiKey,
+        });
+        if (ollamaInfo.contextWindow) {
+          log('[ClaudeAgentRunner] Ollama /api/show reported contextWindow:', ollamaInfo.contextWindow,
+            '(was:', piModel.contextWindow, ')');
+          piModel = { ...piModel, contextWindow: ollamaInfo.contextWindow };
+        }
+      }
+
       // Send context window info to renderer for UI display
       this.sendToRenderer({
         type: 'session.contextInfo',
@@ -1218,7 +1247,6 @@ ${hints.join('\n')}
 
       // Set up API keys via AuthStorage
       const authStorage = getSharedAuthStorage();
-      const provider = runtimeConfig.provider || 'anthropic';
       const apiKey = runtimeConfig.apiKey?.trim();
       if (apiKey) {
         // Map our config provider to pi-ai provider name
@@ -1358,10 +1386,17 @@ ${hints.join('\n')}
           : conversationMessages;
 
         if (historyMessages.length > 0 && !hasImages) {
-          // Token-budget: ~4 chars/token, use ~30% of context window for history
+          // Content-aware chars-per-token estimation (CJK text uses ~1.5 chars/token vs ~4 for English)
           const contextWindow = piModel.contextWindow || 128000;
-          const historyTokenBudget = Math.floor(contextWindow * 0.3);
-          const historyCharBudget = historyTokenBudget * 4;
+          const historyBudgetRatio = (provider === 'ollama' && contextWindow < 16384) ? 0.15 : 0.3;
+          const historyTokenBudget = Math.floor(contextWindow * historyBudgetRatio);
+
+          // Sample recent messages to estimate chars-per-token ratio
+          const sampleText = historyMessages.slice(-3)
+            .flatMap(m => m.content.filter(c => c.type === 'text').map(c => (c as any).text))
+            .join('');
+          const charsPerToken = estimateCharsPerToken(sampleText);
+          const historyCharBudget = Math.floor(historyTokenBudget * charsPerToken);
 
           const historyItems: string[] = [];
           let charCount = 0;
@@ -1372,7 +1407,8 @@ ${hints.join('\n')}
               .filter(c => c.type === 'text')
               .map(c => (c as any).text)
               .join('\n');
-            const entry = `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${textContent}`;
+            const roleTag = msg.role === 'user' ? 'user' : 'assistant';
+            const entry = `<turn role="${roleTag}">${textContent}</turn>`;
             if (charCount + entry.length > historyCharBudget) break;
             charCount += entry.length;
             historyItems.unshift(entry);
@@ -1380,11 +1416,14 @@ ${hints.join('\n')}
 
           if (historyItems.length > 0) {
             const trimmedCount = historyMessages.length - historyItems.length;
-            const preamble = trimmedCount > 0
-              ? `[Previous conversation - ${trimmedCount} older messages omitted]\n${historyItems.join('\n')}`
-              : historyItems.join('\n');
-            contextualPrompt = `${preamble}\nHuman: ${prompt}\nAssistant:`;
-            log('[ClaudeAgentRunner] Cold start: injecting', historyItems.length, 'of', historyMessages.length, 'history messages (budget:', historyCharBudget, 'chars, used:', charCount, ')');
+            const historyNote = trimmedCount > 0
+              ? `[${trimmedCount} older messages omitted]\n`
+              : '';
+            const preamble = `<conversation_history>\n${historyNote}${historyItems.join('\n')}\n</conversation_history>`;
+            contextualPrompt = `${preamble}\n\n${prompt}`;
+            log('[ClaudeAgentRunner] Cold start: injecting', historyItems.length, 'of', historyMessages.length,
+              'history messages (budget:', historyCharBudget, 'chars, used:', charCount,
+              ', charsPerToken:', charsPerToken.toFixed(2), ')');
           }
         }
       } else {
@@ -1613,6 +1652,11 @@ Tool routing:
           logCtx('[ClaudeAgentRunner] Model changed, hot-swapping:', cachedSession.modelId, '→', piModel.id);
           await piSession.setModel(piModel);
           cachedSession.modelId = piModel.id;
+          // Update Ollama num_ctx ref if present
+          if (cachedSession.ollamaNumCtx) {
+            cachedSession.ollamaNumCtx.value = piModel.contextWindow || 128000;
+            log('[ClaudeAgentRunner] Updated Ollama num_ctx on hot-swap:', cachedSession.ollamaNumCtx.value);
+          }
         }
         if (cachedSession.thinkingLevel !== thinkingLevel) {
           logCtx('[ClaudeAgentRunner] Thinking level changed, hot-swapping:', cachedSession.thinkingLevel, '→', thinkingLevel);
@@ -1635,6 +1679,25 @@ Tool routing:
 
         const modelRegistry = new ModelRegistry(authStorage);
 
+        // Ollama-specific compaction tuning based on actual context window
+        const contextWindow = piModel.contextWindow || 128000;
+        let compactionSettings: { enabled: boolean; reserveTokens?: number; keepRecentTokens?: number };
+        if (provider === 'ollama' && contextWindow < 16384) {
+          // Very small context: disable compaction (weak models produce unreliable summaries)
+          compactionSettings = { enabled: false };
+          log('[ClaudeAgentRunner] Ollama small context model, disabling auto-compaction (contextWindow:', contextWindow, ')');
+        } else if (provider === 'ollama' && contextWindow < 65536) {
+          // Medium context: scale reserves proportionally
+          compactionSettings = {
+            enabled: true,
+            reserveTokens: Math.floor(contextWindow * 0.15),
+            keepRecentTokens: Math.floor(contextWindow * 0.25),
+          };
+          log('[ClaudeAgentRunner] Ollama medium context, scaled compaction:', JSON.stringify(compactionSettings));
+        } else {
+          compactionSettings = { enabled: true };
+        }
+
         const { session: newPiSession } = await createAgentSession({
           model: piModel,
           thinkingLevel,
@@ -1644,7 +1707,7 @@ Tool routing:
           customTools: mcpCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
-            compaction: { enabled: true },
+            compaction: compactionSettings,
             retry: { enabled: true, maxRetries: 2 },
           }),
           resourceLoader,
@@ -1659,6 +1722,23 @@ Tool routing:
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
         });
+
+        // Ollama: wrap _onPayload to inject num_ctx into every request
+        if (provider === 'ollama') {
+          const agent = piSession.agent as any;
+          const originalOnPayload = agent._onPayload;
+          const ollamaNumCtx = { value: piModel.contextWindow || 128000 };
+          agent._onPayload = async (payload: any, modelArg: any) => {
+            let result = originalOnPayload
+              ? await originalOnPayload.call(agent, payload, modelArg)
+              : payload;
+            if (result === undefined) result = payload;
+            return { ...result, num_ctx: ollamaNumCtx.value };
+          };
+          this.piSessions.get(session.id)!.ollamaNumCtx = ollamaNumCtx;
+          log('[ClaudeAgentRunner] Ollama _onPayload wrapper installed, num_ctx:', ollamaNumCtx.value);
+        }
+
         logTiming('pi-coding-agent session created', runStartTime);
       }
 

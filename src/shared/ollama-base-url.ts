@@ -39,6 +39,16 @@ export function normalizeOllamaBaseUrl(baseUrl: string | undefined): string | un
   }
 }
 
+/**
+ * Convert an OpenAI-compatible Ollama base URL back to the native Ollama API base.
+ * e.g. "http://localhost:11434/v1" → "http://localhost:11434"
+ *      "http://proxy:8080/ollama/v1" → "http://proxy:8080/ollama"
+ */
+export function ollamaNativeBaseUrl(openaiBaseUrl: string): string {
+  const trimmed = openaiBaseUrl.replace(/\/+$/, '');
+  return /\/v1$/i.test(trimmed) ? trimmed.replace(/\/v1$/i, '') : trimmed;
+}
+
 export function shouldAutoDiscoverLocalOllamaBaseUrl(baseUrl: string | undefined): boolean {
   const trimmed = baseUrl?.trim();
   if (!trimmed) {

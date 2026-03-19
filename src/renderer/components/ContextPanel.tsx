@@ -34,7 +34,11 @@ import type { TraceStep, MCPServerInfo } from '../types';
 
 const EMPTY_STEPS: TraceStep[] = [];
 
-export function ContextPanel() {
+interface ContextPanelProps {
+  width?: number;
+}
+
+export function ContextPanel({ width = 296 }: ContextPanelProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
@@ -119,10 +123,9 @@ export function ContextPanel() {
     const percentage = Math.min((lastInput / contextWindow) * 100, 100);
     return { used: lastInput, total: contextWindow, percentage };
   }, [activeSessionId, contextWindowBySession, messages]);
-
-  const completedStepCount = useMemo(
-    () => steps.reduce((n, s) => n + (s.status === 'completed' ? 1 : 0), 0),
-    [steps]
+  const artifactStepKey = useMemo(
+    () => displayArtifactSteps.map((step) => step.id).join('|'),
+    [displayArtifactSteps]
   );
 
   useEffect(() => {
@@ -134,13 +137,14 @@ export function ContextPanel() {
       || !window.electronAPI?.artifacts?.listRecentFiles
       || !currentWorkingDir
       || !activeSession?.createdAt
+      || !displayArtifactSteps.length
     ) {
       setRecentWorkspaceFiles([]);
       return;
     }
 
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    const loadRecentWorkspaceFiles = async () => {
       try {
         const files = await window.electronAPI.artifacts.listRecentFiles(
           currentWorkingDir,
@@ -156,19 +160,19 @@ export function ContextPanel() {
           setRecentWorkspaceFiles([]);
         }
       }
-    }, 500);
+    };
 
+    void loadRecentWorkspaceFiles();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [
     activeSession?.createdAt,
     activeSessionId,
-    steps.length,
-    completedStepCount,
+    artifactStepKey,
     contextPanelCollapsed,
     currentWorkingDir,
+    displayArtifactSteps.length,
   ]);
 
   const displayArtifacts = useMemo(() => {
@@ -244,7 +248,10 @@ export function ContextPanel() {
   }
 
   return (
-    <div className="w-72 bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
+    <div
+      className="bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm"
+      style={{ width: `${width}px` }}
+    >
       {/* Header */}
       <div className="px-3 h-10 flex items-center gap-2 border-b border-border-muted shrink-0">
         <button
@@ -375,7 +382,7 @@ export function ContextPanel() {
                           });
                         }
                       }}
-                      title={artifactPath || undefined}
+                      title={canClick ? artifactPath : undefined}
                     >
                       <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0" />
                       <span className="text-xs text-text-primary truncate">{label}</span>
