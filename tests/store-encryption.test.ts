@@ -120,7 +120,7 @@ describe('createEncryptedStoreWithKeyRotation', () => {
       apiKey: '',
     });
 
-    const backups = fs.readdirSync(tempDir).filter((file) => file.startsWith('config.json.pre-key-rotation-'));
+    const backups = fs.readdirSync(tempDir).filter((file) => file.startsWith('config.json.unreadable-recovery-'));
     expect(backups).toHaveLength(1);
     expect(fs.existsSync(path.join(tempDir, backups[0]))).toBe(true);
     expect(fs.existsSync(storePath)).toBe(false);

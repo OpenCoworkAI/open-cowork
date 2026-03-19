@@ -53,19 +53,26 @@ function isLikelyKeyMismatch(error: unknown): boolean {
   return /Unexpected token|valid JSON|bad decrypt|decrypt|JSON/i.test(message);
 }
 
-function buildBackupPath(storePath: string): string {
+function buildBackupPath(storePath: string, reason: string = 'pre-key-rotation'): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return `${storePath}.pre-key-rotation-${timestamp}.bak`;
+  return `${storePath}.${reason}-${timestamp}.bak`;
+}
+
+function resolveStoreName<T extends Record<string, any>>(
+  storeOptions: StoreOptions<T>
+): string {
+  return typeof storeOptions.name === 'string' && storeOptions.name.trim()
+    ? storeOptions.name.trim()
+    : 'config';
 }
 
 function resolveStorePath<T extends Record<string, any>>(
   storeOptions: StoreOptions<T> & { projectName?: string }
 ): string | null {
+  const name = resolveStoreName(storeOptions);
+
   const explicitCwd = (storeOptions as { cwd?: string }).cwd;
   if (typeof explicitCwd === 'string' && explicitCwd.trim()) {
-    const name = typeof storeOptions.name === 'string' && storeOptions.name.trim()
-      ? storeOptions.name.trim()
-      : 'config';
     return path.join(path.resolve(explicitCwd), `${name}.json`);
   }
 
@@ -73,9 +80,6 @@ function resolveStorePath<T extends Record<string, any>>(
     if (app && typeof app.getPath === 'function') {
       const userDataPath = app.getPath('userData');
       if (userDataPath?.trim()) {
-        const name = typeof storeOptions.name === 'string' && storeOptions.name.trim()
-          ? storeOptions.name.trim()
-          : 'config';
         return path.join(userDataPath, `${name}.json`);
       }
     }
@@ -87,7 +91,7 @@ function resolveStorePath<T extends Record<string, any>>(
 }
 
 function moveUnreadableStoreToBackup(storePath: string): string {
-  const backupPath = buildBackupPath(storePath);
+  const backupPath = buildBackupPath(storePath, 'unreadable-recovery');
 
   try {
     fs.renameSync(storePath, backupPath);
