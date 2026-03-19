@@ -531,9 +531,36 @@ describe('ScheduledTaskManager', () => {
     expect(executeTask).toHaveBeenCalledTimes(1);
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.any(String), // timestamp prefix from logger
-      expect.stringContaining('[ScheduledTask] Unhandled error executing task'),
+      expect.stringContaining('[ScheduledTaskManager] Failed to update store:'),
       expect.any(Error)
     );
+    consoleSpy.mockRestore();
+  });
+
+  it('calls onTaskError callback when task execution fails', async () => {
+    const now = Date.now();
+    const store = createStore([
+      createTask({
+        id: 'error-callback',
+        runAt: now + 1000,
+        nextRunAt: now + 1000,
+      }),
+    ]);
+    const executeTask = vi.fn().mockRejectedValue(new Error('execution failed'));
+    const onTaskError = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const manager = new ScheduledTaskManager({ store, executeTask, onTaskError, now: () => Date.now() });
+    manager.start();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(executeTask).toHaveBeenCalledTimes(1);
+    expect(onTaskError).toHaveBeenCalledWith('error-callback', 'execution failed');
+    const after = store.get('error-callback');
+    expect(after?.lastError).toBe('execution failed');
     consoleSpy.mockRestore();
   });
 });

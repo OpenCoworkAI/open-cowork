@@ -27,30 +27,6 @@ export function formatAppDate(
   ).format(new Date(value));
 }
 
-export function formatRelativeAppTime(value: number): string {
-  const diff = value - Date.now();
-  const absDiff = Math.abs(diff);
-  const rtf = new Intl.RelativeTimeFormat(getAppLocale(), { numeric: 'auto' });
-
-  if (absDiff < 60_000) {
-    return rtf.format(0, 'second');
-  }
-
-  if (absDiff < 3_600_000) {
-    return rtf.format(Math.round(diff / 60_000), 'minute');
-  }
-
-  if (absDiff < 86_400_000) {
-    return rtf.format(Math.round(diff / 3_600_000), 'hour');
-  }
-
-  if (absDiff < 604_800_000) {
-    return rtf.format(Math.round(diff / 86_400_000), 'day');
-  }
-
-  return formatAppDate(value);
-}
-
 export function joinAppList(values: string[]): string {
   return values.join(getAppLocale().startsWith('zh') ? '、' : ', ');
 }

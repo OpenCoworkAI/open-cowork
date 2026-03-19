@@ -17,10 +17,16 @@ export function isUncPath(value: string): boolean {
   return uncPathPattern.test(value);
 }
 
-export function localPathFromFileUrl(fileUrl: string): string | null {
+function detectPlatform(platform?: NodeJS.Platform): NodeJS.Platform {
+  return platform ?? (typeof process !== 'undefined' ? process.platform : 'linux');
+}
+
+export function localPathFromFileUrl(fileUrl: string, platform?: NodeJS.Platform): string | null {
   if (!fileUrl || !fileUrl.startsWith('file://')) {
     return null;
   }
+
+  const isWindows = detectPlatform(platform) === 'win32';
 
   try {
     const url = new URL(fileUrl);
@@ -28,8 +34,11 @@ export function localPathFromFileUrl(fileUrl: string): string | null {
     const hostname = decodePathSafely(url.hostname || '');
 
     if (hostname && hostname.toLowerCase() !== 'localhost') {
-      const normalizedPathname = pathname.replace(/\//g, '\\');
-      return `\\\\${hostname}${normalizedPathname}`;
+      if (isWindows) {
+        const normalizedPathname = pathname.replace(/\//g, '\\');
+        return `\\\\${hostname}${normalizedPathname}`;
+      }
+      return `//${hostname}${pathname}`;
     }
 
     if (!pathname) {
@@ -52,25 +61,33 @@ export function localPathFromFileUrl(fileUrl: string): string | null {
     }
 
     if (fallback.startsWith('//')) {
-      return `\\\\${fallback.slice(2).replace(/\//g, '\\')}`;
+      if (isWindows) {
+        return `\\\\${fallback.slice(2).replace(/\//g, '\\')}`;
+      }
+      return fallback;
     }
 
     return fallback;
   }
 }
 
-export function localPathFromAppUrlPathname(pathname: string): string | null {
+export function localPathFromAppUrlPathname(pathname: string, platform?: NodeJS.Platform): string | null {
   const decodedPathname = decodePathSafely(pathname || '');
   if (!decodedPathname) {
     return null;
   }
+
+  const isWindows = detectPlatform(platform) === 'win32';
 
   if (/^\/[A-Za-z]:\//.test(decodedPathname)) {
     return decodedPathname.slice(1);
   }
 
   if (/^\/\/[^/]+\/.+/.test(decodedPathname)) {
-    return `\\\\${decodedPathname.slice(2).replace(/\//g, '\\')}`;
+    if (isWindows) {
+      return `\\\\${decodedPathname.slice(2).replace(/\//g, '\\')}`;
+    }
+    return decodedPathname;
   }
 
   if (/^\/(?:Users|home|opt|tmp|var|Volumes|mnt)\//.test(decodedPathname)) {

@@ -87,7 +87,7 @@ describe('SkillsManager storage path management', () => {
     const defaultPath = manager.getGlobalSkillsPath();
     writeSkill(defaultPath, 'alpha');
 
-    const targetPath = path.join(testRoot, 'custom-skills');
+    const targetPath = path.join(testRoot, 'home', 'custom-skills');
     const result = await manager.setGlobalSkillsPath(targetPath, true);
 
     expect(result.path).toBe(path.resolve(targetPath));
@@ -109,7 +109,7 @@ describe('SkillsManager storage path management', () => {
     const defaultPath = manager.getGlobalSkillsPath();
     writeSkill(defaultPath, 'alpha', 'source description');
 
-    const targetPath = path.join(testRoot, 'custom-skills');
+    const targetPath = path.join(testRoot, 'home', 'custom-skills');
     writeSkill(targetPath, 'alpha', 'target description');
 
     const result = await manager.setGlobalSkillsPath(targetPath, true);
@@ -129,7 +129,7 @@ describe('SkillsManager storage path management', () => {
       },
     });
 
-    const invalidPath = path.join(testRoot, 'not-a-directory');
+    const invalidPath = path.join(testRoot, 'home', 'not-a-directory');
     fs.writeFileSync(invalidPath, 'content', 'utf8');
 
     await expect(manager.setGlobalSkillsPath(invalidPath, true)).rejects.toThrow('Target path is not a directory');
@@ -150,7 +150,7 @@ describe('SkillsManager storage path management', () => {
       reasons.push(event.reason);
     });
 
-    const targetPath = path.join(testRoot, 'new-storage');
+    const targetPath = path.join(testRoot, 'home', 'new-storage');
     await manager.setGlobalSkillsPath(targetPath, true);
 
     await waitFor(() => reasons.includes('path_changed'));

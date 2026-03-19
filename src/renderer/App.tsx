@@ -173,6 +173,7 @@ function App() {
           <ResizeHandle direction="horizontal" onResize={handleSidebarResize} />
         )}
 
+
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
           {showSettings ? (

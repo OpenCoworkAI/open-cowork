@@ -44,7 +44,9 @@
     "quickPromptOrganize": "Help me organize my files and folders",
     "quickPromptEmail": "Help me use Chrome to summarize the new emails from the past three days in my Gmail and NetEase Mail. Note that the saved accounts already include the full email suffix. Therefore, if the email suffix is already pre-filled on the webpage or in a screenshot, do not enter it again, to avoid login failure. Also, first check whether the corresponding account credentials are saved. If the username or password for a given email service is not saved, you can skip that email account.",
     "quickPromptPapers": "Please help me use Chrome to search for and summarize papers related to [Agent] within two days.\nSource websites:\n1. HuggingFace Daily Papers. Please include the vote information and a brief summary. Note that it may not include papers in the weekend, so you may need to check the papers in previous days. But make sure that there is a total of two days.",
-    "quickPromptNotion": "Help me research three representative survey papers related to agents, and add them under a Notion page titled \"Agent Survey\". For each paper, include the title, authors, publication venue/year, and a brief summary of the main contributions."
+    "quickPromptNotion": "Help me research three representative survey papers related to agents, and add them under a Notion page titled \"Agent Survey\". For each paper, include the title, authors, publication venue/year, and a brief summary of the main contributions.",
+    "apiNotConfigured": "API not configured yet. Please go to Settings to set up your API provider and key.",
+    "goToSettings": "Go to Settings"
   },
   "settings": {
     "title": "Settings",
@@ -134,23 +136,22 @@
     "getStarted": "Get Started",
     "saveSettings": "Save Settings",
     "openSettingsAction": "Open API Settings",
-    "proxyWarming": "Initializing service, first launch may take a moment...",
     "configRequiredActiveSet": "The current config set does not have usable credentials. Finish setup in API Settings first.",
     "testConnection": "Test Connection",
     "testingConnection": "Testing...",
     "refreshModels": "Refresh Models",
     "refreshingModels": "Refreshing...",
     "refreshModelsFailed": "Failed to refresh models. Check the URL or service status.",
+    "manualModel": "Manual Model",
+    "useDetectedModels": "Use Detected Models",
     "discoverLocalOllama": "Find Local Ollama",
     "discoveringLocalOllama": "Finding...",
-    "discoverLocalOllamaHint": "Scan your local machine for a running Ollama service and fill in the local URL and models.",
+    "discoverLocalOllamaHint": "Enter your Ollama endpoint first. Models will be fetched automatically, and manual entry is only needed if discovery fails.",
     "localOllamaDiscovered": "Found local Ollama with {{count}} available model(s).",
     "localOllamaNotFound": "No local Ollama service was found. Start it with `ollama serve` and try again.",
     "localOllamaNoModels": "Found a local Ollama service, but it does not currently expose any models.",
     "localOllamaModelUnavailable": "Found local Ollama, but model {{model}} could not complete a minimal inference request.",
-    "liveTest": "Live request verification",
-    "liveTestHint": "Sends a minimal request and may consume a small quota",
-    "liveTestCompatibilityHint": "Some compatible providers may reject this probe; disable it and try again if needed.",
+    "localOllamaModelLoading": "Found local Ollama, but the model is still loading into memory. Large models may take up to a minute.",
     "enableThinking": "Enable Thinking Mode",
     "enableThinkingHint": "Show Claude's thinking process step by step. This provides more transparency but may increase token usage.",
     "enableThinkingOllamaHint": "Most Ollama models do not support thinking mode. Enable only if your model explicitly supports it.",
@@ -165,10 +166,7 @@
       "server_error": "Service error. Please try again later",
       "network_error": "Network error. Check your connection",
       "ollama_not_running": "Cannot connect to Ollama. Please make sure Ollama is running (ollama serve).",
-      "proxy_boot_failed": "Local proxy failed to start. Please check your runtime environment",
-      "proxy_health_failed": "Local proxy health check failed. Please try again",
-      "proxy_upstream_auth_failed": "Upstream authentication failed. Please verify your API key",
-      "proxy_upstream_not_found": "Upstream URL or route was not found. Please verify your Base URL",
+      "ollama_loading": "Ollama is loading the model into memory. Large models may take 30–120 seconds. Please wait and try again.",
       "unknown": "Connection failed"
     },
     "guidance": {
@@ -259,6 +257,8 @@
     "configSetKeepOne": "Keep at least one config set",
     "diagnostic": {
       "runDiagnostics": "Diagnose Connection",
+      "runQuickDiagnostics": "Quick Diagnose",
+      "runDeepDiagnostics": "Deep Inference Check",
       "running": "Diagnosing...",
       "step": {
         "dns": "DNS Resolution",
@@ -276,6 +276,10 @@
       },
       "overallSuccess": "All checks passed ({{ms}}ms)",
       "overallFail": "Diagnosis failed at {{step}}",
+      "advisory": {
+        "not_deep_verified": "The endpoint is reachable and the selected model is listed, but no live inference was performed yet.",
+        "model_loading": "The endpoint is reachable, but the model may still be loading into memory."
+      },
       "latency": "{{ms}}ms",
       "fix": {
         "dns_resolve_failed": "Cannot resolve hostname {{host}}. Please check if the URL is correct.",
@@ -285,7 +289,11 @@
         "auth_invalid_key": "API Key is invalid or expired. Please check if the key is correct.",
         "auth_endpoint_not_found": "API endpoint not found. Please check if the Base URL is correct.",
         "auth_request_failed": "Authentication request failed. Please check your configuration.",
-        "model_unavailable": "Model {{model}} is not available. Please verify the model name."
+        "model_unavailable": "Model {{model}} is not available. Please verify the model name.",
+        "ollama_no_models_loaded": "The endpoint is reachable, but it did not return any models. Pull a model in Ollama first.",
+        "ollama_model_not_listed": "Model {{model}} is not in the endpoint model list. Pick a detected model or switch to manual entry.",
+        "ollama_model_loading": "Model {{model}} may still be loading. Try the deep check again in a moment.",
+        "model_cold_start": "The model may still be loading into GPU/CPU memory. Large models (7B+) can take 30–120 seconds on first use. Try again shortly."
       }
     }
   },

@@ -103,12 +103,14 @@ interface ScheduledTaskExecutionRecord {
 interface ScheduledTaskManagerOptions {
   store: ScheduledTaskStore;
   executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  onTaskError?: (taskId: string, error: string) => void;
   now?: () => number;
 }
 
 export class ScheduledTaskManager {
   private readonly store: ScheduledTaskStore;
   private readonly executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  private readonly onTaskError?: (taskId: string, error: string) => void;
   private readonly now: () => number;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private running = false;
@@ -116,6 +118,7 @@ export class ScheduledTaskManager {
   constructor(options: ScheduledTaskManagerOptions) {
     this.store = options.store;
     this.executeTask = options.executeTask;
+    this.onTaskError = options.onTaskError;
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -275,6 +278,17 @@ export class ScheduledTaskManager {
     }
     const taskToExecute = this.prepareExecution(task);
     this.executeAndRecord(taskToExecute).catch((err) => {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      try {
+        this.store.update(taskToExecute.id, {
+          lastRunAt: this.now(),
+          lastRunSessionId: null,
+          lastError: errorMessage,
+        });
+      } catch (updateError) {
+        logError('[ScheduledTaskManager] Failed to update store after unhandled error:', updateError);
+      }
+      this.onTaskError?.(taskToExecute.id, errorMessage);
       logError(`[ScheduledTask] Unhandled error executing task ${taskToExecute.id}:`, err);
     });
   }
@@ -342,6 +356,7 @@ export class ScheduledTaskManager {
       } catch (updateError) {
         logError('[ScheduledTaskManager] Failed to update store:', updateError);
       }
+      this.onTaskError?.(task.id, message);
       return { success: false, error: message };
     }
   }

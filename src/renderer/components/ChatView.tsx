@@ -405,7 +405,7 @@ export function ChatView() {
 
       // Get file info for each selected file
       const newFiles = filePaths.map((filePath) => {
-        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+        const fileName = filePath.split(/[/\\]/).pop() || 'unknown';
         return {
           name: fileName,
           path: filePath,

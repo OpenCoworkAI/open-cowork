@@ -675,7 +675,9 @@ export class LimaBridge implements SandboxExecutor {
     if (/[;&|`$(){}]/.test(agentPath)) {
       throw new Error(`Invalid agent path: ${agentPath}`);
     }
-    const nodeCommand = `source ~/.nvm/nvm.sh 2>/dev/null; node "${agentPath}"`;
+    const escapedAgentPath = agentPath.replace(/[\\$`"!]/g, '\\$&');
+    const nodeCommand = `source ~/.nvm/nvm.sh 2>/dev/null; node "${escapedAgentPath}"`;
+
 
     this.limaProcess = spawn(
       'limactl',

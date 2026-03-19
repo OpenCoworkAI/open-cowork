@@ -132,7 +132,7 @@ export class RemoteGateway extends EventEmitter {
    * Stop the gateway
    */
   async stop(): Promise<void> {
-    if (!this._running) {
+    if (!this._running && !this.httpServer && !this.wss) {
       return;
     }
     
@@ -583,34 +583,49 @@ export class RemoteGateway extends EventEmitter {
     
     // Collect request body
     let body = '';
+    const MAX_BODY_SIZE = 1024 * 1024; // 1MB limit
+    let bodyTooLarge = false;
     req.on('data', (chunk: Buffer) => {
+      if (bodyTooLarge) return;
       body += chunk.toString();
+      if (body.length > MAX_BODY_SIZE) {
+        bodyTooLarge = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request body too large' }));
+      }
     });
     
     req.on('end', () => {
-      log(`[Gateway] Webhook body received, length: ${body.length}`);
-      
-      // Check if there are listeners for this webhook event
-      const listenerCount = this.listenerCount(`webhook:${channelType}`);
-      log(`[Gateway] Listeners for webhook:${channelType}: ${listenerCount}`);
-      
-      if (listenerCount === 0) {
-        log(`[Gateway] No listeners for webhook:${channelType}, returning OK`);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ code: 0 }));
-        return;
+      if (bodyTooLarge) return;
+      try {
+        log(`[Gateway] Webhook body received, length: ${body.length}`);
+        
+        // Check if there are listeners for this webhook event
+        const listenerCount = this.listenerCount(`webhook:${channelType}`);
+        log(`[Gateway] Listeners for webhook:${channelType}: ${listenerCount}`);
+        
+        if (listenerCount === 0) {
+          log(`[Gateway] No listeners for webhook:${channelType}, returning OK`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 0 }));
+          return;
+        }
+        
+        // Emit webhook event for channel to handle
+        this.emit(`webhook:${channelType}`, {
+          headers: req.headers,
+          body,
+          respond: (status: number, data: unknown) => {
+            log(`[Gateway] Webhook response: ${status}`, data);
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(data));
+          },
+        });
+      } catch (error) {
+        logError('[Gateway] Error processing webhook body:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
       }
-      
-      // Emit webhook event for channel to handle
-      this.emit(`webhook:${channelType}`, {
-        headers: req.headers,
-        body,
-        respond: (status: number, data: unknown) => {
-          log(`[Gateway] Webhook response: ${status}`, data);
-          res.writeHead(status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(data));
-        },
-      });
     });
   }
   
@@ -634,7 +649,11 @@ export class RemoteGateway extends EventEmitter {
     log('[Gateway] WebSocket client connected:', clientId);
     
     ws.on('message', (data: Buffer) => {
-      this.handleWSMessage(client, data);
+      try {
+        this.handleWSMessage(client, data);
+      } catch (error) {
+        logError('[Gateway] Error handling WS message:', error);
+      }
     });
     
     ws.on('close', () => {
@@ -663,7 +682,9 @@ export class RemoteGateway extends EventEmitter {
           break;
           
         case 'message':
-          this.handleWSClientMessage(client, message);
+          void this.handleWSClientMessage(client, message).catch((error) => {
+            logError('[Gateway] Error handling WS client message:', error);
+          });
           break;
           
         case 'ping':
@@ -730,37 +751,41 @@ export class RemoteGateway extends EventEmitter {
   }
   
   private async handleWSClientMessage(client: WSClient, message: WSMessage): Promise<void> {
-    if (!client.authenticated) {
-      this.sendWSMessage(client.ws, {
-        type: 'error',
-        payload: { error: 'Not authenticated' },
-        requestId: message.requestId,
-      });
-      return;
+    try {
+      if (!client.authenticated) {
+        this.sendWSMessage(client.ws, {
+          type: 'error',
+          payload: { error: 'Not authenticated' },
+          requestId: message.requestId,
+        });
+        return;
+      }
+      
+      const { text } = message.payload as { text: string; sessionId?: string };
+      
+      // Create a remote message from WS client
+      const remoteMessage: RemoteMessage = {
+        id: this.generateMessageId(),
+        channelType: 'websocket',
+        channelId: client.id,
+        sender: {
+          id: client.userId || client.id,
+          isBot: false,
+        },
+        content: {
+          type: 'text',
+          text,
+        },
+        timestamp: Date.now(),
+        isGroup: false,
+        isMentioned: true,
+      };
+      
+      // Route to agent
+      await this.messageRouter.routeMessage(remoteMessage);
+    } catch (error) {
+      logError('[Gateway] Error in handleWSClientMessage:', error);
     }
-    
-    const { text } = message.payload as { text: string; sessionId?: string };
-    
-    // Create a remote message from WS client
-    const remoteMessage: RemoteMessage = {
-      id: this.generateMessageId(),
-      channelType: 'websocket',
-      channelId: client.id,
-      sender: {
-        id: client.userId || client.id,
-        isBot: false,
-      },
-      content: {
-        type: 'text',
-        text,
-      },
-      timestamp: Date.now(),
-      isGroup: false,
-      isMentioned: true,
-    };
-    
-    // Route to agent
-    await this.messageRouter.routeMessage(remoteMessage);
   }
   
   private sendWSMessage(ws: WebSocket, message: WSMessage): void {

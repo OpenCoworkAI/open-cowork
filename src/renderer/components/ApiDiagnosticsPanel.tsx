@@ -23,6 +23,7 @@ interface ApiDiagnosticsPanelProps {
   result: DiagnosticResult | null;
   isRunning: boolean;
   onRunDiagnostics: () => void;
+  onRunDeepDiagnostics?: () => void;
   disabled?: boolean;
 }
 
@@ -196,6 +197,7 @@ export default function ApiDiagnosticsPanel({
   result,
   isRunning,
   onRunDiagnostics,
+  onRunDeepDiagnostics,
   disabled = false,
 }: ApiDiagnosticsPanelProps) {
   const { t } = useTranslation();
@@ -210,23 +212,40 @@ export default function ApiDiagnosticsPanel({
 
   return (
     <div className="space-y-3">
-      {/* Diagnose button */}
-      <button
-        type="button"
-        onClick={onRunDiagnostics}
-        disabled={disabled || isRunning}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl
-          bg-accent text-white text-sm font-medium
-          hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed
-          transition-colors"
-      >
-        {isRunning ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Stethoscope className="w-4 h-4" />
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onRunDiagnostics()}
+          disabled={disabled || isRunning}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl
+            bg-accent text-white text-sm font-medium
+            hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed
+            transition-colors"
+        >
+          {isRunning ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Stethoscope className="w-4 h-4" />
+          )}
+          {onRunDeepDiagnostics
+            ? t('api.diagnostic.runQuickDiagnostics', 'Quick Diagnose')
+            : t('api.diagnostic.runDiagnostics', 'Diagnose Connection')}
+        </button>
+        {onRunDeepDiagnostics && (
+          <button
+            type="button"
+            onClick={() => onRunDeepDiagnostics()}
+            disabled={disabled || isRunning}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border
+              bg-background text-text-primary text-sm font-medium
+              hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed
+              transition-colors"
+          >
+            <Cpu className="w-4 h-4" />
+            {t('api.diagnostic.runDeepDiagnostics', 'Deep Inference Check')}
+          </button>
         )}
-        {t('api.diagnostic.runDiagnostics', 'Diagnose Connection')}
-      </button>
+      </div>
 
       {/* Pipeline visualization */}
       {(showSteps || isRunning) && (
@@ -249,8 +268,21 @@ export default function ApiDiagnosticsPanel({
           {/* Failure detail */}
           {failedStep && <FailureDetail step={failedStep} />}
 
+          {result?.advisoryText && !isRunning && (
+            <div className="mt-3 rounded-lg bg-accent/8 border border-accent/20 px-3 py-2 text-xs text-text-secondary">
+              {t(`api.diagnostic.advisory.${result.advisoryCode ?? ''}`, result.advisoryText)}
+            </div>
+          )}
+
+          {/* Skipped info */}
+          {result?.skippedReason && !isRunning && (
+            <div className="mt-3 pt-3 border-t border-border text-sm text-text-muted">
+              {t('api.diagnostic.skipped', 'Diagnostics skipped: another run is already in progress.')}
+            </div>
+          )}
+
           {/* Overall summary */}
-          {result && !isRunning && (
+          {result && !result.skippedReason && !isRunning && (
             <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-sm">
               <span
                 className={result.overallOk ? 'text-success font-medium' : 'text-error font-medium'}

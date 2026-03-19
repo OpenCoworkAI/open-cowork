@@ -67,6 +67,10 @@ export class FeishuAPI {
       }),
     });
     
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data: TokenResponse = await response.json();
     
     if (data.code !== 0 || !data.tenant_access_token) {
@@ -93,6 +97,10 @@ export class FeishuAPI {
         'Authorization': `Bearer ${token}`,
       },
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     
     const data: BotInfoResponse = await response.json();
     
@@ -147,6 +155,10 @@ export class FeishuAPI {
       }
     );
     
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data: SendMessageResponse = await response.json();
     
     if (data.code !== 0) {
@@ -188,6 +200,10 @@ export class FeishuAPI {
       }
     );
     
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data: SendMessageResponse = await response.json();
     
     if (data.code !== 0) {
@@ -217,6 +233,10 @@ export class FeishuAPI {
       body: formData,
     });
     
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data = await response.json();
     
     if (data.code !== 0) {
@@ -244,6 +264,10 @@ export class FeishuAPI {
       },
       body: formData,
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     
     const data = await response.json();
     
@@ -318,6 +342,10 @@ export class FeishuAPI {
       }
     );
     
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
     const data = await response.json();
     
     if (data.code !== 0) {
@@ -342,6 +370,10 @@ export class FeishuAPI {
         },
       }
     );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     
     const data = await response.json();
     

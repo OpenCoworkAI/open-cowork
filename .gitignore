@@ -91,6 +91,9 @@ DEV_LOG.md
 # Playwright MCP
 .playwright-mcp/
 
+# Build cache
+.build-cache/
+
 # Temp directories
 .tmp/
 

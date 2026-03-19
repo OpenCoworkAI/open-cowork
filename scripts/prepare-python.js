@@ -8,7 +8,6 @@
  * - Preinstall required packages into `resources/python/darwin-{arch}/site-packages/`
  *   - Pillow (PIL)
  *   - pyobjc-framework-Quartz (import Quartz)
- *   - claude-code-proxy runtime dependencies
  *
  * Runtime code (gui-operate-server) will prefer the bundled Python and add
  * `${pythonRoot}/site-packages` to PYTHONPATH.
@@ -39,26 +38,12 @@ const PYTHON_MINOR = process.env.OPEN_COWORK_PYTHON_MINOR || '3.10';
 const ABI = `cp${PYTHON_MINOR.replace('.', '')}`; // e.g. 3.12 -> cp312
 
 const GITHUB_REPO = process.env.OPEN_COWORK_PYTHON_STANDALONE_REPO || 'astral-sh/python-build-standalone';
-const PROXY_VENDOR_COMMIT = 'dd4a29aff3b470710187505daaeed20ea025e5bf';
-const PROXY_RUNTIME_VERSION_FILENAME = 'runtime-version.txt';
+const RUNTIME_VERSION_FILENAME = 'runtime-version.txt';
 const BUNDLED_GUI_PACKAGES = [
   'pillow',
   'pyobjc-framework-Quartz',
 ];
-const BUNDLED_PROXY_PACKAGES = [
-  'fastapi[standard]>=0.115.11',
-  'uvicorn>=0.34.0',
-  'httpx>=0.25.0',
-  'pydantic>=2.0.0',
-  'litellm>=1.77.7',
-  'python-dotenv>=1.0.0',
-  'google-auth>=2.41.1',
-  'google-cloud-aiplatform>=1.120.0',
-];
-const BUNDLED_PROXY_RUNTIME_FINGERPRINT = [
-  `vendor=${PROXY_VENDOR_COMMIT}`,
-  ...BUNDLED_PROXY_PACKAGES,
-].join('|');
+const BUNDLED_RUNTIME_FINGERPRINT = BUNDLED_GUI_PACKAGES.join('|');
 // Use the correct GitHub API endpoint (v3, no trailing slash)
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=30`;
 
@@ -107,7 +92,7 @@ function ensureDir(dir) {
 }
 
 function resolveRuntimeVersionFile(runtimeRoot) {
-  return path.join(runtimeRoot, PROXY_RUNTIME_VERSION_FILENAME);
+  return path.join(runtimeRoot, RUNTIME_VERSION_FILENAME);
 }
 
 function download(url, dest) {
@@ -342,7 +327,7 @@ function installPackages(siteDir, platformTag, pythonBin) {
   ensureDir(siteDir);
 
   const pipPython = process.env.OPEN_COWORK_PIP_PYTHON || pythonBin;
-  const packageSpecs = [...BUNDLED_GUI_PACKAGES, ...BUNDLED_PROXY_PACKAGES];
+  const packageSpecs = [...BUNDLED_GUI_PACKAGES];
   const pythonRoot = path.resolve(siteDir, '..');
   const runtimeMarkerFile = resolveRuntimeVersionFile(pythonRoot);
   const runtimeMarker = exists(runtimeMarkerFile)
@@ -352,17 +337,7 @@ function installPackages(siteDir, platformTag, pythonBin) {
   // Avoid re-install if already present
   const hasPillow = exists(path.join(siteDir, 'PIL'));
   const hasQuartz = exists(path.join(siteDir, 'Quartz'));
-  const hasProxyDeps = [
-    path.join(siteDir, 'fastapi'),
-    path.join(siteDir, 'uvicorn'),
-    path.join(siteDir, 'httpx'),
-    path.join(siteDir, 'pydantic'),
-    path.join(siteDir, 'litellm'),
-    path.join(siteDir, 'dotenv'),
-    path.join(siteDir, 'google', 'auth'),
-    path.join(siteDir, 'google', 'cloud', 'aiplatform'),
-  ].every(exists);
-  if (hasPillow && hasQuartz && hasProxyDeps && runtimeMarker === BUNDLED_PROXY_RUNTIME_FINGERPRINT) {
+  if (hasPillow && hasQuartz && runtimeMarker === BUNDLED_RUNTIME_FINGERPRINT) {
     console.log(`✓ Python packages already present in ${siteDir}`);
     return;
   }
@@ -379,7 +354,7 @@ function installPackages(siteDir, platformTag, pythonBin) {
     `${packageSpecs.map((pkg) => JSON.stringify(pkg)).join(' ')}`;
 
   execSync(cmd, { stdio: 'inherit' });
-  fs.writeFileSync(runtimeMarkerFile, BUNDLED_PROXY_RUNTIME_FINGERPRINT, 'utf-8');
+  fs.writeFileSync(runtimeMarkerFile, BUNDLED_RUNTIME_FINGERPRINT, 'utf-8');
 }
 
 async function preparePlatformArch(platform, arch) {
@@ -424,7 +399,7 @@ async function preparePlatformArch(platform, arch) {
     console.log(`✓ Standalone Python already present: ${pythonBin}`);
   }
 
-  // Install packages for GUI automation and proxy runtime
+  // Install packages for GUI automation
   installPackages(siteDir, target.platformTag, pythonBin);
 }
 

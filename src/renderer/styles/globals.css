@@ -128,10 +128,6 @@
     @apply bg-transparent hover:bg-surface-active text-text-secondary hover:text-text-primary;
   }
 
-  .btn-danger {
-    @apply bg-transparent border border-error/30 text-error hover:bg-error/10;
-  }
-
   /* Input styles */
   .input {
     @apply w-full px-4 py-3 rounded-xl bg-surface border border-border;
@@ -145,13 +141,6 @@
     @apply bg-surface rounded-2xl shadow-card border border-border-subtle;
   }
 
-  .card-hover {
-    @apply hover:shadow-elevated cursor-pointer transition-all duration-150;
-    &:hover {
-      @apply border-border;
-    }
-  }
-
   /* Tag/Chip styles - like the quick action buttons */
   .tag {
     @apply inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-border;
@@ -159,52 +148,9 @@
     @apply hover:bg-surface-hover hover:shadow-soft cursor-pointer transition-all duration-150;
   }
 
-  .tag-active {
-    @apply bg-accent-muted text-accent;
-    border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
-  }
-
   /* Badge styles */
   .badge {
     @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
-  }
-
-  .badge-idle {
-    @apply bg-surface-muted text-text-muted;
-  }
-
-  .badge-running {
-    @apply bg-accent-muted text-accent;
-  }
-
-  .badge-completed {
-    @apply bg-success/10 text-success;
-  }
-
-  .badge-error {
-    @apply bg-error/10 text-error;
-  }
-
-  /* Section header */
-  .section-header {
-    @apply flex items-center justify-between px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wider;
-  }
-
-  /* Progress circle */
-  .progress-circle {
-    @apply w-6 h-6 rounded-full border-2 flex items-center justify-center;
-  }
-
-  .progress-circle-pending {
-    @apply border-border bg-surface;
-  }
-
-  .progress-circle-active {
-    @apply border-accent bg-accent-muted;
-  }
-
-  .progress-circle-completed {
-    @apply border-success bg-success/10;
   }
 }
 
@@ -220,25 +166,11 @@
     app-region: no-drag;
   }
 
-  /* Grid background pattern - uses theme colors from tailwind.config.js */
-  .bg-grid {
-    @apply bg-background;
-    background-image: 
-      linear-gradient(to right, theme('colors.border.DEFAULT') 1px, transparent 1px),
-      linear-gradient(to bottom, theme('colors.border.DEFAULT') 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
-
   /* Message bubbles */
   .message-user {
     @apply bg-surface rounded-2xl border border-border-subtle;
     width: fit-content;
     margin-left: auto;
-  }
-
-  /* Assistant messages — no bubble, direct content (Claude style) */
-  .message-assistant {
-    /* No background, no border — content renders directly in conversation column */
   }
 
   /* Prose styling for assistant messages - elegant serif font */

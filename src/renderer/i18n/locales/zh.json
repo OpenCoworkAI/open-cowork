@@ -44,7 +44,9 @@
     "quickPromptOrganize": "帮我整理文件和文件夹",
     "quickPromptEmail": "请帮我使用 Chrome 总结过去三天 Gmail 和网易邮箱里的新邮件。注意：已保存账号里的用户名已经包含完整邮箱后缀，所以如果网页或截图里已经预填了邮箱后缀，请不要重复输入，避免登录失败。另外，先检查对应账号凭证是否已保存；如果某个邮箱服务没有保存用户名或密码，可以跳过该邮箱账号。",
     "quickPromptPapers": "请帮我使用 Chrome 搜索并总结两天内与 [Agent] 相关的论文。\n来源网站：\n1. HuggingFace Daily Papers。请包含投票信息和简短总结。注意周末可能没有新论文，所以你可能需要补看前几天的内容，但总计仍然要覆盖两天。",
-    "quickPromptNotion": "帮我调研三篇与 agents 相关、具有代表性的综述论文，并将它们添加到一个名为“Agent Survey”的 Notion 页面下。每篇论文请包含标题、作者、发表 venue/year，以及主要贡献的简短总结。"
+    "quickPromptNotion": "帮我调研三篇与 agents 相关、具有代表性的综述论文，并将它们添加到一个名为“Agent Survey”的 Notion 页面下。每篇论文请包含标题、作者、发表 venue/year，以及主要贡献的简短总结。",
+    "apiNotConfigured": "API 尚未配置，请前往设置页面填写 API 提供商和密钥。",
+    "goToSettings": "前往设置"
   },
   "settings": {
     "title": "设置",
@@ -134,23 +136,22 @@
     "getStarted": "开始使用",
     "saveSettings": "保存设置",
     "openSettingsAction": "打开 API 设置",
-    "proxyWarming": "正在初始化服务，首次启动可能需要几秒...",
     "configRequiredActiveSet": "当前方案未配置可用凭证，请先在 API 设置中完成配置",
     "testConnection": "测试连接",
     "testingConnection": "测试中...",
     "refreshModels": "刷新模型",
     "refreshingModels": "刷新中...",
     "refreshModelsFailed": "刷新模型失败，请检查 URL 或服务状态",
+    "manualModel": "手动输入",
+    "useDetectedModels": "使用探测列表",
     "discoverLocalOllama": "发现本地 Ollama",
     "discoveringLocalOllama": "发现中...",
-    "discoverLocalOllamaHint": "扫描本机是否已有运行中的 Ollama，并自动填入本地 URL 与模型列表。",
+    "discoverLocalOllamaHint": "先填写 Ollama 端点，系统会自动拉取模型列表；只有拉取不到时才需要手动输入模型。",
     "localOllamaDiscovered": "已发现本地 Ollama，可用模型 {{count}} 个。",
     "localOllamaNotFound": "未发现本地 Ollama 服务，请先执行 `ollama serve` 后重试。",
     "localOllamaNoModels": "已发现本地 Ollama 服务，但当前没有可用模型。",
     "localOllamaModelUnavailable": "已发现本地 Ollama，但模型 {{model}} 目前无法完成最小推理请求。",
-    "liveTest": "真实请求验证",
-    "liveTestHint": "会发送一次最小请求，可能消耗少量额度",
-    "liveTestCompatibilityHint": "部分兼容服务可能不支持该探测请求，失败时可关闭后重试。",
+    "localOllamaModelLoading": "已发现本地 Ollama，但模型仍在加载中，大型模型可能需要一分钟左右。",
     "enableThinking": "启用思考模式",
     "enableThinkingHint": "显示 Claude 的思考过程。这提供更多透明度，但可能增加 token 消耗。",
     "enableThinkingOllamaHint": "大多数 Ollama 模型不支持思考模式，仅在模型明确支持时启用。",
@@ -165,10 +166,7 @@
       "server_error": "服务端错误，请稍后再试",
       "network_error": "网络连接失败，请检查网络或地址",
       "ollama_not_running": "无法连接 Ollama，请确认 Ollama 已启动（ollama serve）",
-      "proxy_boot_failed": "本地代理启动失败，请检查运行环境后重试",
-      "proxy_health_failed": "本地代理健康检查失败，请稍后重试",
-      "proxy_upstream_auth_failed": "上游服务鉴权失败，请检查 API Key",
-      "proxy_upstream_not_found": "上游服务地址或路由不存在，请检查 Base URL",
+      "ollama_loading": "Ollama 正在将模型加载到内存中，大型模型可能需要 30–120 秒，请稍候后重试。",
       "unknown": "连接失败"
     },
     "guidance": {
@@ -259,6 +257,8 @@
     "configSetKeepOne": "至少需要保留一个配置方案",
     "diagnostic": {
       "runDiagnostics": "诊断连接",
+      "runQuickDiagnostics": "快速诊断",
+      "runDeepDiagnostics": "深度验证推理",
       "running": "诊断中...",
       "step": {
         "dns": "DNS 解析",
@@ -276,6 +276,10 @@
       },
       "overallSuccess": "所有检查通过 ({{ms}}ms)",
       "overallFail": "诊断在 {{step}} 步骤失败",
+      "advisory": {
+        "not_deep_verified": "已验证端点可达且当前模型在端点返回列表中，但尚未执行真实推理。",
+        "model_loading": "端点可达，但模型可能仍在加载到内存中。"
+      },
       "latency": "{{ms}}ms",
       "fix": {
         "dns_resolve_failed": "无法解析域名 {{host}}，请检查 URL 是否正确",
@@ -285,7 +289,11 @@
         "auth_invalid_key": "API Key 无效或已过期，请检查 Key 是否正确",
         "auth_endpoint_not_found": "API 端点不存在，请检查 Base URL 是否正确",
         "auth_request_failed": "认证请求失败，请检查配置",
-        "model_unavailable": "模型 {{model}} 不可用，请确认模型名称是否正确"
+        "model_unavailable": "模型 {{model}} 不可用，请确认模型名称是否正确",
+        "ollama_no_models_loaded": "端点可访问，但当前没有返回任何可选模型，请先在 Ollama 中拉取模型。",
+        "ollama_model_not_listed": "当前模型 {{model}} 不在端点返回的模型列表中，请从列表重新选择或改用手动输入。",
+        "ollama_model_loading": "模型 {{model}} 可能仍在加载中，稍后再试深度验证。",
+        "model_cold_start": "模型可能仍在加载到 GPU/CPU 内存中。大型模型（7B+）首次使用可能需要 30–120 秒，请稍后重试。"
       }
     }
   },

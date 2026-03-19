@@ -236,7 +236,7 @@ const ContentBlockView = memo(function ContentBlockView({
         }
       }}
       className={getFileLinkButtonClassName()}
-      title={t('messageCard.revealInFolder')}
+      title={resolveFilePath(value)}
     >
       {value}
     </button>
@@ -304,7 +304,7 @@ const ContentBlockView = memo(function ContentBlockView({
               }
             }}
             className={getFileLinkButtonClassName()}
-            title={t('messageCard.revealInFolder')}
+            title={localFilePath}
           >
             {children}
           </button>
@@ -1082,6 +1082,31 @@ const ToolResultBlock = memo(function ToolResultBlock({
     </div>
   );
 });
+// Render **bold** in thinking preview text — only handles double-asterisk bold
+// to avoid false positives with single * in math/code (e.g. "2 * 3").
+function renderThinkingPreview(raw: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = regex.exec(raw)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(raw.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <strong key={key++} className="font-semibold not-italic">
+        {match[1]}
+      </strong>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < raw.length) {
+    parts.push(raw.slice(lastIndex));
+  }
+  return parts;
+}
+
 // Thinking block — collapsible card (Claude style)
 const ThinkingBlock = memo(function ThinkingBlock({
   block,
@@ -1093,8 +1118,14 @@ const ThinkingBlock = memo(function ThinkingBlock({
   const text = block.thinking || '';
   if (!text) return null;
 
-  // Preview: first ~80 chars
-  const preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
+  // Preview: first ~80 chars, clean up broken ** markers from truncation
+  let preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
+  // Strip a trailing unclosed ** that truncation may have created
+  preview = preview.replace(/\*{1,2}(?:\.{3})?$/, (m) => {
+    // Keep the ... suffix if present, just remove the dangling asterisks
+    return m.endsWith('...') ? '...' : '';
+  });
+  const previewNodes = renderThinkingPreview(preview);
 
   return (
     <div className="rounded-2xl border border-border-subtle bg-background/40 overflow-hidden">
@@ -1108,7 +1139,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
         </span>
         {!expanded && (
           <span className="text-[11px] text-text-muted/60 truncate flex-1 min-w-0 italic">
-            {preview}
+            {previewNodes}
           </span>
         )}
         {expanded ? (

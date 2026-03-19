@@ -182,6 +182,10 @@ export class SessionManager {
       log(`[SessionManager] Initialized ${servers.length} MCP servers`);
     } catch (error) {
       logError('[SessionManager] Failed to initialize MCP servers:', error);
+      this.sendToRenderer({
+        type: 'error',
+        payload: { message: `Failed to initialize MCP servers: ${error instanceof Error ? error.message : String(error)}` },
+      });
     }
   }
 
@@ -419,6 +423,10 @@ export class SessionManager {
       log('[SessionManager] Sandbox mode:', this.sandboxAdapter.mode);
     } catch (error) {
       logError('[SessionManager] Failed to initialize sandbox:', error);
+      this.sendToRenderer({
+        type: 'error',
+        payload: { message: `Failed to initialize sandbox: ${error instanceof Error ? error.message : String(error)}` },
+      });
       // Continue anyway - sandbox adapter will fallback to native
     } finally {
       this.sandboxInitPromises.delete(session.cwd);
@@ -510,6 +518,10 @@ export class SessionManager {
           });
         } catch (error) {
           logError('[SessionManager] Error copying file:', error);
+          this.sendToRenderer({
+            type: 'error',
+            payload: { message: `Failed to process file attachment: ${error instanceof Error ? error.message : String(error)}` },
+          });
           // Skip this file attachment
         }
       } else {
@@ -697,6 +709,10 @@ export class SessionManager {
     if (!this.activeSessions.has(session.id)) {
       this.processQueue(session).catch(err => {
         logError('[SessionManager] Queue processing error:', err);
+        this.sendToRenderer({
+          type: 'error',
+          payload: { message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}` },
+        });
       });
     } else {
       log('[SessionManager] Session running, queued prompt:', session.id);
@@ -745,6 +761,10 @@ export class SessionManager {
           log('[SessionManager] Restarting queued prompts after stop/drain:', session.id);
           this.processQueue(latestSession).catch(err => {
             logError('[SessionManager] Queue processing error:', err);
+            this.sendToRenderer({
+              type: 'error',
+              payload: { message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}` },
+            });
           });
         } else {
           this.promptQueues.delete(session.id);
@@ -966,7 +986,15 @@ export class SessionManager {
     input: Record<string, unknown>
   ): Promise<PermissionResult> {
     return new Promise((resolve) => {
-      this.pendingPermissions.set(toolUseId, resolve);
+      const timeoutId = setTimeout(() => {
+        this.pendingPermissions.delete(toolUseId);
+        resolve('deny');
+        this.sendToRenderer({ type: 'permission.dismiss', payload: { toolUseId } });
+      }, 60_000);
+      this.pendingPermissions.set(toolUseId, (result: PermissionResult) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      });
       this.sendToRenderer({
         type: 'permission.request',
         payload: { toolUseId, toolName, input, sessionId },

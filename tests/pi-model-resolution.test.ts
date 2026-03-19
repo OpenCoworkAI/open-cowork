@@ -5,6 +5,8 @@ import {
   buildSyntheticPiModel,
   inferPiApi,
   resolvePiModelString,
+  resolvePiRouteProtocol,
+  resolveSyntheticPiModelFallback,
 } from '../src/main/claude/pi-model-resolution';
 
 describe('pi model resolution helpers', () => {
@@ -41,6 +43,13 @@ describe('pi model resolution helpers', () => {
     expect(resolvePiModelString({ provider: 'anthropic', customProtocol: 'anthropic', model: 'anthropic/claude-sonnet-4-6' })).toBe('anthropic/claude-sonnet-4-6');
   });
 
+  it('routes openrouter through the openai-compatible protocol', () => {
+    expect(resolvePiRouteProtocol('openrouter', 'anthropic')).toBe('openai');
+    expect(resolvePiRouteProtocol('ollama', 'openai')).toBe('openai');
+    expect(resolvePiRouteProtocol('custom', 'gemini')).toBe('gemini');
+    expect(resolvePiRouteProtocol('custom', 'anthropic')).toBe('anthropic');
+  });
+
   it('builds synthetic models with protocol-specific api defaults', () => {
     expect(inferPiApi('anthropic')).toBe('anthropic-messages');
     expect(inferPiApi('gemini')).toBe('google-generative-ai');
@@ -51,6 +60,51 @@ describe('pi model resolution helpers', () => {
     expect(model.provider).toBe('xai');
     expect(model.api).toBe('openai-completions');
     expect(model.baseUrl).toBe('https://api.x.ai/v1');
+  });
+
+  it('preserves explicit provider-prefixed ids for openrouter synthetic fallbacks', () => {
+    const fallback = resolveSyntheticPiModelFallback({
+      rawModel: 'z-ai/glm-5-turbo',
+      resolvedModelString: 'z-ai/glm-5-turbo',
+      rawProvider: 'openrouter',
+      routeProtocol: 'openai',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    });
+
+    expect(fallback).toEqual({
+      provider: 'openrouter',
+      modelId: 'z-ai/glm-5-turbo',
+    });
+  });
+
+  it('strips helper-added provider prefixes for first-party openai fallbacks', () => {
+    const fallback = resolveSyntheticPiModelFallback({
+      rawModel: 'gpt-5.4',
+      resolvedModelString: 'openai/gpt-5.4',
+      rawProvider: 'openai',
+      routeProtocol: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+    });
+
+    expect(fallback).toEqual({
+      provider: 'openai',
+      modelId: 'gpt-5.4',
+    });
+  });
+
+  it('maps ollama synthetic fallbacks onto the openai provider', () => {
+    const fallback = resolveSyntheticPiModelFallback({
+      rawModel: 'qwen3.5:0.8b',
+      resolvedModelString: 'qwen3.5:0.8b',
+      rawProvider: 'ollama',
+      routeProtocol: 'openai',
+      baseUrl: 'http://localhost:11434/v1',
+    });
+
+    expect(fallback).toEqual({
+      provider: 'openai',
+      modelId: 'qwen3.5:0.8b',
+    });
   });
 
   it('downgrades openai responses api to completions for custom endpoints', () => {
@@ -161,6 +215,12 @@ describe('pi model resolution helpers', () => {
     const deepseekR1 = buildSyntheticPiModel('deepseek-r1-distill', 'deepseek', 'openai', 'https://api.deepseek.com/v1');
     expect(deepseekR1.reasoning).toBe(true);
 
+    const qwen35 = buildSyntheticPiModel('qwen3.5:0.8b', 'openai', 'openai', 'http://localhost:11434/v1');
+    expect(qwen35.reasoning).toBe(true);
+
+    const qwen3 = buildSyntheticPiModel('qwen3:8b', 'openai', 'openai', 'http://localhost:11434/v1');
+    expect(qwen3.reasoning).toBe(true);
+
     const reasoner = buildSyntheticPiModel('o3-reasoner', 'openai', 'openai');
     expect(reasoner.reasoning).toBe(true);
 
@@ -217,6 +277,31 @@ describe('pi model resolution helpers', () => {
 
     expect(model.baseUrl).toBe('http://localhost:11434/v1');
     expect(model.compat?.supportsDeveloperRole).toBe(false);
+  });
+
+  it('maps ollama thinking off to reasoning_effort none for reasoning models', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'qwen3.5:0.8b',
+        name: 'qwen3.5:0.8b',
+        api: 'openai-completions',
+        provider: 'openai',
+        baseUrl: 'http://localhost:11434/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 258048,
+        maxTokens: 32768,
+      },
+      {
+        configProvider: 'openai',
+        rawProvider: 'ollama',
+        customBaseUrl: 'http://localhost:11434/v1',
+      },
+    );
+
+    expect(model.compat?.supportsReasoningEffort).toBe(true);
+    expect((model.compat?.reasoningEffortMap as Record<string, string> | undefined)?.off).toBe('none');
   });
 
   it('disables developer role for openrouter with custom endpoint', () => {

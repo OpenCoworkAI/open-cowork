@@ -8,10 +8,8 @@ import type {
   Skill,
   ApiTestInput,
   ApiTestResult,
-  PluginCatalogItem,
   PluginCatalogItemV2,
   InstalledPlugin,
-  PluginInstallResult,
   PluginInstallResultV2,
   PluginToggleResult,
   PluginComponentKind,
@@ -19,6 +17,7 @@ import type {
   ScheduleCreateInput,
   ScheduleUpdateInput,
   ProviderModelInfo,
+  LocalOllamaDiscoveryResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 
@@ -117,13 +116,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.listModels', payload),
     diagnose: (input: DiagnosticInput): Promise<DiagnosticResult> =>
       ipcRenderer.invoke('config.diagnose', input),
-    discoverLocal: (payload?: { baseUrl?: string }): Promise<{ available: boolean; baseUrl: string; models?: string[]; status: 'unavailable' | 'service_available' | 'model_usable' | 'model_unusable'; probeModel?: string; probeError?: string }> =>
+    discoverLocal: (payload?: { baseUrl?: string }): Promise<LocalOllamaDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-local', payload),
-  },
-
-  auth: {
-    getStatus: (): Promise<Array<Record<string, unknown>>> => ipcRenderer.invoke('auth.getStatus'),
-    importToken: (provider: string): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('auth.importToken', provider),
   },
 
   // Window control methods
@@ -180,10 +174,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('skills.setStoragePath', targetPath, migrate),
     openStoragePath: (): Promise<{ success: boolean; path: string; error?: string }> =>
       ipcRenderer.invoke('skills.openStoragePath'),
-    listPlugins: (installableOnly = false): Promise<PluginCatalogItem[]> =>
-      ipcRenderer.invoke('skills.listPlugins', installableOnly),
-    installPlugin: (pluginName: string): Promise<PluginInstallResult> =>
-      ipcRenderer.invoke('skills.installPlugin', pluginName),
   },
 
   plugins: {
@@ -258,16 +248,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('sandbox.checkLima'),
     installNodeInWSL: (distro: string): Promise<boolean> => 
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
-    installPythonInWSL: (distro: string): Promise<boolean> => 
+    installPythonInWSL: (distro: string): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.installPythonInWSL', distro),
-    installClaudeCodeInWSL: (distro: string): Promise<boolean> => 
-      ipcRenderer.invoke('sandbox.installClaudeCodeInWSL', distro),
-    installNodeInLima: (): Promise<boolean> => 
+    installNodeInLima: (): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.installNodeInLima'),
-    installPythonInLima: (): Promise<boolean> => 
+    installPythonInLima: (): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.installPythonInLima'),
-    installClaudeCodeInLima: (): Promise<boolean> => 
-      ipcRenderer.invoke('sandbox.installClaudeCodeInLima'),
     startLimaInstance: (): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.startLimaInstance'),
     stopLimaInstance: (): Promise<boolean> =>
@@ -388,11 +374,7 @@ declare global {
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
         listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }) => Promise<ProviderModelInfo[]>;
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
-        discoverLocal: (payload?: { baseUrl?: string }) => Promise<{ available: boolean; baseUrl: string; models?: string[]; status: 'unavailable' | 'service_available' | 'model_usable' | 'model_unusable'; probeModel?: string; probeError?: string }>;
-      };
-      auth: {
-        getStatus: () => Promise<Array<Record<string, unknown>>>;
-        importToken: (provider: string) => Promise<Record<string, unknown> | null>;
+        discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
       };
       window: {
         minimize: () => void;
@@ -429,8 +411,6 @@ declare global {
           migrate?: boolean
         ) => Promise<{ success: boolean; path: string; migratedCount: number; skippedCount: number; error?: string }>;
         openStoragePath: () => Promise<{ success: boolean; path: string; error?: string }>;
-        listPlugins: (installableOnly?: boolean) => Promise<PluginCatalogItem[]>;
-        installPlugin: (pluginName: string) => Promise<PluginInstallResult>;
       };
       plugins: {
         listCatalog: (options?: { installableOnly?: boolean }) => Promise<PluginCatalogItemV2[]>;
@@ -497,10 +477,8 @@ declare global {
         }>;
         installNodeInWSL: (distro: string) => Promise<boolean>;
         installPythonInWSL: (distro: string) => Promise<boolean>;
-        installClaudeCodeInWSL: (distro: string) => Promise<boolean>;
         installNodeInLima: () => Promise<boolean>;
         installPythonInLima: () => Promise<boolean>;
-        installClaudeCodeInLima: () => Promise<boolean>;
         startLimaInstance: () => Promise<boolean>;
         stopLimaInstance: () => Promise<boolean>;
         retrySetup: () => Promise<{ success: boolean; error?: string; result?: unknown }>;

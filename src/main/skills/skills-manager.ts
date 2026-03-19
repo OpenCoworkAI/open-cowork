@@ -171,7 +171,7 @@ export class SkillsManager {
     // Validate resolved path is within expected directories
     if (configuredPath) {
       const resolved = path.resolve(configuredPath);
-      const allowedBases = [app.getPath('userData'), process.cwd()];
+      const allowedBases = [app.getPath('userData'), app.getPath('home'), process.cwd()];
       const isWithinAllowed = allowedBases.some(base => isPathWithinRoot(resolved, base));
       if (!isWithinAllowed) {
         throw new Error(`Skills path outside allowed directories: ${resolved}`);

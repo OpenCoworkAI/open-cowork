@@ -4,7 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
@@ -200,6 +200,16 @@ export class RemoteManager extends EventEmitter {
       this.emitStatusUpdate();
       
     } catch (error) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === 'EADDRINUSE') {
+        logWarn(
+          '[RemoteManager] Remote control port already in use, skipping startup for this instance'
+        );
+        await this.gateway?.stop();
+        this.gateway = undefined;
+        this.emitStatusUpdate();
+        return;
+      }
+
       logError('[RemoteManager] Failed to start remote control:', error);
       throw error;
     }

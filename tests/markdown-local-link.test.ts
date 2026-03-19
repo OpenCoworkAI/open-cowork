@@ -40,7 +40,12 @@ describe('extractLocalFilePathFromHref', () => {
 
   it('extracts UNC paths from file URLs without dropping the host', () => {
     const href = 'file://server/share/%E6%B5%8B%E8%AF%95.docx';
-    expect(extractLocalFilePathFromHref(href)).toBe('\\\\server\\share\\测试.docx');
+    const result = extractLocalFilePathFromHref(href);
+    if (process.platform === 'win32') {
+      expect(result).toBe('\\\\server\\share\\测试.docx');
+    } else {
+      expect(result).toBe('//server/share/测试.docx');
+    }
   });
 
   it('returns null for external URLs', () => {
@@ -70,6 +75,11 @@ describe('resolveLocalFilePathFromHref', () => {
 
   it('keeps UNC paths intact after resolving file URLs', () => {
     const href = 'file://server/share/demo.txt';
-    expect(resolveLocalFilePathFromHref(href, null)).toBe('\\\\server\\share\\demo.txt');
+    const result = resolveLocalFilePathFromHref(href, null);
+    if (process.platform === 'win32') {
+      expect(result).toBe('\\\\server\\share\\demo.txt');
+    } else {
+      expect(result).toBe('//server/share/demo.txt');
+    }
   });
 });

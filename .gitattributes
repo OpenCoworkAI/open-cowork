@@ -22,3 +22,6 @@
 *.node binary
 *.sqlite binary
 *.db binary
+
+# Lock files - enforce LF to prevent cross-platform false diffs
+package-lock.json text eol=lf

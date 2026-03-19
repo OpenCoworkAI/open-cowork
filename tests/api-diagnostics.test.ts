@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const tlsConnect = vi.fn();
   const openaiModelsList = vi.fn();
   const fetch = vi.fn();
+  const probeWithClaudeSdk = vi.fn();
 
   return {
     dnsLookup,
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => {
     tlsConnect,
     openaiModelsList,
     fetch,
+    probeWithClaudeSdk,
   };
 });
 
@@ -53,6 +55,23 @@ vi.mock('../src/main/config/config-store', () => ({
     ollama: { baseUrl: 'http://localhost:11434/v1' },
     openrouter: { baseUrl: 'https://openrouter.ai/api' },
   },
+  configStore: {
+    getAll: () => ({
+      provider: 'openai',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4.1',
+      activeProfileKey: 'openai',
+      profiles: {},
+      activeConfigSetId: 'default',
+      configSets: [],
+      isConfigured: true,
+    }),
+  },
+}));
+
+vi.mock('../src/main/claude/claude-sdk-one-shot', () => ({
+  probeWithClaudeSdk: mocks.probeWithClaudeSdk,
 }));
 
 vi.mock('../src/main/utils/logger', () => ({
@@ -61,20 +80,24 @@ vi.mock('../src/main/utils/logger', () => ({
 }));
 
 import { discoverLocalOllama, runDiagnostics } from '../src/main/config/api-diagnostics';
+import { resetOllamaModelIndexCache } from '../src/main/config/ollama-api';
 
 describe('runDiagnostics TLS step', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
+    resetOllamaModelIndexCache();
     mocks.dnsLookup.mockReset();
     mocks.tcpConnect.mockReset();
     mocks.tlsConnect.mockReset();
     mocks.openaiModelsList.mockReset();
     mocks.fetch.mockReset();
+    mocks.probeWithClaudeSdk.mockReset();
     global.fetch = mocks.fetch;
 
     mocks.dnsLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 });
     mocks.openaiModelsList.mockResolvedValue({});
+    mocks.probeWithClaudeSdk.mockResolvedValue({ ok: true, latencyMs: 10 });
 
     mocks.tcpConnect.mockImplementation(() => {
       const handlers: Record<string, () => void> = {};
@@ -200,26 +223,57 @@ describe('runDiagnostics TLS step', () => {
     });
   });
 
+  it('model step uses probeWithClaudeSdk', async () => {
+    mocks.probeWithClaudeSdk.mockResolvedValue({ ok: true, latencyMs: 15 });
+
+    const result = await runDiagnostics({
+      provider: 'openai',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4.1',
+    });
+
+    expect(result.overallOk).toBe(true);
+    expect(mocks.probeWithClaudeSdk).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openai',
+        apiKey: 'sk-test',
+        model: 'gpt-4.1',
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('model step reports failure from probeWithClaudeSdk', async () => {
+    mocks.probeWithClaudeSdk.mockResolvedValue({
+      ok: false,
+      errorType: 'unauthorized',
+      details: '401 Unauthorized',
+    });
+
+    const result = await runDiagnostics({
+      provider: 'openai',
+      apiKey: 'sk-bad',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4.1',
+    });
+
+    expect(result.overallOk).toBe(false);
+    expect(result.failedAt).toBe('model');
+    const modelStep = result.steps.find(s => s.name === 'model');
+    expect(modelStep?.status).toBe('fail');
+    expect(modelStep?.error).toBe('401 Unauthorized');
+  });
+
   it('discovers local Ollama using the caller-provided loopback endpoint', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce(
+    mocks.fetch.mockResolvedValueOnce(
       new Response(JSON.stringify({
         data: [{ id: 'qwen3.5:0.8b' }],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          id: 'chatcmpl-1',
-          object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }],
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
+    );
 
     const result = await discoverLocalOllama({
       baseUrl: 'http://127.0.0.1:18080/api',
@@ -229,46 +283,26 @@ describe('runDiagnostics TLS step', () => {
       available: true,
       baseUrl: 'http://127.0.0.1:18080/v1',
       models: ['qwen3.5:0.8b'],
-      status: 'model_usable',
-      probeModel: 'qwen3.5:0.8b',
+      status: 'models_available',
     });
-    expect(mocks.fetch).toHaveBeenNthCalledWith(
-      1,
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch).toHaveBeenCalledWith(
       'http://127.0.0.1:18080/v1/models',
       expect.objectContaining({
-        signal: expect.any(AbortSignal),
-      })
-    );
-    expect(mocks.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://127.0.0.1:18080/v1/chat/completions',
-      expect.objectContaining({
-        method: 'POST',
         signal: expect.any(AbortSignal),
       })
     );
   });
 
   it('falls back to the default local endpoint when a remote base url is passed to local discovery', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce(
+    mocks.fetch.mockResolvedValueOnce(
       new Response(JSON.stringify({
         data: [{ id: 'qwen3.5:0.8b' }],
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          id: 'chatcmpl-1',
-          object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }],
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
+    );
 
     const result = await discoverLocalOllama({
       baseUrl: 'https://ollama.example.internal/v1',
@@ -278,8 +312,7 @@ describe('runDiagnostics TLS step', () => {
       available: true,
       baseUrl: 'http://localhost:11434/v1',
       models: ['qwen3.5:0.8b'],
-      status: 'model_usable',
-      probeModel: 'qwen3.5:0.8b',
+      status: 'models_available',
     });
     expect(mocks.fetch).toHaveBeenNthCalledWith(
       1,
@@ -312,22 +345,15 @@ describe('runDiagnostics TLS step', () => {
     });
   });
 
-  it('distinguishes a listed model that cannot complete a minimal inference request', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          data: [{ id: 'qwen3.5:0.8b' }],
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response('model loading failed', {
-          status: 500,
-          headers: { 'Content-Type': 'text/plain' },
-        })
-      );
+  it('treats listed models as discoverable without performing a live inference probe', async () => {
+    mocks.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        data: [{ id: 'qwen3.5:0.8b' }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
 
     const result = await discoverLocalOllama({
       baseUrl: 'http://127.0.0.1:18080/v1',
@@ -337,73 +363,8 @@ describe('runDiagnostics TLS step', () => {
       available: true,
       baseUrl: 'http://127.0.0.1:18080/v1',
       models: ['qwen3.5:0.8b'],
-      status: 'model_unusable',
-      probeModel: 'qwen3.5:0.8b',
-      probeError: 'model loading failed',
+      status: 'models_available',
     });
-  });
-
-  it('keeps probing later models until one can complete a minimal inference request', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          data: [{ id: 'bad-model' }, { id: 'good-model' }],
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response('first model failed', {
-          status: 500,
-          headers: { 'Content-Type': 'text/plain' },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          id: 'chatcmpl-1',
-          object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }],
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-
-    const result = await discoverLocalOllama({
-      baseUrl: 'http://127.0.0.1:18080/v1',
-    });
-
-    expect(result).toEqual({
-      available: true,
-      baseUrl: 'http://127.0.0.1:18080/v1',
-      models: ['bad-model', 'good-model'],
-      status: 'model_usable',
-      probeModel: 'good-model',
-    });
-    expect(mocks.fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://127.0.0.1:18080/v1/chat/completions',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          model: 'bad-model',
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-        }),
-      })
-    );
-    expect(mocks.fetch).toHaveBeenNthCalledWith(
-      3,
-      'http://127.0.0.1:18080/v1/chat/completions',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          model: 'good-model',
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-        }),
-      })
-    );
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
 });

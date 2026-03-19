@@ -26,6 +26,7 @@ import {
   configStore,
   getPiAiModelPresets,
   type AppConfig,
+  type AppTheme,
   type CreateConfigSetPayload,
 } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
@@ -171,12 +172,17 @@ async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500)
 // Single-instance lock: skip in dev mode so vite-plugin-electron can restart freely
 // without the old process blocking the new one during async cleanup.
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
+const ELECTRON_DEVTOOLS_DEBUG_PORT = '9223';
 
 // Enable Chrome DevTools Protocol in dev mode so the renderer can be inspected
-// via chrome://inspect or connected to by Puppeteer/Playwright at localhost:9222
+// via chrome://inspect or connected to by Puppeteer/Playwright at localhost:9223.
+// Chrome MCP uses 9222, so keep Electron on a separate port in development.
 if (isDev) {
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
-  app.commandLine.appendSwitch('remote-allow-origins', 'http://localhost:9222');
+  app.commandLine.appendSwitch('remote-debugging-port', ELECTRON_DEVTOOLS_DEBUG_PORT);
+  app.commandLine.appendSwitch(
+    'remote-allow-origins',
+    `http://localhost:${ELECTRON_DEVTOOLS_DEBUG_PORT}`
+  );
 }
 
 const hasSingleInstanceLock = isDev || app.requestSingleInstanceLock();
@@ -210,6 +216,8 @@ if (!hasSingleInstanceLock) {
 
 // Tray instance (kept alive to prevent GC)
 let tray: Tray | null = null;
+const DARK_BG = '#171614';
+const LIGHT_BG = '#f5f3ee';
 
 function buildMacMenu() {
   if (process.platform !== 'darwin') return;
@@ -337,13 +345,37 @@ function setupTray() {
   });
 }
 
+function getSavedThemePreference(): AppTheme {
+  const theme = configStore.get('theme');
+  return theme === 'dark' || theme === 'system' ? theme : 'light';
+}
+
+function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
+  if (theme === 'system') {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  }
+  return theme;
+}
+
+function applyNativeThemePreference(theme: AppTheme): void {
+  nativeTheme.themeSource = theme;
+}
+
 function createWindow() {
-  // Theme colors (warm cream theme)
-  const THEME = {
-    background: '#f5f3ee',
-    titleBar: '#f5f3ee',
-    titleBarSymbol: '#1a1a1a',
-  };
+  const savedTheme = getSavedThemePreference();
+  applyNativeThemePreference(savedTheme);
+  const effectiveTheme = resolveEffectiveTheme(savedTheme);
+  const THEME = effectiveTheme === 'dark'
+    ? {
+        background: DARK_BG,
+        titleBar: DARK_BG,
+        titleBarSymbol: '#f1ece4',
+      }
+    : {
+        background: LIGHT_BG,
+        titleBar: LIGHT_BG,
+        titleBarSymbol: '#1a1a1a',
+      };
 
   // Platform-specific window configuration
   const isMac = process.platform === 'darwin';
@@ -796,7 +828,7 @@ app
           click: () => mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
         },
       ]);
-      app.dock.setMenu(dockMenu);
+      app.dock?.setMenu(dockMenu);
     }
 
     // macOS: send initial system theme to renderer
@@ -815,6 +847,15 @@ app
         type: 'native-theme.changed',
         payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
       });
+      if (
+        getSavedThemePreference() === 'system'
+        && mainWindow
+        && !mainWindow.isDestroyed()
+      ) {
+        mainWindow.setBackgroundColor(
+          nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG
+        );
+      }
     });
 
     // Auto-updater: check for updates in production
@@ -856,6 +897,12 @@ app
           payload: { sessionId: started.id, updates: started },
         });
         return { sessionId: started.id };
+      },
+      onTaskError: (taskId, error) => {
+        sendToRenderer({
+          type: 'scheduled-task.error',
+          payload: { taskId, error },
+        });
       },
       now: () => Date.now(),
     });
@@ -1026,11 +1073,21 @@ ipcMain.handle('client-invoke', async (_event, data: ClientEvent) => {
 });
 
 ipcMain.handle('get-version', () => {
-  return app.getVersion();
+  try {
+    return app.getVersion();
+  } catch (error) {
+    logError('[IPC] Error getting version:', error);
+    return 'unknown';
+  }
 });
 
 ipcMain.handle('system.getTheme', () => {
-  return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
+  try {
+    return { shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
+  } catch (error) {
+    logError('[IPC] Error getting theme:', error);
+    return { shouldUseDarkColors: true };
+  }
 });
 
 ipcMain.handle('shell.openExternal', async (_event, url: string) => {
@@ -1241,11 +1298,21 @@ ipcMain.handle('dialog.selectFiles', async () => {
 
 // Config IPC handlers
 ipcMain.handle('config.get', () => {
-  return configStore.getAll();
+  try {
+    return configStore.getAll();
+  } catch (error) {
+    logError('[Config] Error getting config:', error);
+    return {};
+  }
 });
 
 ipcMain.handle('config.getPresets', () => {
-  return getPiAiModelPresets();
+  try {
+    return getPiAiModelPresets();
+  } catch (error) {
+    logError('[Config] Error getting presets:', error);
+    return [];
+  }
 });
 
 const buildAgentRuntimeSignature = (config: AppConfig): string =>
@@ -1344,7 +1411,12 @@ ipcMain.handle('config.switchSet', async (_event, payload: { id: string }) => {
 });
 
 ipcMain.handle('config.isConfigured', () => {
-  return configStore.isConfigured();
+  try {
+    return configStore.isConfigured();
+  } catch (error) {
+    logError('[Config] Error checking configured status:', error);
+    return false;
+  }
 });
 
 ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<ApiTestResult> => {
@@ -1374,22 +1446,25 @@ ipcMain.handle(
 );
 
 ipcMain.handle('config.diagnose', async (_event, payload: DiagnosticInput) => {
-  const { runDiagnostics } = await import('./config/api-diagnostics');
-  return runDiagnostics(payload);
+  try {
+    const { runDiagnostics } = await import('./config/api-diagnostics');
+    return await runDiagnostics(payload);
+  } catch (error) {
+    logError('[Config] Error running diagnostics:', error);
+    throw error;
+  }
 });
 
 ipcMain.handle('config.discover-local', async (_event, payload?: { baseUrl?: string }) => {
-  const { discoverLocalOllama } = await import('./config/api-diagnostics');
-  return discoverLocalOllama(payload);
+  try {
+    const { discoverLocalOllama } = await import('./config/api-diagnostics');
+    return await discoverLocalOllama(payload);
+  } catch (error) {
+    logError('[Config] Error discovering local services:', error);
+    return [];
+  }
 });
 
-ipcMain.handle('auth.getStatus', () => {
-  return [];
-});
-
-ipcMain.handle('auth.importToken', () => {
-  return null;
-});
 
 // MCP Server IPC handlers
 ipcMain.handle('mcp.getServers', () => {
@@ -1629,10 +1704,15 @@ ipcMain.handle('skills.validate', async (_event, skillPath: string) => {
 });
 
 ipcMain.handle('skills.getStoragePath', async () => {
-  if (!skillsManager) {
-    throw new Error('SkillsManager not initialized');
+  try {
+    if (!skillsManager) {
+      return null;
+    }
+    return skillsManager.getGlobalSkillsPath();
+  } catch (error) {
+    logError('[Skills] Error getting storage path:', error);
+    return null;
   }
-  return skillsManager.getGlobalSkillsPath();
 });
 
 ipcMain.handle('skills.setStoragePath', async (_event, targetPath: string, migrate = true) => {
@@ -1752,61 +1832,34 @@ ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
   }
 });
 
-ipcMain.handle('skills.listPlugins', async (_event, installableOnly?: boolean) => {
-  try {
-    logWarn('[Skills] skills.listPlugins is deprecated. Use plugins.listCatalog instead.');
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const plugins = await pluginRuntimeService.listCatalog({
-      installableOnly: installableOnly === true,
-    });
-    return plugins.map((plugin) => ({
-      ...plugin,
-      skillCount: plugin.componentCounts.skills,
-      hasSkills: plugin.componentCounts.skills > 0,
-    }));
-  } catch (error) {
-    logError('[Skills] Error listing plugins:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('skills.installPlugin', async (_event, pluginName: string) => {
-  try {
-    logWarn('[Skills] skills.installPlugin is deprecated. Use plugins.install instead.');
-    if (!pluginRuntimeService) {
-      throw new Error('PluginRuntimeService not initialized');
-    }
-    const result = await pluginRuntimeService.install(pluginName);
-    sessionManager?.invalidateSkillsSetup();
-    return {
-      pluginName: result.plugin.name,
-      installedSkills: result.installedSkills,
-      skippedSkills: [],
-      errors: result.warnings,
-    };
-  } catch (error) {
-    logError('[Skills] Error installing plugin:', error);
-    throw error;
-  }
-});
 
 // Window control IPC handlers
 ipcMain.on('window.minimize', () => {
-  mainWindow?.minimize();
+  try {
+    mainWindow?.minimize();
+  } catch (error) {
+    logError('[Window] Error minimizing:', error);
+  }
 });
 
 ipcMain.on('window.maximize', () => {
-  if (mainWindow?.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow?.maximize();
+  try {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+  } catch (error) {
+    logError('[Window] Error maximizing:', error);
   }
 });
 
 ipcMain.on('window.close', () => {
-  mainWindow?.close();
+  try {
+    mainWindow?.close();
+  } catch (error) {
+    logError('[Window] Error closing:', error);
+  }
 });
 
 // Sandbox IPC handlers
@@ -1881,14 +1934,6 @@ ipcMain.handle('sandbox.installPythonInWSL', async (_event, distro: string) => {
   }
 });
 
-ipcMain.handle('sandbox.installClaudeCodeInWSL', async (_event, distro: string) => {
-  try {
-    return await WSLBridge.installClaudeCodeInWSL(distro);
-  } catch (error) {
-    logError('[Sandbox] Error installing claude-code:', error);
-    return false;
-  }
-});
 
 // Lima IPC handlers (macOS)
 ipcMain.handle('sandbox.checkLima', async () => {
@@ -1945,14 +1990,6 @@ ipcMain.handle('sandbox.installPythonInLima', async () => {
   }
 });
 
-ipcMain.handle('sandbox.installClaudeCodeInLima', async () => {
-  try {
-    return await LimaBridge.installClaudeCodeInLima();
-  } catch (error) {
-    logError('[Sandbox] Error installing claude-code in Lima:', error);
-    return false;
-  }
-});
 
 // Logs IPC handlers
 ipcMain.handle('logs.getPath', () => {
@@ -2334,8 +2371,13 @@ ipcMain.handle('remote.restart', async () => {
 });
 
 ipcMain.handle('schedule.list', () => {
-  if (!scheduledTaskManager) return [];
-  return scheduledTaskManager.list();
+  try {
+    if (!scheduledTaskManager) return [];
+    return scheduledTaskManager.list();
+  } catch (error) {
+    logError('[Schedule] Error listing tasks:', error);
+    return [];
+  }
 });
 
 ipcMain.handle('schedule.create', async (_event, payload: ScheduledTaskCreateInput) => {
@@ -2604,7 +2646,28 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'settings.update':
-      // TODO: Implement settings update
+      if (
+        event.payload.theme === 'dark'
+        || event.payload.theme === 'light'
+        || event.payload.theme === 'system'
+      ) {
+        const nextTheme = event.payload.theme as AppTheme;
+        configStore.update({ theme: nextTheme });
+        applyNativeThemePreference(nextTheme);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const effectiveTheme = resolveEffectiveTheme(nextTheme);
+          mainWindow.setBackgroundColor(
+            effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG
+          );
+        }
+        sendToRenderer({
+          type: 'config.status',
+          payload: {
+            isConfigured: configStore.isConfigured(),
+            config: configStore.getAll(),
+          },
+        });
+      }
       return null;
 
     default:

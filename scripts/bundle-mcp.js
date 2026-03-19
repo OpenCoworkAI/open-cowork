@@ -1,19 +1,19 @@
 /**
- * Bundle MCP Servers using esbuild
- * 
- * This script bundles MCP server TypeScript files into standalone JavaScript files
- * with all dependencies included, so they can run without accessing node_modules.
+ * Build MCP server TypeScript files into runnable CommonJS output.
+ *
+ * We intentionally use the TypeScript compiler API instead of esbuild here.
+ * In locked-down Windows environments, spawning esbuild's helper process can
+ * fail even when the executable exists, which blocks packaging.
  */
 
-const esbuild = require('esbuild');
 const path = require('path');
 const fs = require('fs');
+const ts = require('typescript');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const SRC_MCP_DIR = path.join(PROJECT_ROOT, 'src', 'main', 'mcp');
 const DIST_MCP_DIR = path.join(PROJECT_ROOT, 'dist-mcp');
 
-// MCP servers to bundle
 const servers = [
   {
     name: 'gui-operate-server',
@@ -27,78 +27,70 @@ const servers = [
   },
 ];
 
-async function bundleMCPServers() {
-  console.log('🔨 Bundling MCP Servers with esbuild...\n');
-  
-  // Ensure output directory exists
-  if (!fs.existsSync(DIST_MCP_DIR)) {
-    fs.mkdirSync(DIST_MCP_DIR, { recursive: true });
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-  
+}
+
+function formatDiagnostic(diagnostic) {
+  return ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
+}
+
+function transpileMCPFiles() {
+  const sourceFiles = fs.readdirSync(SRC_MCP_DIR)
+    .filter((file) => file.endsWith('.ts'));
+
+  for (const file of sourceFiles) {
+    const inputPath = path.join(SRC_MCP_DIR, file);
+    const outputPath = path.join(DIST_MCP_DIR, file.replace(/\.ts$/, '.js'));
+    const sourceText = fs.readFileSync(inputPath, 'utf8');
+    const result = ts.transpileModule(sourceText, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        moduleResolution: ts.ModuleResolutionKind.NodeJs,
+        esModuleInterop: true,
+        resolveJsonModule: true,
+        allowSyntheticDefaultImports: true,
+      },
+      fileName: inputPath,
+      reportDiagnostics: true,
+    });
+
+    if (result.diagnostics?.length) {
+      const errors = result.diagnostics.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+      if (errors.length > 0) {
+        throw new Error(`${file}\n${errors.map(formatDiagnostic).join('\n')}`);
+      }
+    }
+
+    fs.writeFileSync(outputPath, result.outputText);
+  }
+}
+
+async function bundleMCPServers() {
+  console.log('🔨 Building MCP Servers with TypeScript...\n');
+
+  ensureDir(DIST_MCP_DIR);
+  transpileMCPFiles();
+
   for (const server of servers) {
-    const entryPoint = path.join(SRC_MCP_DIR, server.entry);
     const outfile = path.join(DIST_MCP_DIR, `${server.name}.js`);
-    
-    console.log(`📦 Bundling ${server.description}...`);
+    console.log(`📦 Built ${server.description}`);
     console.log(`   Entry: ${server.entry}`);
     console.log(`   Output: dist-mcp/${server.name}.js`);
-    
-    try {
-      const result = await esbuild.build({
-        entryPoints: [entryPoint],
-        bundle: true,
-        platform: 'node',
-        target: 'node20',
-        format: 'cjs',
-        outfile: outfile,
-        external: [
-          // Don't bundle native modules - they must be in node_modules
-          'better-sqlite3',
-          '@img/sharp-darwin-arm64',
-          '@img/sharp-darwin-x64',
-          '@img/sharp-win32-x64',
-          '@img/sharp-linux-x64',
-        ],
-        sourcemap: false,
-        minify: false, // Keep readable for debugging
-        logLevel: 'info',
-        metafile: true,
-      });
-      
-      // Get file size
-      const stats = fs.statSync(outfile);
-      const sizeKB = (stats.size / 1024).toFixed(2);
-      
-      console.log(`   ✅ Success! Size: ${sizeKB} KB`);
-      
-      // Show top dependencies (for information)
-      if (result.metafile) {
-        const inputs = Object.keys(result.metafile.inputs)
-          .filter(p => p.includes('node_modules'))
-          .map(p => {
-            const match = p.match(/node_modules\/(@?[^\/]+(?:\/[^\/]+)?)/);
-            return match ? match[1] : null;
-          })
-          .filter(Boolean);
-        
-        const uniqueDeps = [...new Set(inputs)];
-        if (uniqueDeps.length > 0) {
-          console.log(`   📚 Bundled ${uniqueDeps.length} unique packages`);
-        }
-      }
-      
-      console.log('');
-      
-    } catch (error) {
-      console.error(`   ❌ Failed to bundle ${server.name}:`, error.message);
-      process.exit(1);
-    }
+
+    const stats = fs.statSync(outfile);
+    const sizeKB = (stats.size / 1024).toFixed(2);
+    console.log(`   ✅ Success! Size: ${sizeKB} KB`);
+    console.log('');
   }
-  
-  console.log('✅ All MCP servers bundled successfully!\n');
+
+  console.log('✅ All MCP servers built successfully!\n');
 }
 
 bundleMCPServers().catch((error) => {
-  console.error('❌ Bundle failed:', error);
+  console.error('❌ Bundle failed:', error?.stack || error);
   process.exit(1);
 });

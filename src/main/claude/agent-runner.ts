@@ -5,12 +5,12 @@
  *
  * Responsibilities:
  * - Runs AI conversations via the pi-coding-agent SDK (createAgentSession)
- * - Routes providers: Anthropic direct vs Python proxy for OpenAI/Gemini/OpenRouter
+ * - Routes providers via pi-ai SDK for model resolution
  * - Bridges MCP tools into SDK ToolDefinition format
  * - Streams responses back as ServerEvents (stream.message, stream.partial, trace.step)
  * - Skills injection, system prompt assembly, permission handling
  *
- * Dependencies: session-manager, mcp-manager, config-store, proxy-manager, skills-manager
+ * Dependencies: session-manager, mcp-manager, config-store, skills-manager
  */
 import {
   createAgentSession,
@@ -44,7 +44,14 @@ import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { configStore } from '../config/config-store';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
-import { applyPiModelRuntimeOverrides, buildSyntheticPiModel, resolvePiRegistryModel } from './pi-model-resolution';
+import {
+  applyPiModelRuntimeOverrides,
+  buildSyntheticPiModel,
+  resolvePiRegistryModel,
+  resolvePiRouteProtocol,
+  resolveSyntheticPiModelFallback,
+} from './pi-model-resolution';
+import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { ThinkTagStreamParser } from './think-tag-parser';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -258,12 +265,8 @@ function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
             details: undefined as unknown,
           };
         } catch (err: unknown) {
-          const errMsg = err instanceof Error ? err.message : String(err);
           logError(`[ClaudeAgentRunner] MCP tool ${mcpTool.name} failed:`, err);
-          return {
-            content: [{ type: 'text' as const, text: `MCP tool error: ${errMsg}` }],
-            details: undefined as unknown,
-          };
+          throw err instanceof Error ? err : new Error(String(err));
         }
       },
     };
@@ -285,6 +288,34 @@ function safeStringify(value: unknown, space = 0): string {
   }
 }
 
+function summarizeMessageForLog(message: unknown): Record<string, unknown> {
+  if (!message || typeof message !== 'object') {
+    return { present: false };
+  }
+
+  const typedMessage = message as {
+    role?: unknown;
+    stopReason?: unknown;
+    content?: unknown[];
+    usage?: unknown;
+  };
+  const content = Array.isArray(typedMessage.content) ? typedMessage.content : [];
+
+  return {
+    present: true,
+    role: typeof typedMessage.role === 'string' ? typedMessage.role : undefined,
+    stopReason: typedMessage.stopReason ?? undefined,
+    contentBlocks: content.length,
+    contentTypes: content.slice(0, 8).map((block) => {
+      if (!block || typeof block !== 'object') {
+        return typeof block;
+      }
+      const type = (block as { type?: unknown }).type;
+      return typeof type === 'string' ? type : 'unknown';
+    }),
+    usage: normalizeTokenUsage(typedMessage.usage),
+  };
+}
 
 function toErrorText(error: unknown): string {
   if (error instanceof Error) {
@@ -338,8 +369,15 @@ interface AgentRunnerOptions {
   requestSudoPassword?: (sessionId: string, toolUseId: string, command: string) => Promise<string | null>;
 }
 
+interface CachedPiSession {
+  session: PiAgentSession;
+  modelId: string;
+  thinkingLevel: string;
+  runtimeSignature: string;
+}
+
 /**
- * ClaudeAgentRunner - Uses @anthropic-ai/claude-agent-sdk with allowedTools
+ * ClaudeAgentRunner - Uses @mariozechner/pi-coding-agent SDK
  * 
  * Environment variables should be set before running:
  *   ANTHROPIC_BASE_URL=https://openrouter.ai/api
@@ -356,7 +394,7 @@ export class ClaudeAgentRunner {
   private _pluginRuntimeService?: PluginRuntimeService;
   private _skillsAdapter?: SkillsAdapter;
   private activeControllers: Map<string, AbortController> = new Map();
-  private piSessions: Map<string, { session: PiAgentSession; modelId: string; thinkingLevel: string }> = new Map();
+  private piSessions: Map<string, CachedPiSession> = new Map();
 
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
@@ -817,6 +855,9 @@ ${hints.join('\n')}
       return content.replace(new RegExp(sandboxPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), VIRTUAL_WORKSPACE_PATH);
     };
 
+    const thinkingStepId = uuidv4();
+    let abortedByTimeout = false;
+
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
       logTiming('pathResolver.registerSession', runStartTime);
@@ -825,7 +866,6 @@ ${hints.join('\n')}
       // No need to send it again from backend
 
       // Send initial thinking trace
-      const thinkingStepId = uuidv4();
       this.sendTraceStep(session.id, {
         id: thinkingStepId,
         type: 'thinking',
@@ -967,7 +1007,7 @@ ${hints.join('\n')}
             payload: {
               sessionId: session.id,
               phase: 'error',
-              message: 'Sandbox sync failed',
+              message: '沙盒文件同步失败，已回退到直接访问模式',
               detail: 'Falling back to direct access mode (less secure)',
             },
           });
@@ -1100,7 +1140,7 @@ ${hints.join('\n')}
             payload: {
               sessionId: session.id,
               phase: 'error',
-              message: 'Sandbox sync failed',
+              message: '沙盒文件同步失败，已回退到直接访问模式',
               detail: 'Falling back to direct access mode (less secure)',
             },
           });
@@ -1125,7 +1165,11 @@ ${hints.join('\n')}
       // Resolve model via pi-ai
       const runtimeConfig = configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
-      const configProtocol = runtimeConfig.customProtocol || runtimeConfig.provider || 'anthropic';
+      const configProtocol = resolvePiRouteProtocol(
+        runtimeConfig.provider,
+        runtimeConfig.customProtocol,
+      );
+      let usedSyntheticModel = false;
       let piModel = resolvePiRegistryModel(modelString, {
         configProvider: configProtocol,
         customBaseUrl: runtimeConfig.baseUrl?.trim() || undefined,
@@ -1134,11 +1178,25 @@ ${hints.join('\n')}
       });
 
       if (!piModel) {
+        usedSyntheticModel = true;
         // Synthetic fallback: construct a Model for unknown/custom models
-        const parts = modelString.split('/');
-        const syntheticId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
-        const syntheticProvider = parts.length >= 2 ? parts[0] : (configProtocol === 'custom' ? 'anthropic' : configProtocol);
-        piModel = buildSyntheticPiModel(syntheticId, syntheticProvider, configProtocol, runtimeConfig.baseUrl?.trim() || undefined, undefined, undefined, runtimeConfig.contextWindow, runtimeConfig.maxTokens);
+        const synthetic = resolveSyntheticPiModelFallback({
+          rawModel: runtimeConfig.model,
+          resolvedModelString: modelString,
+          rawProvider: runtimeConfig.provider,
+          routeProtocol: configProtocol,
+          baseUrl: runtimeConfig.baseUrl?.trim() || undefined,
+        });
+        piModel = buildSyntheticPiModel(
+          synthetic.modelId,
+          synthetic.provider,
+          configProtocol,
+          runtimeConfig.baseUrl?.trim() || undefined,
+          undefined,
+          undefined,
+          runtimeConfig.contextWindow,
+          runtimeConfig.maxTokens,
+        );
         // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
         // that resolvePiRegistryModel applies to registry models
         piModel = applyPiModelRuntimeOverrides(piModel, {
@@ -1175,7 +1233,16 @@ ${hints.join('\n')}
         }
         log('[ClaudeAgentRunner] Set runtime API key for config provider:', piProvider);
       } else {
-        logWarn('[ClaudeAgentRunner] No API key configured for provider:', provider);
+        if (provider === 'ollama') {
+          log('[ClaudeAgentRunner] Ollama configured without explicit API key; relying on OpenAI-compatible placeholder/env auth path', safeStringify({
+            provider,
+            modelProvider: piModel.provider,
+            modelId: piModel.id,
+            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+          }));
+        } else {
+          logWarn('[ClaudeAgentRunner] No API key configured for provider:', provider);
+        }
       }
 
       // baseUrl is now embedded in the model object via resolvePiModel()
@@ -1185,6 +1252,7 @@ ${hints.join('\n')}
 
       // pi-coding-agent handles path sandboxing via its own tools
       const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
@@ -1223,7 +1291,7 @@ ${hints.join('\n')}
               } catch (err) {
                 // If symlink fails (e.g., on Windows without permissions), copy the directory
                 logWarn(`[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`, err);
-                // We'll skip copying for now to keep it simple
+                this.copyDirectorySync(builtinSkillPath, userSkillPath);
               }
             }
           }
@@ -1250,12 +1318,31 @@ ${hints.join('\n')}
       logCtx('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
       type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
       const thinkingLevel: PiThinkingLevel = enableThinking ? 'medium' : 'off';
+      const sessionRuntimeSignature = buildPiSessionRuntimeSignature({
+        configProvider: runtimeConfig.provider,
+        customProtocol: runtimeConfig.customProtocol,
+        modelProvider: piModel.provider,
+        modelApi: piModel.api,
+        modelBaseUrl: piModel.baseUrl,
+        effectiveCwd,
+        apiKey,
+      });
 
       // Build contextual prompt — if reusing an existing SDK session, the SDK
       // already has conversation history so we only pass the new prompt.
       // For cold starts (new SDK session with existing DB history), we inject
       // a token-budgeted summary of recent history as a preamble.
-      const cachedSession = this.piSessions.get(session.id);
+      let cachedSession = this.piSessions.get(session.id);
+      if (cachedSession && cachedSession.runtimeSignature !== sessionRuntimeSignature) {
+        logCtx('[ClaudeAgentRunner] Runtime changed, recreating cached pi session:', session.id);
+        try {
+          cachedSession.session.dispose();
+        } catch (disposeError) {
+          logWarn('[ClaudeAgentRunner] dispose error while recreating pi session:', disposeError);
+        }
+        this.piSessions.delete(session.id);
+        cachedSession = undefined;
+      }
 
       let contextualPrompt = prompt;
       if (!cachedSession) {
@@ -1478,7 +1565,6 @@ Tool routing:
       logTiming('before pi-coding-agent session creation', runStartTime);
 
       // Create or reuse pi-coding-agent session
-      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
 
       // Collect skill directories for pi's native skill discovery.
       // SkillsAdapter handles path resolution, disabled skill filtering,
@@ -1566,7 +1652,12 @@ Tool routing:
         piSession = newPiSession;
 
         // Store session for reuse
-        this.piSessions.set(session.id, { session: piSession, modelId: piModel.id, thinkingLevel });
+        this.piSessions.set(session.id, {
+          session: piSession,
+          modelId: piModel.id,
+          thinkingLevel,
+          runtimeSignature: sessionRuntimeSignature,
+        });
         logTiming('pi-coding-agent session created', runStartTime);
       }
 
@@ -1575,7 +1666,50 @@ Tool routing:
       // Accumulate streamed text deltas in case message_end.content is empty (pi SDK streaming behaviour)
       let streamedText = '';
       let compactionStepId: string | undefined;
+      let hasEmittedError = false;
+      let terminalErrorText: string | undefined;
       const thinkParser = new ThinkTagStreamParser();
+      const promptStartedAt = Date.now();
+      const streamEventCounts = new Map<string, number>();
+
+      // Ollama cold-start feedback: if provider is 'ollama' and no stream event arrives
+      // within 10 seconds, show a "model loading" trace update so users know what's happening.
+      let ollamaColdStartTimerId: ReturnType<typeof setTimeout> | undefined;
+      let receivedFirstStreamEvent = false;
+      let firstStreamEventAt: number | undefined;
+      if (provider === 'ollama') {
+        ollamaColdStartTimerId = setTimeout(() => {
+          if (!receivedFirstStreamEvent && !controller.signal.aborted) {
+            this.sendTraceUpdate(session.id, thinkingStepId, {
+              title: 'Waiting for model to load into memory...',
+            });
+          }
+        }, 10000);
+      }
+
+      const markFirstStreamEvent = (eventType: string) => {
+        if (receivedFirstStreamEvent) {
+          return;
+        }
+        receivedFirstStreamEvent = true;
+        firstStreamEventAt = Date.now();
+        if (ollamaColdStartTimerId) {
+          clearTimeout(ollamaColdStartTimerId);
+        }
+        this.sendTraceUpdate(session.id, thinkingStepId, {
+          title: 'Processing request...',
+        });
+        if (provider === 'ollama') {
+          log('[ClaudeAgentRunner] Ollama first stream event received', safeStringify({
+            sessionId: session.id,
+            eventType,
+            modelId: piModel.id,
+            modelProvider: piModel.provider,
+            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+            latencyMs: firstStreamEventAt - promptStartedAt,
+          }));
+        }
+      };
 
       // Activity-based timeout: reset the 5-min timer whenever the SDK sends events
       const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -1584,23 +1718,48 @@ Tool routing:
         if (activityTimeoutId) clearTimeout(activityTimeoutId);
         activityTimeoutId = setTimeout(() => {
           logWarn('[ClaudeAgentRunner] Prompt timed out (no activity for 5 min), aborting');
+          abortedByTimeout = true;
           controller.abort();
         }, PROMPT_TIMEOUT_MS);
       };
 
+      const recordStreamEvent = (eventType: string) => {
+        streamEventCounts.set(eventType, (streamEventCounts.get(eventType) ?? 0) + 1);
+      };
+
+      const getStreamEventSummary = () =>
+        Object.fromEntries(
+          Array.from(streamEventCounts.entries()).sort(([left], [right]) => left.localeCompare(right))
+        );
+
       const unsubscribe = piSession.subscribe((event) => {
+        try {
         if (controller.signal.aborted) return;
 
         // Reset activity timeout on meaningful events
         resetActivityTimeout();
 
-        // Debug: log every event type
         if (event.type === 'message_update') {
-          log(`[ClaudeAgentRunner] Event: ${event.type} → ${event.assistantMessageEvent.type}`);
-        } else if (event.type === 'message_start' || event.type === 'message_end') {
-          log(`[ClaudeAgentRunner] Event: ${event.type}`, JSON.stringify((event.message as any)?.content || 'no content').substring(0, 500));
+          const updateType = event.assistantMessageEvent.type;
+          recordStreamEvent(updateType);
+          if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {
+            log(`[ClaudeAgentRunner] Event: ${event.type} → ${updateType}`);
+          }
+        } else if (event.type === 'message_start') {
+          log('[ClaudeAgentRunner] Event: message_start', safeStringify(summarizeMessageForLog(event.message), 2));
+        } else if (event.type === 'message_end') {
+          log(
+            '[ClaudeAgentRunner] Event: message_end',
+            safeStringify(
+              {
+                message: summarizeMessageForLog(event.message),
+                messageUpdateCounts: getStreamEventSummary(),
+              },
+              2
+            )
+          );
         } else if (event.type === 'turn_end') {
-          log(`[ClaudeAgentRunner] Event: ${event.type}`, JSON.stringify((event.message as any)?.content || 'no content').substring(0, 500));
+          log(`[ClaudeAgentRunner] Event: ${event.type}`);
         } else {
           log(`[ClaudeAgentRunner] Event: ${event.type}`);
         }
@@ -1610,6 +1769,7 @@ Tool routing:
             if (controller.signal.aborted) break;
             const ame = event.assistantMessageEvent;
             if (ame.type === 'text_delta') {
+              markFirstStreamEvent(ame.type);
               const parsed = thinkParser.push(ame.delta);
               if (parsed.thinking) {
                 this.sendToRenderer({
@@ -1622,12 +1782,14 @@ Tool routing:
                 this.sendPartial(session.id, parsed.text);
               }
             } else if (ame.type === 'thinking_delta') {
+              markFirstStreamEvent(ame.type);
               // Forward thinking delta to renderer for real-time display
               this.sendToRenderer({
                 type: 'stream.thinking',
                 payload: { sessionId: session.id, delta: ame.delta },
               });
             } else if (ame.type === 'toolcall_start') {
+              markFirstStreamEvent(ame.type);
               const partial = ame.partial;
               const toolContent = partial?.content?.[ame.contentIndex];
               const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
@@ -1671,30 +1833,51 @@ Tool routing:
             }
 
             const msg = event.message;
-            log(
-              '[ClaudeAgentRunner] message_end raw message:',
-              safeStringify(msg, 2)
-            );
+            if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
+              log(
+                '[ClaudeAgentRunner] message_end raw message:',
+                safeStringify(msg, 2)
+              );
+            }
             const resolvedPayload = resolveMessageEndPayload({
               message: msg as any,
               streamedText,
             });
             streamedText = resolvedPayload.nextStreamedText;
-            if (resolvedPayload.errorText) {
-              this.sendMessage(session.id, {
-                id: uuidv4(),
+            if (provider === 'ollama') {
+              log('[ClaudeAgentRunner] Ollama message_end diagnostics', safeStringify({
                 sessionId: session.id,
-                role: 'assistant',
-                content: [{
-                  type: 'text',
-                  text: `**Error**: ${resolvedPayload.errorText}\n\n${
-                    /\b4\d{2}\b/.test(resolvedPayload.errorText)
-                      ? '_请检查配置后重试。_'
-                      : '_Agent is still running and may retry..._'
-                  }`,
-                }],
-                timestamp: Date.now(),
-              });
+                modelId: piModel.id,
+                modelProvider: piModel.provider,
+                usedSyntheticModel,
+                receivedFirstStreamEvent,
+                firstStreamLatencyMs: firstStreamEventAt ? firstStreamEventAt - promptStartedAt : null,
+                stopReason: (msg as { stopReason?: unknown })?.stopReason ?? null,
+                contentBlocks: Array.isArray((msg as { content?: unknown[] })?.content)
+                  ? ((msg as { content?: unknown[] }).content?.length ?? 0)
+                  : 0,
+                emittedError: Boolean(resolvedPayload.errorText),
+              }));
+            }
+            if (resolvedPayload.errorText) {
+              terminalErrorText = resolvedPayload.errorText;
+              if (!hasEmittedError) {
+                hasEmittedError = true;
+                this.sendMessage(session.id, {
+                  id: uuidv4(),
+                  sessionId: session.id,
+                  role: 'assistant',
+                  content: [{
+                    type: 'text',
+                    text: `**Error**: ${resolvedPayload.errorText}\n\n${
+                      /\b4\d{2}\b/.test(resolvedPayload.errorText)
+                        ? '_请检查配置后重试。_'
+                        : '_Agent 正在自动重试，请稍候..._'
+                    }`,
+                  }],
+                  timestamp: Date.now(),
+                });
+              }
               break;
             }
             if (resolvedPayload.shouldEmitMessage) {
@@ -1819,10 +2002,10 @@ Tool routing:
           case 'auto_compaction_end': {
             const status = event.aborted ? 'error' : (event.errorMessage ? 'error' : 'completed');
             const title = event.aborted
-              ? 'Context compaction aborted'
+              ? '上下文压缩已中止'
               : event.errorMessage
-                ? `Compaction error: ${event.errorMessage}`
-                : 'Context compacted successfully';
+                ? `上下文压缩失败: ${event.errorMessage}`
+                : '上下文压缩完成';
             log('[ClaudeAgentRunner] Auto-compaction ended:', title, 'willRetry:', event.willRetry);
             if (compactionStepId) {
               this.sendTraceUpdate(session.id, compactionStepId, { status, title });
@@ -1840,16 +2023,49 @@ Tool routing:
             break;
           }
         }
+        } catch (subscribeErr) {
+          logError('[ClaudeAgentRunner] Error in subscribe callback:', subscribeErr);
+          if (compactionStepId) {
+            this.sendTraceUpdate(session.id, compactionStepId, {
+              status: 'error',
+              title: 'Error during context compaction',
+            });
+            compactionStepId = undefined;
+          }
+          if (!hasEmittedError) {
+            hasEmittedError = true;
+            const errorText = toUserFacingErrorText(toErrorText(subscribeErr));
+            this.sendMessage(session.id, {
+              id: uuidv4(),
+              sessionId: session.id,
+              role: 'assistant',
+              content: [{ type: 'text', text: `**Error**: ${errorText}` }],
+              timestamp: Date.now(),
+            });
+          }
+        }
       });
 
       // Execute the prompt with activity-based timeout
       try {
         resetActivityTimeout();
+        if (provider === 'ollama') {
+          log('[ClaudeAgentRunner] Starting Ollama prompt', safeStringify({
+            sessionId: session.id,
+            modelId: piModel.id,
+            modelProvider: piModel.provider,
+            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+            usedSyntheticModel,
+            hasExplicitApiKey: Boolean(apiKey),
+            thinkingLevel,
+          }));
+        }
         try {
           const promptResult = await piSession.prompt(contextualPrompt);
           log('[ClaudeAgentRunner] prompt() returned:', JSON.stringify(promptResult ?? 'void').substring(0, 1000));
         } finally {
           if (activityTimeoutId) clearTimeout(activityTimeoutId);
+          if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
         }
       } finally {
         try { unsubscribe(); } catch (e) { logWarn('[ClaudeAgentRunner] unsubscribe error:', e); }
@@ -1857,15 +2073,52 @@ Tool routing:
 
       logTiming('pi-coding-agent prompt completed', runStartTime);
 
-      // Complete - update the initial thinking step
-      this.sendTraceUpdate(session.id, thinkingStepId, {
-        status: 'completed',
-        title: 'Task completed',
-      });
+      // If the SDK swallowed the AbortError and returned void, detect timeout here
+      if (controller.signal.aborted && abortedByTimeout) {
+        logCtx('[ClaudeAgentRunner] Aborted due to timeout (detected after prompt returned)');
+        const errorMsg: Message = {
+          id: uuidv4(),
+          sessionId: session.id,
+          role: 'assistant',
+          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          timestamp: Date.now(),
+        };
+        this.sendMessage(session.id, errorMsg);
+        this.sendTraceUpdate(session.id, thinkingStepId, {
+          status: 'error',
+          title: 'Request timed out',
+        });
+      } else {
+        // Complete - update the initial thinking step
+        this.sendTraceUpdate(session.id, thinkingStepId, {
+          status: terminalErrorText ? 'error' : 'completed',
+          title: terminalErrorText ? 'Request failed' : 'Task completed',
+        });
+      }
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        logCtx('[ClaudeAgentRunner] Aborted');
+        if (abortedByTimeout) {
+          logCtx('[ClaudeAgentRunner] Aborted due to timeout');
+          const errorMsg: Message = {
+            id: uuidv4(),
+            sessionId: session.id,
+            role: 'assistant',
+            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            timestamp: Date.now(),
+          };
+          this.sendMessage(session.id, errorMsg);
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            status: 'error',
+            title: 'Request timed out',
+          });
+        } else {
+          logCtx('[ClaudeAgentRunner] Aborted by user');
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            status: 'completed',
+            title: 'Cancelled',
+          });
+        }
       } else {
         logCtxError('[ClaudeAgentRunner] Error:', error);
 
@@ -1898,43 +2151,36 @@ Tool routing:
 
       // Sync changes from sandbox back to host OS (but don't cleanup - sandbox persists)
       if (useSandboxIsolation && sandboxPath) {
-        const sandbox = getSandboxAdapter();
+        try {
+          const sandbox = getSandboxAdapter();
 
-        if (sandbox.isWSL) {
-          log('[ClaudeAgentRunner] Syncing sandbox changes to Windows...');
-          const syncResult = await SandboxSync.syncToWindows(session.id);
-          if (syncResult.success) {
-            log('[ClaudeAgentRunner] Sync completed successfully');
-          } else {
-            logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'error',
-                message: 'File sync failed',
-                error: syncResult.error,
-              },
-            });
+          if (sandbox.isWSL) {
+            log('[ClaudeAgentRunner] Syncing sandbox changes to Windows...');
+            const syncResult = await SandboxSync.syncToWindows(session.id);
+            if (syncResult.success) {
+              log('[ClaudeAgentRunner] Sync completed successfully');
+            } else {
+              logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
+            }
+          } else if (sandbox.isLima) {
+            log('[ClaudeAgentRunner] Syncing sandbox changes to macOS...');
+            const { LimaSync } = await import('../sandbox/lima-sync');
+            const syncResult = await LimaSync.syncToMac(session.id);
+            if (syncResult.success) {
+              log('[ClaudeAgentRunner] Sync completed successfully');
+            } else {
+              logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
+            }
           }
-        } else if (sandbox.isLima) {
-          log('[ClaudeAgentRunner] Syncing sandbox changes to macOS...');
-          const { LimaSync } = await import('../sandbox/lima-sync');
-          const syncResult = await LimaSync.syncToMac(session.id);
-          if (syncResult.success) {
-            log('[ClaudeAgentRunner] Sync completed successfully');
-          } else {
-            logError('[ClaudeAgentRunner] Sync failed:', syncResult.error);
-            this.sendToRenderer({
-              type: 'sandbox.sync',
-              payload: {
-                sessionId: session.id,
-                phase: 'error',
-                message: 'File sync failed',
-                error: syncResult.error,
-              },
-            });
-          }
+        } catch (syncErr) {
+          logError('[ClaudeAgentRunner] Sandbox sync error:', syncErr);
+          this.sendMessage(session.id, {
+            id: uuidv4(),
+            sessionId: session.id,
+            role: 'assistant',
+            content: [{ type: 'text', text: `**Warning**: Sandbox sync failed: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}` }],
+            timestamp: Date.now(),
+          });
         }
       }
     }

@@ -15,7 +15,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
@@ -615,9 +615,13 @@ export class MCPManager {
           // Capture stdout for debugging
           if (process.stdout) {
             process.stdout.on('data', (data: Buffer) => {
-              const message = data.toString().trim();
-              if (message) {
-                log(`[MCPManager] MCP server stdout: ${message}`);
+              try {
+                const message = data.toString().trim();
+                if (message) {
+                  log(`[MCPManager] MCP server stdout: ${message}`);
+                }
+              } catch (error) {
+                logError('[MCPManager] Error processing MCP server stdout:', error);
               }
             });
           }
@@ -625,9 +629,13 @@ export class MCPManager {
           // Listen to stderr for error messages
           if (process.stderr) {
             process.stderr.on('data', (data: Buffer) => {
-              const message = data.toString().trim();
-              if (message) {
-                logError(`[MCPManager] MCP server stderr: ${message}`);
+              try {
+                const message = data.toString().trim();
+                if (message) {
+                  logError(`[MCPManager] MCP server stderr: ${message}`);
+                }
+              } catch (error) {
+                logError('[MCPManager] Error processing MCP server stderr:', error);
               }
             });
           }
@@ -829,7 +837,7 @@ export class MCPManager {
         logError(`[MCPManager]   1. Chrome failed to start`);
         logError(`[MCPManager]   2. Another process is using port 9222`);
         logError(`[MCPManager]   3. Firewall blocking the port`);
-        return;
+        throw new Error('Chrome 浏览器未就绪，无法执行此操作: debug port did not become ready');
       }
       
       log(`[MCPManager] ✓ Chrome debug port is now ready`);
@@ -854,12 +862,14 @@ export class MCPManager {
             logError(`[MCPManager] ❌ Chrome started but MCP connection verification failed after 5 attempts`);
             logError(`[MCPManager] Last error code: ${verifyError.code}, message: ${verifyError.message}`);
             logError(`[MCPManager] The chrome-devtools-mcp server may not be working correctly`);
+            throw new Error('Chrome 浏览器未就绪，无法执行此操作: MCP connection verification failed after 5 attempts');
           }
         }
       }
     } catch (startError: any) {
       logError(`[MCPManager] ❌ Failed to start Chrome with debugging`);
       logError(`[MCPManager] Error: ${startError.message || startError}`);
+      throw new Error(`Chrome 浏览器未就绪，无法执行此操作: ${startError.message || startError}`);
     }
   }
 
@@ -1066,6 +1076,20 @@ export class MCPManager {
         log(`[MCPManager] ✓ Loaded ${listToolsResult.tools.length} tools from ${config.name}`);
       } catch (error: any) {
         logError(`[MCPManager] ❌ Error listing tools from ${serverId}:`, error.message || error);
+
+        // Notify renderer that tools refresh failed for this server
+        try {
+          const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+          if (win) {
+            win.webContents.send('server-event', {
+              type: 'mcp:tools-refresh-error',
+              payload: { serverId, error: error.message || String(error) },
+            });
+          }
+        } catch (_notifyErr) {
+          // Best-effort notification; logging already happened above
+        }
+
         // If Chrome server, try to reconnect
         const config = this.serverConfigs.get(serverId);
         if (config && config.name.toLowerCase().includes('chrome')) {
@@ -1181,13 +1205,15 @@ export class MCPManager {
             continue;
           }
           logWarn(`[MCPManager] Reconnect attempt failed for ${tool.serverName}, will retry after backoff`);
-          await new Promise(resolve => setTimeout(resolve, 1200));
+          const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000);
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
 
         if (errorMsg.includes('timeout')) {
           log(`[MCPManager] Tool call timeout detected, retrying after backoff...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000);
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
 

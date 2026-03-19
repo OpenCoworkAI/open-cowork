@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store';
 import type {
+  AppConfig,
   ClientEvent,
   ServerEvent,
   PermissionResult,
@@ -106,10 +107,22 @@ export function useIPC() {
       }
     };
 
+    const applyConfigSnapshot = (config: AppConfig, isConfigured: boolean) => {
+      const store = storeRef.current;
+      const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
+      store.setIsConfigured(isConfigured);
+      store.setAppConfig(config);
+      store.setSettings({ theme: config.theme || 'light' });
+      if (isInitialConfigStatus) {
+        store.markInitialConfigStatusSeen();
+      }
+    };
+
     const cleanup = window.electronAPI.on((event: ServerEvent) => {
       const store = storeRef.current;
       console.log('[useIPC] Received event:', event.type);
 
+      try {
       switch (event.type) {
         case 'session.list':
           store.setSessions(event.payload.sessions);
@@ -208,15 +221,7 @@ export function useIPC() {
 
         case 'config.status': {
           console.log('[useIPC] config.status received:', event.payload.isConfigured);
-          const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
-          store.setIsConfigured(event.payload.isConfigured);
-          store.setAppConfig(event.payload.config);
-          if (isInitialConfigStatus) {
-            store.markInitialConfigStatusSeen();
-          }
-          if (isInitialConfigStatus && !event.payload.isConfigured) {
-            store.setShowConfigModal(true);
-          }
+          applyConfigSnapshot(event.payload.config, event.payload.isConfigured);
           break;
         }
 
@@ -255,22 +260,6 @@ export function useIPC() {
 
         case 'session.contextInfo':
           store.setSessionContextWindow(event.payload.sessionId, event.payload.contextWindow);
-          break;
-
-        case 'proxy.warmup':
-          if (event.payload.status === 'warming') {
-            store.setGlobalNotice({
-              id: 'proxy-warmup',
-              type: 'info',
-              message: i18n.t('api.proxyWarming'),
-              messageKey: 'api.proxyWarming',
-            });
-          } else {
-            const current = useAppStore.getState().globalNotice;
-            if (current?.id === 'proxy-warmup') {
-              store.clearGlobalNotice();
-            }
-          }
           break;
 
         case 'error':
@@ -312,10 +301,33 @@ export function useIPC() {
         default:
           console.log('[useIPC] Unknown server event:', event);
       }
+      } catch (err) {
+        console.error('[useIPC] Error handling server event:', event.type, err);
+      }
     });
+
+    let disposed = false;
+    void (async () => {
+      try {
+        const [config, isConfigured, systemTheme] = await Promise.all([
+          window.electronAPI.config.get(),
+          window.electronAPI.config.isConfigured(),
+          window.electronAPI.getSystemTheme(),
+        ]);
+        if (disposed) {
+          return;
+        }
+        const store = storeRef.current;
+        store.setSystemDarkMode(Boolean(systemTheme?.shouldUseDarkColors));
+        applyConfigSnapshot(config, Boolean(isConfigured));
+      } catch (error) {
+        console.error('[useIPC] Failed to bootstrap config/theme state:', error);
+      }
+    })();
 
     // Cleanup on unmount only
     return () => {
+      disposed = true;
       console.log('[useIPC] Cleaning up IPC listener');
       if (partialRafId !== null) cancelAnimationFrame(partialRafId);
       if (thinkingRafId !== null) cancelAnimationFrame(thinkingRafId);

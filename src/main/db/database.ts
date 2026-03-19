@@ -237,7 +237,6 @@ function initializeSchema(database: Database.Database): void {
 
   ensureColumn(database, 'sessions', 'openai_thread_id', 'openai_thread_id TEXT');
   ensureColumn(database, 'sessions', 'model', 'model TEXT');
-  ensureColumn(database, 'messages', 'execution_time_ms', 'execution_time_ms INTEGER');
   
   // Create messages table
   database.exec(`
@@ -251,6 +250,8 @@ function initializeSchema(database: Database.Database): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+
+  ensureColumn(database, 'messages', 'execution_time_ms', 'execution_time_ms INTEGER');
 
   // Create trace steps table
   database.exec(`

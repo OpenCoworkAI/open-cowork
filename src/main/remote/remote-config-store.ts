@@ -4,9 +4,11 @@
  */
 
 import Store from 'electron-store';
-import * as crypto from 'crypto';
-import * as os from 'os';
-import { log } from '../utils/logger';
+import { log, logWarn } from '../utils/logger';
+import {
+  createEncryptedStoreWithKeyRotation,
+  getLegacyDerivedKeyHexes,
+} from '../utils/store-encryption';
 import type {
   RemoteConfig,
   GatewayConfig,
@@ -22,19 +24,29 @@ import { DEFAULT_REMOTE_CONFIG } from './types';
 class RemoteConfigStore {
   private store: Store<RemoteConfig & { pairedUsers: PairedUser[] }>;
 
-  private static getRemoteKey(): Buffer {
-    const seed = `${os.hostname()}:${__dirname}:open-cowork-remote-v1`;
-    return crypto.scryptSync(seed, 'open-cowork-remote-salt', 32);
-  }
-
   constructor() {
-    this.store = new Store<RemoteConfig & { pairedUsers: PairedUser[] }>({
-      name: 'remote-config',
-      defaults: {
-        ...DEFAULT_REMOTE_CONFIG,
-        pairedUsers: [],
+    this.store = createEncryptedStoreWithKeyRotation<RemoteConfig & { pairedUsers: PairedUser[] }>({
+      stableKey: 'open-cowork-remote-stable-v1',
+      legacyKeys: [
+        'open-cowork-remote-v1',
+        ...getLegacyDerivedKeyHexes({
+          moduleDirname: __dirname,
+          stableSeed: 'open-cowork-remote-stable-v1',
+          legacySeed: 'open-cowork-remote-v1',
+          salt: 'open-cowork-remote-salt',
+        }),
+      ],
+      storeOptions: {
+        name: 'remote-config',
+        projectName: 'open-cowork',
+        defaults: {
+          ...DEFAULT_REMOTE_CONFIG,
+          pairedUsers: [],
+        },
       },
-      encryptionKey: RemoteConfigStore.getRemoteKey().toString('hex'),
+      logPrefix: '[RemoteConfigStore]',
+      log,
+      warn: logWarn,
     });
     
     // Migrate: change pairing mode to allowlist (allow everyone by default)

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Message, MemoryEntry, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
+import { logError } from '../utils/logger';
 
 interface ContextStrategy {
   type: 'full' | 'compressed' | 'rolling';
@@ -28,19 +29,23 @@ export class MemoryManager {
    * Save a message to the database
    */
   saveMessage(sessionId: string, message: Message): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, token_usage)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO messages (id, session_id, role, content, timestamp, token_usage)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
 
-    stmt.run(
-      message.id,
-      sessionId,
-      message.role,
-      JSON.stringify(message.content),
-      message.timestamp,
-      message.tokenUsage ? JSON.stringify(message.tokenUsage) : null
-    );
+      stmt.run(
+        message.id,
+        sessionId,
+        message.role,
+        JSON.stringify(message.content),
+        message.timestamp,
+        message.tokenUsage ? JSON.stringify(message.tokenUsage) : null
+      );
+    } catch (error) {
+      logError('[MemoryManager] Error saving message:', error);
+    }
   }
 
   /**
@@ -310,16 +315,24 @@ export class MemoryManager {
    * Delete messages for a session
    */
   deleteSessionMessages(sessionId: string): void {
-    const stmt = this.db.prepare('DELETE FROM messages WHERE session_id = ?');
-    stmt.run(sessionId);
+    try {
+      const stmt = this.db.prepare('DELETE FROM messages WHERE session_id = ?');
+      stmt.run(sessionId);
+    } catch (error) {
+      logError('[MemoryManager] Error deleting session messages:', error);
+    }
   }
 
   /**
    * Delete memory entries for a session
    */
   deleteSessionMemory(sessionId: string): void {
-    const stmt = this.db.prepare('DELETE FROM memory_entries WHERE session_id = ?');
-    stmt.run(sessionId);
+    try {
+      const stmt = this.db.prepare('DELETE FROM memory_entries WHERE session_id = ?');
+      stmt.run(sessionId);
+    } catch (error) {
+      logError('[MemoryManager] Error deleting session memory:', error);
+    }
   }
 }
 

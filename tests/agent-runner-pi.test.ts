@@ -33,6 +33,15 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     expect(agentRunnerContent).toContain("log('[ClaudeAgentRunner] Final mcpServers config:'");
   });
 
+  it('summarizes noisy SDK message updates instead of logging every text delta', () => {
+    expect(agentRunnerContent).toContain('const streamEventCounts = new Map<string, number>();');
+    expect(agentRunnerContent).toContain("if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {");
+    expect(agentRunnerContent).toContain("'[ClaudeAgentRunner] Event: message_end'");
+    expect(agentRunnerContent).toContain('messageUpdateCounts: getStreamEventSummary()');
+    expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
+    expect(agentRunnerContent).toContain("'[ClaudeAgentRunner] message_end raw message:'");
+  });
+
   it('reuses the shared user-facing error helper', () => {
     expect(agentRunnerContent).toContain("import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end'");
     expect(agentRunnerContent).toContain('const errorText = toUserFacingErrorText(toErrorText(error));');
@@ -42,6 +51,20 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     expect(agentRunnerContent).toContain('additionalSkillPaths: skillPaths');
     expect(agentRunnerContent).toContain('appendSystemPrompt: coworkAppendPrompt');
     expect(agentRunnerContent).not.toContain('systemPromptOverride');
+  });
+
+  it('recreates cached pi sessions when the runtime signature changes', () => {
+    expect(agentRunnerContent).toContain("import { buildPiSessionRuntimeSignature } from './pi-session-runtime'");
+    expect(agentRunnerContent).toContain('const sessionRuntimeSignature = buildPiSessionRuntimeSignature({');
+    expect(agentRunnerContent).toContain('cachedSession.runtimeSignature !== sessionRuntimeSignature');
+    expect(agentRunnerContent).toContain('Runtime changed, recreating cached pi session:');
+    expect(agentRunnerContent).toContain('runtimeSignature: sessionRuntimeSignature');
+  });
+
+  it('uses the normalized route protocol so openrouter follows the openai-compatible path', () => {
+    expect(agentRunnerContent).toContain('resolvePiRouteProtocol');
+    expect(agentRunnerContent).toContain('const configProtocol = resolvePiRouteProtocol(');
+    expect(agentRunnerContent).toContain('resolveSyntheticPiModelFallback');
   });
 
   it('nudges the model to proceed with reasonable assumptions', () => {

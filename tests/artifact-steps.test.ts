@@ -274,6 +274,37 @@ describe('getArtifactSteps', () => {
     expect(displayArtifactSteps).toHaveLength(0);
   });
 
+  it('excludes Bash tool from file steps (relies on recent-files fallback)', () => {
+    const steps: TraceStep[] = [
+      {
+        id: 'call_bash_create',
+        type: 'tool_call',
+        status: 'completed',
+        title: 'Bash',
+        toolName: 'Bash',
+        toolOutput: 'File created successfully at: /tmp/generated.docx',
+        timestamp: Date.now(),
+      },
+      {
+        id: 'call_bash_python',
+        type: 'tool_call',
+        status: 'completed',
+        title: 'Bash',
+        toolName: 'bash',
+        toolOutput: JSON.stringify({
+          content: [{ type: 'text', text: 'Successfully wrote 2986 bytes to /tmp/report.html' }],
+        }),
+        timestamp: Date.now(),
+      },
+    ];
+
+    const { fileSteps, displayArtifactSteps } = getArtifactSteps(steps);
+
+    // Bash outputs are unpredictable — file display relies on recent-files scan
+    expect(fileSteps).toHaveLength(0);
+    expect(displayArtifactSteps).toHaveLength(0);
+  });
+
   it('formats label from full path', () => {
     expect(getArtifactLabel('/Users/haoqing/tmp/simple.md')).toBe('simple.md');
   });

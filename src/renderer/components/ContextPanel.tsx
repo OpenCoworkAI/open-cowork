@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo } from '../types';
 
+const EMPTY_STEPS: TraceStep[] = [];
+
 interface ContextPanelProps {
   width?: number;
 }
@@ -76,7 +78,7 @@ export function ContextPanel({ width = 296 }: ContextPanelProps) {
     }
   };
 
-  const steps = activeSessionId ? traceStepsBySession[activeSessionId] || [] : [];
+  const steps = activeSessionId ? traceStepsBySession[activeSessionId] ?? EMPTY_STEPS : EMPTY_STEPS;
   const activeSession = activeSessionId ? sessions.find(s => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
   const { displayArtifactSteps } = getArtifactSteps(steps);
@@ -121,9 +123,10 @@ export function ContextPanel({ width = 296 }: ContextPanelProps) {
     const percentage = Math.min((lastInput / contextWindow) * 100, 100);
     return { used: lastInput, total: contextWindow, percentage };
   }, [activeSessionId, contextWindowBySession, messages]);
-  const artifactStepKey = useMemo(
-    () => displayArtifactSteps.map((step) => step.id).join('|'),
-    [displayArtifactSteps]
+
+  const completedStepCount = useMemo(
+    () => steps.reduce((n, s) => n + (s.status === 'completed' ? 1 : 0), 0),
+    [steps]
   );
 
   useEffect(() => {
@@ -135,14 +138,13 @@ export function ContextPanel({ width = 296 }: ContextPanelProps) {
       || !window.electronAPI?.artifacts?.listRecentFiles
       || !currentWorkingDir
       || !activeSession?.createdAt
-      || !displayArtifactSteps.length
     ) {
       setRecentWorkspaceFiles([]);
       return;
     }
 
     let cancelled = false;
-    const loadRecentWorkspaceFiles = async () => {
+    const timer = setTimeout(async () => {
       try {
         const files = await window.electronAPI.artifacts.listRecentFiles(
           currentWorkingDir,
@@ -158,19 +160,19 @@ export function ContextPanel({ width = 296 }: ContextPanelProps) {
           setRecentWorkspaceFiles([]);
         }
       }
-    };
+    }, 500);
 
-    void loadRecentWorkspaceFiles();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [
     activeSession?.createdAt,
     activeSessionId,
-    artifactStepKey,
+    steps.length,
+    completedStepCount,
     contextPanelCollapsed,
     currentWorkingDir,
-    displayArtifactSteps.length,
   ]);
 
   const displayArtifacts = useMemo(() => {
@@ -380,7 +382,7 @@ export function ContextPanel({ width = 296 }: ContextPanelProps) {
                           });
                         }
                       }}
-                      title={canClick ? artifactPath : undefined}
+                      title={artifactPath || undefined}
                     >
                       <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0" />
                       <span className="text-xs text-text-primary truncate">{label}</span>

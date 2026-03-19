@@ -255,7 +255,7 @@ export function getFallbackOpenAISetup(): CommonProviderSetup {
   return COMMON_PROVIDER_SETUPS.find((setup) => setup.id === 'generic-openai')!;
 }
 
-export function detectProviderGuidanceHintCode(details: string | undefined): ProviderGuidanceHintCode | null {
+function detectProviderGuidanceHintCode(details: string | undefined): ProviderGuidanceHintCode | null {
   const value = details?.trim().toLowerCase();
   if (!value) {
     return null;

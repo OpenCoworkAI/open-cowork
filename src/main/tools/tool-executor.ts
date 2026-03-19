@@ -163,9 +163,18 @@ export class ToolExecutor {
       throw new Error('Only http/https URLs are supported');
     }
 
-    const response = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
-    });
+    let response: Response;
+    try {
+      response = await fetch(parsed.toString(), {
+        headers: { 'User-Agent': 'open-cowork' },
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (error) {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        throw new Error('请求超时，请检查网络连接后重试');
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
@@ -197,9 +206,18 @@ export class ToolExecutor {
     searchUrl.searchParams.set('no_html', '1');
     searchUrl.searchParams.set('skip_disambig', '1');
 
-    const response = await fetch(searchUrl.toString(), {
-      headers: { 'User-Agent': 'open-cowork' },
-    });
+    let response: Response;
+    try {
+      response = await fetch(searchUrl.toString(), {
+        headers: { 'User-Agent': 'open-cowork' },
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (error) {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        throw new Error('请求超时，请检查网络连接后重试');
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       throw new Error(`Search request failed with status ${response.status}`);

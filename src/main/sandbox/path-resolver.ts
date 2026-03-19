@@ -121,9 +121,13 @@ export class PathResolver {
         }
       } else {
         // For non-existent paths, validate all existing parent components
+        // (only within the mount root boundary)
         let current = normalized;
         while (current !== path.dirname(current)) {
           current = path.dirname(current);
+          if (!isPathWithinRoot(current, normalizedMount)) {
+            break; // Stop climbing once we're above the mount root
+          }
           if (fs.existsSync(current)) {
             const realParent = fs.realpathSync(current);
             if (!isPathWithinRoot(realParent, normalizedMount)) {

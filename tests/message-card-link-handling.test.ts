@@ -11,7 +11,7 @@ describe('MessageCard local link handling', () => {
     expect(source).toContain(
       'const localFilePath = resolveLocalFilePathFromHref(href, currentWorkingDir);'
     );
-    expect(source).toContain("title={t('messageCard.revealInFolder')}");
+    expect(source).toContain("title={localFilePath}");
     expect(source).toContain('await window.electronAPI.showItemInFolder(');
     expect(source).toContain('localFilePath,');
     expect(source).toContain('currentWorkingDir ?? undefined');

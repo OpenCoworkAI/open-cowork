@@ -267,14 +267,14 @@ describe('api config state helpers', () => {
     expect(source).toContain("showErrorKey('api.localOllamaNotFound')");
     expect(source).toContain("showSuccessKey('api.localOllamaDiscovered'");
     expect(source).toContain("showErrorKey('api.localOllamaNoModels')");
-    expect(source).toContain("showErrorKey('api.localOllamaModelUnavailable'");
-    expect(source).toContain('shouldAutoDiscoverLocalOllamaBaseUrl(baseUrl)');
     expect(source).toContain('ollamaDiscoverRequestIdRef');
     expect(source).toContain('clearDiscoveredModelsForProfile(setDiscoveredModels, requestedProfileKey)');
-    expect(source).toContain("autoSelectModelId: result.status === 'model_usable' ? result.probeModel : undefined");
+    expect(source).toContain('autoSelectModelId: models[0]?.id');
+    expect(source).not.toContain('showErrorKey(\'api.localOllamaModelUnavailable\'');
+    expect(source).not.toContain('shouldAutoDiscoverLocalOllamaBaseUrl(baseUrl)');
   });
 
-  it('only auto-discovers local Ollama for the default local endpoint', () => {
+  it('keeps the shared auto-discovery helper constrained to the default local endpoint', () => {
     expect(shouldAutoDiscoverLocalOllamaBaseUrl(undefined)).toBe(true);
     expect(shouldAutoDiscoverLocalOllamaBaseUrl('')).toBe(true);
     expect(shouldAutoDiscoverLocalOllamaBaseUrl('http://localhost:11434')).toBe(true);

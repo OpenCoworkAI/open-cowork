@@ -31,6 +31,7 @@ import {
   FolderOpen,
   RefreshCw,
   Clock3,
+  Copy,
 } from 'lucide-react';
 import { useWindowSize } from '../hooks/useWindowSize';
 import type {
@@ -512,6 +513,8 @@ function APISettingsTab() {
     diagnosticResult,
     isDiagnosing,
     handleDiagnose,
+    handleDeepDiagnose,
+    shouldShowOllamaManualModelToggle,
   } = useApiConfigState();
 
   if (isLoadingConfig) {
@@ -700,18 +703,22 @@ function APISettingsTab() {
                 {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
               </button>
             )}
-            <button
-              type="button"
-              onClick={toggleCustomModel}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 ${
-                useCustomModel
-                  ? 'bg-accent-muted text-accent'
-                  : 'border border-border-muted bg-background text-text-secondary hover:bg-surface-hover'
-              }`}
-            >
-              <Edit3 className="w-3 h-3" />
-              {useCustomModel ? t('api.usePreset') : t('api.custom')}
-            </button>
+            {shouldShowOllamaManualModelToggle && (
+              <button
+                type="button"
+                onClick={toggleCustomModel}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors active:scale-95 ${
+                  useCustomModel
+                    ? 'bg-accent-muted text-accent'
+                    : 'border border-border-muted bg-background text-text-secondary hover:bg-surface-hover'
+                }`}
+              >
+                <Edit3 className="w-3 h-3" />
+                {isOllamaMode
+                  ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
+                  : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
+              </button>
+            )}
           </div>
         </div>
         {useCustomModel ? (
@@ -826,6 +833,7 @@ function APISettingsTab() {
         result={diagnosticResult}
         isRunning={isDiagnosing}
         onRunDiagnostics={handleDiagnose}
+        onRunDeepDiagnostics={isOllamaMode ? handleDeepDiagnose : undefined}
         disabled={requiresApiKey && !apiKey.trim()}
       />
 
@@ -4994,7 +5002,22 @@ function LogsTab({ isActive }: { isActive: boolean }) {
         >
           <div className="p-3 rounded-lg bg-background border border-border-subtle">
             <div className="text-xs text-text-muted mb-1">{t('logs.logsDirectory')}</div>
-            <div className="font-mono text-xs text-text-secondary break-all">{logsDirectory}</div>
+            <div className="flex items-start gap-2">
+              <button
+                className="font-mono text-xs text-text-secondary break-all text-left hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
+                onClick={() => window.electronAPI.logs.open()}
+                title={t('logs.openFolder')}
+              >
+                {logsDirectory}
+              </button>
+              <button
+                className="shrink-0 p-1 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
+                onClick={() => navigator.clipboard.writeText(logsDirectory)}
+                title={t('common.copy')}
+              >
+                <Copy className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </SettingsContentSection>
       )}

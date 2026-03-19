@@ -11,46 +11,47 @@ npmRebuild: true
 files:
   - dist/**/*
   - dist-electron/**/*
-  - dist-mcp/**/*
   - package.json
-  - node_modules/@anthropic-ai/claude-code/**/*
-  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
   - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
-  - .claude/skills/**/*
-
-# WSL Agent resources (for Windows sandbox)
-# Lima Agent resources (for macOS sandbox)
-# MCP servers (compiled JavaScript files)
-extraResources:
-  - from: dist-wsl-agent
-    to: wsl-agent
-    filter:
-      - "**/*"
-  - from: dist-lima-agent
-    to: lima-agent
-    filter:
-      - "**/*"
-  - from: dist-mcp
-    to: mcp
-    filter:
-      - "**/*"
-  - from: vendor/claude-code-proxy
-    to: vendor/claude-code-proxy
-    filter:
-      - "**/*"
-
-# Unpack claude-code so it can be executed as a CLI
-# Also unpack skills so they can be read/written at runtime
-# Sharp native modules must also be unpacked for image processing
-# Note: MCP servers are now bundled with esbuild, so no need to unpack MCP SDK
-asarUnpack:
-  - node_modules/@anthropic-ai/claude-code/**/*
-  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
-  - node_modules/@img/**/*
-  - node_modules/better-sqlite3/**/*
+  - node_modules/@anthropic-ai/sdk/**/*
+  - node_modules/@larksuiteoapi/**/*
+  - node_modules/openai/**/*
+  - node_modules/@modelcontextprotocol/**/*
+  - node_modules/electron-updater/**/*
+  - node_modules/chokidar/**/*
+  - node_modules/archiver/**/*
+  - node_modules/ngrok/**/*
+  - node_modules/ws/**/*
+  - node_modules/glob/**/*
+  - node_modules/dotenv/**/*
   - node_modules/bufferutil/**/*
   - node_modules/utf-8-validate/**/*
+  - .claude/skills/**/*
+  # Exclude non-essential files from node_modules to reduce bundle size
+  - "!**/*.js.map"
+  - "!**/*.d.ts.map"
+  - "!**/*.mts.map"
+  - "!**/README.md"
+  - "!**/CHANGELOG.md"
+  - "!**/CHANGELOG"
+
+# MCP servers (compiled JavaScript files, cross-platform)
+extraResources:
+  - from: dist-mcp
+    to: mcp
+
+# Unpack skills so they can be read/written at runtime
+# Sharp native modules must also be unpacked for image processing
+# Note: MCP servers are now bundled with TypeScript compiler API, so no need to unpack MCP SDK
+asarUnpack:
+  - node_modules/@img/**/*.node
+  - node_modules/@img/**/*.dll
+  - node_modules/@img/**/*.dylib
+  - node_modules/@img/**/*.so
+  - node_modules/better-sqlite3/**/*.node
+  - node_modules/bufferutil/**/*.node
+  - node_modules/utf-8-validate/**/*.node
   - .claude/skills/**/*
 
 win:
@@ -64,12 +65,8 @@ win:
   extraResources:
     - from: resources/node/win32-x64
       to: node
-      filter:
-        - "**/*"
-    - from: resources/node/win32-x64/node_modules
-      to: node/node_modules
-      filter:
-        - "**/*"
+    - from: dist-wsl-agent
+      to: wsl-agent
 
 mac:
   icon: resources/icon.icns
@@ -89,18 +86,14 @@ mac:
   extraResources:
     - from: resources/node/darwin-${arch}
       to: node
-      filter:
-        - "**/*"
     # Bundled Python runtime + site-packages for GUI automation helpers (Pillow, pyobjc/Quartz)
     - from: resources/python/darwin-${arch}
       to: python
-      filter:
-        - "**/*"
     # Bundled GUI helper tools (e.g. cliclick) to avoid relying on user-installed Homebrew tools
     - from: resources/tools/darwin-${arch}
       to: tools
-      filter:
-        - "**/*"
+    - from: dist-lima-agent
+      to: lima-agent
 
 linux:
   icon: resources/icon.png
@@ -112,12 +105,8 @@ linux:
   extraResources:
     - from: resources/node/linux-x64
       to: node
-      filter:
-        - "**/*"
     - from: resources/python/linux-${arch}
       to: python
-      filter:
-        - "**/*"
 
 nsis:
   oneClick: false

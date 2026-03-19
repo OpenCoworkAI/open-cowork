@@ -235,6 +235,7 @@ export class FeishuChannel extends ChannelBase {
     // Handle incoming messages
     log('[Feishu] Registering message listener on wsClient');
     this.wsClient.on('message', (data: any) => {
+      try {
       log('[Feishu] Received message via WebSocket:', data);
       
       // Skip bot's own messages
@@ -271,6 +272,9 @@ export class FeishuChannel extends ChannelBase {
       
       // Emit message to handler (same as webhook mode)
       this.emitMessage(remoteMessage);
+      } catch (error) {
+        logError('[Feishu] Error processing WebSocket message:', error);
+      }
     });
     
     // Handle connection events

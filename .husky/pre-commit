@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+
+# Guard: prevent accidental package-lock.json commits
+# Only allow lock file changes when package.json is also changed
+if git diff --cached --name-only | grep -q "package-lock.json"; then
+  if ! git diff --cached --name-only | grep -q "package.json"; then
+    echo ""
+    echo "=========================================================="
+    echo "  BLOCKED: package-lock.json changed without package.json"
+    echo "=========================================================="
+    echo ""
+    echo "  This usually means you ran 'npm install' instead of 'npm ci'."
+    echo ""
+    echo "  If you DID NOT change dependencies (most likely):"
+    echo "    git restore --staged package-lock.json"
+    echo "    git restore package-lock.json"
+    echo "    npm ci"
+    echo ""
+    echo "  If you DID intentionally change dependencies:"
+    echo "    git add package.json"
+    echo ""
+    exit 1
+  fi
+fi

@@ -49,7 +49,7 @@ function toFileUrl(pathValue: string): string | null {
 
 // Escape markdown special characters in label
 const escapeMarkdown = (text: string): string => {
-  return text.replace(/([\\`*_{}[\]()#+\-.!|])/g, '\\$1');
+  return text.replace(/([\\`*_{}[\]()#+\-!|])/g, '\\$1');
 };
 
 export function normalizeLocalFileMarkdownLinks(markdown: string): string {

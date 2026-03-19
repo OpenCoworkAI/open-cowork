@@ -10,7 +10,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', 'dist-electron', '.eslintrc.cjs'],
+  ignorePatterns: ['dist', 'dist-electron', 'dist-mcp', 'dist-wsl-agent', 'dist-lima-agent', '.eslintrc.cjs'],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',

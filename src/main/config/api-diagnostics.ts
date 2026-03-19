@@ -10,7 +10,7 @@ import * as net from 'net';
 import * as tls from 'tls';
 import OpenAI from 'openai';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { PROVIDER_PRESETS } from './config-store';
+import { PROVIDER_PRESETS, configStore } from './config-store';
 import { DEFAULT_OLLAMA_BASE_URL } from '../../shared/ollama-base-url';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
 import {
@@ -27,48 +27,17 @@ import type {
   DiagnosticResult,
   DiagnosticStep,
   DiagnosticStepName,
+  DiagnosticVerificationLevel,
+  LocalOllamaDiscoveryResult,
 } from '../../renderer/types';
 import { log, logWarn } from '../utils/logger';
+import { probeWithClaudeSdk } from '../claude/claude-sdk-one-shot';
+import { fetchOllamaModelIndex } from './ollama-api';
 
 const STEP_NAMES: DiagnosticStepName[] = ['dns', 'tcp', 'tls', 'auth', 'model'];
 const TCP_TIMEOUT_MS = 5000;
 const TLS_TIMEOUT_MS = 5000;
 const LOCAL_ANTHROPIC_PLACEHOLDER_KEY = 'sk-ant-local-proxy';
-
-export interface LocalOllamaDiscoveryResult {
-  available: boolean;
-  baseUrl: string;
-  models?: string[];
-  status: 'unavailable' | 'service_available' | 'model_usable' | 'model_unusable';
-  probeModel?: string;
-  probeError?: string;
-}
-
-async function probeOllamaModel(baseUrl: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const probeResponse = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!probeResponse.ok) {
-      const probeError = await probeResponse.text();
-      return { ok: false, error: probeError || `HTTP ${probeResponse.status}` };
-    }
-
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -415,72 +384,60 @@ async function stepModel(input: DiagnosticInput, step: DiagnosticStep): Promise<
   }
 
   const start = Date.now();
-  const apiKey = input.apiKey?.trim() || '';
-  const clientBaseUrl = resolveClientBaseUrl(input);
-  const model = input.model;
-
   try {
-    if (isOpenAICompatible(input)) {
-      const resolved =
-        input.provider === 'ollama'
-          ? resolveOllamaCredentials({
-              provider: input.provider,
-              customProtocol: input.customProtocol,
-              apiKey,
-              baseUrl: clientBaseUrl,
-            })
-          : resolveOpenAICredentials({
-              provider: input.provider,
-              customProtocol: input.customProtocol,
-              apiKey,
-              baseUrl: clientBaseUrl,
-            });
+    const verificationLevel: DiagnosticVerificationLevel = input.verificationLevel ?? 'deep';
+    if (input.provider === 'ollama' && verificationLevel === 'fast') {
+      const result = await fetchOllamaModelIndex({
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+      });
+      const modelId = input.model.trim();
+      const exists = result.models.some((item) => item.id === modelId);
 
-      const client = new OpenAI({
-        apiKey: resolved?.apiKey || apiKey,
-        baseURL: resolved?.baseUrl || clientBaseUrl,
-        timeout: 30000,
-      });
-      await client.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-      });
-    } else if (isAnthropicCompatible(input)) {
-      const allowEmpty = shouldAllowEmptyAnthropicApiKey({
-        provider: input.provider,
-        customProtocol: input.customProtocol,
-        baseUrl: clientBaseUrl,
-      });
-      const effectiveKey = apiKey || (allowEmpty ? LOCAL_ANTHROPIC_PLACEHOLDER_KEY : '');
-      const useAuthToken = shouldUseAnthropicAuthToken({
-        provider: input.provider,
-        customProtocol: input.customProtocol,
-        apiKey: effectiveKey,
-      });
+      if (!result.models.length) {
+        step.status = 'fail';
+        step.error = 'No models returned by endpoint';
+        step.fix = 'ollama_no_models_loaded';
+        step.latencyMs = Date.now() - start;
+        return;
+      }
 
-      await withSuppressedAnthropicEnv(async () => {
-        const client = useAuthToken
-          ? new Anthropic({ authToken: effectiveKey, baseURL: clientBaseUrl, timeout: 30000 })
-          : new Anthropic({ apiKey: effectiveKey, baseURL: clientBaseUrl, timeout: 30000 });
-        await client.messages.create({
-          model,
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'ping' }],
-        });
-      });
-    } else {
-      // Gemini or unknown — skip model check
-      step.status = 'skip';
-      step.latencyMs = 0;
+      if (!exists) {
+        step.status = 'fail';
+        step.error = `Model ${modelId} is not in the endpoint model list`;
+        step.fix = `ollama_model_not_listed:${modelId}`;
+        step.latencyMs = Date.now() - start;
+        return;
+      }
+
+      step.status = 'ok';
+      step.latencyMs = Date.now() - start;
       return;
     }
 
-    step.status = 'ok';
+    const config = configStore.getAll();
+    const result = await probeWithClaudeSdk({
+      provider: input.provider,
+      apiKey: input.apiKey,
+      baseUrl: input.baseUrl,
+      customProtocol: input.customProtocol,
+      model: input.model,
+      verificationLevel,
+    }, config);
+
+    if (result.ok) {
+      step.status = 'ok';
+    } else {
+      step.status = 'fail';
+      step.error = result.details;
+      step.fix = result.errorType === 'ollama_loading'
+        ? `ollama_model_loading:${input.model}`
+        : `model_unavailable:${input.model}`;
+    }
   } catch (err) {
     step.status = 'fail';
     step.error = (err as Error).message;
-    step.fix = `model_unavailable:${model}`;
+    step.fix = `model_unavailable:${input.model}`;
   }
   step.latencyMs = Date.now() - start;
 }
@@ -493,11 +450,14 @@ async function stepModel(input: DiagnosticInput, step: DiagnosticStep): Promise<
 let diagnosticsRunning = false;
 
 export async function runDiagnostics(input: DiagnosticInput): Promise<DiagnosticResult> {
+  const verificationLevel: DiagnosticVerificationLevel = input.verificationLevel ?? 'deep';
   if (diagnosticsRunning) {
     log('[Diagnostics] Skipping — another run is already in progress');
     return {
       steps: STEP_NAMES.map((name) => ({ name, status: 'skip' as const, latencyMs: 0 })),
-      overallOk: false,
+      overallOk: true,
+      verificationLevel,
+      skippedReason: 'concurrent_run',
       failedAt: undefined,
       totalLatencyMs: 0,
     };
@@ -511,12 +471,14 @@ export async function runDiagnostics(input: DiagnosticInput): Promise<Diagnostic
 }
 
 async function runDiagnosticsImpl(input: DiagnosticInput): Promise<DiagnosticResult> {
+  const verificationLevel: DiagnosticVerificationLevel = input.verificationLevel ?? 'deep';
   log('[Diagnostics] Starting', {
     provider: input.provider,
     customProtocol: input.customProtocol,
     hasApiKey: Boolean(input.apiKey?.trim()),
     baseUrl: input.baseUrl || '(default)',
     model: input.model || '(none)',
+    verificationLevel,
   });
 
   const steps: DiagnosticStep[] = STEP_NAMES.map(makeStep);
@@ -586,7 +548,24 @@ async function runDiagnosticsImpl(input: DiagnosticInput): Promise<DiagnosticRes
     overallOk,
     failedAt: failedStep?.name,
     totalLatencyMs,
+    verificationLevel,
   };
+
+  if (overallOk && input.provider === 'ollama' && verificationLevel === 'fast') {
+    result.advisoryCode = 'not_deep_verified';
+    result.advisoryText = 'Endpoint is reachable and the selected model is listed, but no live inference was performed.';
+  }
+
+  if (
+    !overallOk &&
+    input.provider === 'ollama' &&
+    verificationLevel === 'deep' &&
+    failedStep?.name === 'model' &&
+    failedStep.fix?.startsWith('ollama_model_loading:')
+  ) {
+    result.advisoryCode = 'model_loading';
+    result.advisoryText = 'The endpoint is reachable, but the model may still be loading into memory.';
+  }
 
   if (overallOk) {
     log('[Diagnostics] All checks passed', { totalLatencyMs });
@@ -612,50 +591,21 @@ export async function discoverLocalOllama(input?: {
   const baseUrl = preferredBaseUrl && isLoopbackBaseUrl(preferredBaseUrl)
     ? (normalizeOllamaBaseUrl(preferredBaseUrl) || DEFAULT_OLLAMA_BASE_URL)
     : DEFAULT_OLLAMA_BASE_URL;
-  const modelsUrl = `${baseUrl}/models`;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-
-    const response = await fetch(modelsUrl, { signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return { available: false, baseUrl, status: 'unavailable' };
-    }
-
-    const body = (await response.json()) as { data?: Array<{ id: string }> };
-    const models = body.data?.map((m) => m.id).filter(Boolean) as string[] | undefined;
+    const result = await fetchOllamaModelIndex({ baseUrl });
+    const models = result.models.map((item) => item.id);
 
     if (!models?.length) {
       log('[Diagnostics] Local Ollama discovered without loaded models');
-      return { available: true, baseUrl, models: [], status: 'service_available' };
+      return { available: true, baseUrl: result.baseUrl, models: [], status: 'service_available' };
     }
 
-    let lastProbeError = '';
-    for (const probeModel of models) {
-      const probeResult = await probeOllamaModel(baseUrl, probeModel);
-      if (probeResult.ok) {
-        log('[Diagnostics] Local Ollama discovered', { modelCount: models?.length ?? 0, probeModel });
-        return { available: true, baseUrl, models, status: 'model_usable', probeModel };
-      }
-
-      lastProbeError = probeResult.error;
-      logWarn('[Diagnostics] Local Ollama model probe failed', {
-        model: probeModel,
-        error: probeResult.error.slice(0, 200),
-      });
-    }
-
-    return {
-      available: true,
-      baseUrl,
-      models,
-      status: 'model_unusable',
-      probeModel: models[0],
-      probeError: lastProbeError,
-    };
+    log('[Diagnostics] Local Ollama discovered', {
+      modelCount: models.length,
+      baseUrl: result.baseUrl,
+    });
+    return { available: true, baseUrl: result.baseUrl, models, status: 'models_available' };
   } catch {
     return { available: false, baseUrl, status: 'unavailable' };
   }

@@ -67,11 +67,8 @@ export function ConfigModal({
     isDiscoveringLocalOllama,
     testResult,
     friendlyTestDetails,
-    useLiveTest,
-    supportsLiveRequestTest,
     isOllamaMode,
     requiresApiKey,
-    showsCompatibilityProbeHint,
     protocolGuidanceText,
     protocolGuidanceTone,
     baseUrlGuidanceText,
@@ -89,7 +86,6 @@ export function ConfigModal({
     setModel,
     setCustomModel,
     toggleCustomModel,
-    setUseLiveTest,
     applyCommonProviderSetup,
     changeProvider,
     changeProtocol,
@@ -104,6 +100,7 @@ export function ConfigModal({
     handleTest,
     refreshModelOptions,
     discoverLocalOllama,
+    shouldShowOllamaManualModelToggle,
   } = useApiConfigState({
     enabled: isOpen,
     initialConfig,
@@ -140,14 +137,6 @@ export function ConfigModal({
         return t('api.testError.network_error');
       case 'ollama_not_running':
         return t('api.testError.ollama_not_running');
-      case 'proxy_boot_failed':
-        return t('api.testError.proxy_boot_failed');
-      case 'proxy_health_failed':
-        return t('api.testError.proxy_health_failed');
-      case 'proxy_upstream_auth_failed':
-        return t('api.testError.proxy_upstream_auth_failed');
-      case 'proxy_upstream_not_found':
-        return t('api.testError.proxy_upstream_not_found');
       default:
         return t('api.testError.unknown');
     }
@@ -359,18 +348,22 @@ export function ConfigModal({
                     {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={toggleCustomModel}
-                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
-                    useCustomModel
-                      ? 'bg-accent-muted text-accent'
-                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                  }`}
-                >
-                  <Edit3 className="w-3 h-3" />
-                  {useCustomModel ? t('api.usePreset') : t('api.custom')}
-                </button>
+                {shouldShowOllamaManualModelToggle && (
+                  <button
+                    type="button"
+                    onClick={toggleCustomModel}
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
+                      useCustomModel
+                        ? 'bg-accent-muted text-accent'
+                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                    }`}
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    {isOllamaMode
+                      ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
+                      : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
+                  </button>
+                )}
               </div>
             </div>
             {useCustomModel ? (
@@ -454,22 +447,6 @@ export function ConfigModal({
             <div className="mb-3 flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
               {successMessage}
-            </div>
-          )}
-          {supportsLiveRequestTest && (
-            <div className="flex items-start gap-2 text-xs text-text-muted mb-3">
-              <input
-                type="checkbox"
-                id="api-live-test-modal"
-                checked={useLiveTest}
-                onChange={(e) => setUseLiveTest(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent"
-              />
-              <label htmlFor="api-live-test-modal" className="space-y-0.5">
-                <div className="text-text-primary">{t('api.liveTest')}</div>
-                <div>{t('api.liveTestHint')}</div>
-                {showsCompatibilityProbeHint && <div>{t('api.liveTestCompatibilityHint')}</div>}
-              </label>
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">

@@ -9,12 +9,6 @@ export interface ExecutionResult {
   exitCode: number;
 }
 
-export interface FileResult {
-  success: boolean;
-  content?: string;
-  error?: string;
-}
-
 export interface DirectoryEntry {
   name: string;
   isDirectory: boolean;
