@@ -67,6 +67,8 @@ export class MCPManager {
   // Cached base environment (shell env + PATH). Resolved once, reused for all MCP server spawns.
   private cachedBaseEnv: Record<string, string> | null = null;
   private initializingServers = false;
+  // Guards against concurrent reconnect/update operations on the same server
+  private reconnectingServers: Set<string> = new Set();
 
   /**
    * Get bundled Node.js path
@@ -336,6 +338,11 @@ export class MCPManager {
    * This is more efficient than reinitializing all servers
    */
   async updateServer(config: MCPServerConfig): Promise<void> {
+    // Prevent concurrent update while a reconnect is already in progress for this server
+    if (this.reconnectingServers.has(config.id)) {
+      logWarn(`[MCPManager] Skipping updateServer for ${config.name}: reconnect already in progress`);
+      return;
+    }
     log(`[MCPManager] Updating server: ${config.name} (enabled: ${config.enabled})`);
     this.lastConfigFingerprint = null;
     
@@ -695,9 +702,16 @@ export class MCPManager {
         throw new Error(`SSE server ${config.name} requires a URL`);
       }
 
+      let sseUrl: URL;
+      try {
+        sseUrl = new URL(config.url);
+      } catch {
+        throw new Error(`SSE server ${config.name} has a malformed URL: "${config.url}"`);
+      }
+
       // Create SSE transport
       transport = new SSEClientTransport(
-        new URL(config.url),
+        sseUrl,
         config.headers || {}
       );
     } else if (config.type === 'streamable-http') {
@@ -707,13 +721,20 @@ export class MCPManager {
 
       log(`[MCPManager] Creating Streamable HTTP transport: ${config.url}`);
 
+      let httpUrl: URL;
+      try {
+        httpUrl = new URL(config.url);
+      } catch {
+        throw new Error(`Streamable HTTP server ${config.name} has a malformed URL: "${config.url}"`);
+      }
+
       // Create Streamable HTTP transport
       const requestInit: RequestInit = {};
       if (config.headers && Object.keys(config.headers).length > 0) {
         requestInit.headers = config.headers;
       }
       transport = new StreamableHTTPClientTransport(
-        new URL(config.url),
+        httpUrl,
         { requestInit }
       );
     } else {
@@ -1218,11 +1239,17 @@ export class MCPManager {
           name: actualToolName,
           arguments: args,
         });
+        let callTimeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Tool call timeout after ${timeoutMs}ms`)), timeoutMs);
+          callTimeoutId = setTimeout(() => reject(new Error(`Tool call timeout after ${timeoutMs}ms`)), timeoutMs);
         });
 
-        const result = await Promise.race([callPromise, timeoutPromise]);
+        let result;
+        try {
+          result = await Promise.race([callPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(callTimeoutId!);
+        }
 
         const toolErrorMessage = extractStructuredToolErrorMessage(result);
         if (shouldReconnectOnStructuredToolError(toolErrorMessage)) {
@@ -1288,12 +1315,18 @@ export class MCPManager {
   }
 
   private async reconnectServer(serverId: string): Promise<boolean> {
+    // Prevent concurrent reconnect operations for the same server
+    if (this.reconnectingServers.has(serverId)) {
+      logWarn(`[MCPManager] Skipping reconnectServer for ${serverId}: reconnect already in progress`);
+      return false;
+    }
     const config = this.serverConfigs.get(serverId);
     if (!config || !config.enabled) {
       logWarn(`[MCPManager] Cannot reconnect server ${serverId}: config missing or disabled`);
       return false;
     }
 
+    this.reconnectingServers.add(serverId);
     try {
       await this.disconnectServer(serverId);
       await this.connectServer(config);
@@ -1303,6 +1336,8 @@ export class MCPManager {
     } catch (error) {
       logError(`[MCPManager] Failed to reconnect server ${serverId}:`, error);
       return false;
+    } finally {
+      this.reconnectingServers.delete(serverId);
     }
   }
 
