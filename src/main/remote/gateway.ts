@@ -6,7 +6,7 @@
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
-import { createServer, Server as HttpServer, IncomingMessage } from 'http';
+import { createServer, Server as HttpServer, IncomingMessage, ServerResponse } from 'http';
 import { log, logError, logWarn } from '../utils/logger';
 import type {
   GatewayConfig,
@@ -350,10 +350,11 @@ export class RemoteGateway extends EventEmitter {
         }
         return allowlist.includes(message.sender.id);
         
-      case 'pairing':
+      case 'pairing': {
         // Check if user is paired
         const pairedKey = `${message.channelType}:${message.sender.id}`;
         return this.pairedUsers.has(pairedKey);
+      }
         
       default:
         return false;
@@ -540,7 +541,7 @@ export class RemoteGateway extends EventEmitter {
   // HTTP Request Handling (for webhooks)
   // ============================================================================
   
-  private handleHttpRequest(req: IncomingMessage, res: any): void {
+  private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = req.url || '/';
     
     // Health check endpoint
@@ -568,7 +569,7 @@ export class RemoteGateway extends EventEmitter {
     res.end(JSON.stringify({ error: 'Not found' }));
   }
   
-  private handleWebhook(req: IncomingMessage, res: any, url: string): void {
+  private handleWebhook(req: IncomingMessage, res: ServerResponse, url: string): void {
     // Extract channel type from URL: /webhook/feishu, /webhook/telegram, etc.
     const channelType = url.split('/')[2] as ChannelType;
     
@@ -815,6 +816,7 @@ export class RemoteGateway extends EventEmitter {
   
   private emitEvent(type: string, data: unknown): void {
     const event: GatewayEvent = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: type as any,
       timestamp: Date.now(),
       data,

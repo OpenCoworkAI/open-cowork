@@ -121,26 +121,27 @@ export class FeishuAPI {
   async sendMessage(
     chatId: string,
     msgType: string,
-    content: any,
+    content: Record<string, unknown>,
     replyMessageId?: string
   ): Promise<string> {
     const token = await this.refreshToken();
-    
-    const body: any = {
+
+    const contentStr = JSON.stringify(content);
+    const body: Record<string, unknown> = {
       receive_id: chatId,
       msg_type: msgType,
-      content: JSON.stringify(content),
+      content: contentStr,
     };
-    
+
     // Add reply info if replying to a message
     if (replyMessageId) {
       body.reply_in_thread = false;
     }
-    
+
     log('[FeishuAPI] Sending message:', {
       chatId,
       msgType,
-      contentLength: body.content.length,
+      contentLength: contentStr.length,
     });
     
     const response = await fetch(
@@ -177,7 +178,7 @@ export class FeishuAPI {
   async replyMessage(
     messageId: string,
     msgType: string,
-    content: any
+    content: Record<string, unknown>
   ): Promise<string> {
     const token = await this.refreshToken();
     
@@ -329,7 +330,7 @@ export class FeishuAPI {
   /**
    * Get chat info
    */
-  async getChatInfo(chatId: string): Promise<any> {
+  async getChatInfo(chatId: string): Promise<Record<string, unknown>> {
     const token = await this.refreshToken();
     
     const response = await fetch(
@@ -358,7 +359,7 @@ export class FeishuAPI {
   /**
    * Get user info
    */
-  async getUserInfo(userId: string, idType: 'open_id' | 'user_id' = 'open_id'): Promise<any> {
+  async getUserInfo(userId: string, idType: 'open_id' | 'user_id' = 'open_id'): Promise<Record<string, unknown>> {
     const token = await this.refreshToken();
     
     const response = await fetch(
@@ -403,14 +404,14 @@ export class FeishuAPI {
       value: string;
       type?: 'primary' | 'default' | 'danger';
     }>;
-  }): any {
-    const elements: any[] = [
+  }): Record<string, unknown> {
+    const elements: Record<string, unknown>[] = [
       {
         tag: 'markdown',
         content: options.content,
       },
     ];
-    
+
     if (options.buttons && options.buttons.length > 0) {
       elements.push({
         tag: 'action',
@@ -425,8 +426,8 @@ export class FeishuAPI {
         })),
       });
     }
-    
-    const card: any = {
+
+    const card: Record<string, unknown> = {
       config: {
         wide_screen_mode: true,
       },

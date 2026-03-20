@@ -79,7 +79,7 @@ export class FeishuWSClient extends EventEmitter {
       await this.wsClient.start({
         eventDispatcher: new Lark.EventDispatcher({}).register({
           // Handle im.message.receive_v1 event (receive message v2.0)
-          'im.message.receive_v1': async (data: any) => {
+          'im.message.receive_v1': async (data: Record<string, unknown>) => {
             try {
               await this.handleMessageReceive(data);
             } catch (err) {
@@ -235,45 +235,48 @@ export class FeishuWSClient extends EventEmitter {
   /**
    * Handle incoming message event
    */
-  private async handleMessageReceive(data: any): Promise<void> {
+  private async handleMessageReceive(data: Record<string, unknown>): Promise<void> {
     // Skip if connection has been stopped (old instance receiving messages)
     if (!this.connected) {
       log('[FeishuWS] Ignoring message - connection stopped');
       return;
     }
-    
+
     log('[FeishuWS] Received message event:', JSON.stringify(data, null, 2));
 
-    const message = data.message;
+    const message = data.message as Record<string, unknown> | undefined;
     if (!message) {
       logWarn('[FeishuWS] No message in event data');
       return;
     }
 
+    const senderData = data.sender as Record<string, unknown> | undefined;
+    const senderId = senderData?.sender_id as Record<string, unknown> | undefined;
+
     // Parse message
     const feishuMessage: FeishuMessage = {
-      messageId: message.message_id,
-      chatId: message.chat_id,
+      messageId: String(message.message_id || ''),
+      chatId: String(message.chat_id || ''),
       chatType: message.chat_type === 'p2p' ? 'p2p' : 'group',
-      senderId: data.sender?.sender_id?.open_id || data.sender?.sender_id?.user_id || '',
-      senderType: data.sender?.sender_type === 'user' ? 'user' : 'bot',
-      messageType: message.message_type,
-      content: message.content,
-      createTime: message.create_time,
+      senderId: String(senderId?.open_id || senderId?.user_id || ''),
+      senderType: senderData?.sender_type === 'user' ? 'user' : 'bot',
+      messageType: String(message.message_type || ''),
+      content: String(message.content || ''),
+      createTime: String(message.create_time || ''),
     };
 
     // Parse content based on message type
     let textContent = '';
     try {
       if (message.message_type === 'text') {
-        const parsed = JSON.parse(message.content);
-        textContent = parsed.text || '';
+        const parsed = JSON.parse(String(message.content || '')) as Record<string, unknown>;
+        textContent = String(parsed.text || '');
       } else {
         // For other types, just use raw content
-        textContent = message.content;
+        textContent = String(message.content || '');
       }
     } catch {
-      textContent = message.content;
+      textContent = String(message.content || '');
     }
 
     log('[FeishuWS] Parsed message:', {

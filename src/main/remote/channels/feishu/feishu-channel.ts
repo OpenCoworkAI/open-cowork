@@ -11,6 +11,7 @@ import type {
   RemoteMessage,
   RemoteResponse,
   RemoteContent,
+  RemoteResponseContent,
 } from '../../types';
 import { FeishuAPI } from './feishu-api';
 import { FeishuWSClient } from './feishu-ws-client';
@@ -20,7 +21,7 @@ export class FeishuChannel extends ChannelBase {
   
   private config: FeishuChannelConfig;
   private api: FeishuAPI;
-  private wsClient?: any;  // WebSocket client for long polling
+  private wsClient?: FeishuWSClient;  // WebSocket client for long polling
   
   // Bot info
   private botOpenId?: string;
@@ -153,7 +154,7 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Handle incoming webhook request
    */
-  handleWebhook(_headers: Record<string, string>, body: string): { status: number; data: any } {
+  handleWebhook(_headers: Record<string, string>, body: string): { status: number; data: Record<string, unknown> } {
     log('[Feishu] Received webhook request');
 
     // Verify webhook signature if present
@@ -234,7 +235,7 @@ export class FeishuChannel extends ChannelBase {
     
     // Handle incoming messages
     log('[Feishu] Registering message listener on wsClient');
-    this.wsClient.on('message', (data: any) => {
+    this.wsClient.on('message', (data: Record<string, unknown>) => {
       try {
       log('[Feishu] Received message via WebSocket:', data);
       
@@ -246,21 +247,24 @@ export class FeishuChannel extends ChannelBase {
       // Build remote message
       // Use chatId as channelId - Feishu API needs chat_id to send messages
       const remoteMessage: RemoteMessage = {
-        id: data.messageId,
+        id: String(data.messageId || ''),
         channelType: 'feishu',
-        channelId: data.chatId,  // Use actual chat_id for sending messages
+        channelId: String(data.chatId || ''),  // Use actual chat_id for sending messages
         sender: {
-          id: data.senderId,
+          id: String(data.senderId || ''),
           name: '', // Will be filled if needed
           isBot: false,
         },
         content: {
           type: 'text',
-          text: data.text || '',
+          text: String(data.text || ''),
         },
-        timestamp: parseInt(data.createTime) || Date.now(),
+        timestamp: parseInt(String(data.createTime || '0')) || Date.now(),
         isGroup: data.chatType === 'group',
-        isMentioned: data.mentions?.some((m: any) => m.id?.open_id === this.botOpenId) || false,
+        isMentioned: Array.isArray(data.mentions) && data.mentions.some((m: Record<string, unknown>) => {
+          const mid = m.id as Record<string, unknown> | undefined;
+          return mid?.open_id === this.botOpenId;
+        }) || false,
         raw: {
           chatId: data.chatId,
           chatType: data.chatType,
@@ -299,46 +303,47 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Handle incoming message event
    */
-  private handleMessageEvent(event: any): void {
+  private handleMessageEvent(event: Record<string, unknown>): void {
     try {
-      const message = event.message;
-      const sender = event.sender;
-      
+      const message = event.message as Record<string, unknown>;
+      const sender = event.sender as Record<string, unknown>;
+
       // Skip bot's own messages
-      if (sender.sender_id?.open_id === this.botOpenId) {
+      const senderId = sender.sender_id as Record<string, unknown> | undefined;
+      if (senderId?.open_id === this.botOpenId) {
         return;
       }
-      
+
       // Parse message content
       const content = this.parseMessageContent(message);
       if (!content) {
         logWarn('[Feishu] Unable to parse message content');
         return;
       }
-      
+
       // Check if mentioned
       const isMentioned = this.checkMentioned(message);
-      
+
       // Build remote message
       const remoteMessage: RemoteMessage = {
-        id: message.message_id,
+        id: String(message.message_id || ''),
         channelType: 'feishu',
-        channelId: message.chat_id,
+        channelId: String(message.chat_id || ''),
         sender: {
-          id: sender.sender_id?.open_id || sender.sender_id?.user_id || 'unknown',
-          name: sender.sender_id?.name,
+          id: String(senderId?.open_id || senderId?.user_id || 'unknown'),
+          name: senderId?.name as string | undefined,
           isBot: sender.sender_type === 'bot',
         },
         content,
-        timestamp: parseInt(message.create_time) || Date.now(),
+        timestamp: parseInt(String(message.create_time || '0')) || Date.now(),
         isGroup: message.chat_type === 'group',
         isMentioned,
         raw: event,
       };
-      
+
       // Emit message
       this.emitMessage(remoteMessage);
-      
+
     } catch (error) {
       logError('[Feishu] Error handling message event:', error);
     }
@@ -347,44 +352,44 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Parse message content based on type
    */
-  private parseMessageContent(message: any): RemoteContent | null {
-    const msgType = message.message_type;
-    
+  private parseMessageContent(message: Record<string, unknown>): RemoteContent | null {
+    const msgType = message.message_type as string;
+
     try {
-      const contentJson = JSON.parse(message.content);
+      const contentJson = JSON.parse(message.content as string) as Record<string, unknown>;
       
       switch (msgType) {
         case 'text':
           return {
             type: 'text',
-            text: contentJson.text,
+            text: contentJson.text as string | undefined,
           };
-          
+
         case 'image':
           return {
             type: 'image',
-            imageKey: contentJson.image_key,
+            imageKey: contentJson.image_key as string | undefined,
           };
-          
+
         case 'file':
           return {
             type: 'file',
             file: {
-              name: contentJson.file_name,
-              key: contentJson.file_key,
-              size: contentJson.file_size,
+              name: contentJson.file_name as string,
+              key: contentJson.file_key as string | undefined,
+              size: contentJson.file_size as number | undefined,
             },
           };
-          
+
         case 'audio':
           return {
             type: 'voice',
             voice: {
-              key: contentJson.file_key,
-              duration: contentJson.duration,
+              key: contentJson.file_key as string | undefined,
+              duration: contentJson.duration as number | undefined,
             },
           };
-          
+
         case 'post':
           // Rich text post
           return {
@@ -392,13 +397,13 @@ export class FeishuChannel extends ChannelBase {
             text: this.extractTextFromPost(contentJson),
             richText: contentJson,
           };
-          
+
         case 'interactive':
           return {
             type: 'interactive',
             interactive: contentJson,
           };
-          
+
         default:
           log('[Feishu] Unknown message type:', msgType);
           return {
@@ -415,18 +420,22 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Extract plain text from rich text post
    */
-  private extractTextFromPost(post: any): string {
+  private extractTextFromPost(post: Record<string, unknown>): string {
     const texts: string[] = [];
-    
+
     try {
-      const content = post.content || post.zh_cn?.content || post.en_us?.content || [];
-      
+      const zhCn = post.zh_cn as Record<string, unknown> | undefined;
+      const enUs = post.en_us as Record<string, unknown> | undefined;
+      const rawContent = post.content || zhCn?.content || enUs?.content || [];
+      const content = Array.isArray(rawContent) ? rawContent as unknown[][] : [];
+
       for (const paragraph of content) {
-        for (const element of paragraph) {
+        for (const el of paragraph) {
+          const element = el as Record<string, unknown>;
           if (element.tag === 'text') {
-            texts.push(element.text);
+            texts.push(String(element.text || ''));
           } else if (element.tag === 'at') {
-            texts.push(`@${element.user_name || element.user_id}`);
+            texts.push(`@${element.user_name || element.user_id || ''}`);
           }
         }
         texts.push('\n');
@@ -434,29 +443,30 @@ export class FeishuChannel extends ChannelBase {
     } catch (error) {
       logError('[Feishu] Failed to extract text from post:', error);
     }
-    
+
     return texts.join('').trim();
   }
   
   /**
    * Check if the bot was mentioned in the message
    */
-  private checkMentioned(message: any): boolean {
+  private checkMentioned(message: Record<string, unknown>): boolean {
     if (!message.mentions || !this.botOpenId) {
       return false;
     }
-    
-    return message.mentions.some((m: any) => 
-      m.id?.open_id === this.botOpenId || m.key === '@_all'
-    );
+
+    return Array.isArray(message.mentions) && message.mentions.some((m: Record<string, unknown>) => {
+      const mid = m.id as Record<string, unknown> | undefined;
+      return mid?.open_id === this.botOpenId || m.key === '@_all';
+    });
   }
   
   /**
    * Send message to Feishu
    */
-  private async sendMessage(chatId: string, content: any, replyTo?: string): Promise<void> {
+  private async sendMessage(chatId: string, content: RemoteResponseContent, replyTo?: string): Promise<void> {
     let msgType: string;
-    let msgContent: any;
+    let msgContent: Record<string, unknown>;
     
     switch (content.type) {
       case 'text':
@@ -507,7 +517,9 @@ export class FeishuChannel extends ChannelBase {
         }
       } else {
         // For text messages
-        const textContent = msgContent.text || content.text || String(content);
+        const textContent = (typeof msgContent.text === 'string' ? msgContent.text : undefined)
+          || content.text
+          || '';
         
         // Split long messages
         if (textContent.length > 4000) {
@@ -531,8 +543,9 @@ export class FeishuChannel extends ChannelBase {
     } else {
       // Use API mode
       // Split long messages
-      if (msgType === 'text' && msgContent.text && msgContent.text.length > 4000) {
-        const chunks = this.splitMessage(msgContent.text, 4000);
+      const msgText = typeof msgContent.text === 'string' ? msgContent.text : undefined;
+      if (msgType === 'text' && msgText && msgText.length > 4000) {
+        const chunks = this.splitMessage(msgText, 4000);
         for (const chunk of chunks) {
           await this.api.sendMessage(chatId, 'text', { text: chunk }, replyTo);
           // Small delay between chunks
@@ -547,7 +560,7 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Convert markdown to Feishu interactive card
    */
-  private markdownToCard(markdown: string): any {
+  private markdownToCard(markdown: string): Record<string, unknown> {
     // Simple markdown to card conversion
     // Feishu cards support a subset of markdown in certain elements
     

@@ -20,6 +20,7 @@ import type {
   RemoteSessionMapping,
   PairedUser,
   PairingRequest,
+  RemoteConfig,
 } from './types';
 import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer/types/index';
 
@@ -419,8 +420,8 @@ export class RemoteManager extends EventEmitter {
     // Build question message for Feishu
     let messageText = '🤔 **需要你的回答**\n\n';
     
-    // @ts-ignore - qIdx not used in this loop but kept for consistency
-    questions.forEach((q, qIdx) => {
+    // @ts-expect-error - qIdx not used in this loop but kept for consistency
+    questions.forEach((q, _qIdx) => {
       if (q.header) {
         messageText += `**${q.header}**\n`;
       }
@@ -939,6 +940,7 @@ export class RemoteManager extends EventEmitter {
     this.gateway.on('gateway.pairing_request', (data) => {
       log('[RemoteManager] New pairing request:', data);
       this.emitToRenderer({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         type: 'remote.pairing_request' as any,
         payload: data,
       });
@@ -956,24 +958,24 @@ export class RemoteManager extends EventEmitter {
   /**
    * Register configured channels
    */
-  private async registerChannels(config: any): Promise<void> {
+  private async registerChannels(config: RemoteConfig): Promise<void> {
     if (!this.gateway) return;
-    
+
     // Register Feishu channel if configured
     const feishuConfig = config.channels.feishu;
     if (feishuConfig && feishuConfig.appId && feishuConfig.appSecret) {
       const feishuChannel = new FeishuChannel(feishuConfig);
       this.gateway.registerChannel(feishuChannel);
-      
+
       // Set up webhook handler
-      this.gateway.on('webhook:feishu', (data: any) => {
+      this.gateway.on('webhook:feishu', (data: { headers: Record<string, string>; body: string; respond: (status: number, responseData: unknown) => void }) => {
         const result = feishuChannel.handleWebhook(data.headers, data.body);
         data.respond(result.status, result.data);
       });
-      
+
       log('[RemoteManager] Feishu channel registered');
     }
-    
+
     // TODO: Register other channels (WeChat, Telegram, DingTalk)
   }
   
@@ -1067,15 +1069,18 @@ export class RemoteManager extends EventEmitter {
   private emitStatusUpdate(): void {
     // Type assertion needed because remote.status is not in ServerEvent union yet
     this.emitToRenderer({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: 'remote.status' as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       payload: this.getStatus() as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
   }
-  
+
   /**
    * Emit event to renderer
    */
-  private emitToRenderer(event: any): void {
+  private emitToRenderer(event: ServerEvent): void {
     if (this.sendToRenderer) {
       this.sendToRenderer(event);
     }
