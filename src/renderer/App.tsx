@@ -1,5 +1,17 @@
 import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from './store';
+import {
+  useActiveSessionId,
+  useSettings,
+  useSystemDarkMode,
+  useSettingsState,
+  useLayoutState,
+  useConfigModalState,
+  useGlobalNotice,
+  useSandboxSetupState,
+  useSandboxSyncStatus,
+  usePendingDialogs,
+} from './store/selectors';
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
 import { Sidebar } from './components/Sidebar';
@@ -35,19 +47,19 @@ function ContextPanelFallback() {
 }
 
 function App() {
-  const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const pendingPermission = useAppStore((s) => s.pendingPermission);
-  const pendingSudoPassword = useAppStore((s) => s.pendingSudoPassword);
-  const settings = useAppStore((s) => s.settings);
-  const showConfigModal = useAppStore((s) => s.showConfigModal);
-  const showSettings = useAppStore((s) => s.showSettings);
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
-  const isConfigured = useAppStore((s) => s.isConfigured);
-  const appConfig = useAppStore((s) => s.appConfig);
-  const globalNotice = useAppStore((s) => s.globalNotice);
-  const sandboxSetupProgress = useAppStore((s) => s.sandboxSetupProgress);
-  const isSandboxSetupComplete = useAppStore((s) => s.isSandboxSetupComplete);
-  const sandboxSyncStatus = useAppStore((s) => s.sandboxSyncStatus);
+  // --- Store state via selectors (each subscription is minimally scoped) ---
+  const activeSessionId = useActiveSessionId();
+  const settings = useSettings();
+  const systemDarkMode = useSystemDarkMode();
+  const { showSettings } = useSettingsState();
+  const { sidebarCollapsed } = useLayoutState();
+  const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
+  const globalNotice = useGlobalNotice();
+  const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } = useSandboxSetupState();
+  const sandboxSyncStatus = useSandboxSyncStatus();
+  const { pendingPermission, pendingSudoPassword } = usePendingDialogs();
+
+  // Actions are still pulled directly from the store
   const setShowConfigModal = useAppStore((s) => s.setShowConfigModal);
   const setIsConfigured = useAppStore((s) => s.setIsConfigured);
   const setAppConfig = useAppStore((s) => s.setAppConfig);
@@ -56,6 +68,7 @@ function App() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
+
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
   const initialized = useRef(false);
@@ -72,7 +85,6 @@ function App() {
   }, []); // Empty deps - run once
 
   // Apply theme to document root
-  const systemDarkMode = useAppStore((s) => s.systemDarkMode);
   useEffect(() => {
     const effectiveTheme =
       settings.theme === 'system'

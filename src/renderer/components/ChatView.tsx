@@ -1,6 +1,15 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../store';
+import {
+  useActiveSessionId,
+  useCurrentSession,
+  useActiveSessionMessages,
+  useActivePartialContent,
+  useActiveTurn,
+  usePendingTurns,
+  useActiveExecutionClock,
+  useAppConfig,
+} from '../store/selectors';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import type { Message, ContentBlock } from '../types';
@@ -16,14 +25,19 @@ type AttachedFile = {
 
 export function ChatView() {
   const { t } = useTranslation();
-  const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const sessions = useAppStore((s) => s.sessions);
-  const sessionStates = useAppStore((s) => s.sessionStates);
-  const appConfig = useAppStore((s) => s.appConfig);
+  // Scoped selectors — each subscription only re-renders when its slice changes
+  const activeSessionId = useActiveSessionId();
+  const activeSession = useCurrentSession();
+  const messages = useActiveSessionMessages();
+  const { partialMessage, partialThinking } = useActivePartialContent();
+  const activeTurn = useActiveTurn();
+  const pendingTurns = usePendingTurns();
+  const executionClock = useActiveExecutionClock();
+  const appConfig = useAppConfig();
   const { continueSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeConnectors, setActiveConnectors] = useState<{ id: string; name: string; connected: boolean; toolCount: number }[]>([]);
+  const [activeConnectors, setActiveConnectors] = useState<any[]>([]);
   const [showConnectorLabel, setShowConnectorLabel] = useState(true);
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -45,13 +59,6 @@ export function ChatView() {
   const scrollRequestRef = useRef<number | null>(null);
   const isScrollingRef = useRef(false);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const ss = activeSessionId ? sessionStates[activeSessionId] : undefined;
-  const messages = ss?.messages || [];
-  const pendingTurns = ss?.pendingTurns || [];
-  const partialMessage = ss?.partialMessage || '';
-  const partialThinking = ss?.partialThinking || '';
-  const activeTurn = ss?.activeTurn ?? null;
   const hasActiveTurn = Boolean(activeTurn);
   const pendingCount = pendingTurns.length;
   const isSessionRunning = activeSession?.status === 'running';
@@ -100,7 +107,6 @@ export function ChatView() {
   }, []);
 
   // --- Real-time execution timer ---
-  const executionClock = ss?.executionClock;
   const [clockNow, setClockNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -264,7 +270,7 @@ export function ChatView() {
         newImages.push({
           url,
           base64,
-          mediaType: resizedBlob.type,
+          mediaType: resizedBlob.type as any,
         });
       } catch (err) {
         console.error('Failed to process pasted image:', err);
@@ -483,7 +489,7 @@ export function ChatView() {
       const loadConnectors = async () => {
         try {
           const statuses = await window.electronAPI.mcp.getServerStatus();
-          const active = statuses?.filter((s) => s.connected && s.toolCount > 0) || [];
+          const active = statuses?.filter((s: any) => s.connected && s.toolCount > 0) || [];
           setActiveConnectors(active);
         } catch (err) {
           console.error('Failed to load MCP connectors:', err);
@@ -548,7 +554,7 @@ export function ChatView() {
           type: 'image',
           source: {
             type: 'base64',
-            media_type: img.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+            media_type: img.mediaType as any,
             data: img.base64,
           },
         });
