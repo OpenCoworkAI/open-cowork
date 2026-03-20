@@ -1015,11 +1015,11 @@ async function cleanupSandboxResources(): Promise<void> {
     log('[App] Cleaning up all sandbox sessions...');
 
     // Cleanup WSL sessions
-    await withTimeout(SandboxSync.cleanupAllSessions(), 10000, 'WSL session cleanup');
+    await withTimeout(SandboxSync.cleanupAllSessions(), 30000, 'WSL session cleanup');
 
     // Cleanup Lima sessions
     const { LimaSync } = await import('./sandbox/lima-sync');
-    await withTimeout(LimaSync.cleanupAllSessions(), 10000, 'Lima session cleanup');
+    await withTimeout(LimaSync.cleanupAllSessions(), 30000, 'Lima session cleanup');
 
     log('[App] Sandbox sessions cleanup complete');
   } catch (error) {
@@ -1032,6 +1032,18 @@ async function cleanupSandboxResources(): Promise<void> {
     log('[App] Sandbox shutdown complete');
   } catch (error) {
     logError('[App] Error shutting down sandbox:', error);
+  }
+
+  // Shutdown MCP servers
+  try {
+    const mcpManager = sessionManager?.getMCPManager();
+    if (mcpManager) {
+      log('[App] Shutting down MCP servers...');
+      await withTimeout(mcpManager.shutdown(), 5000, 'MCP shutdown');
+      log('[App] MCP servers shutdown complete');
+    }
+  } catch (error) {
+    logError('[App] Error shutting down MCP servers:', error);
   }
 
   try {
@@ -1068,7 +1080,7 @@ app.on('before-quit', async (event) => {
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
       stopNavServer();
-      closeDatabase();
+      try { closeDatabase(); } catch { /* best-effort */ }
       closeLogFile();
       tray?.destroy();
       tray = null;

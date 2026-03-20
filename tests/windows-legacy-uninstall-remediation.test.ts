@@ -20,5 +20,6 @@ describe('windows legacy uninstall remediation', () => {
     expect(source).toContain('closeLogFile();');
     expect(source).toContain('stopNavServer();');
     expect(source).toContain("await withTimeout(remoteManager.stop(), 5000, 'Remote control shutdown');");
+    expect(source).toContain("await withTimeout(mcpManager.shutdown(), 5000, 'MCP shutdown');");
   });
 });

@@ -14,19 +14,23 @@ Function OpenCoworkShowLegacyUninstallHelp
 FunctionEnd
 
 !macro customUnInstallCheck
-  IfErrors 0 +3
+  IfErrors 0 _oc_uninst_no_launch_err
     Push "could not launch the old uninstaller"
     Call OpenCoworkShowLegacyUninstallHelp
-  StrCmp $R0 0 +3
+  _oc_uninst_no_launch_err:
+  StrCmp $R0 0 _oc_uninst_ok
     Push "old uninstaller returned code $R0"
     Call OpenCoworkShowLegacyUninstallHelp
+  _oc_uninst_ok:
 !macroend
 
 !macro customUnInstallCheckCurrentUser
-  IfErrors 0 +3
+  IfErrors 0 _oc_curuninst_no_launch_err
     Push "could not launch the old current-user uninstaller"
     Call OpenCoworkShowLegacyUninstallHelp
-  StrCmp $R0 0 +3
+  _oc_curuninst_no_launch_err:
+  StrCmp $R0 0 _oc_curuninst_ok
     Push "old current-user uninstaller returned code $R0"
     Call OpenCoworkShowLegacyUninstallHelp
+  _oc_curuninst_ok:
 !macroend
