@@ -16,10 +16,11 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
-// AgentSessionEventListener handles subscribe events
 import { getSharedAuthStorage, ModelRegistry } from '../claude/shared-auth';
 import { buildSyntheticPiModel } from '../claude/pi-model-resolution';
 import { buildCuaTools } from './cua-tools';
+import { TrajectoryLogger } from './cua-trajectory';
+import { LoopDetector } from './cua-loop-detector';
 import { log, logError } from '../utils/logger';
 
 // ─── CUA System Prompt ──────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ export interface CuaTaskResult {
   success: boolean;
   summary: string;
   stepsUsed: number;
+  trajectoryDir?: string;
+  failureType?: 'max_steps' | 'loop' | 'exception' | 'model_gave_up';
 }
 
 /**
@@ -84,6 +87,10 @@ export async function executeCuaTask(
   log('[CUA] Starting sub-agent task:', instruction);
   log('[CUA] Model:', model, 'Provider:', provider, 'Max turns:', maxTurns);
 
+  // Initialize monitoring utilities
+  const trajectory = new TrajectoryLogger();
+  const loopDetector = new LoopDetector();
+
   // Build model — same function used by main agent for Ollama
   const piModel = buildSyntheticPiModel(
     model,
@@ -99,8 +106,8 @@ export async function executeCuaTask(
   // Auth — Ollama doesn't need API keys, but Pi SDK requires auth storage
   const authStorage = getSharedAuthStorage();
 
-  // Build GUI tools
-  const cuaTools = buildCuaTools();
+  // Build GUI tools with loop detector integration
+  const cuaTools = buildCuaTools({ loopDetector, trajectory });
 
   // Create isolated sub-agent session
   const { session: subSession } = await createAgentSession({
@@ -125,14 +132,16 @@ export async function executeCuaTask(
   });
 
   log('[CUA] Sub-agent session created');
+  log('[CUA] Trajectory dir:', trajectory.getSessionDir());
+
+  let failureType: CuaTaskResult['failureType'];
 
   try {
-    // Subscribe to events to capture the agent's messages
+    // Subscribe to events to capture the agent's messages + step budget management
     let finalResponse = '';
     let turnCount = 0;
 
     const unsubscribe = subSession.subscribe((event) => {
-      // Capture assistant text messages (the last one will be the task summary)
       if (event.type === 'message_end') {
         turnCount++;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,12 +156,27 @@ export async function executeCuaTask(
             finalResponse = textParts.join('\n');
           }
         }
-        log(`[CUA] Turn ${turnCount}`);
+        log(`[CUA] Turn ${turnCount}/${maxTurns}`);
+
+        // Step budget nudges — inject via steer() if available
+        const pct = turnCount / maxTurns;
+        if (pct >= 0.9 && pct < 1.0) {
+          subSession.steer(
+            'URGENT: This is your LAST chance to act. If you cannot complete the task, provide a summary of what you accomplished so far.',
+          ).catch(() => {});
+        } else if (pct >= 0.75) {
+          subSession.steer(
+            'WARNING: You are running low on steps. Focus on completing the task or summarize your progress.',
+          ).catch(() => {});
+        } else if (pct >= 0.5) {
+          subSession.steer(
+            'Note: You are halfway through your step budget. Stay focused on the key actions.',
+          ).catch(() => {});
+        }
       }
     });
 
     // Send the task instruction — Pi SDK handles the agentic loop
-    // (the agent will take screenshots, call tools, etc. autonomously)
     const taskMessage = `${CUA_SYSTEM_PROMPT}\n\n## Your Task\n${instruction}\n\nStart by taking a screenshot to see the current screen.`;
     await subSession.prompt(taskMessage);
 
@@ -160,17 +184,40 @@ export async function executeCuaTask(
     unsubscribe();
     log('[CUA] Sub-agent completed after', turnCount, 'turns');
 
+    if (turnCount >= maxTurns && !finalResponse.toLowerCase().includes('complete')) {
+      failureType = 'max_steps';
+    }
+
+    // Write trajectory summary
+    await trajectory.writeSummary({
+      success: !failureType,
+      summary: finalResponse || 'No text response',
+      totalSteps: turnCount,
+    });
+
     return {
-      success: true,
+      success: !failureType,
       summary: finalResponse || 'Task completed (no text response from agent)',
       stepsUsed: turnCount,
+      trajectoryDir: trajectory.getSessionDir(),
+      failureType,
     };
   } catch (error) {
     logError('[CUA] Sub-agent task failed:', error);
+    failureType = 'exception';
+
+    await trajectory.writeSummary({
+      success: false,
+      summary: `Exception: ${error instanceof Error ? error.message : String(error)}`,
+      totalSteps: 0,
+    }).catch(() => {});
+
     return {
       success: false,
       summary: `Task failed: ${error instanceof Error ? error.message : String(error)}`,
       stepsUsed: 0,
+      trajectoryDir: trajectory.getSessionDir(),
+      failureType,
     };
   } finally {
     // Dispose sub-agent session — all screenshots and context are freed

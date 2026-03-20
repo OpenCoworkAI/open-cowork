@@ -25,6 +25,9 @@ import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import type { LoopDetector } from './cua-loop-detector';
+import type { TrajectoryLogger } from './cua-trajectory';
+import { computeScreenshotFingerprint, fingerprintDistance, UNCHANGED_THRESHOLD } from './cua-screenshot-hash';
 
 const execFileAsync = promisify(execFile);
 const PLATFORM = os.platform();
@@ -351,7 +354,17 @@ Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
 // ─── Tool Definitions ───────────────────────────────────────────────────────
 
-export function buildCuaTools(): ToolDefinition[] {
+export interface CuaToolsOptions {
+  loopDetector?: LoopDetector;
+  trajectory?: TrajectoryLogger;
+}
+
+/** Last screenshot fingerprint for change detection */
+let lastScreenshotFingerprint: string | null = null;
+
+export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
+  const { loopDetector, trajectory } = options;
+
   const screenshotTool: ToolDefinition = {
     name: 'screenshot',
     label: 'Screenshot',
@@ -359,6 +372,15 @@ export function buildCuaTools(): ToolDefinition[] {
     parameters: Type.Object({}),
     async execute() {
       const png = await captureScreenshot();
+
+      // Update fingerprint for change detection
+      lastScreenshotFingerprint = computeScreenshotFingerprint(png);
+
+      // Save to trajectory if available
+      if (trajectory) {
+        await trajectory.saveScreenshot(png, 'observe').catch(() => {});
+      }
+
       return {
         content: [
           { type: 'text' as const, text: `Screenshot captured (${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT}). Analyze the screenshot and decide your next action.` },
@@ -380,6 +402,7 @@ export function buildCuaTools(): ToolDefinition[] {
     }),
     async execute(_id, params) {
       const { x, y, button } = params as { x: number; y: number; button?: string };
+
       // Bounds validation
       if (x < 0 || x > SCREENSHOT_WIDTH || y < 0 || y > SCREENSHOT_HEIGHT) {
         return {
@@ -387,8 +410,48 @@ export function buildCuaTools(): ToolDefinition[] {
           details: undefined,
         };
       }
+
+      // Loop detection
+      const loopNudge = loopDetector?.recordAction('click', { x, y, button: button || 'left' });
+
+      // Remember fingerprint before action
+      const beforeFingerprint = lastScreenshotFingerprint;
+
       const result = await performClick(x, y, button || 'left');
-      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+
+      // Screenshot change detection: take a quick screenshot after click
+      const afterPng = await captureScreenshot();
+      const afterFingerprint = computeScreenshotFingerprint(afterPng);
+      lastScreenshotFingerprint = afterFingerprint;
+
+      let changeInfo = '';
+      if (beforeFingerprint && afterFingerprint) {
+        const distance = fingerprintDistance(beforeFingerprint, afterFingerprint);
+        if (distance < UNCHANGED_THRESHOLD) {
+          changeInfo = '\n⚠️ WARNING: The screen appears unchanged after your click. Your click may have missed the target. Take a screenshot to verify, and consider clicking a different position.';
+        }
+      }
+
+      const messages = [result + changeInfo];
+      if (loopNudge) messages.push('\n' + loopNudge);
+
+      // Log to trajectory
+      if (trajectory) {
+        await trajectory.recordStep({
+          step: 0, // will be overridden by caller
+          timestamp: new Date().toISOString(),
+          action: { type: 'click', params: { x, y, button: button || 'left' } },
+          modelResponse: '',
+          actionResult: result,
+          screenshotChanged: changeInfo === '',
+          screenshotDistance: beforeFingerprint && afterFingerprint ? fingerprintDistance(beforeFingerprint, afterFingerprint) : null,
+          loopNudge: loopNudge || null,
+          stepBudgetNudge: null,
+          durationMs: 0,
+        }).catch(() => {});
+      }
+
+      return { content: [{ type: 'text' as const, text: messages.join('') }], details: undefined };
     },
   };
 
@@ -401,8 +464,11 @@ export function buildCuaTools(): ToolDefinition[] {
     }),
     async execute(_id, params) {
       const { text } = params as { text: string };
+      const loopNudge = loopDetector?.recordAction('type_text', { text });
       const result = await performType(text);
-      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+      const messages = [result];
+      if (loopNudge) messages.push('\n' + loopNudge);
+      return { content: [{ type: 'text' as const, text: messages.join('') }], details: undefined };
     },
   };
 
@@ -416,8 +482,11 @@ export function buildCuaTools(): ToolDefinition[] {
     }),
     async execute(_id, params) {
       const { key, modifiers } = params as { key: string; modifiers?: string[] };
+      const loopNudge = loopDetector?.recordAction('key_press', { key, modifiers: modifiers || [] });
       const result = await performKeyPress(key, modifiers || []);
-      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+      const messages = [result];
+      if (loopNudge) messages.push('\n' + loopNudge);
+      return { content: [{ type: 'text' as const, text: messages.join('') }], details: undefined };
     },
   };
 
@@ -433,8 +502,11 @@ export function buildCuaTools(): ToolDefinition[] {
     }),
     async execute(_id, params) {
       const { x, y, direction, amount } = params as { x: number; y: number; direction: string; amount?: number };
+      const loopNudge = loopDetector?.recordAction('scroll', { x, y, direction });
       const result = await performScroll(x, y, direction, amount || 3);
-      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+      const messages = [result];
+      if (loopNudge) messages.push('\n' + loopNudge);
+      return { content: [{ type: 'text' as const, text: messages.join('') }], details: undefined };
     },
   };
 
