@@ -119,7 +119,7 @@ export async function executeCuaTask(
     customTools: cuaTools,
     sessionManager: PiSessionManager.inMemory(),  // Isolated — no persistence
     settingsManager: PiSettingsManager.inMemory({
-      compaction: { enabled: true },
+      compaction: { enabled: false },  // MUST disable — compaction drops image content from tool results
       retry: { enabled: true, maxRetries: 2 },
     }),
     cwd: process.cwd(),
@@ -138,10 +138,26 @@ export async function executeCuaTask(
   let failureType: CuaTaskResult['failureType'];
   let finalResponse = '';
   let turnCount = 0;
+  let toolCallCount = 0;
   let unsubscribe: (() => void) | undefined;
 
+  // Install beforeToolCall hook for step budget enforcement (more reliable than steer())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const agent = subSession.agent as any;
+  if (typeof agent.setBeforeToolCall === 'function') {
+    agent.setBeforeToolCall(async () => {
+      toolCallCount++;
+      if (toolCallCount > maxTurns * 2) {
+        // Hard limit: block execution when budget is exhausted
+        // (maxTurns * 2 because each "step" = screenshot + action = 2 tool calls)
+        return { block: true, reason: `Step budget exhausted (${toolCallCount} tool calls, max ${maxTurns * 2}). Provide a summary of what you accomplished.` };
+      }
+      return undefined;
+    });
+  }
+
   try {
-    // Subscribe to events to capture the agent's messages + step budget management
+    // Subscribe to events to capture the agent's messages
     unsubscribe = subSession.subscribe((event) => {
       if (event.type === 'message_end') {
         turnCount++;
@@ -157,23 +173,7 @@ export async function executeCuaTask(
             finalResponse = textParts.join('\n');
           }
         }
-        log(`[CUA] Turn ${turnCount}/${maxTurns}`);
-
-        // Step budget nudges — inject via steer()
-        const pct = turnCount / maxTurns;
-        if (pct >= 0.9 && pct < 1.0) {
-          subSession.steer(
-            'URGENT: This is your LAST chance to act. If you cannot complete the task, provide a summary of what you accomplished so far.',
-          ).catch((e) => log('[CUA] steer() at 90% failed:', String(e)));
-        } else if (pct >= 0.75) {
-          subSession.steer(
-            'WARNING: You are running low on steps. Focus on completing the task or summarize your progress.',
-          ).catch((e) => log('[CUA] steer() at 75% failed:', String(e)));
-        } else if (pct >= 0.5) {
-          subSession.steer(
-            'Note: You are halfway through your step budget. Stay focused on the key actions.',
-          ).catch((e) => log('[CUA] steer() at 50% failed:', String(e)));
-        }
+        log(`[CUA] Turn ${turnCount}/${maxTurns} (${toolCallCount} tool calls)`);
       }
     });
 
