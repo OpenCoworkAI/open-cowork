@@ -66,17 +66,25 @@ Write-Output "$($s.Width) $($s.Height)"
     const [w, h] = stdout.trim().split(' ').map(Number);
     cachedScreenInfo = { width: w || 1920, height: h || 1080 };
   } else {
-    // macOS: capture a quick screenshot to read its dimensions
-    const tmpFile = path.join(os.tmpdir(), `cua-probe-${Date.now()}.png`);
+    // macOS: capture a quick screenshot to read its LOGICAL dimensions
+    // Note: use osascript to get logical bounds, not sips pixelWidth (which returns physical Retina pixels)
     try {
-      await execFileAsync('/usr/sbin/screencapture', ['-x', '-C', tmpFile]);
-      const { stdout: wStr } = await execFileAsync('/usr/bin/sips', ['--getProperty', 'pixelWidth', tmpFile]);
-      const { stdout: hStr } = await execFileAsync('/usr/bin/sips', ['--getProperty', 'pixelHeight', tmpFile]);
-      const w = parseInt(wStr.match(/pixelWidth:\s*(\d+)/)?.[1] ?? '1440', 10);
-      const h = parseInt(hStr.match(/pixelHeight:\s*(\d+)/)?.[1] ?? '900', 10);
-      cachedScreenInfo = { width: w, height: h };
-    } finally {
-      await fs.unlink(tmpFile).catch(() => {});
+      const { stdout } = await execFileAsync('osascript', ['-e',
+        'tell application "Finder" to get bounds of window of desktop',
+      ]);
+      // Returns "0, 0, 1440, 900" for a Retina MBP
+      const parts = stdout.trim().split(/,\s*/);
+      if (parts.length >= 4) {
+        const w = parseInt(parts[2], 10);
+        const h = parseInt(parts[3], 10);
+        cachedScreenInfo = { width: w || 1440, height: h || 900 };
+      } else {
+        cachedScreenInfo = { width: 1440, height: 900 };
+      }
+    } catch {
+      // Fallback to safe defaults if osascript fails
+      cachedScreenInfo = { width: 1440, height: 900 };
+      console.error('[CUA] Failed to detect macOS screen size, using fallback 1440×900');
     }
   }
 
@@ -192,24 +200,34 @@ Start-Sleep -Milliseconds 50
 async function performType(text: string): Promise<string> {
   if (!text) return 'Error: empty text';
 
-  const hasNonAscii = /[^\x00-\x7F]/.test(text);
+  // Security: write text to temp file to avoid shell injection (C-2, H-4)
+  const tmpTextFile = path.join(os.tmpdir(), `cua-type-${Date.now()}.txt`);
 
   if (PLATFORM === 'win32') {
-    const script = `
+    // Windows: write text to temp file, read in PowerShell, paste via clipboard
+    await fs.writeFile(tmpTextFile, text, 'utf-8');
+    try {
+      const script = `
 Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Clipboard]::SetText('${text.replace(/'/g, "''")}')
+$text = [System.IO.File]::ReadAllText('${tmpTextFile.replace(/\\/g, '\\\\')}')
+[System.Windows.Forms.Clipboard]::SetText($text)
 Start-Sleep -Milliseconds 100
 [System.Windows.Forms.SendKeys]::SendWait("^v")
 `;
-    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
-  } else if (hasNonAscii) {
-    await execFileAsync('bash', ['-c', `printf '%s' "${text.replace(/"/g, '\\"')}" | pbcopy`]);
-    await execFileAsync('osascript', ['-e',
-      'tell application "System Events" to key code 9 using command down',
-    ]);
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+    } finally {
+      await fs.unlink(tmpTextFile).catch(() => {});
+    }
   } else {
+    // macOS: pipe text via stdin to pbcopy (no shell interpolation)
+    const { execFile: execFileCb } = await import('child_process');
+    await new Promise<void>((resolve, reject) => {
+      const proc = execFileCb('pbcopy', [], (err) => err ? reject(err) : resolve());
+      proc.stdin?.write(text);
+      proc.stdin?.end();
+    });
     await execFileAsync('osascript', ['-e',
-      `tell application "System Events" to keystroke "${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
+      'tell application "System Events" to key code 9 using command down', // Cmd+V
     ]);
   }
 
@@ -304,8 +322,15 @@ async function performScroll(modelX: number, modelY: number, direction: string, 
   const { x, y } = mapToScreenCoords(modelX, modelY, screen);
 
   if (PLATFORM === 'win32') {
-    const wheelDelta = (direction === 'up' || direction === 'left') ? 120 * amount : -120 * amount;
-    const flag = (direction === 'left' || direction === 'right') ? '0x01000' : '0x0800';
+    // MOUSEEVENTF_WHEEL: positive = scroll up. MOUSEEVENTF_HWHEEL: positive = scroll right.
+    const isHorizontal = direction === 'left' || direction === 'right';
+    const flag = isHorizontal ? '0x1000' : '0x0800'; // MOUSEEVENTF_HWHEEL / MOUSEEVENTF_WHEEL
+    let wheelDelta: number;
+    if (isHorizontal) {
+      wheelDelta = direction === 'right' ? 120 * amount : -120 * amount;
+    } else {
+      wheelDelta = direction === 'up' ? 120 * amount : -120 * amount;
+    }
     const script = `
 Add-Type @"
 using System;

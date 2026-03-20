@@ -19,6 +19,7 @@ import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { getSharedAuthStorage, ModelRegistry } from '../claude/shared-auth';
 import { buildSyntheticPiModel } from '../claude/pi-model-resolution';
 import { buildCuaTools } from './cua-tools';
+import { CUA_FEW_SHOT_EXAMPLES } from './cua-few-shot-examples';
 import { TrajectoryLogger } from './cua-trajectory';
 import { LoopDetector } from './cua-loop-detector';
 import { log, logError } from '../utils/logger';
@@ -135,13 +136,13 @@ export async function executeCuaTask(
   log('[CUA] Trajectory dir:', trajectory.getSessionDir());
 
   let failureType: CuaTaskResult['failureType'];
+  let finalResponse = '';
+  let turnCount = 0;
+  let unsubscribe: (() => void) | undefined;
 
   try {
     // Subscribe to events to capture the agent's messages + step budget management
-    let finalResponse = '';
-    let turnCount = 0;
-
-    const unsubscribe = subSession.subscribe((event) => {
+    unsubscribe = subSession.subscribe((event) => {
       if (event.type === 'message_end') {
         turnCount++;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,30 +159,29 @@ export async function executeCuaTask(
         }
         log(`[CUA] Turn ${turnCount}/${maxTurns}`);
 
-        // Step budget nudges — inject via steer() if available
+        // Step budget nudges — inject via steer()
         const pct = turnCount / maxTurns;
         if (pct >= 0.9 && pct < 1.0) {
           subSession.steer(
             'URGENT: This is your LAST chance to act. If you cannot complete the task, provide a summary of what you accomplished so far.',
-          ).catch(() => {});
+          ).catch((e) => log('[CUA] steer() at 90% failed:', String(e)));
         } else if (pct >= 0.75) {
           subSession.steer(
             'WARNING: You are running low on steps. Focus on completing the task or summarize your progress.',
-          ).catch(() => {});
+          ).catch((e) => log('[CUA] steer() at 75% failed:', String(e)));
         } else if (pct >= 0.5) {
           subSession.steer(
             'Note: You are halfway through your step budget. Stay focused on the key actions.',
-          ).catch(() => {});
+          ).catch((e) => log('[CUA] steer() at 50% failed:', String(e)));
         }
       }
     });
 
     // Send the task instruction — Pi SDK handles the agentic loop
-    const taskMessage = `${CUA_SYSTEM_PROMPT}\n\n## Your Task\n${instruction}\n\nStart by taking a screenshot to see the current screen.`;
+    const taskMessage = `${CUA_SYSTEM_PROMPT}\n\n${CUA_FEW_SHOT_EXAMPLES}\n\n## Your Task\n${instruction}\n\nStart by taking a screenshot to see the current screen.`;
     await subSession.prompt(taskMessage);
 
     // Wait for the agent to finish (prompt() returns when done)
-    unsubscribe();
     log('[CUA] Sub-agent completed after', turnCount, 'turns');
 
     if (turnCount >= maxTurns && !finalResponse.toLowerCase().includes('complete')) {
@@ -221,6 +221,7 @@ export async function executeCuaTask(
     };
   } finally {
     // Dispose sub-agent session — all screenshots and context are freed
+    unsubscribe?.(); // H-5: ensure subscription is always cleaned up
     subSession.dispose();
     log('[CUA] Sub-agent session disposed');
   }
