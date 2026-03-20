@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark-dimmed.min.css';
@@ -75,4 +76,8 @@ function installRendererDiagnostics(): void {
 installRendererDiagnostics();
 
 // Note: StrictMode removed to prevent double-rendering issues with IPC
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

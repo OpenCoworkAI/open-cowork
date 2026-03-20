@@ -870,5 +870,11 @@
     "cancel": "取消",
     "execute": "确认执行",
     "warning": "密码仅用于本次命令执行，不会被保存。"
+  },
+  "errorBoundary": {
+    "title": "出现了一个错误",
+    "description": "应用遇到了意外错误。你可以点击下方按钮尝试恢复。",
+    "details": "错误详情",
+    "retry": "重试"
   }
 }

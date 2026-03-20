@@ -870,5 +870,11 @@
     "cancel": "Cancel",
     "execute": "Execute",
     "warning": "Your password will only be used for this command and will not be stored."
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred in the application. You can try to recover by clicking the button below.",
+    "details": "Error details",
+    "retry": "Try again"
   }
 }
