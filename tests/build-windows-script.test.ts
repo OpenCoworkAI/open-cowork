@@ -12,4 +12,12 @@ describe('build-windows helper', () => {
     expect(source).toContain('Skipping build.');
     expect(source).toContain('process.exit(0);');
   });
+
+  it('copies legacy cleanup helpers into the Windows release output after a successful build', () => {
+    const source = fs.readFileSync(scriptPath, 'utf8');
+
+    expect(source).toContain("const { writeLegacyCleanupArtifacts } = require('./build-windows-artifacts');");
+    expect(source).toContain('writeLegacyCleanupArtifacts({');
+    expect(source).toContain('Added legacy cleanup helper:');
+  });
 });

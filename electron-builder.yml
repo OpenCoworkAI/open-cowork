@@ -129,6 +129,8 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  include: installer.nsh
+  # Preserve user config/history by default; offer explicit cleanup tooling instead of destructive uninstall.
   deleteAppDataOnUninstall: false
 
 dmg:

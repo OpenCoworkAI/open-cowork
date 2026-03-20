@@ -17,7 +17,7 @@ import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { config } from 'dotenv';
-import { initDatabase } from './db/database';
+import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
@@ -971,6 +971,19 @@ app
 // Flag to prevent double cleanup
 let isCleaningUp = false;
 
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }) as Promise<T>;
+}
+
 /**
  * Cleanup all sandbox resources
  * Called on app quit (both Windows and macOS)
@@ -982,12 +995,16 @@ async function cleanupSandboxResources(): Promise<void> {
   }
   isCleaningUp = true;
 
+  stopNavServer();
+  skillsManager?.stopStorageMonitoring();
   scheduledTaskManager?.stop();
+  tray?.destroy();
+  tray = null;
 
   // 停止远程控制
   try {
     log('[App] Stopping remote control...');
-    await remoteManager.stop();
+    await withTimeout(remoteManager.stop(), 5000, 'Remote control shutdown');
     log('[App] Remote control stopped');
   } catch (error) {
     logError('[App] Error stopping remote control:', error);
@@ -998,11 +1015,11 @@ async function cleanupSandboxResources(): Promise<void> {
     log('[App] Cleaning up all sandbox sessions...');
 
     // Cleanup WSL sessions
-    await SandboxSync.cleanupAllSessions();
+    await withTimeout(SandboxSync.cleanupAllSessions(), 30000, 'WSL session cleanup');
 
     // Cleanup Lima sessions
     const { LimaSync } = await import('./sandbox/lima-sync');
-    await LimaSync.cleanupAllSessions();
+    await withTimeout(LimaSync.cleanupAllSessions(), 30000, 'Lima session cleanup');
 
     log('[App] Sandbox sessions cleanup complete');
   } catch (error) {
@@ -1011,11 +1028,31 @@ async function cleanupSandboxResources(): Promise<void> {
 
   // Shutdown sandbox adapter
   try {
-    await shutdownSandbox();
+    await withTimeout(shutdownSandbox(), 8000, 'Sandbox shutdown');
     log('[App] Sandbox shutdown complete');
   } catch (error) {
     logError('[App] Error shutting down sandbox:', error);
   }
+
+  // Shutdown MCP servers
+  try {
+    const mcpManager = sessionManager?.getMCPManager();
+    if (mcpManager) {
+      log('[App] Shutting down MCP servers...');
+      await withTimeout(mcpManager.shutdown(), 5000, 'MCP shutdown');
+      log('[App] MCP servers shutdown complete');
+    }
+  } catch (error) {
+    logError('[App] Error shutting down MCP servers:', error);
+  }
+
+  try {
+    closeDatabase();
+  } catch (error) {
+    logError('[App] Error closing database:', error);
+  }
+
+  closeLogFile();
 
   // pi-ai doesn't need proxy shutdown
 }
@@ -1026,7 +1063,6 @@ app.on('window-all-closed', async () => {
     // On Windows/Linux, closing all windows means quit.
     // On macOS dev mode, also quit — so vite-plugin-electron can restart cleanly
     // without the old process holding the single-instance lock.
-    skillsManager?.stopStorageMonitoring();
     await cleanupSandboxResources();
     app.quit();
   }
@@ -1044,14 +1080,14 @@ app.on('before-quit', async (event) => {
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
       stopNavServer();
+      try { closeDatabase(); } catch { /* best-effort */ }
       closeLogFile();
+      tray?.destroy();
+      tray = null;
       return;
     }
     event.preventDefault();
-    stopNavServer();
-    skillsManager?.stopStorageMonitoring();
     await cleanupSandboxResources();
-    closeLogFile(); // Close log file before quitting
     app.quit();
   }
 });
