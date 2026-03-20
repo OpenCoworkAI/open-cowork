@@ -1,0 +1,442 @@
+/**
+ * @module main/cua/cua-tools
+ *
+ * Optimized GUI tools for the CUA sub-agent.
+ * These are registered as Pi SDK ToolDefinition[] (NOT MCP tools),
+ * so ImageContent blocks are passed directly to the model without
+ * the MCP bridge stringify bug.
+ *
+ * Tools: screenshot, click, type_text, key_press, scroll
+ *
+ * Platform: Windows priority, macOS support.
+ *
+ * Key design decisions:
+ * - Screenshots are resized to 1280×720 before sending to the model
+ * - Model outputs coordinates in 1280×720 space
+ * - Coordinates are scaled back to real screen space before execution
+ * - Windows: DPI-aware via SetProcessDPIAware()
+ * - macOS: screencapture + cliclick both use logical points (self-consistent)
+ */
+
+import { Type } from '@sinclair/typebox';
+import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+
+const execFileAsync = promisify(execFile);
+const PLATFORM = os.platform();
+
+const SCREENSHOT_WIDTH = 1280;
+const SCREENSHOT_HEIGHT = 720;
+
+// ─── Screen Info & Coordinate Mapping ───────────────────────────────────────
+
+interface ScreenInfo {
+  /** Screen width in the coordinate space used by click APIs */
+  width: number;
+  /** Screen height in the coordinate space used by click APIs */
+  height: number;
+}
+
+let cachedScreenInfo: ScreenInfo | null = null;
+
+async function getScreenInfo(): Promise<ScreenInfo> {
+  if (cachedScreenInfo) return cachedScreenInfo;
+
+  if (PLATFORM === 'win32') {
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @"
+using System.Runtime.InteropServices;
+public class DPI { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+"@
+[DPI]::SetProcessDPIAware()
+$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+Write-Output "$($s.Width) $($s.Height)"
+`;
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command', script,
+    ]);
+    const [w, h] = stdout.trim().split(' ').map(Number);
+    cachedScreenInfo = { width: w || 1920, height: h || 1080 };
+  } else {
+    // macOS: capture a quick screenshot to read its dimensions
+    const tmpFile = path.join(os.tmpdir(), `cua-probe-${Date.now()}.png`);
+    try {
+      await execFileAsync('/usr/sbin/screencapture', ['-x', '-C', tmpFile]);
+      const { stdout: wStr } = await execFileAsync('/usr/bin/sips', ['--getProperty', 'pixelWidth', tmpFile]);
+      const { stdout: hStr } = await execFileAsync('/usr/bin/sips', ['--getProperty', 'pixelHeight', tmpFile]);
+      const w = parseInt(wStr.match(/pixelWidth:\s*(\d+)/)?.[1] ?? '1440', 10);
+      const h = parseInt(hStr.match(/pixelHeight:\s*(\d+)/)?.[1] ?? '900', 10);
+      cachedScreenInfo = { width: w, height: h };
+    } finally {
+      await fs.unlink(tmpFile).catch(() => {});
+    }
+  }
+
+  console.error(`[CUA] Screen info: ${cachedScreenInfo.width}×${cachedScreenInfo.height}`);
+  return cachedScreenInfo;
+}
+
+/**
+ * Map model coordinates (in SCREENSHOT_WIDTH×SCREENSHOT_HEIGHT space)
+ * to real screen coordinates for the click/scroll APIs.
+ */
+function mapToScreenCoords(modelX: number, modelY: number, screen: ScreenInfo): { x: number; y: number } {
+  return {
+    x: Math.round(modelX * (screen.width / SCREENSHOT_WIDTH)),
+    y: Math.round(modelY * (screen.height / SCREENSHOT_HEIGHT)),
+  };
+}
+
+// ─── Screenshot ─────────────────────────────────────────────────────────────
+
+async function captureScreenshot(): Promise<Buffer> {
+  if (PLATFORM === 'win32') {
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System.Runtime.InteropServices;
+public class DPI { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+"@
+[DPI]::SetProcessDPIAware()
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bmp = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+$g.Dispose()
+$resized = New-Object System.Drawing.Bitmap($bmp, ${SCREENSHOT_WIDTH}, ${SCREENSHOT_HEIGHT})
+$bmp.Dispose()
+$ms = New-Object System.IO.MemoryStream
+$resized.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+$resized.Dispose()
+[Convert]::ToBase64String($ms.ToArray())
+$ms.Dispose()
+`;
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command', script,
+    ], { maxBuffer: 20 * 1024 * 1024 });
+    return Buffer.from(stdout.trim(), 'base64');
+  } else {
+    const tmpFile = path.join(os.tmpdir(), `cua-screenshot-${Date.now()}.png`);
+    const resizedFile = path.join(os.tmpdir(), `cua-screenshot-${Date.now()}-resized.png`);
+    try {
+      await execFileAsync('/usr/sbin/screencapture', ['-x', '-C', tmpFile]);
+      await execFileAsync('/usr/bin/sips', [
+        '--resampleWidth', String(SCREENSHOT_WIDTH),
+        '--out', resizedFile,
+        tmpFile,
+      ]);
+      return await fs.readFile(resizedFile);
+    } finally {
+      await fs.unlink(tmpFile).catch(() => {});
+      await fs.unlink(resizedFile).catch(() => {});
+    }
+  }
+}
+
+// ─── Actions ────────────────────────────────────────────────────────────────
+
+const ACTION_SETTLE_MS = 500; // Wait after action for UI to settle
+
+async function performClick(modelX: number, modelY: number, button: string = 'left'): Promise<string> {
+  const screen = await getScreenInfo();
+  const { x, y } = mapToScreenCoords(modelX, modelY, screen);
+
+  if (PLATFORM === 'win32') {
+    const flags = button === 'right' ? '0x0008, 0x0010' : '0x0002, 0x0004';
+    const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinInput {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+}
+"@
+[WinInput]::SetCursorPos(${x}, ${y})
+Start-Sleep -Milliseconds 50
+[WinInput]::mouse_event(${flags}, 0, 0, 0, 0)
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  } else {
+    const cliclickPaths = ['/opt/homebrew/bin/cliclick', '/usr/local/bin/cliclick'];
+    let clicked = false;
+    for (const p of cliclickPaths) {
+      try {
+        await fs.access(p);
+        const cmd = button === 'right' ? 'rc' : 'c';
+        await execFileAsync(p, [`${cmd}:${x},${y}`]);
+        clicked = true;
+        break;
+      } catch { /* not found */ }
+    }
+    if (!clicked) {
+      await execFileAsync('osascript', ['-e',
+        `tell application "System Events" to click at {${x}, ${y}}`,
+      ]);
+    }
+  }
+
+  await new Promise(r => setTimeout(r, ACTION_SETTLE_MS));
+  return `Clicked at model(${modelX},${modelY}) → screen(${x},${y}) [${button}]`;
+}
+
+async function performType(text: string): Promise<string> {
+  if (!text) return 'Error: empty text';
+
+  const hasNonAscii = /[^\x00-\x7F]/.test(text);
+
+  if (PLATFORM === 'win32') {
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Clipboard]::SetText('${text.replace(/'/g, "''")}')
+Start-Sleep -Milliseconds 100
+[System.Windows.Forms.SendKeys]::SendWait("^v")
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  } else if (hasNonAscii) {
+    await execFileAsync('bash', ['-c', `printf '%s' "${text.replace(/"/g, '\\"')}" | pbcopy`]);
+    await execFileAsync('osascript', ['-e',
+      'tell application "System Events" to key code 9 using command down',
+    ]);
+  } else {
+    await execFileAsync('osascript', ['-e',
+      `tell application "System Events" to keystroke "${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
+    ]);
+  }
+
+  await new Promise(r => setTimeout(r, 200));
+  return `Typed: "${text.length > 50 ? text.slice(0, 50) + '...' : text}"`;
+}
+
+async function performKeyPress(key: string, modifiers: string[] = []): Promise<string> {
+  if (PLATFORM === 'win32') {
+    const vkMap: Record<string, string> = {
+      'enter': '0x0D', 'return': '0x0D', 'tab': '0x09', 'escape': '0x1B', 'esc': '0x1B',
+      'backspace': '0x08', 'delete': '0x2E', 'space': '0x20',
+      'up': '0x26', 'down': '0x28', 'left': '0x25', 'right': '0x27',
+      'home': '0x24', 'end': '0x23', 'pageup': '0x21', 'pagedown': '0x22',
+      'f1': '0x70', 'f2': '0x71', 'f3': '0x72', 'f4': '0x73', 'f5': '0x74',
+      'f6': '0x75', 'f7': '0x76', 'f8': '0x77', 'f9': '0x78', 'f10': '0x79',
+      'f11': '0x7A', 'f12': '0x7B',
+    };
+    const lowerKey = key.toLowerCase();
+    const vk = vkMap[lowerKey] || (lowerKey.length === 1 ? `0x${lowerKey.toUpperCase().charCodeAt(0).toString(16)}` : null);
+
+    if (!vk) return `Error: unknown key "${key}". Valid keys: enter, tab, escape, backspace, delete, space, up/down/left/right, f1-f12, a-z`;
+
+    const modDown: string[] = [];
+    const modUp: string[] = [];
+    for (const mod of modifiers) {
+      const m = mod.toLowerCase();
+      if (m === 'ctrl' || m === 'control') { modDown.push('[WinInput]::keybd_event(0x11,0,0,0)'); modUp.push('[WinInput]::keybd_event(0x11,0,2,0)'); }
+      if (m === 'alt') { modDown.push('[WinInput]::keybd_event(0x12,0,0,0)'); modUp.push('[WinInput]::keybd_event(0x12,0,2,0)'); }
+      if (m === 'shift') { modDown.push('[WinInput]::keybd_event(0x10,0,0,0)'); modUp.push('[WinInput]::keybd_event(0x10,0,2,0)'); }
+      if (m === 'win' || m === 'cmd' || m === 'meta') { modDown.push('[WinInput]::keybd_event(0x5B,0,0,0)'); modUp.push('[WinInput]::keybd_event(0x5B,0,2,0)'); }
+    }
+
+    const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinInput {
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+}
+"@
+${modDown.join('\n')}
+[WinInput]::keybd_event(${vk}, 0, 0, 0)
+[WinInput]::keybd_event(${vk}, 0, 2, 0)
+${modUp.reverse().join('\n')}
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  } else {
+    const keyCodeMap: Record<string, number> = {
+      'enter': 36, 'return': 36, 'tab': 48, 'escape': 53, 'esc': 53,
+      'backspace': 51, 'delete': 117, 'space': 49,
+      'up': 126, 'down': 125, 'left': 123, 'right': 124,
+      'home': 115, 'end': 119, 'pageup': 116, 'pagedown': 121,
+      'f1': 122, 'f2': 120, 'f3': 99, 'f4': 118, 'f5': 96,
+      'f6': 97, 'f7': 98, 'f8': 100, 'f9': 101, 'f10': 109,
+      'f11': 103, 'f12': 111,
+      'a': 0, 'b': 11, 'c': 8, 'd': 2, 'e': 14, 'f': 3, 'g': 5, 'h': 4,
+      'i': 34, 'j': 38, 'k': 40, 'l': 37, 'm': 46, 'n': 45, 'o': 31,
+      'p': 35, 'q': 12, 'r': 15, 's': 1, 't': 17, 'u': 32, 'v': 9,
+      'w': 13, 'x': 7, 'y': 16, 'z': 6,
+    };
+    const code = keyCodeMap[key.toLowerCase()];
+    if (code === undefined) {
+      return `Error: unknown key "${key}". Valid keys: enter, tab, escape, backspace, delete, space, up/down/left/right, f1-f12, a-z`;
+    }
+
+    const modMap: Record<string, string> = {
+      'cmd': 'command down', 'command': 'command down', 'meta': 'command down',
+      'ctrl': 'control down', 'control': 'control down',
+      'alt': 'option down', 'option': 'option down',
+      'shift': 'shift down',
+    };
+    const using = modifiers.map(m => modMap[m.toLowerCase()]).filter(Boolean).join(', ');
+    const script = using
+      ? `tell application "System Events" to key code ${code} using {${using}}`
+      : `tell application "System Events" to key code ${code}`;
+    await execFileAsync('osascript', ['-e', script]);
+  }
+
+  await new Promise(r => setTimeout(r, 300));
+  const modStr = modifiers?.length ? modifiers.join('+') + '+' : '';
+  return `Pressed: ${modStr}${key}`;
+}
+
+async function performScroll(modelX: number, modelY: number, direction: string, amount: number = 3): Promise<string> {
+  const validDirections = ['up', 'down', 'left', 'right'];
+  if (!validDirections.includes(direction)) {
+    return `Error: invalid direction "${direction}". Valid: up, down, left, right`;
+  }
+
+  const screen = await getScreenInfo();
+  const { x, y } = mapToScreenCoords(modelX, modelY, screen);
+
+  if (PLATFORM === 'win32') {
+    const wheelDelta = (direction === 'up' || direction === 'left') ? 120 * amount : -120 * amount;
+    const flag = (direction === 'left' || direction === 'right') ? '0x01000' : '0x0800';
+    const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinInput {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+}
+"@
+[WinInput]::SetCursorPos(${x}, ${y})
+[WinInput]::mouse_event(${flag}, 0, 0, ${wheelDelta}, 0)
+`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  } else {
+    // macOS: move mouse then use cliclick scroll or Python Quartz
+    const cliclickPaths = ['/opt/homebrew/bin/cliclick', '/usr/local/bin/cliclick'];
+    for (const p of cliclickPaths) {
+      try {
+        await fs.access(p);
+        await execFileAsync(p, [`m:${x},${y}`]);
+        // cliclick scroll: positive = up, negative = down (for vertical)
+        const scrollArg = direction === 'up' ? `su:${amount}` :
+                          direction === 'down' ? `sd:${amount}` :
+                          direction === 'left' ? `sl:${amount}` : `sr:${amount}`;
+        await execFileAsync(p, [scrollArg]);
+        await new Promise(r => setTimeout(r, 200));
+        return `Scrolled ${direction} at model(${modelX},${modelY}) → screen(${x},${y})`;
+      } catch { /* not found, try next */ }
+    }
+    // Fallback: Python Quartz scroll
+    const dy = direction === 'up' ? amount : direction === 'down' ? -amount : 0;
+    const dx = direction === 'left' ? amount : direction === 'right' ? -amount : 0;
+    const pyScript = `
+import Quartz
+event = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 2, ${dy}, ${dx})
+Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+`;
+    await execFileAsync('python3', ['-c', pyScript]).catch(() => {
+      console.error('[CUA] Quartz scroll failed');
+    });
+  }
+
+  await new Promise(r => setTimeout(r, 200));
+  return `Scrolled ${direction} at model(${modelX},${modelY}) → screen(${x},${y})`;
+}
+
+// ─── Tool Definitions ───────────────────────────────────────────────────────
+
+export function buildCuaTools(): ToolDefinition[] {
+  const screenshotTool: ToolDefinition = {
+    name: 'screenshot',
+    label: 'Screenshot',
+    description: `Take a screenshot of the current screen (${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT} pixels). Always take a screenshot first to see the current state before acting.`,
+    parameters: Type.Object({}),
+    async execute() {
+      const png = await captureScreenshot();
+      return {
+        content: [
+          { type: 'text' as const, text: `Screenshot captured (${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT}). Analyze the screenshot and decide your next action.` },
+          { type: 'image' as const, data: png.toString('base64'), mimeType: 'image/png' },
+        ],
+        details: undefined,
+      };
+    },
+  };
+
+  const clickTool: ToolDefinition = {
+    name: 'click',
+    label: 'Click',
+    description: `Click at coordinates on the ${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT} screenshot. Coordinates are pixel positions in the screenshot image.`,
+    parameters: Type.Object({
+      x: Type.Number({ description: `X pixel coordinate (0-${SCREENSHOT_WIDTH})` }),
+      y: Type.Number({ description: `Y pixel coordinate (0-${SCREENSHOT_HEIGHT})` }),
+      button: Type.Optional(Type.String({ description: 'Mouse button: left (default), right' })),
+    }),
+    async execute(_id, params) {
+      const { x, y, button } = params as { x: number; y: number; button?: string };
+      // Bounds validation
+      if (x < 0 || x > SCREENSHOT_WIDTH || y < 0 || y > SCREENSHOT_HEIGHT) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: coordinates (${x},${y}) out of bounds. Valid range: x=0-${SCREENSHOT_WIDTH}, y=0-${SCREENSHOT_HEIGHT}. Take a screenshot and try again.` }],
+          details: undefined,
+        };
+      }
+      const result = await performClick(x, y, button || 'left');
+      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+    },
+  };
+
+  const typeTool: ToolDefinition = {
+    name: 'type_text',
+    label: 'Type Text',
+    description: 'Type text using the keyboard. Supports ASCII and CJK/Unicode characters. Make sure the target text field is focused (clicked) before typing.',
+    parameters: Type.Object({
+      text: Type.String({ description: 'Text to type' }),
+    }),
+    async execute(_id, params) {
+      const { text } = params as { text: string };
+      const result = await performType(text);
+      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+    },
+  };
+
+  const keyPressTool: ToolDefinition = {
+    name: 'key_press',
+    label: 'Key Press',
+    description: 'Press a key with optional modifiers. Keys: enter, tab, escape, backspace, delete, space, up/down/left/right, home, end, pageup, pagedown, f1-f12, a-z. Modifiers: ctrl, alt, shift, cmd/win.',
+    parameters: Type.Object({
+      key: Type.String({ description: 'Key name (e.g., "enter", "a", "f5")' }),
+      modifiers: Type.Optional(Type.Array(Type.String(), { description: 'Modifier keys, e.g. ["ctrl"], ["ctrl","shift"]' })),
+    }),
+    async execute(_id, params) {
+      const { key, modifiers } = params as { key: string; modifiers?: string[] };
+      const result = await performKeyPress(key, modifiers || []);
+      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+    },
+  };
+
+  const scrollTool: ToolDefinition = {
+    name: 'scroll',
+    label: 'Scroll',
+    description: `Scroll at a position on the ${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT} screenshot. Move mouse to position first, then scroll.`,
+    parameters: Type.Object({
+      x: Type.Number({ description: 'X coordinate to scroll at' }),
+      y: Type.Number({ description: 'Y coordinate to scroll at' }),
+      direction: Type.String({ description: 'Scroll direction: up, down, left, right' }),
+      amount: Type.Optional(Type.Number({ description: 'Scroll amount in lines (default: 3)' })),
+    }),
+    async execute(_id, params) {
+      const { x, y, direction, amount } = params as { x: number; y: number; direction: string; amount?: number };
+      const result = await performScroll(x, y, direction, amount || 3);
+      return { content: [{ type: 'text' as const, text: result }], details: undefined };
+    },
+  };
+
+  return [screenshotTool, clickTool, typeTool, keyPressTool, scrollTool];
+}

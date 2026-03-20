@@ -1649,9 +1649,20 @@ Tool routing:
       // Bridge MCP tools as customTools for pi-coding-agent.
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
+
+      // Build CUA (Computer Use Agent) sub-agent tool for context-isolated GUI tasks
+      const { buildComputerUseTool } = await import('../cua/cua-sub-agent');
+      const computerUseTool = buildComputerUseTool({
+        model: runtimeConfig.model,
+        provider: runtimeConfig.provider,
+        baseUrl: runtimeConfig.baseUrl?.trim() || undefined,
+      });
+      const allCustomTools = [...mcpCustomTools, computerUseTool];
+
       if (mcpCustomTools.length > 0) {
         log(`[ClaudeAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`, mcpCustomTools.map(t => t.name).join(', '));
       }
+      log('[ClaudeAgentRunner] Registered CUA computer_use tool for sub-agent delegation');
 
       // Enrich process.env.PATH for build mode — ensures Skill commands (python3, node)
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
@@ -1751,7 +1762,7 @@ Tool routing:
           authStorage,
           modelRegistry,
           tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
-          customTools: mcpCustomTools,
+          customTools: allCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
             compaction: compactionSettings,
