@@ -23,33 +23,98 @@ import { CUA_FEW_SHOT_EXAMPLES } from './cua-few-shot-examples';
 import { TrajectoryLogger } from './cua-trajectory';
 import { LoopDetector } from './cua-loop-detector';
 import { log, logError } from '../utils/logger';
+import * as http from 'http';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as os from 'os';
 
-// ─── CUA System Prompt ──────────────────────────────────────────────────────
+const execFileAsync = promisify(execFile);
+const PLATFORM = os.platform();
+
+// ─── CUA System Prompt (minimal — details go in tool descriptions) ──────────
 
 const CUA_SYSTEM_PROMPT = `/no_think
-You are a computer use agent. You interact with the screen using the provided tools.
+You are a computer use agent. Complete the task by taking screenshots and performing actions.
+Always screenshot first, then act. Verify each action with another screenshot.
+Be concise and efficient. If stuck after 3 attempts, explain why and stop.
+Never click Send, Submit, Delete, or Purchase unless explicitly required.`;
 
-## Workflow
-1. Take a **screenshot** to see the current screen.
-2. Analyze what you see. Identify the specific UI element you need to interact with.
-3. Execute ONE action (click, type_text, key_press, or scroll).
-4. Take another **screenshot** to verify the action worked.
-5. Repeat until the task is complete.
+// ─── Ollama Health Check ────────────────────────────────────────────────────
 
-## Coordinates
-- Screenshots are ${1280}×${720} pixels.
-- When clicking, use pixel coordinates from the screenshot image.
-- (0,0) is top-left, (${1280},${720}) is bottom-right.
-- Look carefully at the screenshot to identify the exact position of UI elements before clicking.
+/**
+ * Validate that Ollama is running and the model is available.
+ * Returns null if healthy, or an error message string.
+ */
+async function validateOllamaHealth(baseUrl: string, model: string): Promise<string | null> {
+  const ollamaBase = baseUrl.replace(/\/v1\/?$/, '');
+  try {
+    // Check Ollama is running
+    const tagsResult = await httpGet(`${ollamaBase}/api/tags`, 3000);
+    if (!tagsResult) return `Ollama is not running at ${ollamaBase}. Run: ollama serve`;
 
-## Rules
-- Always screenshot FIRST to observe the current state.
-- After every click or key_press, take a screenshot to verify the result.
-- If the screen looks unchanged after an action, your action may have missed. Try a different approach.
-- If you see an unexpected dialog or popup, handle it (close or respond) before continuing.
-- If you are stuck after 3 attempts at the same action, explain why and stop.
-- Never click buttons labeled Send, Submit, Delete, or Purchase unless the task explicitly requires it.
-- Be concise. Focus on completing the task efficiently.`;
+    // Check model is downloaded
+    const showResult = await httpPost(`${ollamaBase}/api/show`, { name: model }, 5000);
+    if (!showResult) return `Model "${model}" not found in Ollama. Run: ollama pull ${model}`;
+
+    return null; // healthy
+  } catch {
+    return `Cannot connect to Ollama at ${ollamaBase}. Run: ollama serve`;
+  }
+}
+
+function httpGet(url: string, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => data += chunk);
+      res.on('end', () => resolve(res.statusCode === 200 ? data : null));
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
+
+function httpPost(url: string, body: object, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const urlObj = new URL(url);
+    const payload = JSON.stringify(body);
+    const req = http.request({
+      hostname: urlObj.hostname,
+      port: urlObj.port,
+      path: urlObj.pathname,
+      method: 'POST',
+      timeout: timeoutMs,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => data += chunk);
+      res.on('end', () => resolve(res.statusCode === 200 ? data : null));
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ─── Display Wake Lock ──────────────────────────────────────────────────────
+
+async function preventDisplaySleep(): Promise<void> {
+  if (PLATFORM === 'win32') {
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `Add-Type @"\nusing System.Runtime.InteropServices;\npublic class CuaPower { [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f); }\n"@\n[CuaPower]::SetThreadExecutionState(0x80000003)`,
+    ]).catch(() => {});
+  }
+  // macOS: caffeinate is handled by Electron's powerSaveBlocker
+}
+
+async function allowDisplaySleep(): Promise<void> {
+  if (PLATFORM === 'win32') {
+    await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `Add-Type @"\nusing System.Runtime.InteropServices;\npublic class CuaPower { [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f); }\n"@\n[CuaPower]::SetThreadExecutionState(0x80000000)`,
+    ]).catch(() => {});
+  }
+}
 
 // ─── Sub-Agent Execution ────────────────────────────────────────────────────
 
@@ -58,17 +123,9 @@ export interface CuaTaskResult {
   summary: string;
   stepsUsed: number;
   trajectoryDir?: string;
-  failureType?: 'max_steps' | 'loop' | 'exception' | 'model_gave_up';
+  failureType?: 'max_steps' | 'loop' | 'exception' | 'model_gave_up' | 'ollama_unavailable';
 }
 
-/**
- * Execute a CUA task by spawning a sub-agent session.
- *
- * The sub-agent uses the same Ollama model as the main agent,
- * but has its own isolated context window. All screenshots and
- * tool interactions stay in the sub-agent's context and are
- * discarded when this function returns.
- */
 export async function executeCuaTask(
   instruction: string,
   options: {
@@ -88,43 +145,52 @@ export async function executeCuaTask(
   log('[CUA] Starting sub-agent task:', instruction);
   log('[CUA] Model:', model, 'Provider:', provider, 'Max turns:', maxTurns);
 
-  // Initialize monitoring utilities
+  // #29: Validate Ollama health before creating session
+  const healthError = await validateOllamaHealth(baseUrl, model);
+  if (healthError) {
+    logError('[CUA] Ollama health check failed:', healthError);
+    return {
+      success: false,
+      summary: healthError,
+      stepsUsed: 0,
+      failureType: 'ollama_unavailable',
+    };
+  }
+
+  // #31: Prevent display sleep during CUA task
+  await preventDisplaySleep();
+
   const trajectory = new TrajectoryLogger();
   const loopDetector = new LoopDetector();
 
-  // Build model — same function used by main agent for Ollama
+  // #32: Temperature 0 for deterministic coordinate output
   const piModel = buildSyntheticPiModel(
     model,
     provider,
-    'openai',     // Ollama uses OpenAI-compatible protocol
+    'openai',
     baseUrl,
-    undefined,    // api override
-    false,        // reasoning off for CUA (avoids </think> corruption bug)
-    32768,        // contextWindow: 32K for CUA sub-agent (not 258K — prevents OOM)
-    4096,         // maxTokens: action responses are short
+    undefined,
+    false,    // reasoning off
+    32768,    // contextWindow: 32K
+    4096,     // maxTokens
   );
 
-  // Auth — Ollama doesn't need API keys, but Pi SDK requires auth storage
   const authStorage = getSharedAuthStorage();
-
-  // Build GUI tools with loop detector integration
   const cuaTools = buildCuaTools({ loopDetector, trajectory });
 
-  // Create isolated sub-agent session
   const { session: subSession } = await createAgentSession({
     model: piModel,
     authStorage,
     modelRegistry: new ModelRegistry(authStorage),
-    tools: [],                                    // No coding tools — GUI only
+    tools: [],
     customTools: cuaTools,
-    sessionManager: PiSessionManager.inMemory(),  // Isolated — no persistence
+    sessionManager: PiSessionManager.inMemory(),
     settingsManager: PiSettingsManager.inMemory({
-      compaction: { enabled: false },  // MUST disable — compaction drops image content from tool results
+      compaction: { enabled: false },
       retry: { enabled: true, maxRetries: 2 },
     }),
     cwd: process.cwd(),
     resourceLoader: {
-      // Minimal resource loader — sub-agent doesn't need skills/prompts
       loadResource: async () => null,
       listResources: async () => [],
       reload: async () => {},
@@ -141,23 +207,20 @@ export async function executeCuaTask(
   let toolCallCount = 0;
   let unsubscribe: (() => void) | undefined;
 
-  // Install beforeToolCall hook for step budget enforcement (more reliable than steer())
+  // beforeToolCall hook for step budget enforcement
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const agent = subSession.agent as any;
   if (typeof agent.setBeforeToolCall === 'function') {
     agent.setBeforeToolCall(async () => {
       toolCallCount++;
       if (toolCallCount > maxTurns * 2) {
-        // Hard limit: block execution when budget is exhausted
-        // (maxTurns * 2 because each "step" = screenshot + action = 2 tool calls)
-        return { block: true, reason: `Step budget exhausted (${toolCallCount} tool calls, max ${maxTurns * 2}). Provide a summary of what you accomplished.` };
+        return { block: true, reason: `Step budget exhausted (${toolCallCount} tool calls). Summarize what you accomplished.` };
       }
       return undefined;
     });
   }
 
   try {
-    // Subscribe to events to capture the agent's messages
     unsubscribe = subSession.subscribe((event) => {
       if (event.type === 'message_end') {
         turnCount++;
@@ -177,18 +240,16 @@ export async function executeCuaTask(
       }
     });
 
-    // Send the task instruction — Pi SDK handles the agentic loop
-    const taskMessage = `${CUA_SYSTEM_PROMPT}\n\n${CUA_FEW_SHOT_EXAMPLES}\n\n## Your Task\n${instruction}\n\nStart by taking a screenshot to see the current screen.`;
+    // #35: Simplified system prompt + few-shot examples
+    const taskMessage = `${CUA_SYSTEM_PROMPT}\n\n${CUA_FEW_SHOT_EXAMPLES}\n\n## Your Task\n${instruction}\n\nStart by taking a screenshot.`;
     await subSession.prompt(taskMessage);
 
-    // Wait for the agent to finish (prompt() returns when done)
     log('[CUA] Sub-agent completed after', turnCount, 'turns');
 
     if (turnCount >= maxTurns && !finalResponse.toLowerCase().includes('complete')) {
       failureType = 'max_steps';
     }
 
-    // Write trajectory summary
     await trajectory.writeSummary({
       success: !failureType,
       summary: finalResponse || 'No text response',
@@ -220,19 +281,15 @@ export async function executeCuaTask(
       failureType,
     };
   } finally {
-    // Dispose sub-agent session — all screenshots and context are freed
-    unsubscribe?.(); // H-5: ensure subscription is always cleaned up
+    unsubscribe?.();
     subSession.dispose();
+    await allowDisplaySleep(); // #31: Release wake lock
     log('[CUA] Sub-agent session disposed');
   }
 }
 
 // ─── Main Agent Tool Definition ─────────────────────────────────────────────
 
-/**
- * Build the computer_use ToolDefinition for the main agent.
- * This tool spawns a sub-agent to execute GUI tasks with context isolation.
- */
 export function buildComputerUseTool(
   modelConfig?: { model?: string; provider?: string; baseUrl?: string },
 ): ToolDefinition {
@@ -247,7 +304,6 @@ export function buildComputerUseTool(
     }),
     async execute(_toolCallId, params) {
       const { instruction, max_steps } = params as { instruction: string; max_steps?: number };
-
       log('[CUA] Main agent delegated task:', instruction);
 
       const result = await executeCuaTask(instruction, {

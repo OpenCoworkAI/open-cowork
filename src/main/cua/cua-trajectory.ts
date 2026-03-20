@@ -55,10 +55,11 @@ export class TrajectoryLogger {
     return filename;
   }
 
-  /** Record a trajectory step */
-  async recordStep(step: TrajectoryStep): Promise<void> {
-    this.stepCount = step.step;
-    const line = JSON.stringify(step) + '\n';
+  /** Record a trajectory step — step counter auto-increments */
+  async recordStep(step: Omit<TrajectoryStep, 'step'>): Promise<void> {
+    this.stepCount++;
+    const fullStep = { step: this.stepCount, ...step };
+    const line = JSON.stringify(fullStep) + '\n';
     await fs.appendFile(this.jsonlPath, line);
   }
 

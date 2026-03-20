@@ -107,6 +107,7 @@ function mapToScreenCoords(modelX: number, modelY: number, screen: ScreenInfo): 
 
 async function captureScreenshot(): Promise<Buffer> {
   if (PLATFORM === 'win32') {
+    // #33: Output JPEG Q=85 instead of PNG (80% smaller payload)
     const script = `
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -123,7 +124,10 @@ $g.Dispose()
 $resized = New-Object System.Drawing.Bitmap($bmp, ${SCREENSHOT_WIDTH}, ${SCREENSHOT_HEIGHT})
 $bmp.Dispose()
 $ms = New-Object System.IO.MemoryStream
-$resized.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+$codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageDecoders() | Where-Object { $_.FormatID -eq [System.Drawing.Imaging.ImageFormat]::Jpeg.Guid }
+$ep = New-Object System.Drawing.Imaging.EncoderParameters(1)
+$ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]85)
+$resized.Save($ms, $codec, $ep)
 $resized.Dispose()
 [Convert]::ToBase64String($ms.ToArray())
 $ms.Dispose()
@@ -134,11 +138,14 @@ $ms.Dispose()
     return Buffer.from(stdout.trim(), 'base64');
   } else {
     const tmpFile = path.join(os.tmpdir(), `cua-screenshot-${Date.now()}.png`);
-    const resizedFile = path.join(os.tmpdir(), `cua-screenshot-${Date.now()}-resized.png`);
+    const resizedFile = path.join(os.tmpdir(), `cua-screenshot-${Date.now()}-resized.jpg`);
     try {
       await execFileAsync('/usr/sbin/screencapture', ['-x', '-C', tmpFile]);
+      // Resize and convert to JPEG Q=85
       await execFileAsync('/usr/bin/sips', [
         '--resampleWidth', String(SCREENSHOT_WIDTH),
+        '--setProperty', 'format', 'jpeg',
+        '--setProperty', 'formatOptions', '85',
         '--out', resizedFile,
         tmpFile,
       ]);
@@ -200,26 +207,34 @@ Start-Sleep -Milliseconds 50
 async function performType(text: string): Promise<string> {
   if (!text) return 'Error: empty text';
 
-  // Security: write text to temp file to avoid shell injection (C-2, H-4)
+  // #30: Save clipboard before overwriting, restore after
   const tmpTextFile = path.join(os.tmpdir(), `cua-type-${Date.now()}.txt`);
 
   if (PLATFORM === 'win32') {
-    // Windows: write text to temp file, read in PowerShell, paste via clipboard
     await fs.writeFile(tmpTextFile, text, 'utf-8');
     try {
       const script = `
 Add-Type -AssemblyName System.Windows.Forms
+$saved = [System.Windows.Forms.Clipboard]::GetText()
 $text = [System.IO.File]::ReadAllText('${tmpTextFile.replace(/\\/g, '\\\\')}')
 [System.Windows.Forms.Clipboard]::SetText($text)
 Start-Sleep -Milliseconds 100
 [System.Windows.Forms.SendKeys]::SendWait("^v")
+Start-Sleep -Milliseconds 150
+if ($saved) { [System.Windows.Forms.Clipboard]::SetText($saved) }
 `;
       await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
     } finally {
       await fs.unlink(tmpTextFile).catch(() => {});
     }
   } else {
-    // macOS: pipe text via stdin to pbcopy (no shell interpolation)
+    // macOS: save clipboard, paste, restore
+    let savedClipboard = '';
+    try {
+      const { stdout } = await execFileAsync('pbpaste', []);
+      savedClipboard = stdout;
+    } catch { /* empty clipboard */ }
+
     const { execFile: execFileCb } = await import('child_process');
     await new Promise<void>((resolve, reject) => {
       const proc = execFileCb('pbcopy', [], (err) => err ? reject(err) : resolve());
@@ -227,8 +242,18 @@ Start-Sleep -Milliseconds 100
       proc.stdin?.end();
     });
     await execFileAsync('osascript', ['-e',
-      'tell application "System Events" to key code 9 using command down', // Cmd+V
+      'tell application "System Events" to key code 9 using command down',
     ]);
+
+    // Restore clipboard after a short delay
+    if (savedClipboard) {
+      await new Promise(r => setTimeout(r, 200));
+      await new Promise<void>((resolve, reject) => {
+        const proc = execFileCb('pbcopy', [], (err) => err ? reject(err) : resolve());
+        proc.stdin?.write(savedClipboard);
+        proc.stdin?.end();
+      });
+    }
   }
 
   await new Promise(r => setTimeout(r, 200));
@@ -409,7 +434,7 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
       return {
         content: [
           { type: 'text' as const, text: `Screenshot captured (${SCREENSHOT_WIDTH}×${SCREENSHOT_HEIGHT}). Analyze the screenshot and decide your next action.` },
-          { type: 'image' as const, data: png.toString('base64'), mimeType: 'image/png' },
+          { type: 'image' as const, data: png.toString('base64'), mimeType: 'image/jpeg' },
         ],
         details: undefined,
       };
@@ -463,7 +488,6 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
       // Log to trajectory
       if (trajectory) {
         await trajectory.recordStep({
-          step: 0, // will be overridden by caller
           timestamp: new Date().toISOString(),
           action: { type: 'click', params: { x, y, button: button || 'left' } },
           modelResponse: '',
