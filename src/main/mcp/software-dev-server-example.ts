@@ -57,7 +57,7 @@ const requirements = new Map<string, Requirement>();
 
 // GUI Application Management
 interface GUIAppInstance {
-  process: any;
+  process: ReturnType<typeof exec> | null;
   pid: number;
   appType: string;
   startTime: Date;
@@ -208,9 +208,9 @@ ENTRYPOINT ["/entrypoint.sh"]
     writeMCPLog(stdout);
     if (stderr) writeMCPLog(stderr);
     return imageName;
-  } catch (error: any) {
-    writeMCPLog('[Docker] Failed to build image:', error.message);
-    throw new Error(`Failed to build Docker image: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog('[Docker] Failed to build image:', error instanceof Error ? error.message : String(error));
+    throw new Error(`Failed to build Docker image: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -277,8 +277,8 @@ async function startGUIApplicationInDocker(
     try {
       const logFile = await saveDockerDiagnostics(containerId, WORKSPACE_DIR);
       writeMCPLog(`[Docker] Full diagnostics saved to: ${logFile}`);
-    } catch (error: any) {
-      writeMCPLog(`[Docker] Warning: Failed to save diagnostics: ${error.message}`);
+    } catch (error: unknown) {
+      writeMCPLog(`[Docker] Warning: Failed to save diagnostics: ${error instanceof Error ? error.message : String(error)}`);
     }
     
     if (enableVnc) {
@@ -345,9 +345,9 @@ async function startGUIApplicationInDocker(
     };
     
     return instance;
-  } catch (error: any) {
-    writeMCPLog('[Docker] Failed to start container:', error.message);
-    throw new Error(`Failed to start Docker container: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog('[Docker] Failed to start container:', error instanceof Error ? error.message : String(error));
+    throw new Error(`Failed to start Docker container: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -386,12 +386,13 @@ async function startGUIApplication(
       case 'electron':
         command = `npm start`;
         break;
-      case 'web':
+      case 'web': {
         // For web apps, start a local server
         const port = 8000 + Math.floor(Math.random() * 1000);
         command = `python -m http.server ${port}`;
         url = `http://localhost:${port}`;
         break;
+      }
       case 'java':
         command = `java -jar "${fullPath}"`;
         break;
@@ -441,8 +442,8 @@ async function stopGUIApplication(instance: GUIAppInstance, force: boolean = fal
         await execFileAsync('docker', ['stop', instance.containerId]);
       }
       writeMCPLog('[Docker] Container stopped successfully');
-    } catch (error: any) {
-      writeMCPLog(`[Docker] Error stopping container: ${error.message}`);
+    } catch (error: unknown) {
+      writeMCPLog(`[Docker] Error stopping container: ${error instanceof Error ? error.message : String(error)}`);
     }
     return;
   }
@@ -471,8 +472,8 @@ async function stopGUIApplication(instance: GUIAppInstance, force: boolean = fal
     
     // Wait a bit for cleanup
     await new Promise(resolve => setTimeout(resolve, 1000));
-  } catch (error: any) {
-    writeMCPLog(`[GUI] Error stopping application: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[GUI] Error stopping application: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -482,9 +483,9 @@ async function getDockerContainerLogs(containerId: string, tail: number = 0): Pr
     const args = ['logs', ...(tail > 0 ? ['--tail', String(tail)] : []), containerId];
     const { stdout } = await execFileAsync('docker', args);
     return stdout;
-  } catch (error: any) {
-    writeMCPLog(`[Docker] Error getting logs: ${error.message}`);
-    return `Error getting logs: ${error.message}`;
+  } catch (error: unknown) {
+    writeMCPLog(`[Docker] Error getting logs: ${error instanceof Error ? error.message : String(error)}`);
+    return `Error getting logs: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -507,8 +508,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
   try {
     const logs = await getDockerContainerLogs(containerId);
     diagnostics += logs;
-  } catch (error: any) {
-    diagnostics += `Error getting logs: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error getting logs: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -519,8 +520,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       'exec', containerId, 'bash', '-c', 'ps aux'
     ]);
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error checking processes: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking processes: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
 
@@ -531,8 +532,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       'exec', containerId, 'bash', '-c', 'ps aux | grep Xvfb | grep -v grep'
     ]);
     diagnostics += stdout || 'Xvfb not running\n';
-  } catch (error: any) {
-    diagnostics += `Error checking Xvfb: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking Xvfb: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
 
@@ -543,8 +544,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       'exec', containerId, 'bash', '-c', 'ps aux | grep x11vnc | grep -v grep'
     ]);
     diagnostics += stdout || 'VNC server not running\n';
-  } catch (error: any) {
-    diagnostics += `Error checking VNC: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking VNC: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -556,8 +557,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       'DISPLAY=:99 xwininfo -root -tree 2>&1 || echo \'xwininfo not available or no windows\''
     ]);
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error checking windows: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking windows: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
 
@@ -569,8 +570,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       'env | grep -E \'(DISPLAY|ENABLE_VNC|TEST_COMMAND)\''
     ]);
     diagnostics += stdout || 'No relevant environment variables found\n';
-  } catch (error: any) {
-    diagnostics += `Error checking environment: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking environment: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -582,8 +583,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       WORKSPACE_DIR
     );
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error reading VNC log: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error reading VNC log: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -595,8 +596,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       WORKSPACE_DIR
     );
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error reading application log: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error reading application log: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -608,8 +609,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       WORKSPACE_DIR
     );
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error checking application: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking application: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n\n`;
   
@@ -621,8 +622,8 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
       WORKSPACE_DIR
     );
     diagnostics += stdout;
-  } catch (error: any) {
-    diagnostics += `Error checking network: ${error.message}\n`;
+  } catch (error: unknown) {
+    diagnostics += `Error checking network: ${error instanceof Error ? error.message : String(error)}\n`;
   }
   diagnostics += `\n========================================\n`;
   
@@ -644,6 +645,7 @@ async function saveDockerDiagnostics(containerId: string, outputDir: string = WO
 
 // Helper: Execute cliclick command (macOS)
 async function executeCliclick(command: string): Promise<{ stdout: string; stderr: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const platform = require('os').platform();
   
   if (platform !== 'darwin') {
@@ -715,15 +717,16 @@ async function takeScreenshot(outputPath: string): Promise<string> {
       writeMCPLog(`[Screenshot] Screenshot copied from container to ${outputPath}`);
       
       return outputPath;
-    } catch (error: any) {
-      writeMCPLog(`[Screenshot] Failed to take screenshot from container: ${error.message}`);
-      throw new Error(`Failed to take screenshot from Docker container: ${error.message}`);
+    } catch (error: unknown) {
+      writeMCPLog(`[Screenshot] Failed to take screenshot from container: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to take screenshot from Docker container: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  
+
   // Otherwise, take screenshot from local display
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const platform = require('os').platform();
-  
+
   let command: string;
   if (platform === 'darwin') {
     command = `screencapture -x "${outputPath}"`;
@@ -750,7 +753,7 @@ async function callVisionAPI(
   const openAIApiKey = process.env.OPENAI_API_KEY;
   const apiKey = anthropicApiKey || openAIApiKey;
   const hasOpenAIConfig = Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL || process.env.OPENAI_MODEL);
-  let baseUrl = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
   const model =
     process.env.CLAUDE_MODEL ||
     process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ||
@@ -790,8 +793,11 @@ async function callVisionAPI(
       : `${openAIBaseUrl}/v1/chat/completions`;
     
     // Use Node.js built-in https module for better compatibility
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const https = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const http = require('http');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const url = require('url');
     
     const urlObj = new url.URL(openAIUrl);
@@ -799,7 +805,7 @@ async function callVisionAPI(
     const httpModule = isHttps ? https : http;
     
     // Build request body with optional reasoning parameter for OpenRouter
-    const requestBodyObj: any = {
+    const requestBodyObj: Record<string, unknown> = {
       model: model,
       messages: [
         {
@@ -829,7 +835,7 @@ async function callVisionAPI(
     
     const requestBody = JSON.stringify(requestBodyObj);
     
-    const headers: any = {
+    const headers: Record<string, string | number> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
       'Content-Length': Buffer.byteLength(requestBody),
@@ -849,6 +855,7 @@ async function callVisionAPI(
         headers: headers,
       };
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const req = httpModule.request(options, (res: any) => {
         let data = '';
         
@@ -866,8 +873,8 @@ async function callVisionAPI(
               writeMCPLog(JSON.stringify(jsonData), 'RESPONSE');
               
               resolve(responseContent);
-            } catch (e: any) {
-              reject(new Error(`Failed to parse API response: ${e.message}`));
+            } catch (e: unknown) {
+              reject(new Error(`Failed to parse API response: ${e instanceof Error ? e.message : String(e)}`));
             }
           } else {
             reject(new Error(`API request failed: ${res.statusCode} ${res.statusMessage} - ${data}`));
@@ -884,6 +891,7 @@ async function callVisionAPI(
     });
   } else {
     // Use Anthropic API format
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Anthropic = require('@anthropic-ai/sdk');
     const anthropic = new Anthropic({
       apiKey: apiKey,
@@ -926,6 +934,7 @@ async function callVisionAPI(
 // Helper: Get actual screen dimensions
 async function getScreenDimensions(): Promise<{ width: number; height: number }> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const platform = require('os').platform();
     
     // For Docker mode, use the configured Xvfb resolution
@@ -970,8 +979,8 @@ async function getScreenDimensions(): Promise<{ width: number; height: number }>
     // Fallback: common default
     writeMCPLog('[Vision] Using default screen resolution: 1920x1080');
     return { width: 1920, height: 1080 };
-  } catch (error: any) {
-    writeMCPLog(`[Vision] Error getting screen dimensions: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[Vision] Error getting screen dimensions: ${error instanceof Error ? error.message : String(error)}`);
     return { width: 1920, height: 1080 };
   }
 }
@@ -980,6 +989,7 @@ async function getScreenDimensions(): Promise<{ width: number; height: number }>
 async function getImageDimensions(imagePath: string): Promise<{ width: number; height: number }> {
   try {
     // Use sips on macOS or identify on Linux to get image dimensions
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const platform = require('os').platform();
     
     if (platform === 'darwin') {
@@ -1016,8 +1026,8 @@ async function getImageDimensions(imagePath: string): Promise<{ width: number; h
     }
     
     throw new Error('Could not determine image dimensions');
-  } catch (error: any) {
-    writeMCPLog(`[Vision] Error getting image dimensions: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[Vision] Error getting image dimensions: ${error instanceof Error ? error.message : String(error)}`);
     // Return screen dimensions as fallback
     return await getScreenDimensions();
   }
@@ -1129,8 +1139,8 @@ Be PRECISE with coordinates. Measure carefully from the top-left corner.`;
     writeMCPLog(`[Vision] Layout: ${analysis.layout_structure}`);
     
     return context;
-  } catch (error: any) {
-    writeMCPLog(`[Vision] Error building screen context: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[Vision] Error building screen context: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
 }
@@ -1228,14 +1238,15 @@ If you cannot find the element, set confidence to 0.`;
       y: Math.round(result.y),
       confidence: result.confidence,
     };
-  } catch (error: any) {
-    writeMCPLog(`[Vision] Error analyzing screenshot: ${error.message}`);
-    throw new Error(`Vision analysis failed: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[Vision] Error analyzing screenshot: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Vision analysis failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 // Helper: Bring window to front and focus
 async function focusApplicationWindow(appName?: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const platform = require('os').platform();
   
   writeMCPLog(`[GUI] Attempting to bring window to front (platform: ${platform}, appName: ${appName || 'auto-detect'})`);
@@ -1254,23 +1265,23 @@ async function focusApplicationWindow(appName?: string): Promise<void> {
           // Approach 1: Find process by name containing "Python"
           const { stdout, stderr } = await executeCommand(`osascript -e 'tell application "System Events" to set frontmost of first process whose name contains "Python" to true'`);
           writeMCPLog(`[GUI] AppleScript (Python) result - stdout: ${stdout}, stderr: ${stderr}`);
-        } catch (err1: any) {
-          writeMCPLog(`[GUI] Failed to focus Python process: ${err1.message}`);
+        } catch (err1: unknown) {
+          writeMCPLog(`[GUI] Failed to focus Python process: ${err1 instanceof Error ? err1.message : String(err1)}`);
           
           // Approach 2: Try to find any Python-related window
           try {
             await executeCommand(`osascript -e 'tell application "System Events" to set frontmost of first process whose unix id is greater than 0 and name contains "python" to true'`);
             writeMCPLog('[GUI] Successfully focused python process (lowercase)');
-          } catch (err2: any) {
-            writeMCPLog(`[GUI] Failed to focus python process: ${err2.message}`);
+          } catch (err2: unknown) {
+            writeMCPLog(`[GUI] Failed to focus python process: ${err2 instanceof Error ? err2.message : String(err2)}`);
             
             // Approach 3: Get the PID and focus by PID
             if (currentGUIApp && currentGUIApp.pid) {
               try {
                 await executeCommand(`osascript -e 'tell application "System Events" to set frontmost of first process whose unix id is ${currentGUIApp.pid} to true'`);
                 writeMCPLog(`[GUI] Successfully focused process by PID: ${currentGUIApp.pid}`);
-              } catch (err3: any) {
-                writeMCPLog(`[GUI] Failed to focus by PID: ${err3.message}`);
+              } catch (err3: unknown) {
+                writeMCPLog(`[GUI] Failed to focus by PID: ${err3 instanceof Error ? err3.message : String(err3)}`);
               }
             }
           }
@@ -1298,28 +1309,29 @@ async function focusApplicationWindow(appName?: string): Promise<void> {
           const { stdout, stderr } = await executeCommand(`xdotool search --class python windowactivate`);
           writeMCPLog(`[GUI] xdotool result - stdout: ${stdout}, stderr: ${stderr}`);
         }
-      } catch (err: any) {
-        writeMCPLog(`[GUI] xdotool not available or failed: ${err.message}`);
+      } catch (err: unknown) {
+        writeMCPLog(`[GUI] xdotool not available or failed: ${err instanceof Error ? err.message : String(err)}`);
         writeMCPLog('[GUI] Please install xdotool: sudo apt-get install xdotool');
       }
     }
     
     writeMCPLog('[GUI] ✓ Window focus command executed successfully');
-  } catch (error: any) {
-    writeMCPLog(`[GUI] ✗ Failed to focus window: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog(`[GUI] ✗ Failed to focus window: ${error instanceof Error ? error.message : String(error)}`);
     writeMCPLog('[GUI] Window may still be in background - screenshots might capture wrong content');
   }
 }
 
 // Helper: Execute GUI interaction with vision-based element location (using cliclick)
-async function executeGUIInteractionWithVision(action: string, elementDescription: string, value?: string, _timeout: number = 5000): Promise<any> {
+async function executeGUIInteractionWithVision(action: string, elementDescription: string, value?: string, _timeout: number = 5000): Promise<Record<string, unknown>> {
   if (!currentGUIApp) {
     throw new Error('No GUI application is running');
   }
-  
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const platform = require('os').platform();
   const screenshotPath = path.join(WORKSPACE_DIR, 'gui_screenshot.png');
-  
+
   try {
     // Step 0: Bring window to front before taking screenshot (skip for Docker)
     if (!currentGUIApp.isDocker) {
@@ -1474,20 +1486,20 @@ async function executeGUIInteractionWithVision(action: string, elementDescriptio
             confidence: coords.confidence,
           };
           
-        case 'type':
+        case 'type': {
           if (!value) {
             throw new Error('Value is required for type action');
           }
-          
+
           // Click first, then type
           await executeCliclick(`c:${coords.x},${coords.y}`);
           await new Promise(resolve => setTimeout(resolve, 200));
-          
+
           // Escape special characters for cliclick
           const escapedValue = value.replace(/"/g, '\\"');
           await executeCliclick(`t:"${escapedValue}"`);
           await new Promise(resolve => setTimeout(resolve, 500));
-          
+
           return {
             success: true,
             action: 'type',
@@ -1496,6 +1508,7 @@ async function executeGUIInteractionWithVision(action: string, elementDescriptio
             coordinates: { x: coords.x, y: coords.y },
             confidence: coords.confidence,
           };
+        }
           
         case 'hover':
           await executeCliclick(`m:${coords.x},${coords.y}`);
@@ -1600,11 +1613,11 @@ async function executeGUIInteractionWithVision(action: string, elementDescriptio
         suggestion: 'Use macOS (cliclick) or Linux (xdotool) for vision-based GUI automation',
       };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      message: `Vision-based interaction failed: ${error.message}`,
-      suggestion: platform === 'darwin' 
+      message: `Vision-based interaction failed: ${error instanceof Error ? error.message : String(error)}`,
+      suggestion: platform === 'darwin'
         ? 'Check if cliclick is installed (brew install cliclick) and the element description is accurate'
         : 'Check if xdotool is installed (sudo apt-get install xdotool) and the element description is accurate',
     };
@@ -1612,13 +1625,14 @@ async function executeGUIInteractionWithVision(action: string, elementDescriptio
 }
 
 // Helper: Execute GUI interaction (using cliclick/xdotool for direct coordinate-based actions)
-async function executeGUIInteraction(action: string, x?: number, y?: number, value?: string, timeout: number = 5000): Promise<any> {
+async function executeGUIInteraction(action: string, x?: number, y?: number, value?: string, timeout: number = 5000): Promise<Record<string, unknown>> {
   if (!currentGUIApp) {
     throw new Error('No GUI application is running');
   }
-  
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const platform = require('os').platform();
-  
+
   try {
     // If Docker mode, execute actions inside container using xdotool
     if (currentGUIApp.isDocker && currentGUIApp.containerId) {
@@ -1681,7 +1695,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
             return { success: false, message: 'Coordinates required for move action' };
           }
           
-        case 'type':
+        case 'type': {
           if (!value) {
             return { success: false, message: 'Value required for type action' };
           }
@@ -1692,6 +1706,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           );
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'type', value, mode: 'docker' };
+        }
           
         case 'key':
           if (!value) {
@@ -1704,7 +1719,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'key', key: value, mode: 'docker' };
           
-        case 'drag':
+        case 'drag': {
           if (!value) {
             return { success: false, message: 'Coordinates required for drag action (format: "x1,y1,x2,y2")' };
           }
@@ -1715,12 +1730,12 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           );
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'drag', from: { x: x1, y: y1 }, to: { x: x2, y: y2 }, mode: 'docker' };
-          
-        case 'screenshot':
+        }
+        case 'screenshot': {
           const screenshotPath = path.join(WORKSPACE_DIR, 'screenshot.png');
           await takeScreenshot(screenshotPath);
           return { success: true, action: 'screenshot', path: screenshotPath, mode: 'docker' };
-          
+        }
         case 'wait':
           await new Promise(resolve => setTimeout(resolve, timeout));
           return { success: true, action: 'wait', duration: timeout, mode: 'docker' };
@@ -1773,7 +1788,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
             return { success: false, message: 'Coordinates required for move action' };
           }
           
-        case 'type':
+        case 'type': {
           if (!value) {
             return { success: false, message: 'Value required for type action' };
           }
@@ -1781,7 +1796,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await executeCliclick(`t:"${escapedValue}"`);
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'type', value };
-          
+        }
         case 'key':
           if (!value) {
             return { success: false, message: 'Key required for key action' };
@@ -1790,7 +1805,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'key', key: value };
           
-        case 'drag':
+        case 'drag': {
           // value should be "x1,y1,x2,y2"
           if (!value) {
             return { success: false, message: 'Coordinates required for drag action (format: "x1,y1,x2,y2")' };
@@ -1799,12 +1814,12 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await executeCliclick(`dd:${x1},${y1} m:${x2},${y2} du:${x2},${y2}`);
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'drag', from: { x: x1, y: y1 }, to: { x: x2, y: y2 } };
-          
-        case 'screenshot':
+        }
+        case 'screenshot': {
           const screenshotPath = path.join(WORKSPACE_DIR, 'screenshot.png');
           await takeScreenshot(screenshotPath);
           return { success: true, action: 'screenshot', path: screenshotPath };
-          
+        }
         case 'wait':
           await new Promise(resolve => setTimeout(resolve, timeout));
           return { success: true, action: 'wait', duration: timeout };
@@ -1867,7 +1882,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'key', key: value };
           
-        case 'drag':
+        case 'drag': {
           if (!value) {
             return { success: false, message: 'Coordinates required for drag action (format: "x1,y1,x2,y2")' };
           }
@@ -1875,11 +1890,12 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
           await executeCommand(`xdotool mousemove ${x1} ${y1} mousedown 1 mousemove ${x2} ${y2} mouseup 1`);
           await new Promise(resolve => setTimeout(resolve, 500));
           return { success: true, action: 'drag', from: { x: x1, y: y1 }, to: { x: x2, y: y2 } };
-          
-        case 'screenshot':
+        }
+        case 'screenshot': {
           const screenshotPath = path.join(WORKSPACE_DIR, 'screenshot.png');
           await takeScreenshot(screenshotPath);
           return { success: true, action: 'screenshot', path: screenshotPath };
+        }
           
         case 'wait':
           await new Promise(resolve => setTimeout(resolve, timeout));
@@ -1896,10 +1912,10 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
         suggestion: 'Use macOS (cliclick) or Linux (xdotool) for GUI automation, or use vision-based interaction',
       };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      message: `GUI interaction failed: ${error.message}`,
+      message: `GUI interaction failed: ${error instanceof Error ? error.message : String(error)}`,
       suggestion: platform === 'darwin' 
         ? 'Check if cliclick is installed (brew install cliclick)'
         : 'Check if xdotool is installed (sudo apt-get install xdotool)',
@@ -1983,7 +1999,7 @@ async function executeGUIInteraction(action: string, x?: number, y?: number, val
 // }
 
 // Helper: Execute Claude Code command
-// @ts-ignore - Reserved for future use
+// @ts-expect-error - Reserved for future use
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function executeClaudeCode(prompt: string, workingDir: string = WORKSPACE_DIR): Promise<string> {
   try {
@@ -2005,9 +2021,9 @@ async function executeClaudeCode(prompt: string, workingDir: string = WORKSPACE_
     }
     
     return stdout || stderr || 'Command executed successfully';
-  } catch (error: any) {
-    writeMCPLog('[ClaudeCode] Error:', error.message);
-    throw new Error(`Claude Code execution failed: ${error.message}`);
+  } catch (error: unknown) {
+    writeMCPLog('[ClaudeCode] Error:', error instanceof Error ? error.message : String(error));
+    throw new Error(`Claude Code execution failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -2016,13 +2032,13 @@ async function readFile(filePath: string): Promise<string> {
   const fullPath = path.isAbsolute(filePath) ? filePath : path.join(WORKSPACE_DIR, filePath);
   try {
     return await fs.readFile(fullPath, 'utf-8');
-  } catch (error: any) {
-    throw new Error(`Failed to read file ${filePath}: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(`Failed to read file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 // Helper: Write file content
-// @ts-ignore - Reserved for future use
+// @ts-expect-error - Reserved for future use
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function writeFile(filePath: string, content: string): Promise<void> {
   const fullPath = path.isAbsolute(filePath) ? filePath : path.join(WORKSPACE_DIR, filePath);
@@ -2030,20 +2046,20 @@ async function writeFile(filePath: string, content: string): Promise<void> {
     // Ensure directory exists
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, content, 'utf-8');
-  } catch (error: any) {
-    throw new Error(`Failed to write file ${filePath}: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(`Failed to write file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 // Helper: Delete file
-// @ts-ignore - Reserved for future use
+// @ts-expect-error - Reserved for future use
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function deleteFile(filePath: string): Promise<void> {
   const fullPath = path.isAbsolute(filePath) ? filePath : path.join(WORKSPACE_DIR, filePath);
   try {
     await fs.unlink(fullPath);
-  } catch (error: any) {
-    throw new Error(`Failed to delete file ${filePath}: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(`Failed to delete file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -2066,8 +2082,9 @@ async function executeCommand(command: string, workingDir: string = WORKSPACE_DI
       maxBuffer: 10 * 1024 * 1024,
       timeout: 300000, // 5 minute timeout
     });
-  } catch (error: any) {
-    throw new Error(`Command execution failed: ${error.message}\nStdout: ${error.stdout}\nStderr: ${error.stderr}`);
+  } catch (error: unknown) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    throw new Error(`Command execution failed: ${err.message}\nStdout: ${err.stdout}\nStderr: ${err.stderr}`);
   }
 }
 
@@ -2347,7 +2364,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case 'create_requirement': {
-        const { description, files } = args as any;
+        const { description, files } = args as { description: string; files?: string[] };
         
         const reqId = generateRequirementId();
         const requirement: Requirement = {
@@ -2378,7 +2395,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'update_requirement': {
-        const { requirement_id, updated_description, reason, status } = args as any;
+        const { requirement_id, updated_description, reason, status } = args as { requirement_id: string; updated_description: string; reason: string; status?: 'pending' | 'in-progress' | 'completed' | 'failed' };
         
         const req = requirements.get(requirement_id);
         if (!req) {
@@ -2415,7 +2432,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'validate_requirement': {
-        const { requirement_id } = args as any;
+        const { requirement_id } = args as { requirement_id: string };
         
         const req = requirements.get(requirement_id);
         if (!req) {
@@ -2458,7 +2475,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'list_requirements': {
-        const { status_filter } = args as any;
+        const { status_filter } = args as { status_filter?: string };
         
         let filteredReqs = Array.from(requirements.values());
         
@@ -2483,7 +2500,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'read_code_file': {
-        const { file_path } = args as any;
+        const { file_path } = args as { file_path: string };
         
         const content = await readFile(file_path);
         
@@ -2503,7 +2520,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'start_gui_application': {
-        const { app_file_path, app_type, start_command, wait_for_ready, use_docker, enable_vnc, vnc_port } = args as any;
+        const { app_file_path, app_type, start_command, wait_for_ready, use_docker, enable_vnc, vnc_port } = args as { app_file_path: string; app_type: string; start_command?: string; wait_for_ready?: number; use_docker?: boolean; enable_vnc?: boolean; vnc_port?: number };
         
         // Stop existing app if running
         if (currentGUIApp) {
@@ -2543,7 +2560,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gui_interact': {
-        const { action, x, y, value, timeout } = args as any;
+        const { action, x, y, value, timeout } = args as { action: string; x?: number; y?: number; value?: string; timeout?: number };
         
         if (!currentGUIApp) {
           throw new Error('No GUI application is running. Use start_gui_application first.');
@@ -2562,7 +2579,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           return {
             content: [
               {
@@ -2570,7 +2587,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: JSON.stringify({
                   success: false,
                   tool: 'gui_interact',
-                  error: error.message,
+                  error: error instanceof Error ? error.message : String(error),
                 }, null, 2),
               },
             ],
@@ -2579,7 +2596,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gui_assert': {
-        const { question, expected_answer } = args as any;
+        const { question, expected_answer } = args as { question: string; expected_answer?: string };
         
         if (!currentGUIApp) {
           throw new Error('No GUI application is running. Use start_gui_application first.');
@@ -2628,7 +2645,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           return {
             content: [
               {
@@ -2636,7 +2653,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: JSON.stringify({
                   success: false,
                   tool: 'gui_assert',
-                  error: error.message,
+                  error: error instanceof Error ? error.message : String(error),
                 }, null, 2),
               },
             ],
@@ -2645,7 +2662,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'stop_gui_application': {
-        const { force } = args as any;
+        const { force } = args as { force?: boolean };
         
         if (!currentGUIApp) {
           return {
@@ -2678,7 +2695,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_docker_logs': {
-        const { save_to_file } = args as any;
+        const { save_to_file } = args as { save_to_file?: boolean };
         
         if (!currentGUIApp || !currentGUIApp.isDocker || !currentGUIApp.containerId) {
           return {
@@ -2719,7 +2736,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           return {
             content: [
               {
@@ -2727,7 +2744,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: JSON.stringify({
                   success: false,
                   message: 'Failed to get Docker logs',
-                  error: error.message,
+                  error: error instanceof Error ? error.message : String(error),
                 }, null, 2),
               },
             ],
@@ -2736,7 +2753,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gui_interact_vision': {
-        const { action, element_description, value, timeout } = args as any;
+        const { action, element_description, value, timeout } = args as { action: string; element_description: string; value?: string; timeout?: number };
         
         if (!currentGUIApp) {
           throw new Error('No GUI application is running. Use start_gui_application first.');
@@ -2755,7 +2772,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           return {
             content: [
               {
@@ -2763,7 +2780,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: JSON.stringify({
                   success: false,
                   tool: 'gui_interact_vision',
-                  error: error.message,
+                  error: error instanceof Error ? error.message : String(error),
                 }, null, 2),
               },
             ],
@@ -2772,7 +2789,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'gui_verify_vision': {
-        const { question } = args as any;
+        const { question } = args as { question: string };
         
         if (!currentGUIApp) {
           throw new Error('No GUI application is running. Use start_gui_application first.');
@@ -2814,7 +2831,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           return {
             content: [
               {
@@ -2822,7 +2839,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: JSON.stringify({
                   success: false,
                   tool: 'gui_verify_vision',
-                  error: error.message,
+                  error: error instanceof Error ? error.message : String(error),
                 }, null, 2),
               },
             ],
