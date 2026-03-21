@@ -495,6 +495,13 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       const result = await runCuaTask(task.instruction, task.maxSteps, task.validate);
       const dur = Date.now() - t0;
 
+      // Cleanup: close common apps between tasks to avoid focus conflicts
+      try {
+        await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+          'Get-Process CalculatorApp,Notepad,mspaint -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+        await sleep(1000);
+      } catch {}
+
       if (result.success) successes++;
       taskResults.push({ ...result, durationMs: dur, runIndex: i });
 
