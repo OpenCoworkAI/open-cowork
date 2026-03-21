@@ -37,32 +37,9 @@ jobs:
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/OpenCoworkAI/homebrew-tap.git" tap
           cd tap
 
-          cat > Casks/open-cowork.rb << 'CASK'
-          cask "open-cowork" do
-            version "VERSION_PLACEHOLDER"
-            sha256 "SHA256_PLACEHOLDER"
-
-            url "https://github.com/OpenCoworkAI/open-cowork/releases/download/v#{version}/Open.Cowork-#{version}-mac-arm64.dmg"
-            name "Open Cowork"
-            desc "Desktop AI agent app with sandboxed environment"
-            homepage "https://github.com/OpenCoworkAI/open-cowork"
-
-            depends_on macos: ">= :ventura"
-            depends_on arch: :arm64
-
-            app "Open Cowork.app"
-
-            zap trash: [
-              "~/Library/Application Support/open-cowork",
-              "~/Library/Preferences/com.opencowork.app.plist",
-            ]
-          end
-          CASK
-
-          # Remove leading whitespace from heredoc and substitute placeholders
-          sed -i '' 's/^          //' Casks/open-cowork.rb
-          sed -i '' "s/VERSION_PLACEHOLDER/${VERSION}/" Casks/open-cowork.rb
-          sed -i '' "s/SHA256_PLACEHOLDER/${SHA256}/" Casks/open-cowork.rb
+          # Only update version and sha256 lines, preserving caveats and other manual edits
+          sed -i '' "s/^  version \".*\"/  version \"${VERSION}\"/" Casks/open-cowork.rb
+          sed -i '' "s/^  sha256 \".*\"/  sha256 \"${SHA256}\"/" Casks/open-cowork.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
