@@ -21,41 +21,28 @@
 // ─── Individual Example Blocks ───────────────────────────────────────────────
 
 /**
- * Example 1 — Open an app via Windows Search (Win+S → type → click result)
+ * Example 1 — Open an app via launch_app tool
  *
  * Failure mode addressed: model tries to find app icon on desktop instead of
- * using search, wastes 3-5 steps scanning taskbar.
+ * using search, wastes 3-5 steps scanning taskbar. Or worse, uses Win key
+ * which can lock the screen on Windows 11.
  */
-const EXAMPLE_WIN_SEARCH = `
+const EXAMPLE_LAUNCH_APP = `
 ---
-## Example 1: Opening an app via Windows Search
+## Example 1: Opening an app via launch_app
 
 **Task**: Open Notepad.
 
 **Screenshot**: The Windows desktop is visible. The taskbar is at the bottom. There is no Notepad window open.
 
-**Thought**: The fastest way to open Notepad is via Windows Search. I will press Win+S to open the search bar, type "notepad", then click the top result.
+**Thought**: The safest and fastest way to open Notepad is using the launch_app tool. I must NOT use the Win key as it can lock the screen.
 
 **Action**:
 \`\`\`tool
-key_press(key="s", modifiers=["win"])
+launch_app(app="notepad")
 \`\`\`
 
-**Result**: The Windows Search overlay appeared — a search box is now visible in the center of the screen with placeholder text "Search".
-
-**Action**:
-\`\`\`tool
-type_text(text="notepad")
-\`\`\`
-
-**Result**: The search box shows "notepad" and a result list is visible. "Notepad — App" appears as the first result at approximately (640, 310).
-
-**Action**:
-\`\`\`tool
-click(x=640, y=310)
-\`\`\`
-
-**Result**: The search overlay closed and Notepad opened in a new window. Task complete.
+**Result**: Notepad opened in a new window. Task complete.
 `;
 
 /**
@@ -216,11 +203,11 @@ const EXAMPLE_SETTINGS_MENU = `
 
 **Screenshot**: The Windows desktop is visible with no apps open.
 
-**Thought**: I'll open Settings with the Win+I shortcut, then navigate to System → Display.
+**Thought**: I'll open Settings using launch_app, then navigate to System → Display. I must NOT use Win+I as the Win key can lock the screen.
 
 **Action**:
 \`\`\`tool
-key_press(key="i", modifiers=["win"])
+launch_app(app="ms-settings:")
 \`\`\`
 
 **Result**: The Windows Settings app opened. The left sidebar shows navigation categories.
@@ -276,4 +263,4 @@ export const CUA_FEW_SHOT_EXAMPLES = `## Examples
 
 The following examples demonstrate correct tool usage for common Windows tasks.
 Study these carefully — always follow the same pattern: screenshot → analyze → one action → verify.
-${EXAMPLE_WIN_SEARCH}${EXAMPLE_DIALOG_BUTTON}${EXAMPLE_TYPE_INTO_FIELD}${EXAMPLE_KEYBOARD_SHORTCUTS}${EXAMPLE_SCROLL_TO_FIND}${EXAMPLE_HANDLE_POPUP}${EXAMPLE_SETTINGS_MENU}`;
+${EXAMPLE_LAUNCH_APP}${EXAMPLE_DIALOG_BUTTON}${EXAMPLE_TYPE_INTO_FIELD}${EXAMPLE_KEYBOARD_SHORTCUTS}${EXAMPLE_SCROLL_TO_FIND}${EXAMPLE_HANDLE_POPUP}${EXAMPLE_SETTINGS_MENU}`;
