@@ -1,0 +1,72 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-cask:
+    name: Update Cask Formula
+    runs-on: macos-14
+    if: contains(github.ref_name, 'v')
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download macOS DMG and calculate SHA256
+        id: sha
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          curl -sL -o open-cowork.dmg \
+            "https://github.com/${REPO}/releases/download/${TAG}/Open.Cowork-${VERSION}-mac-arm64.dmg"
+          echo "sha256=$(shasum -a 256 open-cowork.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/OpenCoworkAI/homebrew-tap.git" tap
+          cd tap
+
+          cat > Casks/open-cowork.rb << 'CASK'
+          cask "open-cowork" do
+            version "VERSION_PLACEHOLDER"
+            sha256 "SHA256_PLACEHOLDER"
+
+            url "https://github.com/OpenCoworkAI/open-cowork/releases/download/v#{version}/Open.Cowork-#{version}-mac-arm64.dmg"
+            name "Open Cowork"
+            desc "Desktop AI agent app with sandboxed environment"
+            homepage "https://github.com/OpenCoworkAI/open-cowork"
+
+            depends_on macos: ">= :ventura"
+            depends_on arch: :arm64
+
+            app "Open Cowork.app"
+
+            zap trash: [
+              "~/Library/Application Support/open-cowork",
+              "~/Library/Preferences/com.opencowork.app.plist",
+            ]
+          end
+          CASK
+
+          # Remove leading whitespace from heredoc and substitute placeholders
+          sed -i '' 's/^          //' Casks/open-cowork.rb
+          sed -i '' "s/VERSION_PLACEHOLDER/${VERSION}/" Casks/open-cowork.rb
+          sed -i '' "s/SHA256_PLACEHOLDER/${SHA256}/" Casks/open-cowork.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/open-cowork.rb
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "bump open-cowork to ${VERSION}"
+          git push
