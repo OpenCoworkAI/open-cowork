@@ -3,9 +3,11 @@ CUA Helper — Python-based screenshot & input automation for Windows.
 Avoids PowerShell AMSI/AV blocking. Uses pyautogui + subprocess for reliability.
 
 Commands:
-  screenshot [--width W] [--height H]   Take and output base64 JPEG screenshot
+  screenshot [--width W] [--height H]   Take and output base64 PNG screenshot
   screen_info                            Print "width height" of primary monitor
   click <x> <y> [left|right]            Click at screen coordinates
+  double_click <x> <y>                  Double-click at screen coordinates
+  right_click <x> <y>                   Right-click at screen coordinates
   key_press <key> [mod1 mod2 ...]       Press key with modifiers (NO Win key!)
   type_text <text_file_path>            Type text via clipboard paste
   scroll <x> <y> <direction> [amount]   Scroll at position
@@ -25,9 +27,8 @@ def cmd_screenshot(args):
     import mss
     from PIL import Image, ImageDraw, ImageFont
 
-    width = 1024
-    height = 576
-    quality = 85
+    width = 1280
+    height = 800
     grid = True  # Add coordinate grid overlay
     i = 0
     while i < len(args):
@@ -35,8 +36,6 @@ def cmd_screenshot(args):
             width = int(args[i + 1]); i += 2
         elif args[i] == '--height' and i + 1 < len(args):
             height = int(args[i + 1]); i += 2
-        elif args[i] == '--quality' and i + 1 < len(args):
-            quality = int(args[i + 1]); i += 2
         elif args[i] == '--no-grid':
             grid = False; i += 1
         else:
@@ -49,31 +48,30 @@ def cmd_screenshot(args):
 
     pil_img = pil_img.resize((width, height), Image.LANCZOS)
 
-    # Draw coordinate grid overlay
+    # Draw coordinate grid overlay (8x6 grid, cyan with low opacity)
     if grid:
         draw = ImageDraw.Draw(pil_img)
-        # Grid lines every ~128px for 1024 width, ~96px for 576 height
-        grid_x = width // 8   # 128px
-        grid_y = height // 6  # 96px
+        grid_x = width // 8   # 160px for 1280
+        grid_y = height // 6  # ~133px for 800
 
         # Draw vertical lines with x labels
         for ix in range(1, 8):
             x = ix * grid_x
-            draw.line([(x, 0), (x, height)], fill=(255, 0, 0, 80), width=1)
-            draw.text((x + 2, 2), str(x), fill=(255, 50, 50))
+            draw.line([(x, 0), (x, height)], fill=(0, 200, 200, 60), width=1)
+            draw.text((x + 2, 2), str(x), fill=(0, 180, 180))
 
         # Draw horizontal lines with y labels
         for iy in range(1, 6):
             y = iy * grid_y
-            draw.line([(0, y), (width, y)], fill=(255, 0, 0, 80), width=1)
-            draw.text((2, y + 2), str(y), fill=(255, 50, 50))
+            draw.line([(0, y), (width, y)], fill=(0, 200, 200, 60), width=1)
+            draw.text((2, y + 2), str(y), fill=(0, 180, 180))
 
         # Corner labels
-        draw.text((2, 2), "0,0", fill=(255, 50, 50))
-        draw.text((width - 60, height - 15), f"{width},{height}", fill=(255, 50, 50))
+        draw.text((2, 2), "0,0", fill=(0, 180, 180))
+        draw.text((width - 70, height - 15), f"{width},{height}", fill=(0, 180, 180))
 
     buf = io.BytesIO()
-    pil_img.save(buf, format='JPEG', quality=quality)
+    pil_img.save(buf, format='PNG')
     b64 = base64.b64encode(buf.getvalue()).decode('ascii')
     sys.stdout.write(b64)
     sys.stdout.flush()
@@ -96,6 +94,28 @@ def cmd_click(args):
     button = args[2] if len(args) > 2 else 'left'
     pyautogui.moveTo(x, y, duration=0.05)
     pyautogui.click(x, y, button=button)
+    print("OK")
+
+
+def cmd_double_click(args):
+    import pyautogui
+    if len(args) < 2:
+        print("Usage: double_click <x> <y>", file=sys.stderr)
+        sys.exit(1)
+    x, y = int(args[0]), int(args[1])
+    pyautogui.moveTo(x, y, duration=0.05)
+    pyautogui.doubleClick(x, y)
+    print("OK")
+
+
+def cmd_right_click(args):
+    import pyautogui
+    if len(args) < 2:
+        print("Usage: right_click <x> <y>", file=sys.stderr)
+        sys.exit(1)
+    x, y = int(args[0]), int(args[1])
+    pyautogui.moveTo(x, y, duration=0.05)
+    pyautogui.rightClick(x, y)
     print("OK")
 
 
@@ -306,6 +326,8 @@ def main():
         'screenshot': cmd_screenshot,
         'screen_info': cmd_screen_info,
         'click': cmd_click,
+        'double_click': cmd_double_click,
+        'right_click': cmd_right_click,
         'key_press': cmd_key_press,
         'type_text': cmd_type_text,
         'scroll': cmd_scroll,

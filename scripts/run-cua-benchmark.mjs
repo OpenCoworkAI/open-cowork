@@ -25,8 +25,8 @@ const HELPER_PY = path.join(__dirname, 'cua-helpers', 'cua_helper.py');
 
 const OLLAMA_BASE = process.env.OLLAMA_BASE || 'http://localhost:11434';
 const MODEL = process.env.CUA_MODEL || 'qwen3.5:9b';
-const SCREENSHOT_W = 1024;
-const SCREENSHOT_H = 576;
+const SCREENSHOT_W = 1280;
+const SCREENSHOT_H = 800;
 const ACTION_SETTLE_MS = 500;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -119,6 +119,32 @@ async function executeAction(action) {
       return { text: await performClick(x, y, action.button || 'left') };
     }
 
+    case 'double_click': {
+      const x = Number(action.x);
+      const y = Number(action.y);
+      if (isNaN(x) || isNaN(y)) return { text: `Error: invalid coords x=${action.x}, y=${action.y}` };
+      if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
+        return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
+      }
+      const { x: sx, y: sy } = mapCoords(x, y);
+      await runPy('double_click', [String(sx), String(sy)]);
+      await sleep(ACTION_SETTLE_MS);
+      return { text: `Double-clicked model(${x},${y}) -> screen(${sx},${sy})` };
+    }
+
+    case 'right_click': {
+      const x = Number(action.x);
+      const y = Number(action.y);
+      if (isNaN(x) || isNaN(y)) return { text: `Error: invalid coords x=${action.x}, y=${action.y}` };
+      if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
+        return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
+      }
+      const { x: sx, y: sy } = mapCoords(x, y);
+      await runPy('right_click', [String(sx), String(sy)]);
+      await sleep(ACTION_SETTLE_MS);
+      return { text: `Right-clicked model(${x},${y}) -> screen(${sx},${sy})` };
+    }
+
     case 'type':
     case 'type_text':
       return { text: await performType(action.text || '') };
@@ -153,7 +179,7 @@ async function executeAction(action) {
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, type, key_press, scroll, launch_app, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, done` };
   }
 }
 
@@ -161,24 +187,28 @@ async function executeAction(action) {
 
 const SYSTEM_PROMPT = `You are a computer use agent on Windows 11. You can see the screen and perform actions.
 
-IMPORTANT: You MUST respond with a JSON object on a single line. No other text before or after the JSON.
+You MUST respond with a JSON object on a single line. No other text before or after the JSON.
+Format: {"thought": "what I observe and my plan", "action": "click", "x": 500, "y": 300}
+The "thought" field is REQUIRED — describe what you see and why you chose this action.
 
 Available actions:
-1. {"action": "screenshot"} - Take a screenshot to see the current screen
-2. {"action": "click", "x": 300, "y": 200} - Click at pixel coordinates in the screenshot
-3. {"action": "type", "text": "hello"} - Type text via keyboard (PREFERRED over clicking buttons!)
-4. {"action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key (modifiers: ctrl, alt, shift — NO win key)
-5. {"action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3} - Scroll
-6. {"action": "launch_app", "app": "calc"} - Open an application (calc, notepad, chrome, settings, etc.)
-7. {"action": "done", "summary": "Task completed. Result: ..."} - Report task completion
+1. {"thought": "...", "action": "screenshot"} - Take a screenshot to see the current screen
+2. {"thought": "...", "action": "click", "x": 300, "y": 200} - Click at pixel coordinates in the screenshot
+3. {"thought": "...", "action": "double_click", "x": 300, "y": 200} - Double-click at pixel coordinates
+4. {"thought": "...", "action": "right_click", "x": 300, "y": 200} - Right-click for context menu
+5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard (PREFERRED over clicking buttons!)
+6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key (modifiers: ctrl, alt, shift)
+7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3} - Scroll
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (calc, notepad, chrome, settings, etc.)
+9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report task completion
 
 COORDINATE SYSTEM:
-- The screenshot has a RED GRID overlay with coordinate labels to help you aim
+- The screenshot has a CYAN GRID overlay with coordinate labels to help you aim
 - x ranges from 0 (left) to ${SCREENSHOT_W} (right)
 - y ranges from 0 (top) to ${SCREENSHOT_H} (bottom)
-- Use the grid lines and labels to estimate coordinates accurately
 - NEVER output x > ${SCREENSHOT_W} or y > ${SCREENSHOT_H}
 - Click the CENTER of the target element
+- Use the grid lines and labels to estimate coordinates accurately
 
 KEY RULE — KEYBOARD FIRST:
 - ALWAYS prefer typing over clicking when possible!
@@ -188,12 +218,11 @@ KEY RULE — KEYBOARD FIRST:
 - Clicking is error-prone — use it only when keyboard input won't work
 
 Other Rules:
-- Start with {"action": "screenshot"} to see the current screen
-- Use launch_app to open applications
+- Start with {"thought": "...", "action": "screenshot"} to see the current screen
+- Use launch_app to open applications (safer than keyboard shortcuts)
 - After each action, check the screenshot to verify it worked
 - If an action didn't work (screen unchanged), try a different approach
-- When done, use "done" with a summary including any results/answers
-- NEVER use the Win key — it will lock the screen`;
+- When done, use "done" with a summary including any results/answers`;
 
 // ─── Ollama Chat API (no tools, raw chat) ────────────────────────────────────
 
@@ -272,20 +301,44 @@ class Trajectory {
     );
     this.jsonlPath = path.join(this.dir, 'trajectory.jsonl');
     this.stepCount = 0;
+    this.screenshotIndex = 0;
+    this.actionTypeCounts = {};
+    this.stepsWithNoScreenChange = 0;
     fss.mkdirSync(this.dir, { recursive: true });
   }
   async saveScreenshot(b64, label) {
-    this.stepCount++;
-    const fn = `step_${String(this.stepCount).padStart(3, '0')}_${label}.jpg`;
+    this.screenshotIndex++;
+    const ext = 'png';
+    const fn = `step_${String(this.screenshotIndex).padStart(3, '0')}_${label}.${ext}`;
     await fs.writeFile(path.join(this.dir, fn), Buffer.from(b64, 'base64'));
+    return fn;
   }
   async recordStep(data) {
+    this.stepCount++;
+    // Track action type counts
+    const actionType = data.action?.action || data.action?.type || 'unknown';
+    this.actionTypeCounts[actionType] = (this.actionTypeCounts[actionType] || 0) + 1;
+    // Track screen changes
+    if (data.screen_changed === false) {
+      this.stepsWithNoScreenChange++;
+    }
     await fs.appendFile(this.jsonlPath, JSON.stringify({ step: this.stepCount, ...data }) + '\n');
   }
   async writeSummary(result) {
-    await fs.writeFile(path.join(this.dir, 'summary.json'), JSON.stringify({
-      ...result, timestamp: new Date().toISOString(),
-    }, null, 2));
+    const summary = {
+      ...result,
+      steps_with_no_screen_change: this.stepsWithNoScreenChange,
+      action_type_counts: this.actionTypeCounts,
+      timestamp: new Date().toISOString(),
+    };
+    if (!result.success) {
+      summary.failure_analysis = {
+        steps_with_no_screen_change: this.stepsWithNoScreenChange,
+        action_type_counts: this.actionTypeCounts,
+        total_screenshots: this.screenshotIndex,
+      };
+    }
+    await fs.writeFile(path.join(this.dir, 'summary.json'), JSON.stringify(summary, null, 2));
   }
 }
 
@@ -321,6 +374,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       stepCount++;
       console.error(`[CUA] Turn ${stepCount}/${maxSteps}`);
 
+      const stepStartTime = Date.now();
       const result = await chatRaw(messages);
       const rawResponse = result.message?.content || '';
       console.error(`[CUA] Model: ${rawResponse.slice(0, 200)}`);
@@ -330,17 +384,28 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       if (!action) {
         console.error('[CUA] Failed to parse action JSON');
         messages.push({ role: 'assistant', content: rawResponse });
-        messages.push({ role: 'user', content: 'Please respond with a valid JSON action. Example: {"action": "screenshot"}' });
+        messages.push({ role: 'user', content: 'Please respond with a valid JSON action. Example: {"thought": "I need to see the screen", "action": "screenshot"}' });
         continue;
       }
 
       messages.push({ role: 'assistant', content: rawResponse });
+
+      // Extract thought from parsed action
+      const modelThought = action.thought || '';
 
       // Check for done
       const actionType = (action.action || action.type || '').toLowerCase();
       if (actionType === 'done' || actionType === 'finish' || actionType === 'complete') {
         lastSummary = action.summary || action.result || rawResponse;
         console.error(`[CUA] DONE: ${lastSummary.slice(0, 150)}`);
+        await trajectory.recordStep({
+          timestamp: new Date().toISOString(),
+          action,
+          result: lastSummary,
+          model_raw_output: rawResponse,
+          model_thought: modelThought,
+          duration_ms: Date.now() - stepStartTime,
+        }).catch(() => {});
         break;
       }
 
@@ -349,7 +414,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         console.error('[CUA] Loop detected! Injecting nudge.');
         messages.push({
           role: 'user',
-          content: 'You are repeating the same action. Try a COMPLETELY DIFFERENT approach. If stuck, use {"action": "done", "summary": "explanation of what went wrong"}',
+          content: 'You are repeating the same action. Try a COMPLETELY DIFFERENT approach. If stuck, use {"thought": "explanation", "action": "done", "summary": "explanation of what went wrong"}',
         });
         continue;
       }
@@ -358,31 +423,85 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       if (actionType === 'screenshot') {
         const b64 = await captureScreenshot();
         await trajectory.saveScreenshot(b64, 'observe').catch(() => {});
+        await trajectory.recordStep({
+          timestamp: new Date().toISOString(),
+          action,
+          result: 'Screenshot taken',
+          model_raw_output: rawResponse,
+          model_thought: modelThought,
+          duration_ms: Date.now() - stepStartTime,
+        }).catch(() => {});
         messages.push({
           role: 'user',
           content: 'Here is the current screenshot. Describe what you see briefly, then respond with your next action as JSON.',
           images: [b64],
         });
       } else {
+        // Capture "before" screenshot for non-screenshot actions
+        let beforeScreenshotFile = null;
+        let beforeB64 = null;
+        try {
+          beforeB64 = await captureScreenshot();
+          beforeScreenshotFile = await trajectory.saveScreenshot(beforeB64, 'before');
+        } catch {}
+
         const execResult = await executeAction(action);
-        await trajectory.recordStep({
-          timestamp: new Date().toISOString(),
-          action,
-          result: execResult.text,
-        }).catch(() => {});
 
         if (execResult.done) {
           lastSummary = execResult.text;
+          await trajectory.recordStep({
+            timestamp: new Date().toISOString(),
+            action,
+            result: execResult.text,
+            model_raw_output: rawResponse,
+            model_thought: modelThought,
+            screenshot_before: beforeScreenshotFile,
+            duration_ms: Date.now() - stepStartTime,
+          }).catch(() => {});
           break;
         }
 
         // Auto-screenshot after every action so model can see the result
-        const b64 = await captureScreenshot();
-        await trajectory.saveScreenshot(b64, 'after-action').catch(() => {});
+        const afterB64 = await captureScreenshot();
+        let afterScreenshotFile = null;
+        try {
+          afterScreenshotFile = await trajectory.saveScreenshot(afterB64, 'after');
+        } catch {}
+
+        // Detect screen change by comparing screenshot byte lengths
+        const screenChanged = beforeB64 ? (beforeB64.length !== afterB64.length) : null;
+
+        // Extract model coords and screen coords for click-like actions
+        let modelCoords = null;
+        let screenCoords = null;
+        if (['click', 'double_click', 'right_click'].includes(actionType)) {
+          const mx = Number(action.x);
+          const my = Number(action.y);
+          if (!isNaN(mx) && !isNaN(my)) {
+            modelCoords = [mx, my];
+            const mapped = mapCoords(mx, my);
+            screenCoords = [mapped.x, mapped.y];
+          }
+        }
+
+        await trajectory.recordStep({
+          timestamp: new Date().toISOString(),
+          action,
+          result: execResult.text,
+          model_raw_output: rawResponse,
+          model_thought: modelThought,
+          screenshot_before: beforeScreenshotFile,
+          screenshot_after: afterScreenshotFile,
+          screen_changed: screenChanged,
+          duration_ms: Date.now() - stepStartTime,
+          model_coords: modelCoords,
+          screen_coords: screenCoords,
+        }).catch(() => {});
+
         messages.push({
           role: 'user',
           content: `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state after the action. Analyze what changed and respond with your next action as JSON.`,
-          images: [b64],
+          images: [afterB64],
         });
       }
     }
