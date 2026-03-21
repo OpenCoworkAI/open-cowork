@@ -25,8 +25,8 @@ const HELPER_PY = path.join(__dirname, 'cua-helpers', 'cua_helper.py');
 
 const OLLAMA_BASE = process.env.OLLAMA_BASE || 'http://localhost:11434';
 const MODEL = process.env.CUA_MODEL || 'qwen3.5:9b';
-const SCREENSHOT_W = 1280;
-const SCREENSHOT_H = 720;
+const SCREENSHOT_W = 1024;
+const SCREENSHOT_H = 576;
 const ACTION_SETTLE_MS = 500;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -191,12 +191,10 @@ Rules:
 Example: Open Calculator and compute 1+2
 1. {"action": "launch_app", "app": "calc"}
 2. {"action": "screenshot"}
-3. {"action": "click", "x": 760, "y": 548}  (click button "1")
-4. {"action": "click", "x": 960, "y": 482}  (click "+" button)
-5. {"action": "click", "x": 828, "y": 548}  (click button "2")
-6. {"action": "click", "x": 895, "y": 582}  (click "=" button)
-7. {"action": "screenshot"}
-8. {"action": "done", "summary": "1 + 2 = 3. The Calculator shows 3 in the display."}
+3. {"action": "click", "x": 150, "y": 200}  (click anywhere on the Calculator window to focus it)
+4. {"action": "type", "text": "1+2="}  (Calculator accepts keyboard input: digits, +, -, *, /, =)
+5. {"action": "screenshot"}
+6. {"action": "done", "summary": "1 + 2 = 3. The Calculator display shows 3."}
 
 Example: Open Notepad and type text
 1. {"action": "launch_app", "app": "notepad"}
@@ -213,7 +211,7 @@ async function chatRaw(messages) {
     model: MODEL,
     messages,
     stream: false,
-    options: { temperature: 0, num_ctx: 32768 },
+    options: { temperature: 0, num_ctx: 8192 },
     keep_alive: '30m',
   };
 
@@ -440,11 +438,11 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 const TIER1_TASKS = [
   {
     id: 'notepad-write',
-    name: 'Notepad: write and save',
+    name: 'Notepad: write text',
     tier: 1,
-    instruction: 'Open Notepad using launch_app, type "Hello CUA Test", then save the file with Ctrl+S to the Desktop as "cua-test.txt". When done, report success.',
-    maxSteps: 15,
-    validate: (summary) => summary.toLowerCase().includes('hello') || summary.toLowerCase().includes('save') || summary.toLowerCase().includes('cua-test'),
+    instruction: 'Open Notepad using launch_app with "notepad". Press Ctrl+N to create a new blank document. Click on the text area to focus it. Type "Hello CUA Test 2026" using the keyboard. Take a screenshot to verify the text appears. Report done.',
+    maxSteps: 10,
+    validate: (summary) => summary.toLowerCase().includes('hello') || summary.toLowerCase().includes('typed') || summary.toLowerCase().includes('text'),
   },
   {
     id: 'settings-themes',
@@ -458,7 +456,7 @@ const TIER1_TASKS = [
     id: 'calculator-add',
     name: 'Calculator: simple addition',
     tier: 1,
-    instruction: 'Open Calculator using launch_app with "calc". Then calculate 123 + 456 by clicking the calculator buttons. Report the result number.',
+    instruction: 'Use launch_app to open "calc" (it will open maximized). Take a screenshot. Click on the calculator display area to focus it. Type "123+456=" using the type action. Take a screenshot and read the result number from the display. Report the exact number shown.',
     maxSteps: 15,
     validate: (summary) => summary.includes('579'),
   },

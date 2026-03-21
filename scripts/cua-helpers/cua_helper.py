@@ -206,14 +206,42 @@ def cmd_launch_app(args):
 
     try:
         if resolved.startswith('ms-'):
-            # URI schemes use Start-Process
             subprocess.run(
                 ['powershell.exe', '-NoProfile', '-Command', f'Start-Process "{resolved}"'],
                 capture_output=True, timeout=10
             )
         else:
-            subprocess.Popen(resolved, shell=True)
-        time.sleep(1)  # Wait for app to appear
+            subprocess.run(
+                ['powershell.exe', '-NoProfile', '-Command',
+                 f'Start-Process "{resolved}"'],
+                capture_output=True, timeout=10
+            )
+        time.sleep(2)  # Wait for app to appear
+
+        # Maximize window via Win32 API (reliable for UWP and Win32 apps)
+        import ctypes
+        user32 = ctypes.windll.user32
+        SW_MAXIMIZE = 3
+        # Try common window titles
+        titles_to_try = [resolved, resolved.capitalize(), app, app.capitalize()]
+        # Special known titles
+        title_map = {
+            'calc': ['Calculator', '计算器'],
+            'notepad': ['Notepad', '记事本', 'Untitled - Notepad'],
+            'mspaint': ['Paint', '画图'],
+            'explorer': ['File Explorer', '文件资源管理器'],
+        }
+        if resolved.lower() in title_map:
+            titles_to_try = title_map[resolved.lower()] + titles_to_try
+
+        for title in titles_to_try:
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.ShowWindow(hwnd, SW_MAXIMIZE)
+                user32.SetForegroundWindow(hwnd)
+                break
+        time.sleep(0.5)
+
         print("OK")
     except Exception as e:
         print(f"Error launching {app}: {e}", file=sys.stderr)
