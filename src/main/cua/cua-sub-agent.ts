@@ -37,7 +37,9 @@ const CUA_SYSTEM_PROMPT = `/no_think
 You are a computer use agent. Complete the task by taking screenshots and performing actions.
 Always screenshot first, then act. Verify each action with another screenshot.
 Be concise and efficient. If stuck after 3 attempts, explain why and stop.
-Never click Send, Submit, Delete, or Purchase unless explicitly required.`;
+Never click Send, Submit, Delete, or Purchase unless explicitly required.
+IMPORTANT: To open applications, use the launch_app tool instead of Win key shortcuts.
+The Win key can lock the screen on Windows 11 and must NOT be used.`;
 
 // ─── Ollama Health Check ────────────────────────────────────────────────────
 

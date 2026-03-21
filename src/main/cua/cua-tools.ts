@@ -261,6 +261,16 @@ if ($saved) { [System.Windows.Forms.Clipboard]::SetText($saved) }
 }
 
 async function performKeyPress(key: string, modifiers: string[] = []): Promise<string> {
+  // SAFETY: Block Win key modifier on Windows 11 — it can trigger Windows Hello
+  // lock screen via keybd_event, making the machine inaccessible to the CUA agent.
+  // Use Start-Process or URI schemes to open apps instead.
+  if (PLATFORM === 'win32') {
+    const hasWinMod = modifiers.some(m => ['win', 'cmd', 'meta'].includes(m.toLowerCase()));
+    if (hasWinMod) {
+      return 'Error: Win key is blocked on Windows 11 (can lock screen). Use the launch_app approach instead.';
+    }
+  }
+
   if (PLATFORM === 'win32') {
     const vkMap: Record<string, string> = {
       'enter': '0x0D', 'return': '0x0D', 'tab': '0x09', 'escape': '0x1B', 'esc': '0x1B',
@@ -559,5 +569,40 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
     },
   };
 
-  return [screenshotTool, clickTool, typeTool, keyPressTool, scrollTool];
+  const launchAppTool: ToolDefinition = {
+    name: 'launch_app',
+    label: 'Launch App',
+    description: 'Open a Windows application by name. Much safer than using Win key shortcuts (which can lock the screen on Windows 11). Common names: calc, notepad, mspaint, explorer, chrome, msedge, code. For Settings, use URI like "ms-settings:" or "ms-settings:themes".',
+    parameters: Type.Object({
+      app: Type.String({ description: 'App name or path (e.g., "calc", "notepad", "ms-settings:themes")' }),
+    }),
+    async execute(_id, params) {
+      const { app } = params as { app: string };
+      const appMap: Record<string, string> = {
+        calculator: 'calc', calc: 'calc',
+        notepad: 'notepad', paint: 'mspaint',
+        explorer: 'explorer', chrome: 'chrome',
+        edge: 'msedge', settings: 'ms-settings:',
+      };
+      const resolved = appMap[app.toLowerCase()] || app;
+
+      try {
+        if (PLATFORM === 'win32') {
+          if (resolved.startsWith('ms-')) {
+            await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Start-Process "${resolved}"`]);
+          } else {
+            await execFileAsync('cmd.exe', ['/c', 'start', '', resolved]);
+          }
+        } else {
+          await execFileAsync('open', ['-a', resolved]);
+        }
+        await new Promise(r => setTimeout(r, 1500)); // Wait for app to appear
+        return { content: [{ type: 'text' as const, text: `Launched: ${app} (resolved: ${resolved})` }], details: undefined };
+      } catch (error) {
+        return { content: [{ type: 'text' as const, text: `Error launching ${app}: ${error instanceof Error ? error.message : String(error)}` }], details: undefined };
+      }
+    },
+  };
+
+  return [screenshotTool, clickTool, typeTool, keyPressTool, scrollTool, launchAppTool];
 }
