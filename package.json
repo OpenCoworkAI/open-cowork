@@ -45,8 +45,8 @@
     "glob": "^10.3.10",
     "highlight.js": "^11.11.1",
     "i18next": "^25.8.0",
-    "i18next-browser-languagedetector": "^8.2.0",
-    "katex": "^0.16.27",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "katex": "^0.16.40",
     "lucide-react": "^0.468.0",
     "ngrok": "^5.0.0-beta.2",
     "openai": "^6.32.0",
@@ -60,7 +60,7 @@
     "remark-math": "^6.0.0",
     "uuid": "^11.0.3",
     "ws": "^8.19.0",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
