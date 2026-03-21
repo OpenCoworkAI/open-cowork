@@ -68,6 +68,23 @@ async function captureScreenshot() {
   return await runPy('screenshot', ['--width', String(SCREENSHOT_W), '--height', String(SCREENSHOT_H)]);
 }
 
+async function captureStableScreenshot(maxWaitMs = 3000) {
+  let prev = await captureScreenshot();
+  const pollInterval = 500;
+  const maxPolls = Math.floor(maxWaitMs / pollInterval);
+
+  for (let i = 0; i < maxPolls; i++) {
+    await sleep(pollInterval);
+    const curr = await captureScreenshot();
+    // Compare base64 lengths as a quick stability check
+    if (prev.length === curr.length) {
+      return curr; // Screen is stable
+    }
+    prev = curr;
+  }
+  return prev; // Return last screenshot even if not stable
+}
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 async function performClick(mx, my, button = 'left') {
@@ -342,6 +359,30 @@ class Trajectory {
   }
 }
 
+// ─── Screenshot Context Pruning ─────────────────────────────────────────────
+
+const MAX_SCREENSHOTS_IN_CONTEXT = 2;
+
+function pruneOldScreenshots(messages) {
+  // Find all user messages with images
+  const imageMessageIndices = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'user' && messages[i].images) {
+      imageMessageIndices.push(i);
+    }
+  }
+
+  // Keep only the last MAX_SCREENSHOTS_IN_CONTEXT images
+  if (imageMessageIndices.length > MAX_SCREENSHOTS_IN_CONTEXT) {
+    const toRemove = imageMessageIndices.slice(0, -MAX_SCREENSHOTS_IN_CONTEXT);
+    for (const idx of toRemove) {
+      const msg = messages[idx];
+      delete msg.images;
+      msg.content = '[Screenshot removed to save context] ' + msg.content;
+    }
+  }
+}
+
 // ─── CUA Agent Loop ──────────────────────────────────────────────────────────
 
 async function runCuaTask(instruction, maxSteps = 15, validate = null) {
@@ -361,6 +402,8 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
   const trajectory = new Trajectory();
   const loopDetector = new LoopDetector();
+  const reflectionBuffer = []; // Max 3 reflections
+  const MAX_REFLECTIONS = 3;
   let stepCount = 0;
   let lastSummary = '';
 
@@ -373,6 +416,32 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
     while (stepCount < maxSteps) {
       stepCount++;
       console.error(`[CUA] Turn ${stepCount}/${maxSteps}`);
+
+      // Step budget awareness (TASK 1c)
+      const progressPct = stepCount / maxSteps;
+      if (progressPct >= 0.75 && stepCount === Math.ceil(maxSteps * 0.75)) {
+        messages.push({
+          role: 'user',
+          content: `Step ${stepCount}/${maxSteps} -- you are at 75% of your step budget. Prioritize completing the task efficiently. If the task seems impossible, use "done" with a summary of what you accomplished.`
+        });
+      } else if (progressPct >= 0.5 && stepCount === Math.ceil(maxSteps * 0.5)) {
+        messages.push({
+          role: 'user',
+          content: `Progress check: Step ${stepCount}/${maxSteps}. Briefly assess: what have you accomplished so far, and what remains?`
+        });
+      }
+
+      // Inject reflection buffer if we have past failures (TASK 2c)
+      if (reflectionBuffer.length > 0) {
+        const reflectionText = reflectionBuffer.map((r, i) => `${i + 1}. ${r}`).join('\n');
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'user') {
+          lastMsg.content = `[PAST FAILURES -- learn from these]\n${reflectionText}\n[END PAST FAILURES]\n\n${lastMsg.content}`;
+        }
+      }
+
+      // Prune old screenshots to save context (TASK 3b)
+      pruneOldScreenshots(messages);
 
       const stepStartTime = Date.now();
       const result = await chatRaw(messages);
@@ -412,9 +481,14 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       // Loop detection
       if (actionType !== 'screenshot' && loopDetector.record(action)) {
         console.error('[CUA] Loop detected! Injecting nudge.');
+        // Reflection on loop (TASK 2b)
+        const reflection = `Steps ${stepCount-2}-${stepCount}: Repeated "${actionType}" 3+ times with no progress. Need a completely different approach.`;
+        reflectionBuffer.push(reflection);
+        if (reflectionBuffer.length > MAX_REFLECTIONS) reflectionBuffer.shift();
+        // Recovery action menu (TASK 1b)
         messages.push({
           role: 'user',
-          content: 'You are repeating the same action. Try a COMPLETELY DIFFERENT approach. If stuck, use {"thought": "explanation", "action": "done", "summary": "explanation of what went wrong"}',
+          content: `You are repeating the same action with no effect. Try one of these recovery strategies:\n\n1. {"thought": "Let me take a fresh screenshot to re-examine", "action": "screenshot"}\n2. {"thought": "Let me press Escape to dismiss any dialog", "action": "key_press", "key": "escape"}\n3. {"thought": "Let me try a keyboard shortcut instead", "action": "key_press", "key": "...", "modifiers": ["ctrl"]}\n4. {"thought": "I am stuck and cannot complete the task", "action": "done", "summary": "Failed: [explain what went wrong]"}\n\nDo NOT repeat the same action again.`,
         });
         continue;
       }
@@ -462,7 +536,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         }
 
         // Auto-screenshot after every action so model can see the result
-        const afterB64 = await captureScreenshot();
+        const afterB64 = await captureStableScreenshot();
         let afterScreenshotFile = null;
         try {
           afterScreenshotFile = await trajectory.saveScreenshot(afterB64, 'after');
@@ -470,6 +544,13 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
         // Detect screen change by comparing screenshot byte lengths
         const screenChanged = beforeB64 ? (beforeB64.length !== afterB64.length) : null;
+
+        // Reflection on screen-not-changed (TASK 2b)
+        if (screenChanged === false && actionType !== 'screenshot') {
+          const reflection = `Step ${stepCount}: Tried "${actionType}" at (${action.x || '?'},${action.y || '?'}) but screen did not change. The target may not be at those coordinates, or the window may not be focused.`;
+          reflectionBuffer.push(reflection);
+          if (reflectionBuffer.length > MAX_REFLECTIONS) reflectionBuffer.shift();
+        }
 
         // Extract model coords and screen coords for click-like actions
         let modelCoords = null;
@@ -498,9 +579,17 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
           screen_coords: screenCoords,
         }).catch(() => {});
 
+        // Post-action verification template (TASK 1a)
+        let userContent;
+        if (screenChanged === false) {
+          userContent = `Action result: ${execResult.text}\n\nThe screen appears UNCHANGED after your action. Your action may have missed its target.\n\nVerification checklist:\n1. Was the target element actually at those coordinates?\n2. Was the correct window focused?\n3. Should you try a different approach?\n\nHere is the current screenshot. Look carefully and try a different action.`;
+        } else {
+          userContent = `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state. Analyze what changed and respond with your next action as JSON.`;
+        }
+
         messages.push({
           role: 'user',
-          content: `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state after the action. Analyze what changed and respond with your next action as JSON.`,
+          content: userContent,
           images: [afterB64],
         });
       }
