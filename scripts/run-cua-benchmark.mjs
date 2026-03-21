@@ -165,22 +165,28 @@ IMPORTANT: You MUST respond with a JSON object on a single line. No other text b
 
 Available actions:
 1. {"action": "screenshot"} - Take a screenshot to see the current screen
-2. {"action": "click", "x": 640, "y": 360} - Click at coordinates in the 1280x720 screenshot
+2. {"action": "click", "x": 640, "y": 360} - Click at pixel coordinates in the screenshot
 3. {"action": "type", "text": "hello"} - Type text (field must be focused first by clicking)
 4. {"action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key (modifiers: ctrl, alt, shift — NO win key)
 5. {"action": "scroll", "x": 640, "y": 360, "direction": "down", "amount": 3} - Scroll
 6. {"action": "launch_app", "app": "calc"} - Open an application (calc, notepad, chrome, settings, etc.)
 7. {"action": "done", "summary": "Task completed. Result: ..."} - Report task completion
 
-Coordinates are in the 1280x720 screenshot space. (0,0) is top-left, (1280,720) is bottom-right.
+COORDINATE SYSTEM:
+- The screenshot is exactly ${SCREENSHOT_W}x${SCREENSHOT_H} pixels
+- x ranges from 0 (left edge) to ${SCREENSHOT_W} (right edge)
+- y ranges from 0 (top edge) to ${SCREENSHOT_H} (bottom edge)
+- NEVER output x > ${SCREENSHOT_W} or y > ${SCREENSHOT_H} — those are OUT OF BOUNDS
+- Click the CENTER of the target element
+- The taskbar is at the very bottom of the screen, around y=700-${SCREENSHOT_H}
 
 Rules:
 - Start with {"action": "screenshot"} to see the current screen state
-- To open applications, use launch_app (NOT Win key — it can lock the screen!)
+- To open applications, ALWAYS use launch_app (NOT Win key — it will lock the screen!)
 - Click the CENTER of UI elements, not edges
-- When done, use the "done" action with a summary of what was accomplished
+- When done, use the "done" action with a detailed summary of what was accomplished
 - If stuck after 3 attempts at the same thing, use "done" with explanation
-- NEVER use the Win key modifier - it will lock the screen
+- NEVER use the Win key modifier — it will lock the screen
 
 Example: Open Calculator and compute 1+2
 1. {"action": "launch_app", "app": "calc"}
