@@ -296,7 +296,7 @@ class Trajectory {
 
 // ─── CUA Agent Loop ──────────────────────────────────────────────────────────
 
-async function runCuaTask(instruction, maxSteps = 15) {
+async function runCuaTask(instruction, maxSteps = 15, validate = null) {
   console.error(`\n[CUA] Task: ${instruction}`);
   console.error(`[CUA] Max steps: ${maxSteps}`);
 
@@ -392,10 +392,17 @@ async function runCuaTask(instruction, maxSteps = 15) {
       }
     }
 
-    const success = lastSummary.length > 0 &&
-      !lastSummary.toLowerCase().includes('stuck') &&
-      !lastSummary.toLowerCase().includes('impossible') &&
-      !lastSummary.toLowerCase().includes('failed');
+    const lowerSummary = (lastSummary || '').toLowerCase();
+    let success = lastSummary.length > 0 &&
+      !lowerSummary.includes('stuck') &&
+      !lowerSummary.includes('impossible') &&
+      !lowerSummary.includes('failed');
+
+    // Use task-specific validation if provided
+    if (success && validate) {
+      success = validate(lastSummary);
+      if (!success) console.error('[CUA] Task-specific validation failed');
+    }
 
     await trajectory.writeSummary({
       success,
@@ -429,32 +436,44 @@ const TIER1_TASKS = [
     id: 'notepad-write',
     name: 'Notepad: write and save',
     tier: 1,
-    instruction: 'Open Notepad, type "Hello CUA Test" and save the file to the Desktop as "cua-test.txt".',
+    instruction: 'Open Notepad using launch_app, type "Hello CUA Test", then save the file with Ctrl+S to the Desktop as "cua-test.txt". When done, report success.',
     maxSteps: 15,
+    validate: (summary) => summary.toLowerCase().includes('hello') || summary.toLowerCase().includes('save') || summary.toLowerCase().includes('cua-test'),
   },
   {
-    id: 'settings-dark-mode',
-    name: 'Settings: toggle dark mode',
+    id: 'settings-themes',
+    name: 'Settings: open themes page',
     tier: 1,
-    instruction: 'Open Windows Settings and toggle the display theme to Dark mode.',
-    maxSteps: 12,
+    instruction: 'Open Windows Settings using launch_app with "settings-themes". Take a screenshot to verify the Themes settings page is open. Report what you see.',
+    maxSteps: 8,
+    validate: (summary) => summary.toLowerCase().includes('theme') || summary.toLowerCase().includes('setting'),
   },
   {
     id: 'calculator-add',
     name: 'Calculator: simple addition',
     tier: 1,
-    instruction: 'Open the Calculator app, calculate 123 + 456, and tell me the result.',
-    maxSteps: 12,
+    instruction: 'Open Calculator using launch_app with "calc". Then calculate 123 + 456 by clicking the calculator buttons. Report the result number.',
+    maxSteps: 15,
+    validate: (summary) => summary.includes('579'),
   },
 ];
 
 const TIER2_TASKS = [
   {
-    id: 'browser-search',
-    name: 'Browser: search and extract',
+    id: 'notepad-multiline',
+    name: 'Notepad: multi-line text',
     tier: 2,
-    instruction: 'Open Chrome, search for "current weather in Beijing", and tell me the temperature shown.',
+    instruction: 'Open Notepad using launch_app. Type three lines of text: "Line 1: Hello", then press Enter, "Line 2: World", then press Enter, "Line 3: CUA Test". Take a screenshot to verify, then report done.',
     maxSteps: 15,
+    validate: (summary) => summary.toLowerCase().includes('line') || summary.toLowerCase().includes('notepad'),
+  },
+  {
+    id: 'explorer-open',
+    name: 'Explorer: open file browser',
+    tier: 2,
+    instruction: 'Open File Explorer using launch_app with "explorer". Navigate to the Desktop folder by clicking on "Desktop" in the left sidebar. Report what files you see.',
+    maxSteps: 12,
+    validate: (summary) => summary.toLowerCase().includes('desktop') || summary.toLowerCase().includes('explorer'),
   },
 ];
 
@@ -476,7 +495,7 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
     for (let i = 0; i < runs; i++) {
       console.error(`  Run ${i + 1}/${runs}...`);
       const t0 = Date.now();
-      const result = await runCuaTask(task.instruction, task.maxSteps);
+      const result = await runCuaTask(task.instruction, task.maxSteps, task.validate);
       const dur = Date.now() - t0;
 
       if (result.success) successes++;
