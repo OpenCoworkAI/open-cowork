@@ -23,11 +23,12 @@ import subprocess
 
 def cmd_screenshot(args):
     import mss
-    from PIL import Image
+    from PIL import Image, ImageDraw, ImageFont
 
-    width = 1280
-    height = 720
+    width = 1024
+    height = 576
     quality = 85
+    grid = True  # Add coordinate grid overlay
     i = 0
     while i < len(args):
         if args[i] == '--width' and i + 1 < len(args):
@@ -36,6 +37,8 @@ def cmd_screenshot(args):
             height = int(args[i + 1]); i += 2
         elif args[i] == '--quality' and i + 1 < len(args):
             quality = int(args[i + 1]); i += 2
+        elif args[i] == '--no-grid':
+            grid = False; i += 1
         else:
             i += 1
 
@@ -45,6 +48,30 @@ def cmd_screenshot(args):
         pil_img = Image.frombytes('RGB', img.size, img.bgra, 'raw', 'BGRX')
 
     pil_img = pil_img.resize((width, height), Image.LANCZOS)
+
+    # Draw coordinate grid overlay
+    if grid:
+        draw = ImageDraw.Draw(pil_img)
+        # Grid lines every ~128px for 1024 width, ~96px for 576 height
+        grid_x = width // 8   # 128px
+        grid_y = height // 6  # 96px
+
+        # Draw vertical lines with x labels
+        for ix in range(1, 8):
+            x = ix * grid_x
+            draw.line([(x, 0), (x, height)], fill=(255, 0, 0, 80), width=1)
+            draw.text((x + 2, 2), str(x), fill=(255, 50, 50))
+
+        # Draw horizontal lines with y labels
+        for iy in range(1, 6):
+            y = iy * grid_y
+            draw.line([(0, y), (width, y)], fill=(255, 0, 0, 80), width=1)
+            draw.text((2, y + 2), str(y), fill=(255, 50, 50))
+
+        # Corner labels
+        draw.text((2, 2), "0,0", fill=(255, 50, 50))
+        draw.text((width - 60, height - 15), f"{width},{height}", fill=(255, 50, 50))
+
     buf = io.BytesIO()
     pil_img.save(buf, format='JPEG', quality=quality)
     b64 = base64.b64encode(buf.getvalue()).decode('ascii')
@@ -186,20 +213,20 @@ def cmd_launch_app(args):
 
     app = args[0]
 
-    # Common app name mappings
+    # Common app name mappings (use full paths to avoid "Select app" dialogs)
     app_map = {
-        'calculator': 'calc',
-        'calc': 'calc',
-        'notepad': 'notepad',
-        'paint': 'mspaint',
-        'explorer': 'explorer',
-        'chrome': 'chrome',
-        'edge': 'msedge',
+        'calculator': 'calc.exe',
+        'calc': 'calc.exe',
+        'notepad': os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'notepad.exe'),
+        'paint': 'mspaint.exe',
+        'explorer': 'explorer.exe',
+        'chrome': 'chrome.exe',
+        'edge': 'msedge.exe',
         'settings': 'ms-settings:',
         'settings-display': 'ms-settings:display',
         'settings-personalization': 'ms-settings:personalization',
         'settings-themes': 'ms-settings:themes',
-        'file-explorer': 'explorer',
+        'file-explorer': 'explorer.exe',
     }
 
     resolved = app_map.get(app.lower(), app)
@@ -218,28 +245,35 @@ def cmd_launch_app(args):
             )
         time.sleep(2)  # Wait for app to appear
 
-        # Maximize window via Win32 API (reliable for UWP and Win32 apps)
+        # Maximize the foreground window (most reliable - just launched app should be focused)
         import ctypes
         user32 = ctypes.windll.user32
         SW_MAXIMIZE = 3
-        # Try common window titles
-        titles_to_try = [resolved, resolved.capitalize(), app, app.capitalize()]
-        # Special known titles
-        title_map = {
-            'calc': ['Calculator', '计算器'],
-            'notepad': ['Notepad', '记事本', 'Untitled - Notepad'],
-            'mspaint': ['Paint', '画图'],
-            'explorer': ['File Explorer', '文件资源管理器'],
-        }
-        if resolved.lower() in title_map:
-            titles_to_try = title_map[resolved.lower()] + titles_to_try
 
-        for title in titles_to_try:
-            hwnd = user32.FindWindowW(None, title)
-            if hwnd:
-                user32.ShowWindow(hwnd, SW_MAXIMIZE)
-                user32.SetForegroundWindow(hwnd)
-                break
+        # First try: get foreground window directly
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        else:
+            # Fallback: search by known window titles
+            title_map = {
+                'calc': ['Calculator', '计算器'],
+                'calc.exe': ['Calculator', '计算器'],
+                'notepad': ['Untitled', 'Notepad', '记事本', '无标题'],
+                'notepad.exe': ['Untitled', 'Notepad', '记事本', '无标题'],
+                'mspaint': ['Paint', '画图', 'Untitled - Paint'],
+                'mspaint.exe': ['Paint', '画图', 'Untitled - Paint'],
+                'explorer': ['File Explorer', '文件资源管理器'],
+                'explorer.exe': ['File Explorer', '文件资源管理器'],
+            }
+            key = os.path.basename(resolved).lower().replace('.exe', '')
+            titles = title_map.get(key, title_map.get(resolved.lower(), []))
+            for title in titles:
+                hwnd = user32.FindWindowW(None, title)
+                if hwnd:
+                    user32.ShowWindow(hwnd, SW_MAXIMIZE)
+                    user32.SetForegroundWindow(hwnd)
+                    break
         time.sleep(0.5)
 
         print("OK")

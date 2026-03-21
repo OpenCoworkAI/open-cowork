@@ -165,45 +165,36 @@ IMPORTANT: You MUST respond with a JSON object on a single line. No other text b
 
 Available actions:
 1. {"action": "screenshot"} - Take a screenshot to see the current screen
-2. {"action": "click", "x": 640, "y": 360} - Click at pixel coordinates in the screenshot
-3. {"action": "type", "text": "hello"} - Type text (field must be focused first by clicking)
+2. {"action": "click", "x": 300, "y": 200} - Click at pixel coordinates in the screenshot
+3. {"action": "type", "text": "hello"} - Type text via keyboard (PREFERRED over clicking buttons!)
 4. {"action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key (modifiers: ctrl, alt, shift — NO win key)
-5. {"action": "scroll", "x": 640, "y": 360, "direction": "down", "amount": 3} - Scroll
+5. {"action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3} - Scroll
 6. {"action": "launch_app", "app": "calc"} - Open an application (calc, notepad, chrome, settings, etc.)
 7. {"action": "done", "summary": "Task completed. Result: ..."} - Report task completion
 
 COORDINATE SYSTEM:
-- The screenshot is exactly ${SCREENSHOT_W}x${SCREENSHOT_H} pixels
-- x ranges from 0 (left edge) to ${SCREENSHOT_W} (right edge)
-- y ranges from 0 (top edge) to ${SCREENSHOT_H} (bottom edge)
-- NEVER output x > ${SCREENSHOT_W} or y > ${SCREENSHOT_H} — those are OUT OF BOUNDS
+- The screenshot has a RED GRID overlay with coordinate labels to help you aim
+- x ranges from 0 (left) to ${SCREENSHOT_W} (right)
+- y ranges from 0 (top) to ${SCREENSHOT_H} (bottom)
+- Use the grid lines and labels to estimate coordinates accurately
+- NEVER output x > ${SCREENSHOT_W} or y > ${SCREENSHOT_H}
 - Click the CENTER of the target element
-- The taskbar is at the very bottom of the screen, around y=700-${SCREENSHOT_H}
 
-Rules:
-- Start with {"action": "screenshot"} to see the current screen state
-- To open applications, ALWAYS use launch_app (NOT Win key — it will lock the screen!)
-- Click the CENTER of UI elements, not edges
-- When done, use the "done" action with a detailed summary of what was accomplished
-- If stuck after 3 attempts at the same thing, use "done" with explanation
-- NEVER use the Win key modifier — it will lock the screen
+KEY RULE — KEYBOARD FIRST:
+- ALWAYS prefer typing over clicking when possible!
+- Calculator: type "123+456=" instead of clicking buttons
+- Text fields: click once to focus, then type the text
+- Navigation: use keyboard shortcuts (Ctrl+S, Ctrl+N, Tab, Enter) instead of clicking menus
+- Clicking is error-prone — use it only when keyboard input won't work
 
-Example: Open Calculator and compute 1+2
-1. {"action": "launch_app", "app": "calc"}
-2. {"action": "screenshot"}
-3. {"action": "click", "x": 150, "y": 200}  (click anywhere on the Calculator window to focus it)
-4. {"action": "type", "text": "1+2="}  (Calculator accepts keyboard input: digits, +, -, *, /, =)
-5. {"action": "screenshot"}
-6. {"action": "done", "summary": "1 + 2 = 3. The Calculator display shows 3."}
+Other Rules:
+- Start with {"action": "screenshot"} to see the current screen
+- Use launch_app to open applications
+- After each action, check the screenshot to verify it worked
+- If an action didn't work (screen unchanged), try a different approach
+- When done, use "done" with a summary including any results/answers
+- NEVER use the Win key — it will lock the screen`;
 
-Example: Open Notepad and type text
-1. {"action": "launch_app", "app": "notepad"}
-2. {"action": "screenshot"}
-3. {"action": "click", "x": 640, "y": 400}  (click text area to focus)
-4. {"action": "type", "text": "Hello World"}
-5. {"action": "screenshot"}
-6. {"action": "done", "summary": "Typed 'Hello World' in Notepad."}
-`;
 // ─── Ollama Chat API (no tools, raw chat) ────────────────────────────────────
 
 async function chatRaw(messages) {
@@ -435,28 +426,30 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
 // ─── Benchmark Tasks ─────────────────────────────────────────────────────────
 
+// Tasks are goal-only — no step-by-step instructions.
+// The model must autonomously decide how to achieve each goal.
 const TIER1_TASKS = [
   {
     id: 'notepad-write',
     name: 'Notepad: write text',
     tier: 1,
-    instruction: 'Open Notepad using launch_app with "notepad". Press Ctrl+N to create a new blank document. Click on the text area to focus it. Type "Hello CUA Test 2026" using the keyboard. Take a screenshot to verify the text appears. Report done.',
-    maxSteps: 10,
+    instruction: 'Open a text editor and type "Hello CUA Test 2026" in it.',
+    maxSteps: 12,
     validate: (summary) => summary.toLowerCase().includes('hello') || summary.toLowerCase().includes('typed') || summary.toLowerCase().includes('text'),
   },
   {
     id: 'settings-themes',
-    name: 'Settings: open themes page',
+    name: 'Settings: open themes',
     tier: 1,
-    instruction: 'Open Windows Settings using launch_app with "settings-themes". Take a screenshot to verify the Themes settings page is open. Report what you see.',
-    maxSteps: 8,
+    instruction: 'Open the Windows Themes settings page and tell me what themes are available.',
+    maxSteps: 10,
     validate: (summary) => summary.toLowerCase().includes('theme') || summary.toLowerCase().includes('setting'),
   },
   {
     id: 'calculator-add',
-    name: 'Calculator: simple addition',
+    name: 'Calculator: addition',
     tier: 1,
-    instruction: 'Use launch_app to open "calc" (it will open maximized). Take a screenshot. Click on the calculator display area to focus it. Type "123+456=" using the type action. Take a screenshot and read the result number from the display. Report the exact number shown.',
+    instruction: 'Calculate 123 + 456 and tell me the result.',
     maxSteps: 15,
     validate: (summary) => summary.includes('579'),
   },
@@ -465,19 +458,19 @@ const TIER1_TASKS = [
 const TIER2_TASKS = [
   {
     id: 'notepad-multiline',
-    name: 'Notepad: multi-line text',
+    name: 'Notepad: multi-line',
     tier: 2,
-    instruction: 'Open Notepad using launch_app. Type three lines of text: "Line 1: Hello", then press Enter, "Line 2: World", then press Enter, "Line 3: CUA Test". Take a screenshot to verify, then report done.',
+    instruction: 'Write three lines in a text editor: "Line 1", "Line 2", "Line 3", each on its own line.',
     maxSteps: 15,
-    validate: (summary) => summary.toLowerCase().includes('line') || summary.toLowerCase().includes('notepad'),
+    validate: (summary) => summary.toLowerCase().includes('line') || summary.toLowerCase().includes('wrote') || summary.toLowerCase().includes('text'),
   },
   {
-    id: 'explorer-open',
-    name: 'Explorer: open file browser',
+    id: 'explorer-desktop',
+    name: 'Explorer: Desktop files',
     tier: 2,
-    instruction: 'Open File Explorer using launch_app with "explorer". Navigate to the Desktop folder by clicking on "Desktop" in the left sidebar. Report what files you see.',
+    instruction: 'Open File Explorer, go to the Desktop folder, and tell me what files are there.',
     maxSteps: 12,
-    validate: (summary) => summary.toLowerCase().includes('desktop') || summary.toLowerCase().includes('explorer'),
+    validate: (summary) => summary.toLowerCase().includes('desktop') || summary.toLowerCase().includes('file'),
   },
 ];
 
