@@ -166,7 +166,11 @@ def cmd_key_press(args):
 
 
 def cmd_type_text(args):
-    import pyperclip
+    """Type text using the most reliable method available.
+    - For ASCII-only text (letters, digits, operators): use pyautogui.write()
+      which sends individual key events — works in Calculator, Notepad, etc.
+    - For text with Unicode/CJK: fall back to clipboard paste (Ctrl+V).
+    """
     import pyautogui
 
     if len(args) < 1:
@@ -176,21 +180,30 @@ def cmd_type_text(args):
     with open(args[0], 'r', encoding='utf-8') as f:
         text = f.read()
 
-    try:
-        saved = pyperclip.paste()
-    except Exception:
-        saved = ''
+    # Check if text is pure ASCII (can use direct key events)
+    is_ascii = all(ord(c) < 128 for c in text)
 
-    pyperclip.copy(text)
-    time.sleep(0.1)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.15)
-
-    if saved:
+    if is_ascii:
+        # Direct key events — most reliable for apps like Calculator
+        # pyautogui.write sends each character as a keypress
+        pyautogui.write(text, interval=0.03)
+    else:
+        # Clipboard paste for Unicode text
+        import pyperclip
         try:
-            pyperclip.copy(saved)
+            saved = pyperclip.paste()
         except Exception:
-            pass
+            saved = ''
+        pyperclip.copy(text)
+        time.sleep(0.1)
+        pyautogui.hotkey('ctrl', 'v')
+        time.sleep(0.15)
+        if saved:
+            try:
+                pyperclip.copy(saved)
+            except Exception:
+                pass
+
     print("OK")
 
 
