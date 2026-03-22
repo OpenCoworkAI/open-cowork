@@ -263,7 +263,11 @@ def cmd_launch_app(args):
         'settings-display': 'ms-settings:display',
         'settings-personalization': 'ms-settings:personalization',
         'settings-themes': 'ms-settings:themes',
+        'settings-network': 'ms-settings:network',
         'file-explorer': 'explorer.exe',
+        'powershell': 'powershell.exe',
+        'cmd': 'cmd.exe',
+        'terminal': 'wt.exe',
     }
 
     resolved = app_map.get(app.lower(), app)

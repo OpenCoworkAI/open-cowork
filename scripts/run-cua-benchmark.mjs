@@ -96,10 +96,22 @@ async function performClick(mx, my, button = 'left') {
 
 async function performType(text) {
   if (!text) return 'Error: empty text';
-  const tmpFile = path.join(os.tmpdir(), `cua-type-${Date.now()}.txt`);
-  await fs.writeFile(tmpFile, text, 'utf-8');
-  try { await runPy('type_text', [tmpFile]); }
-  finally { await fs.unlink(tmpFile).catch(() => {}); }
+  // Normalize: handle both actual newlines and literal \n sequences from model output
+  const normalized = text.replace(/\\n/g, '\n');
+  // Handle newlines: split on \n, type each part and press Enter between them
+  const lines = normalized.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].length > 0) {
+      const tmpFile = path.join(os.tmpdir(), `cua-type-${Date.now()}.txt`);
+      await fs.writeFile(tmpFile, lines[i], 'utf-8');
+      try { await runPy('type_text', [tmpFile]); }
+      finally { await fs.unlink(tmpFile).catch(() => {}); }
+    }
+    if (i < lines.length - 1) {
+      await runPy('key_press', ['enter']);
+      await sleep(200);
+    }
+  }
   await sleep(200);
   return `Typed: "${text.slice(0, 50)}"`;
 }
@@ -228,12 +240,19 @@ Available actions:
 5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard
 6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key
 7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3}
-8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (also accepts: settings, settings-themes, settings-display, notepad, explorer, chrome, edge)
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (also accepts: settings, settings-themes, settings-display, notepad, explorer, chrome, edge, powershell, cmd, terminal)
 9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 Harness guidelines:
 - Use launch_app to open applications. It will maximize the window and focus it for you.
 - Prefer keyboard input (type, key_press) over clicking buttons — it is more reliable.
+- Use Tab to move between input fields in dialogs (e.g., Find → Replace fields).
+- Use Alt+key shortcuts to activate buttons in dialogs (underlined letter) when possible.
+- The type action supports newlines: include \\n in text for multi-line content.
+- You can open PowerShell or cmd to use command-line tools when they are more efficient than GUI.
+  For example, to create a folder: launch powershell, then type "mkdir ~\\Desktop\\MyFolder".
+  CLI is often faster and more reliable for file operations, system queries, and text processing.
+- To navigate in File Explorer, use Ctrl+L to focus the address bar, then type the path.
 - The screenshot has a CYAN GRID overlay with coordinate labels to help you aim clicks.
 - x: 0 (left) to ${SCREENSHOT_W} (right). y: 0 (top) to ${SCREENSHOT_H} (bottom).
 - After each action, verify the result in the screenshot before proceeding.
@@ -728,6 +747,123 @@ const TIER2_TASKS = [
     maxSteps: 12,
     validate: (summary) => summary.toLowerCase().includes('wi-fi') || summary.toLowerCase().includes('wifi') || summary.toLowerCase().includes('network') || summary.toLowerCase().includes('connected'),
   },
+  {
+    id: 'notepad-timestamp',
+    name: 'Notepad: insert timestamp',
+    tier: 2,
+    instruction: 'Open Notepad and press F5 to insert the current date and time. Tell me what date and time was inserted.',
+    maxSteps: 10,
+    validate: (summary) => /\d{1,2}[\/\-.:]\d{1,2}/.test(summary),
+  },
+  {
+    id: 'notepad-draft-email',
+    name: 'Notepad: draft email',
+    tier: 2,
+    instruction: 'Open Notepad and write a short professional email from Alex to the Team with subject "Weekly Update", briefly summarizing project progress. Include a greeting, body with 2-3 sentences, and a sign-off.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('email') || s.includes('wrote') || s.includes('alex') || s.includes('weekly') || s.includes('draft') || s.includes('typed');
+    },
+  },
+  {
+    id: 'settings-display-info',
+    name: 'Settings: display info',
+    tier: 2,
+    instruction: 'Open the Display settings page and tell me the current screen resolution and display scale percentage.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return /\d{3,4}\s*[x×]\s*\d{3,4}/.test(summary) || s.includes('resolution') || s.includes('scale') || s.includes('%');
+    },
+  },
+  {
+    id: 'cross-app-time-note',
+    name: 'Cross-app: clock to notepad',
+    tier: 2,
+    instruction: 'Look at the current time shown in the taskbar clock, then open Notepad and type "Time check: " followed by the time you read from the clock.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('time') || /\d{1,2}:\d{2}/.test(summary))
+        && (s.includes('notepad') || s.includes('typed') || s.includes('wrote') || s.includes('noted'));
+    },
+  },
+];
+
+// Tier 3: Complex real-world productivity scenarios
+const TIER3_TASKS = [
+  {
+    id: 'notepad-find-replace',
+    name: 'Notepad: find and replace',
+    tier: 3,
+    instruction: 'Open Notepad, type "apple banana apple cherry apple", then use Find and Replace (Ctrl+H) to change all "apple" to "orange".',
+    maxSteps: 22,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('replace') || s.includes('orange');
+    },
+  },
+  {
+    id: 'create-folder',
+    name: 'System: create folder',
+    tier: 3,
+    instruction: 'Create a new folder named "CUA-Test-2026" on the Desktop.',
+    maxSteps: 12,
+    validate: (summary) => {
+      // Best validation: check if folder was actually created
+      try {
+        for (const dir of ['Desktop', 'Downloads', 'Documents']) {
+          if (fss.existsSync(path.join(os.homedir(), dir, 'CUA-Test-2026'))) return true;
+        }
+      } catch {}
+      const s = summary.toLowerCase();
+      return s.includes('folder') || s.includes('cua-test') || s.includes('created');
+    },
+    cleanup: async () => {
+      // Clean up from common locations
+      for (const dir of ['Desktop', 'Downloads', 'Documents']) {
+        const folder = path.join(os.homedir(), dir, 'CUA-Test-2026');
+        await fs.rm(folder, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  },
+  {
+    id: 'edge-web-search',
+    name: 'Edge: web search',
+    tier: 3,
+    instruction: 'Open the Edge browser and search for "Windows 11 features". Tell me the title and a brief summary of the first search result you see.',
+    maxSteps: 15,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('windows') || s.includes('result') || s.includes('search'))
+        && s.length > 40;
+    },
+  },
+  {
+    id: 'notepad-meeting-agenda',
+    name: 'Notepad: meeting agenda',
+    tier: 3,
+    instruction: 'Create a meeting agenda in Notepad with the title "Team Standup - March 2026", followed by three numbered agenda items about project updates, and an "Action Items" section at the bottom. Use newlines to separate each section.',
+    maxSteps: 18,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('agenda') || s.includes('meeting') || s.includes('standup'))
+        && (s.includes('wrote') || s.includes('created') || s.includes('typed') || s.includes('completed') || s.includes('done'));
+    },
+  },
+  {
+    id: 'powershell-system-info',
+    name: 'PowerShell: system info',
+    tier: 3,
+    instruction: 'Open PowerShell and run a command to find this computer\'s name. Tell me the computer name.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      // Should contain some kind of computer/host name
+      return s.length > 10 && (s.includes('computer') || s.includes('name') || s.includes('host') || /[a-z]+-?[a-z0-9]+/i.test(summary));
+    },
+  },
 ];
 
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
@@ -749,7 +885,7 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       // Pre-task: wake display + kill stale apps + clear Notepad session
       try {
         await runPy('wake_display');
-        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings'];
+        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT'];
         for (const app of appsToKill) {
           await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
         }
@@ -764,6 +900,13 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
             await fs.unlink(path.join(notepadState, f)).catch(() => {});
           }
         } catch {}
+        // Close all File Explorer windows only for explorer-related tasks
+        if (task.id && (task.id.startsWith('explorer') || task.id === 'create-folder')) {
+          try {
+            await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+              '(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }']);
+          } catch {}
+        }
         await sleep(1500);
         await sleep(1500);
       } catch {}
@@ -776,9 +919,14 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       // Cleanup: close common apps between tasks to avoid focus conflicts
       try {
         await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-          'Get-Process CalculatorApp,Notepad,mspaint -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+          'Get-Process CalculatorApp,Notepad,mspaint,msedge,powershell,WINWORD -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
         await sleep(1000);
       } catch {}
+
+      // Per-task cleanup (e.g., remove created folders)
+      if (task.cleanup) {
+        try { await task.cleanup(); } catch {}
+      }
 
       if (result.success) successes++;
       taskResults.push({ ...result, durationMs: dur, runIndex: i });
@@ -884,14 +1032,16 @@ async function main() {
 
   let tasks;
   if (opts.task) {
-    const all = [...TIER1_TASKS, ...TIER2_TASKS];
+    const all = [...TIER1_TASKS, ...TIER2_TASKS, ...TIER3_TASKS];
     const found = all.find(t => t.id === opts.task);
     if (!found) { console.error(`Task not found: ${opts.task}`); process.exit(1); }
     tasks = [found];
   } else if (opts.tier === '2') {
     tasks = TIER2_TASKS;
+  } else if (opts.tier === '3') {
+    tasks = TIER3_TASKS;
   } else if (opts.tier === 'all') {
-    tasks = [...TIER1_TASKS, ...TIER2_TASKS];
+    tasks = [...TIER1_TASKS, ...TIER2_TASKS, ...TIER3_TASKS];
   } else {
     tasks = TIER1_TASKS;
   }
