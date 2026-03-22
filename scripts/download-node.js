@@ -26,24 +26,54 @@ const WINDOWS_UNLINK_RETRY_COUNT = 8;
 const WINDOWS_UNLINK_RETRY_DELAY_MS = 500;
 
 /**
- * Fix npx in bundled Node: bin/npx requires('../lib/cli.js') but the Node
- * distribution only has lib/node_modules/npm/lib/cli.js. Create redirect
- * shims so npx-based MCP servers can start correctly.
+ * Fix npx in bundled Node: the default bin/npx script has unresolvable
+ * require() calls (@npmcli/config, etc.) when run from the extracted
+ * directory layout. Replace it with a minimal wrapper that uses the
+ * bundled node to run npm's real npx-cli.js directly.
  * Safe to call multiple times (idempotent).
  */
 function applyNpxFix(extractDir) {
-  const libCliPath = path.join(extractDir, 'lib', 'cli.js');
-  const npmCliPath = path.join(extractDir, 'lib', 'node_modules', 'npm', 'lib', 'cli.js');
-  if (fs.existsSync(npmCliPath) && !fs.existsSync(libCliPath)) {
-    fs.writeFileSync(libCliPath, 'module.exports = require("./node_modules/npm/lib/cli.js");\n');
-    console.log('  Fixed npx: created lib/cli.js redirect');
+  const npxBinPath = path.join(extractDir, 'bin', 'npx');
+  const realNpxCli = path.join(extractDir, 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js');
+
+  if (!fs.existsSync(realNpxCli)) {
+    return;
   }
 
-  const npmCliBinPath = path.join(extractDir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  const binNpmCliPath = path.join(extractDir, 'bin', 'npm-cli.js');
-  if (fs.existsSync(npmCliBinPath) && !fs.existsSync(binNpmCliPath)) {
-    fs.writeFileSync(binNpmCliPath, 'module.exports = require("../lib/node_modules/npm/bin/npm-cli.js");\n');
-    console.log('  Fixed npx: created bin/npm-cli.js redirect');
+  // Check if already fixed
+  const current = fs.existsSync(npxBinPath) ? fs.readFileSync(npxBinPath, 'utf8') : '';
+  if (current.includes('npx-wrapper-fix')) {
+    return;
+  }
+
+  // bin/npx is typically a symlink to lib/node_modules/npm/bin/npx-cli.js.
+  // We must remove the symlink first, otherwise writing to bin/npx would
+  // overwrite the real npx-cli.js through the symlink.
+  const isSymlink = fs.lstatSync(npxBinPath).isSymbolicLink();
+  if (isSymlink) {
+    fs.unlinkSync(npxBinPath);
+  }
+
+  // Use a shell wrapper that resolves the bundled node via dirname,
+  // then executes npx-cli.js with it. This avoids shebang issues
+  // where #!/usr/bin/env node picks up the system node.
+  const isWindows = extractDir.includes('win32') || extractDir.includes('win-x');
+  if (isWindows) {
+    // Windows: create a .cmd wrapper
+    const cmdPath = npxBinPath + '.cmd';
+    const cmd = `@echo off\r\nrem npx-wrapper-fix\r\n"%~dp0node.exe" "%~dp0..\\lib\\node_modules\\npm\\bin\\npx-cli.js" %*\r\n`;
+    fs.writeFileSync(cmdPath, cmd);
+    console.log('  Fixed npx: created npx.cmd wrapper');
+  } else {
+    // Unix: shell script wrapper
+    const wrapper = `#!/bin/sh
+# npx-wrapper-fix
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/node" "$DIR/../lib/node_modules/npm/bin/npx-cli.js" "$@"
+`;
+    fs.writeFileSync(npxBinPath, wrapper);
+    fs.chmodSync(npxBinPath, 0o755);
+    console.log('  Fixed npx: replaced bin/npx with shell wrapper');
   }
 }
 
