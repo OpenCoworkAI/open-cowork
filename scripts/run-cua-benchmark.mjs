@@ -228,7 +228,7 @@ Available actions:
 5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard
 6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key
 7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3}
-8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (also accepts: settings, settings-themes, settings-display, notepad, explorer, chrome, edge)
 9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 Harness guidelines:
@@ -735,10 +735,12 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
     let successes = 0;
 
     for (let i = 0; i < runs; i++) {
-      // Pre-task cleanup: close apps from previous tasks
+      // Pre-task cleanup: kill common apps to avoid stale state
       try {
-        await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-          'Get-Process CalculatorApp,Notepad,mspaint,SystemSettings -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings'];
+        for (const app of appsToKill) {
+          await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
+        }
         await sleep(1500);
       } catch {}
 
