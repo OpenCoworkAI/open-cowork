@@ -258,12 +258,13 @@ def cmd_launch_app(args):
         'paint': 'mspaint.exe',
         'explorer': 'explorer.exe',
         'chrome': 'chrome.exe',
-        'edge': 'msedge.exe',
+        'edge': 'msedge.exe --inprivate --no-first-run',
         'settings': 'ms-settings:',
         'settings-display': 'ms-settings:display',
         'settings-personalization': 'ms-settings:personalization',
         'settings-themes': 'ms-settings:themes',
         'settings-network': 'ms-settings:network',
+        'settings-wifi': 'ms-settings:network-wifi',
         'file-explorer': 'explorer.exe',
         'powershell': 'powershell.exe',
         'cmd': 'cmd.exe',
@@ -295,17 +296,27 @@ def cmd_launch_app(args):
         )
         time.sleep(2)
 
-        # Find new windows
+        # Find new windows — retry up to 3 times (some apps are slow to start)
         new_hwnd = None
-        def collect_after(hwnd, _):
-            nonlocal new_hwnd
-            if user32.IsWindowVisible(hwnd) and hwnd not in before_handles:
-                new_hwnd = hwnd
-            return True
-        user32.EnumWindows(WNDENUMPROC(collect_after), 0)
+        for attempt in range(3):
+            def collect_after(hwnd, _):
+                nonlocal new_hwnd
+                if user32.IsWindowVisible(hwnd) and hwnd not in before_handles:
+                    # Check it has a title (skip utility windows)
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        new_hwnd = hwnd
+                return True
+            user32.EnumWindows(WNDENUMPROC(collect_after), 0)
+            if new_hwnd:
+                break
+            time.sleep(1)  # Wait longer for slow apps
 
         if new_hwnd:
             user32.ShowWindow(new_hwnd, SW_MAXIMIZE)
+            user32.SetForegroundWindow(new_hwnd)
+            time.sleep(0.3)
+            # Double-tap foreground (first call sometimes fails due to foreground lock)
             user32.SetForegroundWindow(new_hwnd)
         else:
             # Fallback: maximize whatever is in foreground
@@ -317,6 +328,94 @@ def cmd_launch_app(args):
         print("OK")
     except Exception as e:
         print(f"Error launching {app}: {e}", file=sys.stderr)
+        print("FAILED")
+
+
+def cmd_focus_window(args):
+    """Bring a window to foreground by process name.
+    Usage: focus_window notepad | focus_window CalculatorApp | focus_window msedge
+    Finds any visible window belonging to the named process and sets it as foreground.
+    """
+    if len(args) < 1:
+        print("Usage: focus_window <process_name>", file=sys.stderr)
+        sys.exit(1)
+
+    target = args[0].lower().replace('.exe', '')
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        SW_MAXIMIZE = 3
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        found_hwnd = None
+        pid_of_target = None
+
+        # Get PIDs matching target process name
+        result = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-Command',
+             f'Get-Process -Name "*{target}*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id'],
+            capture_output=True, text=True, timeout=5
+        )
+        target_pids = set()
+        for line in result.stdout.strip().split('\n'):
+            line = line.strip()
+            if line.isdigit():
+                target_pids.add(int(line))
+
+        if not target_pids:
+            print(f"No process found matching: {target}", file=sys.stderr)
+            print("NOT_FOUND")
+            return
+
+        # Find windows belonging to target PIDs
+        def find_window(hwnd, _):
+            nonlocal found_hwnd
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value in target_pids:
+                # Check window has a title (skip invisible/utility windows)
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    found_hwnd = hwnd
+                    return False  # Stop enumeration
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(find_window), 0)
+
+        if found_hwnd:
+            # Restore if minimized, then maximize and focus
+            user32.ShowWindow(found_hwnd, 9)  # SW_RESTORE
+            time.sleep(0.1)
+            user32.ShowWindow(found_hwnd, SW_MAXIMIZE)
+            user32.SetForegroundWindow(found_hwnd)
+            time.sleep(0.3)
+            # Second attempt at foreground (sometimes first call fails)
+            user32.SetForegroundWindow(found_hwnd)
+            print("OK")
+        else:
+            print(f"No window found for PIDs: {target_pids}", file=sys.stderr)
+            print("NOT_FOUND")
+    except Exception as e:
+        print(f"Error focusing window: {e}", file=sys.stderr)
+        print("FAILED")
+
+
+def cmd_minimize_all(args):
+    """Minimize all windows to clear the desktop before a task."""
+    try:
+        subprocess.run(
+            ['powershell.exe', '-NoProfile', '-Command',
+             '(New-Object -ComObject Shell.Application).MinimizeAll()'],
+            capture_output=True, timeout=5
+        )
+        time.sleep(0.5)
+        print("OK")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         print("FAILED")
 
 
@@ -350,6 +449,8 @@ def main():
         'type_text': cmd_type_text,
         'scroll': cmd_scroll,
         'launch_app': cmd_launch_app,
+        'focus_window': cmd_focus_window,
+        'minimize_all': cmd_minimize_all,
         'wake_display': cmd_wake_display,
     }
 

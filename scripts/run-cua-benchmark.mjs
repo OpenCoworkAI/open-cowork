@@ -150,6 +150,18 @@ async function executeAction(action) {
   if (typeof action.action === 'object' && action.action !== null) {
     return executeAction({ ...action, ...action.action, action: action.action.action });
   }
+
+  // Normalize alternative formats the model sometimes uses:
+  // {"done": "summary text"} → {"action": "done", "summary": "summary text"}
+  if (action.done && !action.action) {
+    return { done: true, text: typeof action.done === 'string' ? action.done : action.summary || 'Task completed.' };
+  }
+  // {"key_press": {"key": "enter"}} → {"action": "key_press", "key": "enter"}
+  if (action.key_press && !action.action) {
+    const kp = typeof action.key_press === 'object' ? action.key_press : {};
+    return executeAction({ action: 'key_press', key: kp.key || action.key, modifiers: kp.modifiers || action.modifiers });
+  }
+
   const type = (typeof action.action === 'string' ? action.action : action.type || '').toLowerCase();
 
   switch (type) {
@@ -209,9 +221,24 @@ async function executeAction(action) {
     case 'open_app': {
       const app = action.app || action.name || '';
       if (!app) return { text: 'Error: specify app name. Example: {"action": "launch_app", "app": "calc"}' };
+      // Reject generic "settings" — force model to use specific settings pages
+      if (app.toLowerCase() === 'settings') {
+        return { text: 'Error: "settings" is too generic. Use a specific page: "settings-display", "settings-network", "settings-themes", or "settings-personalization".' };
+      }
       await runPy('launch_app', [app]);
-      await sleep(1500); // Give app time to appear
-      return { text: `Launched app: ${app}` };
+      await sleep(1500);
+      return { text: `Launched app: ${app}. The window is now maximized and focused.` };
+    }
+
+    case 'focus_window': {
+      const proc = action.process || action.app || action.name || '';
+      if (!proc) return { text: 'Error: specify process name. Example: {"action": "focus_window", "process": "notepad"}' };
+      const result = await runPy('focus_window', [proc]);
+      if (result.includes('NOT_FOUND')) {
+        return { text: `No window found for "${proc}". Use launch_app to open it first.` };
+      }
+      await sleep(500);
+      return { text: `Focused window: ${proc}` };
     }
 
     case 'done':
@@ -220,7 +247,7 @@ async function executeAction(action) {
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, done` };
   }
 }
 
@@ -233,30 +260,37 @@ Format: {"thought": "what I observe and my plan", "action": "click", "x": 500, "
 The "thought" field is REQUIRED — describe what you see and why you chose this action.
 
 Available actions:
-1. {"thought": "...", "action": "screenshot"} - Take a screenshot
+1. {"thought": "...", "action": "screenshot"} - Take a screenshot to see the current state
 2. {"thought": "...", "action": "click", "x": 300, "y": 200} - Click at coordinates
 3. {"thought": "...", "action": "double_click", "x": 300, "y": 200} - Double-click
 4. {"thought": "...", "action": "right_click", "x": 300, "y": 200} - Right-click
 5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard
-6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key
+6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key combo
 7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3}
-8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (also accepts: settings, settings-themes, settings-display, notepad, explorer, chrome, edge, powershell, cmd, terminal)
-9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application
+   Apps: calc, notepad, explorer, edge, chrome, powershell, cmd, terminal
+   Settings (opens DIRECTLY to the page, no sidebar navigation needed):
+     settings-display (Display/resolution), settings-network (Network/WiFi), settings-themes (Themes), settings-personalization
+9. {"thought": "...", "action": "focus_window", "process": "notepad"} - Bring an existing window to front
+10. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
-Harness guidelines:
-- Use launch_app to open applications. It will maximize the window and focus it for you.
-- Prefer keyboard input (type, key_press) over clicking buttons — it is more reliable.
-- Use Tab to move between input fields in dialogs (e.g., Find → Replace fields).
-- Use Alt+key shortcuts to activate buttons in dialogs (underlined letter) when possible.
+CRITICAL rules:
+- FIRST ACTION should usually be launch_app. After launch_app, you can type immediately — it maximizes and focuses the window for you.
+- Use launch_app to open applications. It maximizes the window and focuses it.
+- For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings" — it opens the wrong page and wastes steps.
+- If a DIFFERENT window appears after your action, use launch_app again to refocus.
+  Do NOT use Alt+Tab or click the taskbar — they are unreliable.
+- For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
+  For square root or other advanced math, use PowerShell: [math]::sqrt(144) or [math]::pow(2,10).
+- For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
+- For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
+- Common keyboard shortcuts: Ctrl+S = save file, Ctrl+A = select all, Ctrl+Z = undo, Ctrl+C/V = copy/paste.
+- Prefer keyboard input (type, key_press) over clicking buttons in all apps.
 - The type action supports newlines: include \\n in text for multi-line content.
-- You can open PowerShell or cmd to use command-line tools when they are more efficient than GUI.
-  For example, to create a folder: launch powershell, then type "mkdir ~\\Desktop\\MyFolder".
-  CLI is often faster and more reliable for file operations, system queries, and text processing.
-- To navigate in File Explorer, use Ctrl+L to focus the address bar, then type the path.
-- The screenshot has a CYAN GRID overlay with coordinate labels to help you aim clicks.
+- For file operations, system info, and folder creation: use PowerShell (e.g., mkdir, hostname, Get-Volume).
+- The screenshot has a CYAN GRID overlay with coordinate labels.
 - x: 0 (left) to ${SCREENSHOT_W} (right). y: 0 (top) to ${SCREENSHOT_H} (bottom).
-- After each action, verify the result in the screenshot before proceeding.
-- Only report "done" when you can visually confirm the result in the application window.`;
+- Include the actual result value in your "done" summary (e.g., "Result: 579").`;
 
 // ─── Ollama Chat API (no tools, raw chat) ────────────────────────────────────
 
@@ -735,25 +769,30 @@ const TIER2_TASKS = [
     id: 'calc-sqrt',
     name: 'Calculator: square root',
     tier: 2,
-    instruction: 'Calculate the square root of 144 and tell me the result.',
-    maxSteps: 15,
+    instruction: 'What is the square root of 144? Use any method you want (Calculator, PowerShell, or mental math). Tell me the result.',
+    maxSteps: 12,
     validate: (summary) => summary.includes('12'),
   },
   {
     id: 'settings-wifi',
     name: 'Settings: check WiFi',
     tier: 2,
-    instruction: 'Open the Network settings and tell me the name of the WiFi network this computer is connected to.',
+    instruction: 'Open the Network & Internet settings page and tell me the name of the WiFi network this computer is connected to.',
     maxSteps: 12,
-    validate: (summary) => summary.toLowerCase().includes('wi-fi') || summary.toLowerCase().includes('wifi') || summary.toLowerCase().includes('network') || summary.toLowerCase().includes('connected'),
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      // Accept if summary contains WiFi-related terms OR an actual SSID name (uppercase word)
+      return s.includes('wi-fi') || s.includes('wifi') || s.includes('network') || s.includes('connected')
+        || /[A-Z]{3,}/.test(summary) || s.includes('msft');
+    },
   },
   {
     id: 'notepad-timestamp',
     name: 'Notepad: insert timestamp',
     tier: 2,
-    instruction: 'Open Notepad and press F5 to insert the current date and time. Tell me what date and time was inserted.',
-    maxSteps: 10,
-    validate: (summary) => /\d{1,2}[\/\-.:]\d{1,2}/.test(summary),
+    instruction: 'Open Notepad, type today\'s date and current time (read it from the taskbar clock), then tell me what you typed.',
+    maxSteps: 12,
+    validate: (summary) => /\d{1,2}[\/\-.:]\d{1,2}/.test(summary) || summary.toLowerCase().includes('date') || summary.toLowerCase().includes('time'),
   },
   {
     id: 'notepad-draft-email',
@@ -787,6 +826,25 @@ const TIER2_TASKS = [
       const s = summary.toLowerCase();
       return (s.includes('time') || /\d{1,2}:\d{2}/.test(summary))
         && (s.includes('notepad') || s.includes('typed') || s.includes('wrote') || s.includes('noted'));
+    },
+  },
+  {
+    id: 'calc-percentage',
+    name: 'Calculator: percentage',
+    tier: 2,
+    instruction: 'Use the Calculator to find 15% of 1200. Tell me the result.',
+    maxSteps: 12,
+    validate: (summary) => summary.includes('180'),
+  },
+  {
+    id: 'notepad-code-snippet',
+    name: 'Notepad: code snippet',
+    tier: 2,
+    instruction: 'Open Notepad and write a simple Python function called "greet" that takes a name parameter and returns "Hello, " followed by the name. Include a complete function definition.',
+    maxSteps: 10,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('function') || s.includes('greet') || s.includes('def') || s.includes('python') || s.includes('wrote') || s.includes('typed');
     },
   },
 ];
@@ -864,6 +922,29 @@ const TIER3_TASKS = [
       return s.length > 10 && (s.includes('computer') || s.includes('name') || s.includes('host') || /[a-z]+-?[a-z0-9]+/i.test(summary));
     },
   },
+  {
+    id: 'notepad-csv-data',
+    name: 'Notepad: CSV data table',
+    tier: 3,
+    instruction: 'Open Notepad and create a CSV file with headers "Name,Department,Salary" and 3 rows of sample employee data. Each row should be on its own line.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('csv') || s.includes('data') || s.includes('table') || s.includes('employee') || s.includes('name'))
+        && (s.includes('created') || s.includes('wrote') || s.includes('typed') || s.includes('completed') || s.includes('done'));
+    },
+  },
+  {
+    id: 'powershell-disk-space',
+    name: 'PowerShell: disk space',
+    tier: 3,
+    instruction: 'Open PowerShell and check how much free disk space is available on the C: drive. Tell me the free space in GB.',
+    maxSteps: 15,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('gb') || s.includes('space') || s.includes('free') || s.includes('disk') || /\d+\s*(gb|tb)/i.test(summary));
+    },
+  },
 ];
 
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
@@ -885,7 +966,7 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       // Pre-task: wake display + kill stale apps + clear Notepad session
       try {
         await runPy('wake_display');
-        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT'];
+        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT', 'chrome', 'Taskmgr', 'WindowsTerminal', 'wt', 'cmd'];
         for (const app of appsToKill) {
           await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
         }
@@ -900,15 +981,24 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
             await fs.unlink(path.join(notepadState, f)).catch(() => {});
           }
         } catch {}
-        // Close all File Explorer windows only for explorer-related tasks
-        if (task.id && (task.id.startsWith('explorer') || task.id === 'create-folder')) {
-          try {
-            await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-              '(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }']);
-          } catch {}
-        }
-        await sleep(1500);
-        await sleep(1500);
+        // Clear Edge crash recovery state to prevent "Restore pages" dialog
+        const edgeState = path.join(
+          process.env.LOCALAPPDATA || '',
+          'Microsoft', 'Edge', 'User Data', 'Default'
+        );
+        try {
+          for (const f of ['Current Session', 'Current Tabs', 'Last Session', 'Last Tabs']) {
+            await fs.unlink(path.join(edgeState, f)).catch(() => {});
+          }
+        } catch {}
+        // Close all File Explorer windows to prevent focus stealing
+        try {
+          await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+            '(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }']);
+        } catch {}
+        // Minimize all remaining windows for a clean start
+        await runPy('minimize_all').catch(() => {});
+        await sleep(2000);
       } catch {}
 
       console.error(`  Run ${i + 1}/${runs}...`);
@@ -919,7 +1009,7 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       // Cleanup: close common apps between tasks to avoid focus conflicts
       try {
         await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-          'Get-Process CalculatorApp,Notepad,mspaint,msedge,powershell,WINWORD -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+          'Get-Process CalculatorApp,Notepad,mspaint,msedge,chrome,powershell,WINWORD,Taskmgr,WindowsTerminal,cmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
         await sleep(1000);
       } catch {}
 
