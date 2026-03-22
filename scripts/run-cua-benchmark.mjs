@@ -153,8 +153,6 @@ async function executeAction(action) {
       const y = Number(action.y);
       const err = validateClickCoords(x, y);
       if (err) return { text: err };
-        return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
-      }
       const { x: sx, y: sy } = mapCoords(x, y);
       await runPy('double_click', [String(sx), String(sy)]);
       await sleep(ACTION_SETTLE_MS);
