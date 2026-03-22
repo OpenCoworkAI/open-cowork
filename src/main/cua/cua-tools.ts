@@ -572,7 +572,7 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
   const launchAppTool: ToolDefinition = {
     name: 'launch_app',
     label: 'Launch App',
-    description: 'Open a Windows application by name. Much safer than using Win key shortcuts (which can lock the screen on Windows 11). Common names: calc, notepad, mspaint, explorer, chrome, msedge, code. For Settings, use URI like "ms-settings:" or "ms-settings:themes".',
+    description: 'Open a Windows application by name. The app will be maximized and focused automatically. Common names: calc, notepad, mspaint, explorer, chrome, msedge. For Settings, use URI like "ms-settings:" or "ms-settings:themes".',
     parameters: Type.Object({
       app: Type.String({ description: 'App name or path (e.g., "calc", "notepad", "ms-settings:themes")' }),
     }),
@@ -588,16 +588,32 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
 
       try {
         if (PLATFORM === 'win32') {
-          if (resolved.startsWith('ms-')) {
-            await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Start-Process "${resolved}"`]);
-          } else {
-            await execFileAsync('cmd.exe', ['/c', 'start', '', resolved]);
-          }
+          // Snapshot current window list, launch app, then find the new window
+          const focusScript = `
+$before = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -ExpandProperty MainWindowHandle
+Start-Process "${resolved}"
+Start-Sleep -Seconds 2
+$after = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -ExpandProperty MainWindowHandle
+$newHandles = $after | Where-Object { $before -notcontains $_ }
+if ($newHandles) {
+  Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class WinFocus {
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+}
+"@
+  $h = $newHandles | Select-Object -First 1
+  [WinFocus]::ShowWindow($h, 3)
+  [WinFocus]::SetForegroundWindow($h)
+}`;
+          await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', focusScript]);
+          await new Promise(r => setTimeout(r, 500));
         } else {
           await execFileAsync('open', ['-a', resolved]);
+          await new Promise(r => setTimeout(r, 1500));
         }
-        await new Promise(r => setTimeout(r, 1500)); // Wait for app to appear
-        return { content: [{ type: 'text' as const, text: `Launched: ${app} (resolved: ${resolved})` }], details: undefined };
+        return { content: [{ type: 'text' as const, text: `Launched and focused: ${app}` }], details: undefined };
       } catch (error) {
         return { content: [{ type: 'text' as const, text: `Error launching ${app}: ${error instanceof Error ? error.message : String(error)}` }], details: undefined };
       }

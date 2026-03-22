@@ -252,50 +252,47 @@ def cmd_launch_app(args):
     resolved = app_map.get(app.lower(), app)
 
     try:
-        if resolved.startswith('ms-'):
-            subprocess.run(
-                ['powershell.exe', '-NoProfile', '-Command', f'Start-Process "{resolved}"'],
-                capture_output=True, timeout=10
-            )
-        else:
-            subprocess.run(
-                ['powershell.exe', '-NoProfile', '-Command',
-                 f'Start-Process "{resolved}"'],
-                capture_output=True, timeout=10
-            )
-        time.sleep(2)  # Wait for app to appear
-
-        # Maximize the foreground window (most reliable - just launched app should be focused)
         import ctypes
         user32 = ctypes.windll.user32
         SW_MAXIMIZE = 3
 
-        # First try: get foreground window directly
-        hwnd = user32.GetForegroundWindow()
-        if hwnd:
-            user32.ShowWindow(hwnd, SW_MAXIMIZE)
-        else:
-            # Fallback: search by known window titles
-            title_map = {
-                'calc': ['Calculator', '计算器'],
-                'calc.exe': ['Calculator', '计算器'],
-                'notepad': ['Untitled', 'Notepad', '记事本', '无标题'],
-                'notepad.exe': ['Untitled', 'Notepad', '记事本', '无标题'],
-                'mspaint': ['Paint', '画图', 'Untitled - Paint'],
-                'mspaint.exe': ['Paint', '画图', 'Untitled - Paint'],
-                'explorer': ['File Explorer', '文件资源管理器'],
-                'explorer.exe': ['File Explorer', '文件资源管理器'],
-            }
-            key = os.path.basename(resolved).lower().replace('.exe', '')
-            titles = title_map.get(key, title_map.get(resolved.lower(), []))
-            for title in titles:
-                hwnd = user32.FindWindowW(None, title)
-                if hwnd:
-                    user32.ShowWindow(hwnd, SW_MAXIMIZE)
-                    user32.SetForegroundWindow(hwnd)
-                    break
-        time.sleep(0.5)
+        # Generic approach: snapshot visible windows before launch,
+        # then find the new window that appeared after launch.
+        # No hardcoded app-specific title maps needed.
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        before_handles = set()
+        def collect_before(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                before_handles.add(hwnd)
+            return True
+        user32.EnumWindows(WNDENUMPROC(collect_before), 0)
 
+        # Launch
+        subprocess.run(
+            ['powershell.exe', '-NoProfile', '-Command', f'Start-Process "{resolved}"'],
+            capture_output=True, timeout=10
+        )
+        time.sleep(2)
+
+        # Find new windows
+        new_hwnd = None
+        def collect_after(hwnd, _):
+            nonlocal new_hwnd
+            if user32.IsWindowVisible(hwnd) and hwnd not in before_handles:
+                new_hwnd = hwnd
+            return True
+        user32.EnumWindows(WNDENUMPROC(collect_after), 0)
+
+        if new_hwnd:
+            user32.ShowWindow(new_hwnd, SW_MAXIMIZE)
+            user32.SetForegroundWindow(new_hwnd)
+        else:
+            # Fallback: maximize whatever is in foreground
+            fg = user32.GetForegroundWindow()
+            if fg:
+                user32.ShowWindow(fg, SW_MAXIMIZE)
+
+        time.sleep(0.5)
         print("OK")
     except Exception as e:
         print(f"Error launching {app}: {e}", file=sys.stderr)

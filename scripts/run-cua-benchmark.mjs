@@ -202,44 +202,30 @@ async function executeAction(action) {
 
 // ─── System Prompt (structured JSON output) ──────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a computer use agent on Windows 11. You can see the screen and perform actions.
+const SYSTEM_PROMPT = `You are a computer use agent on Windows 11. You can see the screen and perform actions to complete tasks.
 
 You MUST respond with a JSON object on a single line. No other text before or after the JSON.
 Format: {"thought": "what I observe and my plan", "action": "click", "x": 500, "y": 300}
 The "thought" field is REQUIRED — describe what you see and why you chose this action.
 
 Available actions:
-1. {"thought": "...", "action": "screenshot"} - Take a screenshot to see the current screen
-2. {"thought": "...", "action": "click", "x": 300, "y": 200} - Click at pixel coordinates in the screenshot
-3. {"thought": "...", "action": "double_click", "x": 300, "y": 200} - Double-click at pixel coordinates
-4. {"thought": "...", "action": "right_click", "x": 300, "y": 200} - Right-click for context menu
-5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard (PREFERRED over clicking buttons!)
-6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key (modifiers: ctrl, alt, shift)
-7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3} - Scroll
-8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application (calc, notepad, chrome, settings, etc.)
-9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report task completion
+1. {"thought": "...", "action": "screenshot"} - Take a screenshot
+2. {"thought": "...", "action": "click", "x": 300, "y": 200} - Click at coordinates
+3. {"thought": "...", "action": "double_click", "x": 300, "y": 200} - Double-click
+4. {"thought": "...", "action": "right_click", "x": 300, "y": 200} - Right-click
+5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard
+6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key
+7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3}
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application
+9. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
-COORDINATE SYSTEM:
-- The screenshot has a CYAN GRID overlay with coordinate labels to help you aim
-- x ranges from 0 (left) to ${SCREENSHOT_W} (right)
-- y ranges from 0 (top) to ${SCREENSHOT_H} (bottom)
-- NEVER output x > ${SCREENSHOT_W} or y > ${SCREENSHOT_H}
-- Click the CENTER of the target element
-- Use the grid lines and labels to estimate coordinates accurately
-
-KEY RULE — KEYBOARD FIRST:
-- ALWAYS prefer typing over clicking when possible!
-- Calculator: type "123+456=" instead of clicking buttons
-- Text fields: click once to focus, then type the text
-- Navigation: use keyboard shortcuts (Ctrl+S, Ctrl+N, Tab, Enter) instead of clicking menus
-- Clicking is error-prone — use it only when keyboard input won't work
-
-Other Rules:
-- Start with {"thought": "...", "action": "screenshot"} to see the current screen
-- Use launch_app to open applications (safer than keyboard shortcuts)
-- After each action, check the screenshot to verify it worked
-- If an action didn't work (screen unchanged), try a different approach
-- When done, use "done" with a summary including any results/answers`;
+Harness guidelines:
+- Use launch_app to open applications. It will maximize the window and focus it for you.
+- Prefer keyboard input (type, key_press) over clicking buttons — it is more reliable.
+- The screenshot has a CYAN GRID overlay with coordinate labels to help you aim clicks.
+- x: 0 (left) to ${SCREENSHOT_W} (right). y: 0 (top) to ${SCREENSHOT_H} (bottom).
+- After each action, verify the result in the screenshot before proceeding.
+- Only report "done" when you can visually confirm the result in the application window.`;
 
 // ─── Ollama Chat API (no tools, raw chat) ────────────────────────────────────
 
@@ -698,6 +684,13 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
     let successes = 0;
 
     for (let i = 0; i < runs; i++) {
+      // Pre-task cleanup: close apps from previous tasks
+      try {
+        await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+          'Get-Process CalculatorApp,Notepad,mspaint,SystemSettings -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+        await sleep(1500);
+      } catch {}
+
       console.error(`  Run ${i + 1}/${runs}...`);
       const t0 = Date.now();
       const result = await runCuaTask(task.instruction, task.maxSteps, task.validate);
