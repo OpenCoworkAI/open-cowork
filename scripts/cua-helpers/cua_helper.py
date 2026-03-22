@@ -22,6 +22,10 @@ import io
 import time
 import subprocess
 
+# Disable pyautogui fail-safe (mouse in corner triggers exception)
+import pyautogui
+pyautogui.FAILSAFE = False
+
 
 def cmd_screenshot(args):
     import mss
