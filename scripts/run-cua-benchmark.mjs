@@ -281,6 +281,7 @@ CRITICAL rules:
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
+  Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For square root or other advanced math, use PowerShell: [math]::sqrt(144) or [math]::pow(2,10).
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
