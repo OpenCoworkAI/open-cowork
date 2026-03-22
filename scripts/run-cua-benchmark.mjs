@@ -628,9 +628,28 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
 // ─── Benchmark Tasks ─────────────────────────────────────────────────────────
 
-// Tasks are goal-only — no step-by-step instructions.
-// The model must autonomously decide how to achieve each goal.
+// Tasks: goal-only, tests real model autonomy.
+// Tier 1: Simple single-app tasks
+// Tier 2: Multi-step or cross-app tasks
+// Tier 3: Complex real-world scenarios
+
 const TIER1_TASKS = [
+  {
+    id: 'calc-add',
+    name: 'Calculator: addition',
+    tier: 1,
+    instruction: 'Calculate 123 + 456 and tell me the result.',
+    maxSteps: 15,
+    validate: (summary) => summary.includes('579'),
+  },
+  {
+    id: 'calc-multiply',
+    name: 'Calculator: multiply',
+    tier: 1,
+    instruction: 'Calculate 25 * 16 and tell me the result.',
+    maxSteps: 15,
+    validate: (summary) => summary.includes('400'),
+  },
   {
     id: 'notepad-write',
     name: 'Notepad: write text',
@@ -640,20 +659,20 @@ const TIER1_TASKS = [
     validate: (summary) => summary.toLowerCase().includes('hello') || summary.toLowerCase().includes('typed') || summary.toLowerCase().includes('text'),
   },
   {
+    id: 'screenshot-describe',
+    name: 'Screen: describe desktop',
+    tier: 1,
+    instruction: 'Take a screenshot of the current screen and describe what applications and windows are visible.',
+    maxSteps: 5,
+    validate: (summary) => summary.length > 30,
+  },
+  {
     id: 'settings-themes',
     name: 'Settings: open themes',
     tier: 1,
     instruction: 'Open the Windows Themes settings page and tell me what themes are available.',
     maxSteps: 10,
     validate: (summary) => summary.toLowerCase().includes('theme') || summary.toLowerCase().includes('setting'),
-  },
-  {
-    id: 'calculator-add',
-    name: 'Calculator: addition',
-    tier: 1,
-    instruction: 'Calculate 123 + 456 and tell me the result.',
-    maxSteps: 15,
-    validate: (summary) => summary.includes('579'),
   },
 ];
 
@@ -664,7 +683,15 @@ const TIER2_TASKS = [
     tier: 2,
     instruction: 'Write three lines in a text editor: "Line 1", "Line 2", "Line 3", each on its own line.',
     maxSteps: 15,
-    validate: (summary) => summary.toLowerCase().includes('line') || summary.toLowerCase().includes('wrote') || summary.toLowerCase().includes('text'),
+    validate: (summary) => summary.toLowerCase().includes('line') || summary.toLowerCase().includes('wrote'),
+  },
+  {
+    id: 'calc-chain',
+    name: 'Calculator: chain ops',
+    tier: 2,
+    instruction: 'Calculate (100 + 50) * 2 and tell me the result.',
+    maxSteps: 15,
+    validate: (summary) => summary.includes('300'),
   },
   {
     id: 'explorer-desktop',
@@ -673,6 +700,14 @@ const TIER2_TASKS = [
     instruction: 'Open File Explorer, go to the Desktop folder, and tell me what files are there.',
     maxSteps: 12,
     validate: (summary) => summary.toLowerCase().includes('desktop') || summary.toLowerCase().includes('file'),
+  },
+  {
+    id: 'time-check',
+    name: 'System: check time',
+    tier: 2,
+    instruction: 'What is the current time shown on this computer? Read it from the screen.',
+    maxSteps: 5,
+    validate: (summary) => /\d{1,2}:\d{2}/.test(summary),
   },
 ];
 
