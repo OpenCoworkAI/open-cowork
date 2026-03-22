@@ -449,24 +449,22 @@ function ServerCard({
                   {server.url}
                 </div>
               )}
-              {/* Chrome hint */}
-              {server.name.toLowerCase().includes('chrome') && (
-                <div
-                  className={`text-xs px-2 py-1.5 rounded-lg ${
-                    isConnected
-                      ? 'bg-success/10 text-success'
-                      : server.enabled
-                        ? 'bg-warning/10 text-warning'
-                        : 'bg-accent/10 text-accent'
-                  }`}
-                >
-                  {isConnected
-                    ? `✓ ${t('mcp.connected')} to Chrome debug port (9222)`
+              {/* Status hint — consistent for all servers */}
+              <div
+                className={`text-xs px-2 py-1.5 rounded-lg ${
+                  isConnected
+                    ? 'bg-success/10 text-success'
                     : server.enabled
-                      ? `⏳ ${t('mcp.connecting')}`
-                      : `💡 ${t('mcp.chromeHint')}`}
-                </div>
-              )}
+                      ? 'bg-warning/10 text-warning'
+                      : 'bg-accent/10 text-accent'
+                }`}
+              >
+                {isConnected
+                  ? `✓ ${t('mcp.connected')}`
+                  : server.enabled
+                    ? `⏳ ${t('mcp.connecting')}`
+                    : t('mcp.disabled', { defaultValue: 'Disabled' })}
+              </div>
               <div className="flex items-center gap-4 mt-2">
                 <button
                   onClick={() => setShowTools(!showTools)}
