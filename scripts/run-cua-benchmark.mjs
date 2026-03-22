@@ -134,7 +134,11 @@ function validateClickCoords(x, y) {
 }
 
 async function executeAction(action) {
-  const type = (action.action || action.type || '').toLowerCase();
+  // Handle nested action objects: {"action": {"action": "screenshot"}} → flatten
+  if (typeof action.action === 'object' && action.action !== null) {
+    return executeAction({ ...action, ...action.action, action: action.action.action });
+  }
+  const type = (typeof action.action === 'string' ? action.action : action.type || '').toLowerCase();
 
   switch (type) {
     case 'screenshot':
@@ -457,7 +461,11 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       const modelThought = action.thought || '';
 
       // Check for done
-      const actionType = (action.action || action.type || '').toLowerCase();
+      let actionType = (typeof action.action === 'string' ? action.action : action.type || '').toLowerCase();
+      // Handle nested action objects
+      if (typeof action.action === 'object' && action.action !== null && typeof action.action.action === 'string') {
+        actionType = action.action.action.toLowerCase();
+      }
       if (actionType === 'done' || actionType === 'finish' || actionType === 'complete') {
         lastSummary = action.summary || action.result || rawResponse;
         console.error(`[CUA] DONE: ${lastSummary.slice(0, 150)}`);
