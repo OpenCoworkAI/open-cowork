@@ -1,37 +1,45 @@
-# CUA Harness Iteration Log
+# CUA Harness Iteration Log — Final Summary
 
-## Summary (50% → 75% in 4 rounds)
+## Score Progression: 50% → 75% peak, 71-75% stable
 
-| Round | Score | Key Change | Key Insight |
-|-------|-------|-----------|-------------|
-| 0 | 10/20 (50%) | Baseline | 70% failures = focus loss |
-| 1 | 15/24 (63%) | Aggressive cleanup + focus_window | Kill stale apps helps |
-| 2 | **18/24 (75%)** | Settings URIs + Ctrl+S hint | Remove generic "settings" = +3 |
-| 3 | 12/24 (50%) | Title-bar click after launch | **DON'T click after launch_app** |
-| 4 | **18/24 (75%)** | Remove click, restore R2 | Recovery confirmed |
+| Round | Score | Key Change |
+|-------|-------|-----------|
+| 0 | 10/20 (50%) | Baseline |
+| 1 | 15/24 (63%) | Cleanup + focus_window |
+| 2 | **18/24 (75%)** | Settings URIs + Ctrl+S hint |
+| 3 | 12/24 (50%) | **REGRESSION: click after launch** |
+| 4 | **18/24 (75%)** | Remove click = recovery |
+| 5 | 17/24 (71%) | Validator fix, random variance |
 
-## Effective Patterns (proven across rounds)
+## Proven Patterns
 1. **minimize_all before tasks** — eliminates residual window interference
-2. **Specific settings URIs** — `settings-display` >> navigating sidebar
+2. **Specific settings URIs** — `settings-display` >> generic `settings` + sidebar
 3. **Type full calculator expressions** — `type "25*16="` >> clicking buttons
 4. **launch_app for focus recovery** — more reliable than Alt+Tab
-5. **Newline support in type** — `\\n` in text for multi-line content
-6. **PowerShell for file ops** — `mkdir` >> Explorer GUI for folder creation
-7. **NO click after launch_app** — clicking center/title causes focus corruption
-8. **Reject generic "settings"** — force model to use specific page names
-9. **Common shortcuts in prompt** — Ctrl+S, Ctrl+H, Ctrl+L, Alt+A
+5. **NO click after launch_app** — clicking center/title causes focus corruption
+6. **Reject generic "settings"** — force model to use specific page names
+7. **PowerShell for file ops** — `mkdir` >> Explorer GUI
+8. **Common shortcuts in prompt** — Ctrl+S, Ctrl+H, Alt+A, Ctrl+L
 
-## Remaining Failures (6/24)
-| Task | Root Cause | Fix Strategy |
-|------|-----------|-------------|
-| settings-wifi | ~~Validator bug~~ Fixed R5 | Accept SSID names |
-| settings-display | Model uses PowerShell instead of settings-display | Model can't map "Display" → settings-display |
-| edge-web-search | Edge loses focus during Ctrl+L+type | Edge UWP focus issue |
-| notepad-meeting-agenda | Long text focus loss to Settings/PowerShell | Type stability |
-| notepad-csv | Gets stuck trying to save (unnecessary) | Model strategy |
-| powershell-disk-space | PowerShell window disappears | Focus recovery |
+## Anti-Patterns
+1. **Clicking after launch_app** — caused 75%→50% regression
+2. **System prompt changes affect ALL tasks** — cascading effects
+3. **"Take screenshot to verify" instruction** — wastes step budget
 
-## Anti-Patterns (proven harmful)
-1. **Clicking after launch_app** — even title-bar click (y=3-5%) causes R3-level regression
-2. **Adding too many rules to system prompt** — changes affect ALL tasks non-deterministically
-3. **"Take screenshot to verify" instruction** — wastes 1 step per task, reduces budget
+## Variance Analysis
+Tasks that flip between pass/fail across runs (unreliable):
+- settings-themes (2/4 runs pass)
+- calc-chain (3/4 runs pass)
+- settings-wifi (2/4 runs pass)
+- notepad-find-replace (3/4 runs pass)
+
+Tasks that always pass (17/24 reliable core):
+- All Tier 1 except settings-themes: calc-add, calc-multiply, notepad-write, screenshot
+- Most Tier 2: notepad-multiline, time-check, notepad-save, calc-sqrt, notepad-timestamp, notepad-draft-email, cross-app-time-note, calc-percentage, notepad-code-snippet
+- Some Tier 3: system-create-folder, powershell-system-info
+
+## Remaining Challenges
+- **Edge UWP focus** — Edge's multi-process architecture breaks window detection
+- **settings-display** — model doesn't connect "Display settings" → `settings-display` app
+- **PowerShell disk space** — complex commands + focus loss
+- **Random variance** — 4B model sensitivity to screenshot context
