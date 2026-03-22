@@ -119,6 +119,20 @@ async function performScroll(mx, my, direction, amount = 3) {
 
 // ─── Execute parsed action ──────────────────────────────────────────────────
 
+// Bottom 5% of screen is taskbar — clicks there trigger Start/Search unexpectedly
+const TASKBAR_Y = Math.floor(SCREENSHOT_H * 0.95);
+
+function validateClickCoords(x, y) {
+  if (isNaN(x) || isNaN(y)) return `Error: invalid coordinates. x and y must be numbers.`;
+  if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
+    return `Error: (${x},${y}) out of bounds. Valid range: x 0-${SCREENSHOT_W}, y 0-${SCREENSHOT_H}.`;
+  }
+  if (y > TASKBAR_Y) {
+    return `Error: (${x},${y}) is in the taskbar area (y > ${TASKBAR_Y}). The taskbar will intercept your click. Aim higher.`;
+  }
+  return null;
+}
+
 async function executeAction(action) {
   const type = (action.action || action.type || '').toLowerCase();
 
@@ -129,18 +143,16 @@ async function executeAction(action) {
     case 'click': {
       const x = Number(action.x);
       const y = Number(action.y);
-      if (isNaN(x) || isNaN(y)) return { text: `Error: invalid click coordinates x=${action.x}, y=${action.y}` };
-      if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
-        return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
-      }
+      const err = validateClickCoords(x, y);
+      if (err) return { text: err };
       return { text: await performClick(x, y, action.button || 'left') };
     }
 
     case 'double_click': {
       const x = Number(action.x);
       const y = Number(action.y);
-      if (isNaN(x) || isNaN(y)) return { text: `Error: invalid coords x=${action.x}, y=${action.y}` };
-      if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
+      const err = validateClickCoords(x, y);
+      if (err) return { text: err };
         return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
       }
       const { x: sx, y: sy } = mapCoords(x, y);
@@ -152,10 +164,8 @@ async function executeAction(action) {
     case 'right_click': {
       const x = Number(action.x);
       const y = Number(action.y);
-      if (isNaN(x) || isNaN(y)) return { text: `Error: invalid coords x=${action.x}, y=${action.y}` };
-      if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
-        return { text: `Error: (${x},${y}) out of bounds. Range: 0-${SCREENSHOT_W}, 0-${SCREENSHOT_H}` };
-      }
+      const err = validateClickCoords(x, y);
+      if (err) return { text: err };
       const { x: sx, y: sy } = mapCoords(x, y);
       await runPy('right_click', [String(sx), String(sy)]);
       await sleep(ACTION_SETTLE_MS);

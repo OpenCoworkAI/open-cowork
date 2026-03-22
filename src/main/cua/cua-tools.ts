@@ -422,6 +422,9 @@ export interface CuaToolsOptions {
 /** Last screenshot fingerprint for change detection */
 let lastScreenshotFingerprint: string | null = null;
 
+// Bottom 5% of screenshot is the taskbar — clicks there trigger Start/Search
+const TASKBAR_Y = Math.floor(SCREENSHOT_HEIGHT * 0.95);
+
 export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
   const { loopDetector, trajectory } = options;
 
@@ -463,10 +466,16 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
     async execute(_id, params) {
       const { x, y, button } = params as { x: number; y: number; button?: string };
 
-      // Bounds validation
+      // Bounds validation + taskbar protection
       if (x < 0 || x > SCREENSHOT_WIDTH || y < 0 || y > SCREENSHOT_HEIGHT) {
         return {
           content: [{ type: 'text' as const, text: `Error: coordinates (${x},${y}) out of bounds. Valid range: x=0-${SCREENSHOT_WIDTH}, y=0-${SCREENSHOT_HEIGHT}. Take a screenshot and try again.` }],
+          details: undefined,
+        };
+      }
+      if (y > TASKBAR_Y) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: coordinates (${x},${y}) are in the taskbar area (y > ${TASKBAR_Y}). Clicks there will trigger Start/Search instead of your target. Aim higher.` }],
           details: undefined,
         };
       }
