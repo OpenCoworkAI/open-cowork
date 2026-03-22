@@ -97,38 +97,66 @@ class CredentialsStore {
     return decrypted;
   }
 
+  private static looksSuspiciousDecryptedText(value: string): boolean {
+    for (const char of value) {
+      const code = char.charCodeAt(0);
+      if (code <= 0x08 || code === 0x0b || code === 0x0c || (code >= 0x0e && code <= 0x1f)) {
+        return true;
+      }
+      if (code === 0x7f || code === 0xfffd) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private decryptWithFallback(
     encrypted: string,
     iv: string
   ): { decrypted: string; needsRewrite: boolean } {
-    try {
-      return {
-        decrypted: this.decryptWithKey(encrypted, iv, CredentialsStore.getPrimaryKey()),
-        needsRewrite: false,
-      };
-    } catch {
-      const storedLegacyKey = this.getLegacyStoredKey();
-      if (storedLegacyKey) {
-        try {
-          return {
-            decrypted: this.decryptWithKey(encrypted, iv, storedLegacyKey),
-            needsRewrite: true,
-          };
-        } catch {
-          // Fall through to derived legacy keys.
+    let suspiciousCandidate: { decrypted: string; needsRewrite: boolean } | null = null;
+    const tryKey = (key: Buffer, needsRewrite: boolean): { decrypted: string; needsRewrite: boolean } | null => {
+      try {
+        const decrypted = this.decryptWithKey(encrypted, iv, key);
+        if (CredentialsStore.looksSuspiciousDecryptedText(decrypted)) {
+          if (!suspiciousCandidate) {
+            suspiciousCandidate = { decrypted, needsRewrite };
+          }
+          return null;
         }
-      }
 
-      for (const key of CredentialsStore.getFallbackKeys()) {
-        try {
-          return {
-            decrypted: this.decryptWithKey(encrypted, iv, key),
-            needsRewrite: true,
-          };
-        } catch {
-          // Try next legacy key candidate.
-        }
+        return {
+          decrypted,
+          needsRewrite,
+        };
+      } catch {
+        return null;
       }
+    };
+
+    const primary = tryKey(CredentialsStore.getPrimaryKey(), false);
+    if (primary) {
+      return primary;
+    }
+
+    const storedLegacyKey = this.getLegacyStoredKey();
+    if (storedLegacyKey) {
+      const legacy = tryKey(storedLegacyKey, true);
+      if (legacy) {
+        return legacy;
+      }
+    }
+
+    for (const key of CredentialsStore.getFallbackKeys()) {
+      const fallback = tryKey(key, true);
+      if (fallback) {
+        return fallback;
+      }
+    }
+
+    if (suspiciousCandidate) {
+      return suspiciousCandidate;
     }
 
     throw new Error('Failed to decrypt stored credential with both stable and legacy keys');
