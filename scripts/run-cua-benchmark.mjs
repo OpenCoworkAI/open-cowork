@@ -441,6 +441,9 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       // Prune old screenshots to save context (TASK 3b)
       pruneOldScreenshots(messages);
 
+      // Keep display awake during long inference waits
+      if (stepCount % 5 === 0) await runPy('wake_display').catch(() => {});
+
       const stepStartTime = Date.now();
       const result = await chatRaw(messages);
       const rawResponse = result.message?.content || '';
@@ -743,12 +746,25 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
     let successes = 0;
 
     for (let i = 0; i < runs; i++) {
-      // Pre-task cleanup: kill common apps to avoid stale state
+      // Pre-task: wake display + kill stale apps + clear Notepad session
       try {
+        await runPy('wake_display');
         const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings'];
         for (const app of appsToKill) {
           await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
         }
+        // Clear Windows 11 Notepad tab session to prevent history restoration
+        const notepadState = path.join(
+          process.env.LOCALAPPDATA || '',
+          'Packages', 'Microsoft.WindowsNotepad_8wekyb3d8bbwe', 'LocalState', 'TabState'
+        );
+        try {
+          const files = await fs.readdir(notepadState);
+          for (const f of files) {
+            await fs.unlink(path.join(notepadState, f)).catch(() => {});
+          }
+        } catch {}
+        await sleep(1500);
         await sleep(1500);
       } catch {}
 
