@@ -125,10 +125,10 @@ const TASKBAR_Y = Math.floor(SCREENSHOT_H * 0.95);
 function validateClickCoords(x, y) {
   if (isNaN(x) || isNaN(y)) return `Error: invalid coordinates. x and y must be numbers.`;
   if (x < 0 || x > SCREENSHOT_W || y < 0 || y > SCREENSHOT_H) {
-    return `Error: (${x},${y}) out of bounds. Valid range: x 0-${SCREENSHOT_W}, y 0-${SCREENSHOT_H}.`;
+    return `Error: (${x},${y}) out of bounds. Valid range: x 0-${SCREENSHOT_W}, y 0-${SCREENSHOT_H}. Consider using type or key_press instead if you're trying to press a button.`;
   }
   if (y > TASKBAR_Y) {
-    return `Error: (${x},${y}) is in the taskbar area (y > ${TASKBAR_Y}). The taskbar will intercept your click. Aim higher.`;
+    return `Error: (${x},${y}) is in the taskbar area (y > ${TASKBAR_Y}). Try clicking higher, or use type/key_press to input the character directly.`;
   }
   return null;
 }
