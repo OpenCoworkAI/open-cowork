@@ -93,6 +93,7 @@ DEV_LOG.md
 
 # Build cache
 .build-cache/
+.bundle-resources/
 
 # Temp directories
 .tmp/

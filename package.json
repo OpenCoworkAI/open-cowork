@@ -27,7 +27,7 @@
     "bench:api": "node scripts/bench-api.mjs",
     "rebuild": "node -e \"const {execSync}=require('node:child_process'); const v=require('electron/package.json').version; execSync('npm rebuild better-sqlite3 --runtime=electron --target='+v+' --disturl=https://electronjs.org/headers',{stdio:'inherit'})\"",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent release",
+    "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent .bundle-resources release",
     "deploy:local": "bash scripts/deploy-local.sh"
   },
   "dependencies": {

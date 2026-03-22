@@ -46,11 +46,11 @@ files:
   - "!**/.eslintrc*"
   - "!**/tsconfig.json"
 
-# MCP servers (compiled JavaScript files, cross-platform)
-# NOTE: Platform-specific extraResources OVERRIDE this global section,
-# so dist-mcp must also be listed in each platform's extraResources.
+# MCP servers are staged into .bundle-resources/mcp after build:mcp completes.
+# Packaging from the staged directory is more reliable on Windows than reading
+# directly from freshly emitted dist-mcp files.
 extraResources:
-  - from: dist-mcp
+  - from: .bundle-resources/mcp
     to: mcp
 
 # Unpack skills so they can be read/written at runtime
@@ -75,7 +75,7 @@ win:
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
   extraResources:
-    - from: dist-mcp
+    - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/win32-x64
       to: node
@@ -99,7 +99,7 @@ mac:
     NSScreenCaptureUsageDescription: "Open Cowork needs screen recording access for GUI automation."
     NSAccessibilityUsageDescription: "Open Cowork needs accessibility access for GUI automation."
   extraResources:
-    - from: dist-mcp
+    - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/darwin-${arch}
       to: node
@@ -120,7 +120,7 @@ linux:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
   extraResources:
-    - from: dist-mcp
+    - from: .bundle-resources/mcp
       to: mcp
     - from: resources/node/linux-x64
       to: node

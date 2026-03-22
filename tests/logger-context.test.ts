@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from 'fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,50 +17,75 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 let testUserDataDir: string = '';
 
-/**
- * Holds a reference to the most recent WriteStream opened by the logger's
- * initLogFile() so getLogContent can wait for the 'finish' event instead of
- * relying on a fixed-length timeout.
- *
- * Populated by a vi.spyOn wrapper installed in each beforeEach and reset in
- * afterEach, giving every test a fresh, isolated reference.
- */
-let capturedWriteStream: fs.WriteStream | null = null;
+async function waitForFileToStabilize(filePath: string): Promise<void> {
+  let previousSize = -1;
+  let stableChecks = 0;
+  const deadline = Date.now() + 2000;
+
+  while (Date.now() < deadline) {
+    try {
+      const { size } = fs.statSync(filePath);
+      if (size > 0 && size === previousSize) {
+        stableChecks += 1;
+        if (stableChecks >= 3) {
+          return;
+        }
+      } else {
+        stableChecks = 0;
+        previousSize = size;
+      }
+    } catch {
+      stableChecks = 0;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function waitForLogFiles(logsDirectory: string): Promise<string[]> {
+  const deadline = Date.now() + 2000;
+
+  while (Date.now() < deadline) {
+    const logFiles = fs
+      .readdirSync(logsDirectory)
+      .filter((file) => file.startsWith('app-') && file.endsWith('.log'))
+      .map((file) => path.join(logsDirectory, file))
+      .sort();
+
+    if (logFiles.length > 0) {
+      return logFiles;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  return [];
+}
 
 /**
  * Helper: write a log, then read back the file content.
  *
  * The log file is lazily initialized on first write, so we retrieve the path
- * AFTER writing.  Instead of a fixed setTimeout we wait for the WriteStream
- * 'finish' event (captured via the createWriteStream spy) to guarantee all
- * buffered bytes have been flushed before the file is read back.  This makes
- * the assertion reliable even under heavy CPU load during a full test-suite run.
+ * AFTER writing.  After closeLogFile() we poll the file until its size stops
+ * changing, which avoids depending on stream timing details and makes the
+ * assertion reliable even under heavy CPU load during a full test-suite run.
  */
 async function getLogContent(logger: typeof import('../src/main/utils/logger')): Promise<string> {
   const logFilePath = logger.getLogFilePath();
   expect(logFilePath).toBeTruthy();
 
-  // Capture the stream reference before closeLogFile() clears the internal pointer.
-  const stream = capturedWriteStream;
-
   logger.closeLogFile();
+  const logsDirectory = path.dirname(logFilePath!);
+  expect(fs.existsSync(logsDirectory)).toBe(true);
 
-  if (stream) {
-    // Wait until the stream has fully flushed and closed.
-    await new Promise<void>((resolve) => {
-      if (stream.writableFinished || stream.destroyed) {
-        resolve();
-        return;
-      }
-      stream.once('finish', resolve);
-      stream.once('close', resolve);
-    });
-  } else {
-    // No stream was captured (e.g. test that never triggered a write).
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  const logFiles = await waitForLogFiles(logsDirectory);
+  expect(logFiles.length).toBeGreaterThan(0);
+
+  for (const logFilePath of logFiles) {
+    await waitForFileToStabilize(logFilePath);
   }
 
-  return fs.readFileSync(logFilePath!, 'utf8');
+  return logFiles.map((logFilePath) => fs.readFileSync(logFilePath, 'utf8')).join('\n');
 }
 
 describe('logger context (AsyncLocalStorage)', () => {
@@ -82,27 +107,10 @@ describe('logger context (AsyncLocalStorage)', () => {
       },
     }));
 
-    // Spy on fs.createWriteStream to capture the stream instance created by
-    // initLogFile().  We use the real implementation and only intercept to
-    // record the returned stream, so the logger behaves normally.
-    //
-    // The spy is set up AFTER vi.resetModules() so the freshly loaded logger
-    // module uses the same fs object reference we are wrapping here.
-    capturedWriteStream = null;
-    const realCreateWriteStream = fs.createWriteStream.bind(fs);
-    vi.spyOn(fs, 'createWriteStream').mockImplementation(
-      (...args: Parameters<typeof fs.createWriteStream>) => {
-        const stream = realCreateWriteStream(...args);
-        capturedWriteStream = stream;
-        return stream;
-      }
-    );
   });
 
   afterEach(async () => {
-    // Restore all mocks before closing the log file so the spy is removed.
     vi.restoreAllMocks();
-    capturedWriteStream = null;
 
     try {
       const logger = await import('../src/main/utils/logger');
