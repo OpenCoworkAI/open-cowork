@@ -513,14 +513,6 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
           images: [b64],
         });
       } else {
-        // Capture "before" screenshot for non-screenshot actions
-        let beforeScreenshotFile = null;
-        let beforeB64 = null;
-        try {
-          beforeB64 = await captureScreenshot();
-          beforeScreenshotFile = await trajectory.saveScreenshot(beforeB64, 'before');
-        } catch {}
-
         const execResult = await executeAction(action);
 
         if (execResult.done) {
@@ -531,69 +523,69 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
             result: execResult.text,
             model_raw_output: rawResponse,
             model_thought: modelThought,
-            screenshot_before: beforeScreenshotFile,
             duration_ms: Date.now() - stepStartTime,
           }).catch(() => {});
           break;
         }
 
-        // Auto-screenshot after every action so model can see the result
-        const afterB64 = await captureStableScreenshot();
-        let afterScreenshotFile = null;
-        try {
-          afterScreenshotFile = await trajectory.saveScreenshot(afterB64, 'after');
-        } catch {}
+        // For short type actions (≤5 chars), skip screenshot to avoid
+        // per-character overhead when model types one char at a time.
+        // Just give text feedback and let model continue quickly.
+        const isShortType = (actionType === 'type' || actionType === 'type_text')
+          && action.text && action.text.length <= 5;
 
-        // Detect screen change by comparing screenshot byte lengths
-        const screenChanged = beforeB64 ? (beforeB64.length !== afterB64.length) : null;
-
-        // Reflection on screen-not-changed (TASK 2b)
-        if (screenChanged === false && actionType !== 'screenshot') {
-          const reflection = `Step ${stepCount}: Tried "${actionType}" at (${action.x || '?'},${action.y || '?'}) but screen did not change. The target may not be at those coordinates, or the window may not be focused.`;
-          reflectionBuffer.push(reflection);
-          if (reflectionBuffer.length > MAX_REFLECTIONS) reflectionBuffer.shift();
-        }
-
-        // Extract model coords and screen coords for click-like actions
-        let modelCoords = null;
-        let screenCoords = null;
-        if (['click', 'double_click', 'right_click'].includes(actionType)) {
-          const mx = Number(action.x);
-          const my = Number(action.y);
-          if (!isNaN(mx) && !isNaN(my)) {
-            modelCoords = [mx, my];
-            const mapped = mapCoords(mx, my);
-            screenCoords = [mapped.x, mapped.y];
-          }
-        }
-
-        await trajectory.recordStep({
-          timestamp: new Date().toISOString(),
-          action,
-          result: execResult.text,
-          model_raw_output: rawResponse,
-          model_thought: modelThought,
-          screenshot_before: beforeScreenshotFile,
-          screenshot_after: afterScreenshotFile,
-          screen_changed: screenChanged,
-          duration_ms: Date.now() - stepStartTime,
-          model_coords: modelCoords,
-          screen_coords: screenCoords,
-        }).catch(() => {});
-
-        // Post-action verification template (TASK 1a)
-        let userContent;
-        if (screenChanged === false) {
-          userContent = `Action result: ${execResult.text}\n\nThe screen appears UNCHANGED after your action. Your action may have missed its target.\n\nVerification checklist:\n1. Was the target element actually at those coordinates?\n2. Was the correct window focused?\n3. Should you try a different approach?\n\nHere is the current screenshot. Look carefully and try a different action.`;
+        if (isShortType) {
+          await trajectory.recordStep({
+            timestamp: new Date().toISOString(),
+            action,
+            result: execResult.text,
+            model_raw_output: rawResponse,
+            model_thought: modelThought,
+            duration_ms: Date.now() - stepStartTime,
+          }).catch(() => {});
+          messages.push({
+            role: 'user',
+            content: `Action result: ${execResult.text}\n\nContinue with your next action. You can type multiple characters at once (e.g., "123+456=") to be more efficient.`,
+          });
         } else {
-          userContent = `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state. Analyze what changed and respond with your next action as JSON.`;
-        }
+          // Full screenshot feedback for all other actions
+          const afterB64 = await captureStableScreenshot();
+          let afterScreenshotFile = null;
+          try {
+            afterScreenshotFile = await trajectory.saveScreenshot(afterB64, 'after');
+          } catch {}
 
-        messages.push({
-          role: 'user',
-          content: userContent,
-          images: [afterB64],
-        });
+          // Extract model coords and screen coords for click-like actions
+          let modelCoords = null;
+          let screenCoords = null;
+          if (['click', 'double_click', 'right_click'].includes(actionType)) {
+            const mx = Number(action.x);
+            const my = Number(action.y);
+            if (!isNaN(mx) && !isNaN(my)) {
+              modelCoords = [mx, my];
+              const mapped = mapCoords(mx, my);
+              screenCoords = [mapped.x, mapped.y];
+            }
+          }
+
+          await trajectory.recordStep({
+            timestamp: new Date().toISOString(),
+            action,
+            result: execResult.text,
+            model_raw_output: rawResponse,
+            model_thought: modelThought,
+            screenshot_after: afterScreenshotFile,
+            duration_ms: Date.now() - stepStartTime,
+            model_coords: modelCoords,
+            screen_coords: screenCoords,
+          }).catch(() => {});
+
+          messages.push({
+            role: 'user',
+            content: `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state. Analyze what changed and respond with your next action as JSON.`,
+            images: [afterB64],
+          });
+        }
       }
     }
 
@@ -702,20 +694,36 @@ const TIER2_TASKS = [
     validate: (summary) => summary.includes('300'),
   },
   {
-    id: 'explorer-desktop',
-    name: 'Explorer: Desktop files',
-    tier: 2,
-    instruction: 'Open File Explorer, go to the Desktop folder, and tell me what files are there.',
-    maxSteps: 12,
-    validate: (summary) => summary.toLowerCase().includes('desktop') || summary.toLowerCase().includes('file'),
-  },
-  {
     id: 'time-check',
     name: 'System: check time',
     tier: 2,
     instruction: 'What is the current time shown on this computer? Read it from the screen.',
     maxSteps: 5,
     validate: (summary) => /\d{1,2}:\d{2}/.test(summary),
+  },
+  {
+    id: 'notepad-save',
+    name: 'Notepad: write and save',
+    tier: 2,
+    instruction: 'Open a text editor, type "CUA saved this file", and save the file with Ctrl+S.',
+    maxSteps: 15,
+    validate: (summary) => summary.toLowerCase().includes('save'),
+  },
+  {
+    id: 'calc-sqrt',
+    name: 'Calculator: square root',
+    tier: 2,
+    instruction: 'Calculate the square root of 144 and tell me the result.',
+    maxSteps: 15,
+    validate: (summary) => summary.includes('12'),
+  },
+  {
+    id: 'settings-wifi',
+    name: 'Settings: check WiFi',
+    tier: 2,
+    instruction: 'Open the Network settings and tell me the name of the WiFi network this computer is connected to.',
+    maxSteps: 12,
+    validate: (summary) => summary.toLowerCase().includes('wi-fi') || summary.toLowerCase().includes('wifi') || summary.toLowerCase().includes('network') || summary.toLowerCase().includes('connected'),
   },
 ];
 
