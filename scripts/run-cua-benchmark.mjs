@@ -9,7 +9,7 @@
  *   node scripts/run-cua-benchmark.mjs --runs 3
  */
 
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as fss from 'fs';
@@ -18,13 +18,14 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELPER_PY = path.join(__dirname, 'cua-helpers', 'cua_helper.py');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const OLLAMA_BASE = process.env.OLLAMA_BASE || 'http://localhost:11434';
-const MODEL = process.env.CUA_MODEL || 'qwen3.5:9b';
+const MODEL = process.env.CUA_MODEL || 'qwen3.5:4b';
 const SCREENSHOT_W = 1280;
 const SCREENSHOT_H = 800;
 const ACTION_SETTLE_MS = 500;
@@ -241,13 +242,40 @@ async function executeAction(action) {
       return { text: `Focused window: ${proc}` };
     }
 
+    case 'run_command':
+    case 'shell':
+    case 'exec': {
+      const cmd = action.command || action.cmd || '';
+      if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
+      try {
+        const { stdout, stderr } = await execAsync(cmd, {
+          shell: 'powershell.exe',
+          timeout: 15000,
+          maxBuffer: 1024 * 1024,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        });
+        const out = (stdout || '').trim();
+        const err = (stderr || '').trim();
+        let result = '';
+        if (out) result += out;
+        if (err) result += (result ? '\n[stderr] ' : '[stderr] ') + err;
+        if (!result) result = '(no output)';
+        // Truncate to prevent context overflow
+        if (result.length > 2000) result = result.slice(0, 2000) + '\n... (truncated)';
+        return { text: `$ ${cmd}\n${result}` };
+      } catch (e) {
+        const msg = e.stdout || e.stderr || e.message || 'Command failed';
+        return { text: `$ ${cmd}\n[error] ${msg.slice(0, 1000)}` };
+      }
+    }
+
     case 'done':
     case 'finish':
     case 'complete':
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, run_command, done` };
   }
 }
 
@@ -267,28 +295,37 @@ Available actions:
 5. {"thought": "...", "action": "type", "text": "hello"} - Type text via keyboard
 6. {"thought": "...", "action": "key_press", "key": "enter", "modifiers": ["ctrl"]} - Press key combo
 7. {"thought": "...", "action": "scroll", "x": 300, "y": 200, "direction": "down", "amount": 3}
-8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open an application
-   Apps: calc, notepad, explorer, edge, chrome, powershell, cmd, terminal
+8. {"thought": "...", "action": "launch_app", "app": "calc"} - Open a GUI application
+   Apps: calc, notepad, edge, chrome
    Settings (opens DIRECTLY to the page, no sidebar navigation needed):
      settings-display (Display/resolution), settings-network (Network/WiFi), settings-themes (Themes), settings-personalization
 9. {"thought": "...", "action": "focus_window", "process": "notepad"} - Bring an existing window to front
-10. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
+10. {"thought": "...", "action": "run_command", "command": "hostname"} - Run a shell command and get text output
+    This runs in PowerShell and returns stdout/stderr as text. Use for ANY command-line task:
+    system info (hostname, ipconfig), file ops (mkdir, ls, cat, Set-Content), math, web requests (curl), etc.
+    You do NOT need to open a terminal window — run_command executes directly and returns the result.
+11. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 CRITICAL rules:
-- FIRST ACTION should usually be launch_app. After launch_app, you can type immediately — it maximizes and focuses the window for you.
-- Use launch_app to open applications. It maximizes the window and focuses it.
-- For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings" — it opens the wrong page and wastes steps.
+- ALWAYS try run_command FIRST before using any GUI app. run_command is faster, more reliable, and takes 1 step instead of 10+.
+  Examples: "ls $HOME/Desktop" to list files, "mkdir $HOME/Desktop/Docs" to create folders, "mv $HOME/Desktop/*.txt $HOME/Desktop/Docs/" to move files.
+- Only use launch_app for tasks that REQUIRE a graphical interface (e.g., Calculator UI, Notepad text editing, Edge web browsing, Excel charts).
+- Do NOT use File Explorer for file operations — use run_command instead (ls, mkdir, mv, cp, cat).
+- After launch_app, you can type immediately — it maximizes and focuses the window for you.
+- For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
-  For square root or other advanced math, use PowerShell: [math]::sqrt(144) or [math]::pow(2,10).
+  For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
 - Common keyboard shortcuts: Ctrl+S = save file, Ctrl+A = select all, Ctrl+Z = undo, Ctrl+C/V = copy/paste.
 - Prefer keyboard input (type, key_press) over clicking buttons in all apps.
 - The type action supports newlines: include \\n in text for multi-line content.
-- For file operations, system info, and folder creation: use PowerShell (e.g., mkdir, hostname, Get-Volume).
+- When working across apps (e.g., get system info then write it in Notepad):
+  - Step 1: Use run_command to get the info — the result is returned as text.
+  - Step 2: Use launch_app to open the GUI app, then type the info you got.
 - The screenshot has a CYAN GRID overlay with coordinate labels.
 - x: 0 (left) to ${SCREENSHOT_W} (right). y: 0 (top) to ${SCREENSHOT_H} (bottom).
 - Include the actual result value in your "done" summary (e.g., "Result: 579").`;
@@ -587,11 +624,12 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
         // For short type actions (≤5 chars), skip screenshot to avoid
         // per-character overhead when model types one char at a time.
-        // Just give text feedback and let model continue quickly.
+        // For run_command, the result is already text — no screenshot needed.
         const isShortType = (actionType === 'type' || actionType === 'type_text')
           && action.text && action.text.length <= 5;
+        const isCommandAction = (actionType === 'run_command' || actionType === 'shell' || actionType === 'exec');
 
-        if (isShortType) {
+        if (isShortType || isCommandAction) {
           await trajectory.recordStep({
             timestamp: new Date().toISOString(),
             action,
@@ -602,7 +640,9 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
           }).catch(() => {});
           messages.push({
             role: 'user',
-            content: `Action result: ${execResult.text}\n\nContinue with your next action. You can type multiple characters at once (e.g., "123+456=") to be more efficient.`,
+            content: isCommandAction
+              ? `Command output:\n${execResult.text}\n\nRespond with your next action as JSON.`
+              : `Action result: ${execResult.text}\n\nContinue with your next action. You can type multiple characters at once (e.g., "123+456=") to be more efficient.`,
           });
         } else {
           // Full screenshot feedback for all other actions
@@ -842,10 +882,40 @@ const TIER2_TASKS = [
     name: 'Notepad: code snippet',
     tier: 2,
     instruction: 'Open Notepad and write a simple Python function called "greet" that takes a name parameter and returns "Hello, " followed by the name. Include a complete function definition.',
-    maxSteps: 10,
+    maxSteps: 15,
     validate: (summary) => {
       const s = summary.toLowerCase();
       return s.includes('function') || s.includes('greet') || s.includes('def') || s.includes('python') || s.includes('wrote') || s.includes('typed');
+    },
+  },
+  {
+    id: 'powershell-ip-address',
+    name: 'PowerShell: IP address',
+    tier: 2,
+    instruction: 'Open PowerShell and find this computer\'s local IPv4 address. Tell me the IP address.',
+    maxSteps: 10,
+    validate: (summary) => /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(summary),
+  },
+  {
+    id: 'powershell-username',
+    name: 'PowerShell: current user',
+    tier: 2,
+    instruction: 'Use PowerShell to find the current logged-in Windows username. Tell me the exact username.',
+    maxSteps: 8,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('v-') || s.includes('user') || /[a-z][-_a-z0-9]{3,}/i.test(summary);
+    },
+  },
+  {
+    id: 'notepad-markdown-doc',
+    name: 'Notepad: markdown document',
+    tier: 2,
+    instruction: 'Open Notepad and write a Markdown document with a "# Project Status" heading, a bullet list of 3 items (Design, Development, Testing), and a line that says "Last updated: March 2026".',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('markdown') || s.includes('document') || s.includes('project') || s.includes('wrote') || s.includes('created') || s.includes('typed'));
     },
   },
 ];
@@ -927,7 +997,7 @@ const TIER3_TASKS = [
     id: 'notepad-csv-data',
     name: 'Notepad: CSV data table',
     tier: 3,
-    instruction: 'Open Notepad and create a CSV file with headers "Name,Department,Salary" and 3 rows of sample employee data. Each row should be on its own line.',
+    instruction: 'Open Notepad and type a CSV data table with the header line "Name,Department,Salary" followed by 3 rows of sample employee data, each on its own line. Tell me the data you typed.',
     maxSteps: 12,
     validate: (summary) => {
       const s = summary.toLowerCase();
@@ -939,16 +1009,252 @@ const TIER3_TASKS = [
     id: 'powershell-disk-space',
     name: 'PowerShell: disk space',
     tier: 3,
-    instruction: 'Open PowerShell and check how much free disk space is available on the C: drive. Tell me the free space in GB.',
+    instruction: 'Open PowerShell and find the free disk space on C: drive. You can use any command (e.g., fsutil, Get-Volume, wmic). Tell me the free space.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('gb') || s.includes('space') || s.includes('free') || s.includes('disk') || s.includes('byte') || /\d+\s*(gb|tb|mb|byte)/i.test(summary) || /\d{5,}/.test(summary));
+    },
+  },
+  {
+    id: 'powershell-web-fetch',
+    name: 'PowerShell: fetch webpage',
+    tier: 3,
+    instruction: 'Use PowerShell to fetch the webpage at https://example.com and tell me the title of the page.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('example') && (s.includes('domain') || s.includes('title') || s.includes('page'));
+    },
+  },
+  {
+    id: 'powershell-process-top',
+    name: 'PowerShell: top memory process',
+    tier: 3,
+    instruction: 'Open PowerShell and find the process currently using the most memory. Tell me its name and approximately how much memory it is using in MB.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('process') || s.includes('memory') || s.includes('mb') || s.includes('gb'))
+        && s.length > 20;
+    },
+  },
+  {
+    id: 'powershell-network-test',
+    name: 'PowerShell: network ping',
+    tier: 3,
+    instruction: 'Open PowerShell and ping microsoft.com once. Tell me if it was successful and what the response time was in milliseconds.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('ms') || s.includes('ping') || s.includes('reply') || s.includes('success') || s.includes('time');
+    },
+  },
+  {
+    id: 'powershell-file-listing',
+    name: 'PowerShell: list Desktop files',
+    tier: 3,
+    instruction: 'Open PowerShell and list all files and folders on the Desktop. Tell me how many items are there and name at least two of them.',
+    maxSteps: 12,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('file') || s.includes('item') || s.includes('folder') || s.includes('desktop') || /\d+/.test(summary))
+        && s.length > 20;
+    },
+  },
+  {
+    id: 'cross-app-sysinfo-report',
+    name: 'Cross-app: system report in Notepad',
+    tier: 3,
+    instruction: 'First use PowerShell to find this computer\'s hostname and IP address. Then open Notepad and write a brief "System Report" containing both the hostname and IP address you found.',
+    maxSteps: 25,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('report') || s.includes('wrote') || s.includes('notepad') || s.includes('system'))
+        && (s.includes('host') || s.includes('name') || s.includes('ip') || /\d+\.\d+\.\d+/.test(summary));
+    },
+  },
+  {
+    id: 'cross-app-web-to-notepad',
+    name: 'Cross-app: web fetch to Notepad',
+    tier: 3,
+    instruction: 'Use PowerShell to fetch the title of https://example.com (hint: Invoke-WebRequest). Then open Notepad and type "Web Research Notes:" followed by the title you found.',
+    maxSteps: 25,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('example') || s.includes('web') || s.includes('research') || s.includes('title'))
+        && (s.includes('notepad') || s.includes('wrote') || s.includes('typed') || s.includes('notes'));
+    },
+  },
+  {
+    id: 'edge-visit-url',
+    name: 'Edge: navigate to URL',
+    tier: 3,
+    instruction: 'Open Edge browser, navigate to https://example.com, and describe what the page looks like and what text it contains.',
     maxSteps: 15,
     validate: (summary) => {
       const s = summary.toLowerCase();
-      return (s.includes('gb') || s.includes('space') || s.includes('free') || s.includes('disk') || /\d+\s*(gb|tb)/i.test(summary));
+      return s.includes('example') || (s.includes('page') && s.length > 40);
+    },
+  },
+  {
+    id: 'powershell-create-run-script',
+    name: 'PowerShell: create & run script',
+    tier: 3,
+    instruction: 'Use PowerShell to create a script file on the Desktop called "hello.ps1" that outputs "Hello from CUA Agent!". Then run that script and tell me the output.',
+    maxSteps: 18,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return s.includes('hello') || s.includes('cua') || s.includes('script') || s.includes('output');
+    },
+    cleanup: async () => {
+      const script = path.join(os.homedir(), 'Desktop', 'hello.ps1');
+      await fs.unlink(script).catch(() => {});
+    },
+  },
+  {
+    id: 'notepad-html-create',
+    name: 'Notepad: create HTML page',
+    tier: 3,
+    instruction: 'Create a file called "demo.html" on the Desktop containing a simple HTML page with a title "CUA Demo", an h1 heading saying "Hello World", and a paragraph. You can use Notepad+Save or PowerShell Set-Content — whichever is easier.',
+    maxSteps: 18,
+    validate: (summary) => {
+      const s = summary.toLowerCase();
+      return (s.includes('html') || s.includes('page') || s.includes('demo'))
+        && (s.includes('created') || s.includes('saved') || s.includes('wrote') || s.includes('typed'));
+    },
+    cleanup: async () => {
+      const html = path.join(os.homedir(), 'Desktop', 'demo.html');
+      await fs.unlink(html).catch(() => {});
+    },
+  },
+  {
+    id: 'organize-desktop-files',
+    name: 'System: organize messy Desktop',
+    tier: 3,
+    instruction: 'The Desktop has a bunch of messy files (txt, py, js, json, csv, jpg, png, pdf, docx, pptx, log). Organize them into folders by type — for example, put documents in a "Documents" folder, code files in a "Code" folder, images in an "Images" folder, etc. Use whatever folder names make sense.',
+    maxSteps: 30,
+    setup: async () => {
+      // Always clean first to ensure fresh state (handles interrupted previous runs)
+      const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
+      await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', messy, 'clean']).catch(() => {});
+      await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);
+    },
+    validate: () => {
+      // Directly check filesystem: demo_ files should be in subfolders, not loose on Desktop
+      const desktop = path.join(os.homedir(), 'Desktop');
+      const prefix = 'demo_';
+      try {
+        const items = fss.readdirSync(desktop);
+        // Count loose demo files still on Desktop
+        const looseFiles = items.filter(f => f.startsWith(prefix) && fss.statSync(path.join(desktop, f)).isFile());
+        // Find demo files inside subfolders
+        const folders = items.filter(f => fss.statSync(path.join(desktop, f)).isDirectory());
+        let organizedCount = 0;
+        const usedFolders = new Set();
+        for (const dir of folders) {
+          const dirPath = path.join(desktop, dir);
+          const files = fss.readdirSync(dirPath).filter(f => f.startsWith(prefix));
+          if (files.length > 0) {
+            organizedCount += files.length;
+            usedFolders.add(dir);
+          }
+        }
+        console.error(`[VERIFY] Loose: ${looseFiles.length}, Organized: ${organizedCount}, Folders: ${usedFolders.size} (${[...usedFolders].join(', ')})`);
+        // Pass: most files organized + at least 3 different folders
+        return looseFiles.length <= 2 && organizedCount >= 18 && usedFolders.size >= 3;
+      } catch (e) {
+        console.error('[VERIFY] Error:', e.message);
+        return false;
+      }
+    },
+    cleanup: async () => {
+      const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
+      await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', messy, 'clean']).catch(() => {});
     },
   },
 ];
 
-// ─── Benchmark Runner ────────────────────────────────────────────────────────
+// ─── Demo Tasks (for final demo iteration) ───────────────────────────────────
+
+const DEMO_TASKS = [
+  {
+    id: 'demo-organize-desktop',
+    name: 'Demo: organize messy Desktop',
+    tier: 'demo',
+    instruction: 'My Desktop is a mess. Please sort the files into folders by type (e.g. documents, code, images, data, etc).',
+    maxSteps: 35,
+    setup: async () => {
+      const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
+      await execFileAsync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);
+    },
+    validate: (summary) => {
+      try {
+        const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
+        const { status } = require('child_process').spawnSync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'verify'], { timeout: 10000 });
+        if (status === 0) return true;
+      } catch {}
+      const s = summary.toLowerCase();
+      return (s.includes('organiz') || s.includes('moved') || s.includes('sorted') || s.includes('folder'))
+        && s.length > 30;
+    },
+    cleanup: async () => {
+      const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
+      await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', messy, 'clean']).catch(() => {});
+    },
+  },
+  {
+    id: 'demo-paper-chart',
+    name: 'Demo: paper ablation → Excel chart',
+    tier: 'demo',
+    instruction: 'Find the paper "Attention is All You Need", look at the ablation study results, and create a comparison chart in Excel based on the data.',
+    maxSteps: 45,
+    setup: async () => {
+      // Clean up any leftover files from previous runs
+      const desktop = path.join(os.homedir(), 'Desktop');
+      for (const f of ['paper.pdf', 'attention.pdf', 'chart.xlsx', 'ablation.xlsx']) {
+        await fs.unlink(path.join(desktop, f)).catch(() => {});
+      }
+      // Also close Excel if open
+      await execFileAsync('powershell', ['-Command', 'Get-Process EXCEL -ErrorAction SilentlyContinue | Stop-Process -Force']).catch(() => {});
+    },
+    validate: (summary) => {
+      // Check if any Excel file was created/opened
+      try {
+        const desktop = path.join(os.homedir(), 'Desktop');
+        const files = require('fs').readdirSync(desktop);
+        const hasExcel = files.some(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
+        if (hasExcel) return true;
+      } catch {}
+      // Check common locations (Documents, Downloads)
+      for (const dir of ['Documents', 'Downloads']) {
+        try {
+          const d = path.join(os.homedir(), dir);
+          const files = require('fs').readdirSync(d);
+          const recent = files.filter(f => {
+            if (!f.endsWith('.xlsx') && !f.endsWith('.xls')) return false;
+            const stat = require('fs').statSync(path.join(d, f));
+            return Date.now() - stat.mtimeMs < 5 * 60 * 1000; // created in last 5 min
+          });
+          if (recent.length > 0) return true;
+        } catch {}
+      }
+      // Fallback: check summary mentions chart/Excel
+      const s = summary.toLowerCase();
+      return (s.includes('chart') || s.includes('excel') || s.includes('graph') || s.includes('plot'))
+        && (s.includes('bleu') || s.includes('ablation') || s.includes('attention') || s.includes('transformer'));
+    },
+    cleanup: async () => {
+      // Close Excel
+      await execFileAsync('powershell', ['-Command', 'Get-Process EXCEL -ErrorAction SilentlyContinue | Stop-Process -Force']).catch(() => {});
+      // Clean up downloaded PDFs
+      const desktop = path.join(os.homedir(), 'Desktop');
+      for (const f of ['paper.pdf', 'attention.pdf']) {
+        await fs.unlink(path.join(desktop, f)).catch(() => {});
+      }
+    },
+  },
+];
 
 async function runBenchmark(tasks, runs = 1, variant = 'default') {
   console.error(`\n${'='.repeat(60)}`);
@@ -967,7 +1273,9 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
       // Pre-task: wake display + kill stale apps + clear Notepad session
       try {
         await runPy('wake_display');
-        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT', 'chrome', 'Taskmgr', 'WindowsTerminal', 'wt', 'cmd'];
+        // NOTE: Do NOT kill terminal apps (WindowsTerminal, wt, cmd) — we may be running from one!
+        // The model uses run_command instead of GUI terminals anyway.
+        const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT', 'chrome', 'Taskmgr'];
         for (const app of appsToKill) {
           await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
         }
@@ -992,25 +1300,28 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
             await fs.unlink(path.join(edgeState, f)).catch(() => {});
           }
         } catch {}
-        // Close all File Explorer windows to prevent focus stealing
-        try {
-          await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-            '(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }']);
-        } catch {}
+        // NOTE: Do NOT use Shell.Application COM object to close Explorer windows.
+        // It creates a COM reference that causes Explorer to steal focus from subsequent apps.
+        // minimize_all below handles any remaining windows.
         // Minimize all remaining windows for a clean start
         await runPy('minimize_all').catch(() => {});
         await sleep(2000);
       } catch {}
 
       console.error(`  Run ${i + 1}/${runs}...`);
+      // Run task-specific setup if defined
+      if (task.setup) {
+        try { await task.setup(); } catch (e) { console.error(`[SETUP] ${e.message}`); }
+      }
       const t0 = Date.now();
       const result = await runCuaTask(task.instruction, task.maxSteps, task.validate);
       const dur = Date.now() - t0;
 
       // Cleanup: close common apps between tasks to avoid focus conflicts
+      // NOTE: Do NOT kill terminal/shell apps (WindowsTerminal, cmd, powershell) — we run from them!
       try {
         await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-          'Get-Process CalculatorApp,Notepad,mspaint,msedge,chrome,powershell,WINWORD,Taskmgr,WindowsTerminal,cmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
+          'Get-Process CalculatorApp,Notepad,mspaint,msedge,chrome,WINWORD,Taskmgr -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue']);
         await sleep(1000);
       } catch {}
 
@@ -1103,6 +1414,7 @@ function parseArgs() {
     tier: opts['tier'],
     variant: opts['variant'] || 'baseline-v2',
     maxSteps: parseInt(opts['max-steps'] || '15', 10),
+    demo: args.includes('--demo'),
   };
 }
 
@@ -1122,8 +1434,11 @@ async function main() {
   }
 
   let tasks;
-  if (opts.task) {
-    const all = [...TIER1_TASKS, ...TIER2_TASKS, ...TIER3_TASKS];
+  if (opts.demo) {
+    tasks = DEMO_TASKS;
+    console.error('Mode: DEMO (iterating on final demo tasks)');
+  } else if (opts.task) {
+    const all = [...TIER1_TASKS, ...TIER2_TASKS, ...TIER3_TASKS, ...DEMO_TASKS];
     const found = all.find(t => t.id === opts.task);
     if (!found) { console.error(`Task not found: ${opts.task}`); process.exit(1); }
     tasks = [found];
@@ -1142,6 +1457,13 @@ async function main() {
 
   const reportPath = await saveReport(report);
   console.error(`Report saved: ${reportPath}`);
+
+  // Restore terminal focus after benchmark completes
+  try {
+    await runPy('minimize_all');
+    await sleep(500);
+    await runPy('focus_window', ['WindowsTerminal']);
+  } catch {}
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });

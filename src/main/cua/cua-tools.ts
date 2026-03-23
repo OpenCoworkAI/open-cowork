@@ -6,7 +6,7 @@
  * so ImageContent blocks are passed directly to the model without
  * the MCP bridge stringify bug.
  *
- * Tools: screenshot, click, type_text, key_press, scroll
+ * Tools: screenshot, click, type_text, key_press, scroll, launch_app, run_command
  *
  * Platform: Windows priority, macOS support.
  *
@@ -22,6 +22,7 @@ import { Type } from '@sinclair/typebox';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { exec } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -30,6 +31,7 @@ import type { TrajectoryLogger } from './cua-trajectory';
 import { computeScreenshotFingerprint, fingerprintDistance, UNCHANGED_THRESHOLD } from './cua-screenshot-hash';
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 const PLATFORM = os.platform();
 
 const SCREENSHOT_WIDTH = 1280;
@@ -581,7 +583,7 @@ export function buildCuaTools(options: CuaToolsOptions = {}): ToolDefinition[] {
   const launchAppTool: ToolDefinition = {
     name: 'launch_app',
     label: 'Launch App',
-    description: 'Open a Windows application by name. The app will be maximized and focused automatically. Common names: calc, notepad, mspaint, explorer, chrome, msedge. For Settings, use URI like "ms-settings:" or "ms-settings:themes".',
+    description: 'Open a GUI application by name. The app will be maximized and focused automatically. Common names: calc, notepad, mspaint, chrome, msedge. For Settings, use URI like "ms-settings:" or "ms-settings:themes". Do NOT use this for file operations — use run_command instead.',
     parameters: Type.Object({
       app: Type.String({ description: 'App name or path (e.g., "calc", "notepad", "ms-settings:themes")' }),
     }),
@@ -629,5 +631,44 @@ public class WinFocus {
     },
   };
 
-  return [screenshotTool, clickTool, typeTool, keyPressTool, scrollTool, launchAppTool];
+  const runCommandTool: ToolDefinition = {
+    name: 'run_command',
+    label: 'Run Command',
+    description: 'Execute a shell command and return the text output. Runs in PowerShell (Windows) or bash (macOS/Linux). Use for file operations (ls, mkdir, mv), system info (hostname, ipconfig), math, web requests (curl), and any task that can be done via command line. Much faster and more reliable than opening a terminal GUI.',
+    parameters: Type.Object({
+      command: Type.String({ description: 'Shell command to execute (e.g., "ls $HOME/Desktop", "hostname", "mkdir myFolder")' }),
+    }),
+    async execute(_id, params) {
+      const { command } = params as { command: string };
+      if (!command) {
+        return { content: [{ type: 'text' as const, text: 'Error: specify a command to run.' }], details: undefined };
+      }
+
+      try {
+        const shell = PLATFORM === 'win32' ? 'powershell.exe' : '/bin/bash';
+        const { stdout, stderr } = await execAsync(command, {
+          shell,
+          timeout: 15000,
+          maxBuffer: 1024 * 1024,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        });
+        const out = (stdout || '').trim();
+        const err = (stderr || '').trim();
+        let result = '';
+        if (out) result += out;
+        if (err) result += (result ? '\n[stderr] ' : '[stderr] ') + err;
+        if (!result) result = '(no output)';
+        // Truncate to prevent context overflow
+        if (result.length > 2000) result = result.slice(0, 2000) + '\n... (truncated)';
+
+        return { content: [{ type: 'text' as const, text: `$ ${command}\n${result}` }], details: undefined };
+      } catch (e: unknown) {
+        const error = e as { stdout?: string; stderr?: string; message?: string };
+        const msg = error.stdout || error.stderr || error.message || 'Command failed';
+        return { content: [{ type: 'text' as const, text: `$ ${command}\n[error] ${String(msg).slice(0, 1000)}` }], details: undefined };
+      }
+    },
+  };
+
+  return [screenshotTool, clickTool, typeTool, keyPressTool, scrollTool, launchAppTool, runCommandTool];
 }

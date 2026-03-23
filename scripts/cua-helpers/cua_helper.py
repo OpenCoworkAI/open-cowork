@@ -169,6 +169,21 @@ def cmd_key_press(args):
     print("OK")
 
 
+def _ensure_english_input():
+    """Disable IME to prevent Chinese character injection during pyautogui.write().
+    On Chinese Windows, the IME can intercept key events and convert them to Chinese chars.
+    """
+    import ctypes
+    try:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        # Send WM_INPUTLANGCHANGEREQUEST to switch to English US keyboard layout
+        EN_US = 0x04090409
+        ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, EN_US)
+        time.sleep(0.05)
+    except Exception:
+        pass
+
+
 def cmd_type_text(args):
     """Type text using the most reliable method available.
     - For ASCII-only text (letters, digits, operators): use pyautogui.write()
@@ -188,6 +203,8 @@ def cmd_type_text(args):
     is_ascii = all(ord(c) < 128 for c in text)
 
     if is_ascii:
+        # Ensure English input mode to prevent IME from converting keystrokes
+        _ensure_english_input()
         # Direct key events — most reliable for apps like Calculator
         # pyautogui.write sends each character as a keypress
         pyautogui.write(text, interval=0.03)
