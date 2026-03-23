@@ -515,7 +515,12 @@ CRITICAL rules:
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
 - For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST look at each image to classify it.
   Use view_image to quickly see what each image shows — it's much faster than open_file.
-  Efficient workflow: 1) List files with run_command, 2) view_image each file to see content, 3) create folders + move files with run_command.
+  IMPORTANT workflow:
+  1) List files with run_command
+  2) view_image EACH file — after viewing, note which folder it belongs to
+  3) Create all folders at once with run_command (e.g., mkdir Food, Landscapes, Receipts)
+  4) Move files to correct folders — move EACH file to its specific folder based on what you saw!
+     Do NOT dump all files into one folder. Move food images to Food, landscapes to Landscapes, etc.
   Group files by their VISUAL CONTENT (food, nature, charts, receipts, etc), NOT by file extension.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
@@ -1455,7 +1460,7 @@ const DEMO_TASKS = [
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
     instruction: 'My Desktop has a bunch of image files with camera-style names like IMG_xxxx and DSC_xxxx. I have no idea what\'s in them. Please look at each image, figure out what it shows, and organize them into folders by content (e.g. food photos, landscapes, receipts, etc).',
-    maxSteps: 50,
+    maxSteps: 70,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
       await execFileAsync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);
