@@ -9,7 +9,7 @@
  *   node scripts/run-cua-benchmark.mjs --runs 3
  */
 
-import { execFile, exec, execFileSync } from 'child_process';
+import { execFile, exec, execFileSync, spawnSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as fss from 'fs';
@@ -1468,10 +1468,24 @@ const DEMO_TASKS = [
     },
     validate: (summary) => {
       try {
+        // Debug: check file state before validation
+        const desktop = path.join(os.homedir(), 'Desktop');
+        const items = fss.readdirSync(desktop);
+        const demoFiles = items.filter(f => f.startsWith('demo_'));
+        const folders = items.filter(f => { try { return fss.statSync(path.join(desktop, f)).isDirectory(); } catch { return false; } });
+        console.error(`[VALIDATE] Desktop: ${demoFiles.length} loose demo files, ${folders.length} folders: ${folders.join(', ')}`);
+        for (const folder of folders) {
+          try {
+            const ff = fss.readdirSync(path.join(desktop, folder)).filter(f => f.startsWith('demo_'));
+            if (ff.length > 0) console.error(`[VALIDATE]   ${folder}: ${ff.length} demo files`);
+          } catch {}
+        }
+
         const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
-        const { status } = require('child_process').spawnSync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'verify'], { timeout: 10000 });
+        const { status, stdout, stderr } = spawnSync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'verify'], { timeout: 10000 });
+        console.error(`[VALIDATE] verify exit: ${status}, stdout: ${(stdout||'').toString().slice(0,200)}`);
         return status === 0;
-      } catch {}
+      } catch (e) { console.error(`[VALIDATE] error: ${e.message}`); }
       return false;
     },
     cleanup: async () => {
