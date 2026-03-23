@@ -90,7 +90,15 @@ public class WMin { [DllImport("user32.dll")] public static extern bool ShowWind
 
 async function captureScreenshot() {
   await ensureParentMinimized();
-  return await runPy('screenshot', ['--width', String(SCREENSHOT_W), '--height', String(SCREENSHOT_H)]);
+  const b64 = await runPy('screenshot', ['--width', String(SCREENSHOT_W), '--height', String(SCREENSHOT_H)]);
+  return b64;
+}
+
+// Detect if a screenshot is mostly black (locked/off screen)
+function isBlackScreen(b64) {
+  // A mostly-black screenshot compresses very well → short base64
+  // Normal desktop screenshots are typically 200KB+, black screens are <20KB
+  return b64.length < 30000;
 }
 
 async function captureStableScreenshot(maxWaitMs = 3000) {
@@ -834,8 +842,10 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         }).catch(() => {});
         messages.push({
           role: 'user',
-          content: 'Here is the current screenshot. Describe what you see briefly, then respond with your next action as JSON.',
-          images: [b64],
+          content: isBlackScreen(b64)
+            ? 'The screen appears to be off or locked (black screen). Do NOT try to unlock it. Instead, use run_command and view_image actions which work without the screen. Continue with your task.'
+            : 'Here is the current screenshot. Describe what you see briefly, then respond with your next action as JSON.',
+          ...(isBlackScreen(b64) ? {} : { images: [b64] }),
         });
       } else {
         const execResult = await executeAction(action);
@@ -926,8 +936,10 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
           messages.push({
             role: 'user',
-            content: `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state. Analyze what changed and respond with your next action as JSON.`,
-            images: [afterB64],
+            content: isBlackScreen(afterB64)
+              ? `Action result: ${execResult.text}\n\nScreen is off/locked. Use run_command and view_image instead of GUI actions. Continue with your task.`
+              : `Action result: ${execResult.text}\n\nHere is a screenshot showing the current state. Analyze what changed and respond with your next action as JSON.`,
+            ...(isBlackScreen(afterB64) ? {} : { images: [afterB64] }),
           });
         }
       }
