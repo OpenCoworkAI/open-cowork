@@ -1162,7 +1162,7 @@ const TIER3_TASKS = [
         }
         console.error(`[VERIFY] Loose: ${looseFiles.length}, Organized: ${organizedCount}, Folders: ${usedFolders.size} (${[...usedFolders].join(', ')})`);
         // Pass: most files organized + at least 3 different folders
-        return looseFiles.length <= 2 && organizedCount >= 18 && usedFolders.size >= 3;
+        return looseFiles.length <= 8 && organizedCount >= 100 && usedFolders.size >= 3;
       } catch (e) {
         console.error('[VERIFY] Error:', e.message);
         return false;
@@ -1183,7 +1183,7 @@ const DEMO_TASKS = [
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
     instruction: 'My Desktop is a mess. Please sort the files into folders by type (e.g. documents, code, images, data, etc).',
-    maxSteps: 35,
+    maxSteps: 60,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
       await execFileAsync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);
