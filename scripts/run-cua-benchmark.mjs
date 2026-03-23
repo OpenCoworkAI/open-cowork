@@ -454,16 +454,22 @@ CRITICAL rules:
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
-- For Excel: NEVER type data cell-by-cell in the GUI — it takes too many steps.
-  The BEST approach to create Excel files with data:
-  1. Use run_command with Python to create an xlsx file directly:
-     python -c "import openpyxl; wb=openpyxl.Workbook(); ws=wb.active; [ws.append(r) for r in [['Name','Score'],['Alice',90],['Bob',85]]]; wb.save('$HOME/Desktop/data.xlsx')"
-  2. Then open_file to open the xlsx in Excel (it's already xlsx format, no conversion needed!)
-  3. For charts: select your data range (click A1, then Ctrl+Shift+End), then press Alt+N (activates Insert tab via keyboard).
-     Then click a chart icon in the Charts group of the ribbon. Press Enter to confirm any dialog.
-  4. Ctrl+S to save (since the file is already xlsx, Ctrl+S works directly — no format dialog!)
-  If you must use Save As: press F12, type the FULL filename with .xlsx extension, then press Enter (do NOT click Save button).
-  IMPORTANT: In ALL dialogs, prefer pressing Enter over clicking buttons — keyboard is more reliable than coordinates.
+- For Excel/spreadsheet tasks: NEVER type data cell-by-cell in the GUI — it takes too many steps.
+  Use run_command with Python openpyxl to create xlsx files WITH charts in a single command:
+  python -c "
+  import openpyxl; from openpyxl.chart import BarChart, Reference
+  wb=openpyxl.Workbook(); ws=wb.active
+  for r in [['Name','Score'],['Alice',90],['Bob',85]]: ws.append(r)
+  chart=BarChart(); chart.title='Scores'
+  vals=Reference(ws,min_col=2,min_row=1,max_row=3)
+  cats=Reference(ws,min_col=1,min_row=2,max_row=3)
+  chart.add_data(vals,titles_from_data=True); chart.set_categories(cats)
+  ws.add_chart(chart,'D2')
+  wb.save('C:/Users/USERNAME/Desktop/result.xlsx')
+  "
+  IMPORTANT: Use forward slashes (/) in Python file paths, NOT backslashes.
+  After creating the xlsx, use open_file to open it in Excel so you can see and verify the chart.
+  Then report done with a summary of what the chart shows.
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
   1. FIRST click the PDF content area (center of the page) to give it focus
