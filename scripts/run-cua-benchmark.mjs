@@ -416,7 +416,7 @@ public class WU {
         // Use -NoProfile to avoid PSReadLine noise from user's PowerShell profile
         const { stdout, stderr } = await execFileAsync('powershell.exe',
           ['-NoProfile', '-Command', cmd],
-          { timeout: 15000, maxBuffer: 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
+          { timeout: 15000, maxBuffer: 1024 * 1024, cwd: os.homedir(), env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
         );
         const out = (stdout || '').trim();
         // Filter out PSReadLine noise that leaks even with -NoProfile in some configs
@@ -593,6 +593,16 @@ function parseAction(text) {
   const codeMatch = noThink.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
   if (codeMatch) {
     try { return JSON.parse(codeMatch[1]); } catch {}
+  }
+
+  // Fix common model JSON errors and retry
+  if (jsonMatch) {
+    let fixed = jsonMatch[0];
+    // Fix: \"value\" → "value" (escaped quotes around values)
+    fixed = fixed.replace(/\\"/g, '"');
+    // Fix: double-quoted keys with extra quotes: ""key"" → "key"
+    fixed = fixed.replace(/""+/g, '"');
+    try { return JSON.parse(fixed); } catch {}
   }
 
   return null;
