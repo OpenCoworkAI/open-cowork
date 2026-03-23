@@ -483,6 +483,10 @@ CRITICAL rules:
 - For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
+- For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST open each image to see what it shows.
+  Use open_file to view each image, take a screenshot to see its content, then classify it.
+  Group files by their VISUAL CONTENT (food, nature, charts, receipts, etc), NOT by file extension.
+  Efficient workflow: 1) List files with run_command, 2) open_file each image to see content, 3) create folders with run_command, 4) move files with run_command.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
@@ -1377,8 +1381,8 @@ const DEMO_TASKS = [
     id: 'demo-organize-desktop',
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
-    instruction: 'My Desktop is a mess. Please sort the files into folders by type (e.g. documents, code, images, data, etc).',
-    maxSteps: 60,
+    instruction: 'My Desktop has a bunch of image files with camera-style names like IMG_xxxx and DSC_xxxx. I have no idea what\'s in them. Please look at each image, figure out what it shows, and organize them into folders by content (e.g. food photos, landscapes, receipts, etc).',
+    maxSteps: 50,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
       await execFileAsync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);
