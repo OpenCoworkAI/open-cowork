@@ -1644,7 +1644,7 @@ async function main() {
 
   // Prevent Windows from locking the screen or sleeping during benchmark
   // Use mouse_event + SetThreadExecutionState to prevent BOTH lock screen and display off
-  const keepAlive = setInterval(async () => {
+  const wakeScreen = async () => {
     try {
       await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
 Add-Type @"
@@ -1660,7 +1660,9 @@ Start-Sleep -Milliseconds 100
 [KA]::mouse_event(1, -5, 0, 0, 0)
 `], { timeout: 5000 });
     } catch {}
-  }, 10000);
+  };
+  await wakeScreen(); // Run immediately to wake screen if it's locked
+  const keepAlive = setInterval(wakeScreen, 10000);
   console.error('Screen lock prevention: active (mouse_event + ExecutionState every 10s)');
 
   if (opts.single) {
