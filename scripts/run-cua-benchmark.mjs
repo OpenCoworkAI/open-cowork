@@ -142,9 +142,31 @@ async function performType(text) {
 }
 
 async function performKeyPress(key, modifiers = []) {
-  await runPy('key_press', [key, ...modifiers]);
+  // Normalize key: "page down" → "pagedown", "page up" → "pageup"
+  let normalizedKey = key.toLowerCase().replace(/\s+/g, '');
+
+  // Handle "ctrl+f" style combined keys
+  if (normalizedKey.includes('+')) {
+    const parts = normalizedKey.split('+');
+    normalizedKey = parts.pop(); // last part is the key
+    modifiers = [...parts, ...modifiers]; // everything else is a modifier
+  }
+
+  // Fix swapped key/modifier: if key is a modifier (ctrl/alt/shift) and modifiers contain a non-modifier, swap them
+  const modifierNames = new Set(['ctrl', 'control', 'alt', 'shift']);
+  if (modifierNames.has(normalizedKey) && modifiers.length > 0) {
+    const nonModMods = modifiers.filter(m => !modifierNames.has(m.toLowerCase()));
+    const modMods = modifiers.filter(m => modifierNames.has(m.toLowerCase()));
+    if (nonModMods.length > 0) {
+      // Swap: the "key" is actually a modifier, and the non-modifier in modifiers is the real key
+      modifiers = [normalizedKey, ...modMods];
+      normalizedKey = nonModMods[0].toLowerCase().replace(/\s+/g, '');
+    }
+  }
+
+  await runPy('key_press', [normalizedKey, ...modifiers]);
   await sleep(300);
-  return `Pressed: ${modifiers.length ? modifiers.join('+') + '+' : ''}${key}`;
+  return `Pressed: ${modifiers.length ? modifiers.join('+') + '+' : ''}${normalizedKey}`;
 }
 
 async function performScroll(mx, my, direction, amount = 3) {
@@ -185,6 +207,10 @@ async function executeAction(action) {
     // If inner has "app", it's a launch_app: {"action": {"app": "edge"}}
     if (inner.app) {
       return executeAction({ ...action, ...inner, action: 'launch_app' });
+    }
+    // If inner has "path"/"file", it's an open_file: {"action": {"path": "/path/to/file"}}
+    if (inner.path || inner.file) {
+      return executeAction({ ...action, ...inner, action: 'open_file' });
     }
     // If inner has "summary", it's done: {"action": {"summary": "..."}}
     if (inner.summary || inner.done) {
@@ -254,7 +280,7 @@ async function executeAction(action) {
     case 'scroll': {
       const sx = Number(action.x || 640);
       const sy = Number(action.y || 360);
-      return { text: await performScroll(sx, sy, action.direction || 'down', action.amount || 3) };
+      return { text: await performScroll(sx, sy, action.direction || 'down', action.amount || 5) };
     }
 
     case 'launch_app':
@@ -282,20 +308,56 @@ async function executeAction(action) {
       return { text: `Focused window: ${proc}` };
     }
 
+    case 'open_file': {
+      // Open a file with default app, wait for it to load, maximize, and click content for focus
+      const filePath = action.path || action.file || '';
+      if (!filePath) return { text: 'Error: specify file path. Example: {"action": "open_file", "path": "C:\\\\Users\\\\me\\\\Desktop\\\\file.pdf"}' };
+      try {
+        await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${filePath}"`]);
+      } catch (e) {
+        return { text: `Error opening file: ${e.message}` };
+      }
+      // Wait for app to start and render
+      await sleep(2500);
+      // Maximize the foreground window and click center to give content focus
+      try {
+        await runPy('screenshot', ['--width', '1', '--height', '1']); // wake display
+        // Get foreground window and maximize it
+        await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class WU {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+}
+"@
+[WU]::ShowWindow([WU]::GetForegroundWindow(), 3)
+`]);
+        await sleep(500);
+        // Click center of screen to give content area focus
+        const cx = Math.round(SCREENSHOT_W / 2);
+        const cy = Math.round(SCREENSHOT_H / 2);
+        const { x: sx, y: sy } = mapCoords(cx, cy);
+        await runPy('click', [String(sx), String(sy)]);
+        await sleep(300);
+      } catch {}
+      return { text: `Opened file: ${filePath} (maximized, content focused)` };
+    }
+
     case 'run_command':
     case 'shell':
     case 'exec': {
       const cmd = action.command || action.cmd || '';
       if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
       try {
-        const { stdout, stderr } = await execAsync(cmd, {
-          shell: 'powershell.exe',
-          timeout: 15000,
-          maxBuffer: 1024 * 1024,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-        });
+        // Use -NoProfile to avoid PSReadLine noise from user's PowerShell profile
+        const { stdout, stderr } = await execFileAsync('powershell.exe',
+          ['-NoProfile', '-Command', cmd],
+          { timeout: 15000, maxBuffer: 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
+        );
         const out = (stdout || '').trim();
-        const err = (stderr || '').trim();
+        // Filter out PSReadLine noise that leaks even with -NoProfile in some configs
+        const err = (stderr || '').replace(/Set-PSReadLineOption[\s\S]*?FullyQualifiedErrorId[^\r\n]*/g, '').trim();
         let result = '';
         if (out) result += out;
         if (err) result += (result ? '\n[stderr] ' : '[stderr] ') + err;
@@ -304,7 +366,9 @@ async function executeAction(action) {
         if (result.length > 2000) result = result.slice(0, 2000) + '\n... (truncated)';
         return { text: `$ ${cmd}\n${result}` };
       } catch (e) {
-        const msg = e.stdout || e.stderr || e.message || 'Command failed';
+        // Filter PSReadLine noise from error output too
+        const raw = e.stdout || e.stderr || e.message || 'Command failed';
+        const msg = raw.replace(/Set-PSReadLineOption[\s\S]*?FullyQualifiedErrorId[^\r\n]*/g, '').trim();
         return { text: `$ ${cmd}\n[error] ${msg.slice(0, 1000)}` };
       }
     }
@@ -315,7 +379,7 @@ async function executeAction(action) {
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, run_command, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, open_file, run_command, done` };
   }
 }
 
@@ -341,19 +405,29 @@ Available actions:
      settings-display (Display/resolution), settings-network (Network/WiFi), settings-themes (Themes), settings-personalization
 9. {"thought": "...", "action": "focus_window", "process": "notepad"} - Bring an existing window to front
 10. {"thought": "...", "action": "run_command", "command": "hostname"} - Run a shell command and get text output
-    This runs in PowerShell and returns stdout/stderr as text. Use for ANY command-line task:
+    This runs in PowerShell (-NoProfile) and returns stdout/stderr as text. Use for ANY command-line task:
     system info (hostname, ipconfig), file ops (mkdir, ls, cat, Set-Content), math, web requests, etc.
     You do NOT need to open a terminal window — run_command executes directly and returns the result.
     IMPORTANT: This is Windows PowerShell. "curl" is an alias for Invoke-WebRequest (not Unix curl).
     To download files: Invoke-WebRequest -Uri "https://url" -OutFile "path"
     To make HTTP requests: Invoke-RestMethod "https://url"
-11. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
+    IMPORTANT PowerShell tips:
+    - Desktop path: use "$HOME\\Desktop" or "[Environment]::GetFolderPath('Desktop')". Do NOT use "$env:Desktop" (it does not exist).
+    - To open a file with default app: Start-Process "$HOME\\Desktop\\file.pdf" (this works!)
+    - Edge executable name is "msedge" (NOT "edge"). Example: Start-Process msedge -ArgumentList "https://url"
+    - If a command produces no stdout and no error, it SUCCEEDED. Do not retry.
+    - "dir /b" does not work in PowerShell. Use: Get-ChildItem -Name
+11. {"thought": "...", "action": "open_file", "path": "C:\\Users\\me\\Desktop\\file.pdf"} - Open a file with its default app
+    This opens the file, waits for the app to load, MAXIMIZES the window, and clicks the center to give content focus.
+    Use this instead of Start-Process when you need to VIEW a file (PDF, image, document).
+    After open_file, the content area has focus — you can immediately use keyboard shortcuts (Ctrl+F, Page Down, etc.)
+12. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 CRITICAL rules:
 - ALWAYS try run_command FIRST before using any GUI app. run_command is faster, more reliable, and takes 1 step instead of 10+.
-  Examples: "ls $HOME/Desktop" to list files, "mkdir $HOME/Desktop/Docs" to create folders, "mv $HOME/Desktop/*.txt $HOME/Desktop/Docs/" to move files.
-  For downloading files: Invoke-WebRequest -Uri "https://url" -OutFile "$HOME/Desktop/file.pdf"
-  For opening files: Start-Process "$HOME/Desktop/file.pdf" (opens with default app, no need to launch_app first)
+  Examples: "Get-ChildItem $HOME\\Desktop" to list files, "mkdir $HOME\\Desktop\\Docs" to create folders, "Move-Item $HOME\\Desktop\\*.txt $HOME\\Desktop\\Docs\\" to move files.
+  For downloading files: Invoke-WebRequest -Uri "https://url" -OutFile "$HOME\\Desktop\\file.pdf"
+  For VIEWING files (PDFs, images, documents): use open_file action (NOT Start-Process) — it auto-maximizes and gives content focus.
 - Only use launch_app + Edge browser when you need to VISUALLY interact with a webpage (click buttons, fill forms, read visual content).
   Do NOT open a browser just to search or download — use run_command with curl instead.
 - Do NOT use File Explorer for file operations — use run_command instead (ls, mkdir, mv, cp, cat).
@@ -365,8 +439,12 @@ CRITICAL rules:
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
-- For PDFs in Edge: click the PDF content area first to give it focus, then use Page Down to navigate pages.
-  Use Ctrl+G to jump to a specific page number. Use Ctrl+F to search for text in the PDF.
+- For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
+  1. FIRST click the PDF content area (center of the page) to give it focus
+  2. Use Ctrl+F to search for specific text (e.g., search "Table 3" to find a table)
+  3. Use Page Down key to move one full page at a time
+  4. Click the page number field in the toolbar and type a number to jump to that page
+  IMPORTANT: Always click the PDF content BEFORE using any keyboard shortcut (Ctrl+F, Page Down, etc.)
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
 - Common keyboard shortcuts: Ctrl+S = save file, Ctrl+A = select all, Ctrl+Z = undo, Ctrl+C/V = copy/paste.
 - Prefer keyboard input (type, key_press) over clicking buttons in all apps.
@@ -1347,6 +1425,12 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
           for (const f of ['Current Session', 'Current Tabs', 'Last Session', 'Last Tabs']) {
             await fs.unlink(path.join(edgeState, f)).catch(() => {});
           }
+          // Mark Edge as having exited cleanly to suppress crash recovery dialog
+          const prefsPath = path.join(edgeState, 'Preferences');
+          const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+          if (prefs.profile) prefs.profile.exited_cleanly = true;
+          if (prefs.profile) prefs.profile.exit_type = 'Normal';
+          await fs.writeFile(prefsPath, JSON.stringify(prefs), 'utf8');
         } catch {}
         // NOTE: Do NOT use Shell.Application COM object to close Explorer windows.
         // It creates a COM reference that causes Explorer to steal focus from subsequent apps.
@@ -1473,6 +1557,25 @@ async function main() {
   console.error(`Model: ${MODEL}`);
 
   if (opts.single) {
+    // Pre-task cleanup: kill stale apps (same as runBenchmark)
+    const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT', 'chrome', 'Taskmgr'];
+    for (const app of appsToKill) {
+      await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
+    }
+    // Clear Edge session state to prevent "Restore pages" dialog and old tabs
+    const edgeState = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'User Data', 'Default');
+    try {
+      for (const f of ['Current Session', 'Current Tabs', 'Last Session', 'Last Tabs']) {
+        await fs.unlink(path.join(edgeState, f)).catch(() => {});
+      }
+      // Mark Edge as having exited cleanly to suppress crash recovery dialog
+      const prefsPath = path.join(edgeState, 'Preferences');
+      const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+      if (prefs.profile) prefs.profile.exited_cleanly = true;
+      if (prefs.profile) prefs.profile.exit_type = 'Normal';
+      await fs.writeFile(prefsPath, JSON.stringify(prefs), 'utf8');
+    } catch {}
+    await sleep(1000);
     // Pre-task: minimize the current terminal/Claude Code window so it doesn't block screenshots
     try {
       await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
