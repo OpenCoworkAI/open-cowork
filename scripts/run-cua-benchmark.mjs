@@ -733,6 +733,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
   const reflectionBuffer = []; // Max 3 reflections
   const MAX_REFLECTIONS = 3;
   let stepCount = 0;
+  let consecutiveParseFailures = 0;
   let lastSummary = '';
 
   const messages = [
@@ -782,11 +783,23 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
       // Parse JSON action
       const action = parseAction(rawResponse);
       if (!action) {
-        console.error('[CUA] Failed to parse action JSON');
+        consecutiveParseFailures = (consecutiveParseFailures || 0) + 1;
+        console.error(`[CUA] Failed to parse action JSON (${consecutiveParseFailures} consecutive)`);
         messages.push({ role: 'assistant', content: rawResponse });
-        messages.push({ role: 'user', content: 'Please respond with a valid JSON action. Example: {"thought": "I need to see the screen", "action": "screenshot"}' });
+        if (consecutiveParseFailures >= 3) {
+          // After 3 consecutive failures, provide a very explicit example
+          messages.push({ role: 'user', content: 'Your JSON is malformed. Here are exact examples you can copy:\n' +
+            '{"thought": "list files", "action": "run_command", "command": "Get-ChildItem $HOME\\\\Desktop -Name"}\n' +
+            '{"thought": "view an image", "action": "view_image", "path": "$HOME/Desktop/demo_IMG_4721.jpg"}\n' +
+            '{"thought": "create folder", "action": "run_command", "command": "mkdir $HOME\\\\Desktop\\\\Food"}\n' +
+            'Respond with ONLY a JSON object, nothing else.' });
+          consecutiveParseFailures = 0; // reset after explicit help
+        } else {
+          messages.push({ role: 'user', content: 'Please respond with a valid JSON action. Example: {"thought": "I need to see the screen", "action": "screenshot"}' });
+        }
         continue;
       }
+      consecutiveParseFailures = 0;
 
       messages.push({ role: 'assistant', content: rawResponse });
 
