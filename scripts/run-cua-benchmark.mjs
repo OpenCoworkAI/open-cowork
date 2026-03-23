@@ -65,7 +65,31 @@ function mapCoords(mx, my) {
 
 // ─── Screenshot ──────────────────────────────────────────────────────────────
 
+// Minimize the parent terminal/Claude Code window so it doesn't block screenshots
+let _parentMinimized = false;
+async function ensureParentMinimized() {
+  if (_parentMinimized) return;
+  try {
+    await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
+$p = (Get-CimInstance Win32_Process -Filter "ProcessId = ${process.pid}").ParentProcessId
+while ($p) {
+  $proc = Get-Process -Id $p -EA SilentlyContinue
+  if ($proc -and $proc.MainWindowHandle -ne 0) {
+    Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class WMin { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); }
+"@
+    [WMin]::ShowWindow($proc.MainWindowHandle, 6)
+    break
+  }
+  $p = (Get-CimInstance Win32_Process -Filter "ProcessId = $p" -EA SilentlyContinue).ParentProcessId
+}`]);
+    _parentMinimized = true;
+  } catch {}
+}
+
 async function captureScreenshot() {
+  await ensureParentMinimized();
   return await runPy('screenshot', ['--width', String(SCREENSHOT_W), '--height', String(SCREENSHOT_H)]);
 }
 
@@ -149,7 +173,23 @@ function validateClickCoords(x, y) {
 async function executeAction(action) {
   // Handle nested action objects: {"action": {"action": "screenshot"}} → flatten
   if (typeof action.action === 'object' && action.action !== null) {
-    return executeAction({ ...action, ...action.action, action: action.action.action });
+    const inner = action.action;
+    // If inner has "action" key, use it: {"action": {"action": "click", "x": 100}}
+    if (inner.action) {
+      return executeAction({ ...action, ...inner, action: inner.action });
+    }
+    // If inner has "command" but no "action", it's a run_command: {"action": {"command": "ls"}}
+    if (inner.command) {
+      return executeAction({ ...action, ...inner, action: 'run_command' });
+    }
+    // If inner has "app", it's a launch_app: {"action": {"app": "edge"}}
+    if (inner.app) {
+      return executeAction({ ...action, ...inner, action: 'launch_app' });
+    }
+    // If inner has "summary", it's done: {"action": {"summary": "..."}}
+    if (inner.summary || inner.done) {
+      return { done: true, text: inner.summary || inner.done || 'Task completed.' };
+    }
   }
 
   // Normalize alternative formats the model sometimes uses:
@@ -302,14 +342,20 @@ Available actions:
 9. {"thought": "...", "action": "focus_window", "process": "notepad"} - Bring an existing window to front
 10. {"thought": "...", "action": "run_command", "command": "hostname"} - Run a shell command and get text output
     This runs in PowerShell and returns stdout/stderr as text. Use for ANY command-line task:
-    system info (hostname, ipconfig), file ops (mkdir, ls, cat, Set-Content), math, web requests (curl), etc.
+    system info (hostname, ipconfig), file ops (mkdir, ls, cat, Set-Content), math, web requests, etc.
     You do NOT need to open a terminal window — run_command executes directly and returns the result.
+    IMPORTANT: This is Windows PowerShell. "curl" is an alias for Invoke-WebRequest (not Unix curl).
+    To download files: Invoke-WebRequest -Uri "https://url" -OutFile "path"
+    To make HTTP requests: Invoke-RestMethod "https://url"
 11. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 CRITICAL rules:
 - ALWAYS try run_command FIRST before using any GUI app. run_command is faster, more reliable, and takes 1 step instead of 10+.
   Examples: "ls $HOME/Desktop" to list files, "mkdir $HOME/Desktop/Docs" to create folders, "mv $HOME/Desktop/*.txt $HOME/Desktop/Docs/" to move files.
-- Only use launch_app for tasks that REQUIRE a graphical interface (e.g., Calculator UI, Notepad text editing, Edge web browsing, Excel charts).
+  For downloading files: Invoke-WebRequest -Uri "https://url" -OutFile "$HOME/Desktop/file.pdf"
+  For opening files: Start-Process "$HOME/Desktop/file.pdf" (opens with default app, no need to launch_app first)
+- Only use launch_app + Edge browser when you need to VISUALLY interact with a webpage (click buttons, fill forms, read visual content).
+  Do NOT open a browser just to search or download — use run_command with curl instead.
 - Do NOT use File Explorer for file operations — use run_command instead (ls, mkdir, mv, cp, cat).
 - After launch_app, you can type immediately — it maximizes and focuses the window for you.
 - For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
@@ -319,6 +365,8 @@ CRITICAL rules:
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
+- For PDFs in Edge: click the PDF content area first to give it focus, then use Page Down to navigate pages.
+  Use Ctrl+G to jump to a specific page number. Use Ctrl+F to search for text in the PDF.
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
 - Common keyboard shortcuts: Ctrl+S = save file, Ctrl+A = select all, Ctrl+Z = undo, Ctrl+C/V = copy/paste.
 - Prefer keyboard input (type, key_press) over clicking buttons in all apps.
@@ -1425,7 +1473,34 @@ async function main() {
   console.error(`Model: ${MODEL}`);
 
   if (opts.single) {
+    // Pre-task: minimize the current terminal/Claude Code window so it doesn't block screenshots
+    try {
+      await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
+$myPid = ${process.pid}
+$parent = (Get-CimInstance Win32_Process -Filter "ProcessId = $myPid").ParentProcessId
+while ($parent) {
+  $proc = Get-Process -Id $parent -ErrorAction SilentlyContinue
+  if ($proc -and $proc.MainWindowHandle -ne 0) {
+    Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class WinMin { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); }
+"@
+    [WinMin]::ShowWindow($proc.MainWindowHandle, 6)
+    break
+  }
+  $parent = (Get-CimInstance Win32_Process -Filter "ProcessId = $parent" -ErrorAction SilentlyContinue).ParentProcessId
+}
+`]);
+    } catch {}
+    await runPy('minimize_all').catch(() => {});
+    await sleep(1000);
     const result = await runCuaTask(opts.single, opts.maxSteps);
+    // Restore terminal focus
+    try {
+      await runPy('minimize_all');
+      await sleep(300);
+      await runPy('focus_window', ['WindowsTerminal']);
+    } catch {}
     console.error(`\nResult: ${result.success ? 'SUCCESS' : 'FAILED'}`);
     console.error(`Summary: ${result.summary}`);
     console.error(`Steps: ${result.steps}`);
