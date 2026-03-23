@@ -337,11 +337,19 @@ async function executeAction(action) {
       } catch (e) {
         return { text: `Error opening file: ${e.message}` };
       }
-      // Wait for app to start and render
-      await sleep(2500);
+      // Wait for app to start and render (PDF viewers need extra time after Edge restart)
+      await sleep(4000);
       // Maximize the foreground window and click center to give content focus
       try {
-        await runPy('screenshot', ['--width', '1', '--height', '1']); // wake display
+        // Wake display with a tiny screenshot
+        await runPy('screenshot', ['--width', '1', '--height', '1']);
+        // Focus the correct app window explicitly
+        if (filePath.toLowerCase().endsWith('.pdf')) {
+          await runPy('focus_window', ['msedge']).catch(() => {});
+        } else if (filePath.toLowerCase().endsWith('.xlsx') || filePath.toLowerCase().endsWith('.xls')) {
+          await runPy('focus_window', ['EXCEL']).catch(() => {});
+        }
+        await sleep(1000);
         // Get foreground window and maximize it
         await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
 Add-Type @"
@@ -672,6 +680,9 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
 
   // Init screen info
   await getScreenInfo();
+
+  // Ensure parent terminal is minimized BEFORE any actions
+  await ensureParentMinimized();
 
   const trajectory = new Trajectory();
   const loopDetector = new LoopDetector();
@@ -1507,11 +1518,13 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
         } catch {}
         // NOTE: Do NOT use Shell.Application COM object to close Explorer windows.
         // It creates a COM reference that causes Explorer to steal focus from subsequent apps.
-        // minimize_all below handles any remaining windows.
-        // Minimize all remaining windows for a clean start
-        await runPy('minimize_all').catch(() => {});
-        await sleep(2000);
+        // NOTE: Do NOT use minimize_all — it triggers Windows Hello lock screen on corporate Win11.
+        // ensureParentMinimized() handles the terminal window separately.
+        await sleep(1000);
       } catch {}
+
+      // Keep screen alive: mouse activity prevents Windows Hello from locking
+      try { await runPy('scroll', ['640', '400', 'down', '0']); } catch {}
 
       console.error(`  Run ${i + 1}/${runs}...`);
       // Run task-specific setup if defined
@@ -1629,6 +1642,27 @@ async function main() {
   console.error('=== CUA Benchmark Runner v2 (JSON mode) ===');
   console.error(`Model: ${MODEL}`);
 
+  // Prevent Windows from locking the screen or sleeping during benchmark
+  // Use mouse_event + SetThreadExecutionState to prevent BOTH lock screen and display off
+  const keepAlive = setInterval(async () => {
+    try {
+      await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class KA {
+  [DllImport("user32.dll")] public static extern void mouse_event(int f, int dx, int dy, int d, int e);
+  [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);
+}
+"@
+[KA]::SetThreadExecutionState(0x80000003)
+[KA]::mouse_event(1, 5, 0, 0, 0)
+Start-Sleep -Milliseconds 100
+[KA]::mouse_event(1, -5, 0, 0, 0)
+`], { timeout: 5000 });
+    } catch {}
+  }, 10000);
+  console.error('Screen lock prevention: active (mouse_event + ExecutionState every 10s)');
+
   if (opts.single) {
     // Pre-task cleanup: kill stale apps (same as runBenchmark)
     const appsToKill = ['CalculatorApp', 'Notepad', 'mspaint', 'SystemSettings', 'msedge', 'WINWORD', 'EXCEL', 'POWERPNT', 'chrome', 'Taskmgr'];
@@ -1686,7 +1720,8 @@ public class WinMin { [DllImport("user32.dll")] public static extern bool ShowWi
 }
 `]);
     } catch {}
-    await runPy('minimize_all').catch(() => {});
+    // NOTE: Do NOT use minimize_all — triggers Windows Hello lock screen on corporate Win11.
+    // ensureParentMinimized() in captureScreenshot() handles the terminal window.
     await sleep(1000);
     const result = await runCuaTask(opts.single, opts.maxSteps);
     // Restore terminal focus
