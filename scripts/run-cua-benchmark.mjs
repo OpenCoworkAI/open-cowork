@@ -424,7 +424,7 @@ public class WU {
         // Use -NoProfile to avoid PSReadLine noise from user's PowerShell profile
         const { stdout, stderr } = await execFileAsync('powershell.exe',
           ['-NoProfile', '-Command', cmd],
-          { timeout: 15000, maxBuffer: 1024 * 1024, cwd: os.homedir(), env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
+          { timeout: 15000, maxBuffer: 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
         );
         const out = (stdout || '').trim();
         // Filter out PSReadLine noise that leaks even with -NoProfile in some configs
@@ -484,6 +484,7 @@ Available actions:
     To make HTTP requests: Invoke-RestMethod "https://url"
     IMPORTANT PowerShell tips:
     - Desktop path: use "$HOME\\Desktop" or "[Environment]::GetFolderPath('Desktop')". Do NOT use "$env:Desktop" (it does not exist).
+    - ALWAYS use ABSOLUTE paths (e.g., "$HOME\\Desktop\\Food") for mkdir and Move-Item. Do NOT use relative paths like "mkdir Food".
     - To open a file with default app: Start-Process "$HOME\\Desktop\\file.pdf" (this works!)
     - Edge executable name is "msedge" (NOT "edge"). Example: Start-Process msedge -ArgumentList "https://url"
     - If a command produces no stdout and no error, it SUCCEEDED. Do not retry.
