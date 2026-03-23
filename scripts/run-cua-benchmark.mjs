@@ -340,6 +340,11 @@ public class WU {
         const { x: sx, y: sy } = mapCoords(cx, cy);
         await runPy('click', [String(sx), String(sy)]);
         await sleep(300);
+        // Press Escape to dismiss any popups (Document Recovery, Copilot, etc.)
+        await runPy('key_press', ['escape']);
+        await sleep(200);
+        await runPy('key_press', ['escape']);
+        await sleep(200);
       } catch {}
       return { text: `Opened file: ${filePath} (maximized, content focused)` };
     }
@@ -347,8 +352,16 @@ public class WU {
     case 'run_command':
     case 'shell':
     case 'exec': {
-      const cmd = action.command || action.cmd || '';
+      let cmd = action.command || action.cmd || '';
       if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
+      // Convert literal \n to PowerShell newline (`n) inside quoted strings
+      // This fixes the common issue where models use \n (Unix-style) in PowerShell commands
+      cmd = cmd.replace(/"([^"]*?)"/g, (match, inner) => {
+        return '"' + inner.replace(/\\n/g, '`n') + '"';
+      });
+      cmd = cmd.replace(/'([^']*?)'/g, (match, inner) => {
+        return "'" + inner.replace(/\\n/g, '`n') + "'";
+      });
       try {
         // Use -NoProfile to avoid PSReadLine noise from user's PowerShell profile
         const { stdout, stderr } = await execFileAsync('powershell.exe',
@@ -417,6 +430,9 @@ Available actions:
     - Edge executable name is "msedge" (NOT "edge"). Example: Start-Process msedge -ArgumentList "https://url"
     - If a command produces no stdout and no error, it SUCCEEDED. Do not retry.
     - "dir /b" does not work in PowerShell. Use: Get-ChildItem -Name
+    - IMPORTANT: PowerShell uses backtick-n for newlines, NOT \\n. But the EASIEST way to write multi-line files is:
+      Set-Content "$HOME\\Desktop\\data.csv" -Value @("header1,header2","value1,value2","value3,value4")
+      Each array element becomes a separate line. Use this for CSV/text files.
 11. {"thought": "...", "action": "open_file", "path": "C:\\Users\\me\\Desktop\\file.pdf"} - Open a file with its default app
     This opens the file, waits for the app to load, MAXIMIZES the window, and clicks the center to give content focus.
     Use this instead of Start-Process when you need to VIEW a file (PDF, image, document).
@@ -438,6 +454,16 @@ CRITICAL rules:
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
+- For Excel: NEVER type data cell-by-cell in the GUI — it takes too many steps.
+  The BEST approach to create Excel files with data:
+  1. Use run_command with Python to create an xlsx file directly:
+     python -c "import openpyxl; wb=openpyxl.Workbook(); ws=wb.active; [ws.append(r) for r in [['Name','Score'],['Alice',90],['Bob',85]]]; wb.save('$HOME/Desktop/data.xlsx')"
+  2. Then open_file to open the xlsx in Excel (it's already xlsx format, no conversion needed!)
+  3. For charts: select your data range (click A1, then Ctrl+Shift+End), then press Alt+N (activates Insert tab via keyboard).
+     Then click a chart icon in the Charts group of the ribbon. Press Enter to confirm any dialog.
+  4. Ctrl+S to save (since the file is already xlsx, Ctrl+S works directly — no format dialog!)
+  If you must use Save As: press F12, type the FULL filename with .xlsx extension, then press Enter (do NOT click Save button).
+  IMPORTANT: In ALL dialogs, prefer pressing Enter over clicking buttons — keyboard is more reliable than coordinates.
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
   1. FIRST click the PDF content area (center of the page) to give it focus
@@ -1432,6 +1458,14 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
           if (prefs.profile) prefs.profile.exit_type = 'Normal';
           await fs.writeFile(prefsPath, JSON.stringify(prefs), 'utf8');
         } catch {}
+        // Clear Excel auto-recovery files to prevent "Document Recovery" panel
+        try {
+          const excelRecovery = path.join(process.env.APPDATA || '', 'Microsoft', 'Excel');
+          const recoveryFiles = await fs.readdir(excelRecovery).catch(() => []);
+          for (const f of recoveryFiles) {
+            if (f !== 'XLSTART') await fs.rm(path.join(excelRecovery, f), { recursive: true, force: true }).catch(() => {});
+          }
+        } catch {}
         // NOTE: Do NOT use Shell.Application COM object to close Explorer windows.
         // It creates a COM reference that causes Explorer to steal focus from subsequent apps.
         // minimize_all below handles any remaining windows.
@@ -1574,6 +1608,24 @@ async function main() {
       if (prefs.profile) prefs.profile.exited_cleanly = true;
       if (prefs.profile) prefs.profile.exit_type = 'Normal';
       await fs.writeFile(prefsPath, JSON.stringify(prefs), 'utf8');
+    } catch {}
+    // Clear Excel auto-recovery files to prevent "Document Recovery" panel
+    try {
+      const excelRecovery = path.join(process.env.APPDATA || '', 'Microsoft', 'Excel');
+      const recoveryFiles = await fs.readdir(excelRecovery);
+      for (const f of recoveryFiles) {
+        if (f !== 'XLSTART') await fs.rm(path.join(excelRecovery, f), { recursive: true, force: true }).catch(() => {});
+      }
+      // Also clear Office unsaved files
+      const unsaved = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Office', 'UnsavedFiles');
+      const unsavedFiles = await fs.readdir(unsaved).catch(() => []);
+      for (const f of unsavedFiles) {
+        await fs.rm(path.join(unsaved, f), { force: true }).catch(() => {});
+      }
+      // Clear Excel DocumentRecovery registry keys
+      await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+        'Remove-Item "HKCU:\\Software\\Microsoft\\Office\\16.0\\Excel\\Resiliency\\DocumentRecovery" -Recurse -Force -ErrorAction SilentlyContinue'
+      ]).catch(() => {});
     } catch {}
     await sleep(1000);
     // Pre-task: minimize the current terminal/Claude Code window so it doesn't block screenshots
