@@ -399,11 +399,13 @@ public class WU {
       let cmd = action.command || action.cmd || '';
       if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
       // Convert literal \n to PowerShell newline (`n) inside quoted strings
+      // But NOT when \n is part of a path like \nature or \new
+      // Only match \n that is NOT followed by a word character (letter/digit/_)
       cmd = cmd.replace(/"([^"]*?)"/g, (match, inner) => {
-        return '"' + inner.replace(/\\n/g, '`n') + '"';
+        return '"' + inner.replace(/\\n(?![a-zA-Z0-9_])/g, '`n') + '"';
       });
       cmd = cmd.replace(/'([^']*?)'/g, (match, inner) => {
-        return "'" + inner.replace(/\\n/g, '`n') + "'";
+        return "'" + inner.replace(/\\n(?![a-zA-Z0-9_])/g, '`n') + "'";
       });
       // Replace $HOME in single quotes (PowerShell doesn't expand variables in single quotes)
       const homeDir = os.homedir().replace(/\\/g, '\\\\');
