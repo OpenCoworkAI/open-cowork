@@ -9,7 +9,7 @@
  *   node scripts/run-cua-benchmark.mjs --runs 3
  */
 
-import { execFile, exec } from 'child_process';
+import { execFile, exec, execFileSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as fss from 'fs';
@@ -212,6 +212,22 @@ async function executeAction(action) {
     if (inner.path || inner.file) {
       return executeAction({ ...action, ...inner, action: 'open_file' });
     }
+    // If inner has "key", it's a key_press: {"action": {"key": "enter", "modifiers": ["ctrl"]}}
+    if (inner.key) {
+      return executeAction({ ...action, ...inner, action: 'key_press' });
+    }
+    // If inner has "x" and "y", it's a click: {"action": {"x": 100, "y": 200}}
+    if (inner.x !== undefined && inner.y !== undefined) {
+      return executeAction({ ...action, ...inner, action: 'click' });
+    }
+    // If inner has "text", it's a type: {"action": {"text": "hello"}}
+    if (inner.text) {
+      return executeAction({ ...action, ...inner, action: 'type' });
+    }
+    // If inner has "direction", it's a scroll: {"action": {"direction": "down", "x": 640}}
+    if (inner.direction) {
+      return executeAction({ ...action, ...inner, action: 'scroll' });
+    }
     // If inner has "summary", it's done: {"action": {"summary": "..."}}
     if (inner.summary || inner.done) {
       return { done: true, text: inner.summary || inner.done || 'Task completed.' };
@@ -310,8 +326,12 @@ async function executeAction(action) {
 
     case 'open_file': {
       // Open a file with default app, wait for it to load, maximize, and click content for focus
-      const filePath = action.path || action.file || '';
-      if (!filePath) return { text: 'Error: specify file path. Example: {"action": "open_file", "path": "C:\\\\Users\\\\me\\\\Desktop\\\\file.pdf"}' };
+      let filePath = action.path || action.file || '';
+      if (!filePath) return { text: 'Error: specify file path. Example: {"action": "open_file", "path": "$HOME/Desktop/file.pdf"}' };
+      // Expand common variables that might not resolve in all contexts
+      filePath = filePath.replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir());
+      // Normalize forward slashes to backslashes for Windows
+      filePath = filePath.replace(/\//g, '\\');
       try {
         await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${filePath}"`]);
       } catch (e) {
@@ -355,12 +375,16 @@ public class WU {
       let cmd = action.command || action.cmd || '';
       if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
       // Convert literal \n to PowerShell newline (`n) inside quoted strings
-      // This fixes the common issue where models use \n (Unix-style) in PowerShell commands
       cmd = cmd.replace(/"([^"]*?)"/g, (match, inner) => {
         return '"' + inner.replace(/\\n/g, '`n') + '"';
       });
       cmd = cmd.replace(/'([^']*?)'/g, (match, inner) => {
         return "'" + inner.replace(/\\n/g, '`n') + "'";
+      });
+      // Replace $HOME in single quotes (PowerShell doesn't expand variables in single quotes)
+      const homeDir = os.homedir().replace(/\\/g, '\\\\');
+      cmd = cmd.replace(/'([^']*?)'/g, (match, inner) => {
+        return "'" + inner.replace(/\$HOME/g, os.homedir()) + "'";
       });
       try {
         // Use -NoProfile to avoid PSReadLine noise from user's PowerShell profile
@@ -477,6 +501,8 @@ CRITICAL rules:
   3. Use Page Down key to move one full page at a time
   4. Click the page number field in the toolbar and type a number to jump to that page
   IMPORTANT: Always click the PDF content BEFORE using any keyboard shortcut (Ctrl+F, Page Down, etc.)
+  IMPORTANT: When using Ctrl+F, ALWAYS press Ctrl+A first to select all text in the search box, THEN type your search term.
+  This prevents old search text from concatenating with your new search.
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
 - Common keyboard shortcuts: Ctrl+S = save file, Ctrl+A = select all, Ctrl+Z = undo, Ctrl+C/V = copy/paste.
 - Prefer keyboard input (type, key_press) over clicking buttons in all apps.
@@ -719,7 +745,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         actionType = action.action.action.toLowerCase();
       }
       if (actionType === 'done' || actionType === 'finish' || actionType === 'complete') {
-        lastSummary = action.summary || action.result || rawResponse;
+        lastSummary = String(action.summary || action.result || rawResponse || '');
         console.error(`[CUA] DONE: ${lastSummary.slice(0, 150)}`);
         await trajectory.recordStep({
           timestamp: new Date().toISOString(),
@@ -1365,40 +1391,47 @@ const DEMO_TASKS = [
     id: 'demo-paper-chart',
     name: 'Demo: paper ablation → Excel chart',
     tier: 'demo',
-    instruction: 'Find the paper "Attention is All You Need", look at the ablation study results, and create a comparison chart in Excel based on the data.',
-    maxSteps: 45,
+    instruction: 'Open the paper "Attention_is_All_You_Need.pdf" on the Desktop. Find the ablation study table (Table 3), read the data, and create a comparison chart in Excel showing the BLEU scores. Save the chart as an xlsx file on the Desktop.',
+    maxSteps: 30,
     setup: async () => {
       // Clean up any leftover files from previous runs
       const desktop = path.join(os.homedir(), 'Desktop');
-      for (const f of ['paper.pdf', 'attention.pdf', 'chart.xlsx', 'ablation.xlsx']) {
+      for (const f of ['paper.pdf', 'attention.pdf', 'chart.xlsx', 'ablation.xlsx', 'ablation_chart.xlsx']) {
         await fs.unlink(path.join(desktop, f)).catch(() => {});
+      }
+      // Download the paper if not already present
+      const pdfPath = path.join(desktop, 'Attention_is_All_You_Need.pdf');
+      try {
+        await fs.access(pdfPath);
+      } catch {
+        await execFileAsync('powershell', ['-NoProfile', '-Command',
+          `Invoke-WebRequest -Uri "https://arxiv.org/pdf/1706.03762" -OutFile "${pdfPath}"`
+        ], { timeout: 30000 });
       }
       // Also close Excel if open
       await execFileAsync('powershell', ['-Command', 'Get-Process EXCEL -ErrorAction SilentlyContinue | Stop-Process -Force']).catch(() => {});
     },
     validate: (summary) => {
-      // Check if any Excel file was created/opened
-      try {
-        const desktop = path.join(os.homedir(), 'Desktop');
-        const files = require('fs').readdirSync(desktop);
-        const hasExcel = files.some(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
-        if (hasExcel) return true;
-      } catch {}
-      // Check common locations (Documents, Downloads)
-      for (const dir of ['Documents', 'Downloads']) {
+      // Check if any xlsx file with a chart exists on Desktop or common locations
+      for (const dir of ['Desktop', 'Documents', 'Downloads', '.']) {
         try {
-          const d = path.join(os.homedir(), dir);
-          const files = require('fs').readdirSync(d);
-          const recent = files.filter(f => {
-            if (!f.endsWith('.xlsx') && !f.endsWith('.xls')) return false;
-            const stat = require('fs').statSync(path.join(d, f));
-            return Date.now() - stat.mtimeMs < 5 * 60 * 1000; // created in last 5 min
-          });
-          if (recent.length > 0) return true;
+          const d = dir === '.' ? process.cwd() : path.join(os.homedir(), dir);
+          const files = fss.readdirSync(d).filter(f => f.endsWith('.xlsx'));
+          for (const f of files) {
+            const fp = path.join(d, f);
+            const stat = fss.statSync(fp);
+            if (Date.now() - stat.mtimeMs > 10 * 60 * 1000) continue; // skip old files
+            // Check if xlsx contains a chart using openpyxl
+            const result = execFileSync('python', ['-c',
+              `import openpyxl; wb=openpyxl.load_workbook("${fp.replace(/\\/g, '/')}"); print(sum(len(ws._charts) for ws in wb.worksheets))`
+            ], { timeout: 5000 });
+            const charts = parseInt((result || '').toString().trim());
+            if (charts > 0) return true;
+          }
         } catch {}
       }
       // Fallback: check summary mentions chart/Excel
-      const s = summary.toLowerCase();
+      const s = (summary || '').toLowerCase();
       return (s.includes('chart') || s.includes('excel') || s.includes('graph') || s.includes('plot'))
         && (s.includes('bleu') || s.includes('ablation') || s.includes('attention') || s.includes('transformer'));
     },
