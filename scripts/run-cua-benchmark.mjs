@@ -324,6 +324,22 @@ async function executeAction(action) {
       return { text: `Focused window: ${proc}` };
     }
 
+    case 'view_image': {
+      // Read an image file and return it directly to the model's vision input
+      // This is faster and more reliable than opening the image in a GUI app
+      let imgPath = action.path || action.file || '';
+      if (!imgPath) return { text: 'Error: specify image path. Example: {"action": "view_image", "path": "$HOME/Desktop/IMG_001.jpg"}' };
+      imgPath = imgPath.replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir());
+      imgPath = imgPath.replace(/\//g, '\\');
+      try {
+        const imgData = await fs.readFile(imgPath);
+        const base64 = imgData.toString('base64');
+        return { text: `Viewing image: ${path.basename(imgPath)}`, image: base64 };
+      } catch (e) {
+        return { text: `Error reading image: ${e.message}` };
+      }
+    }
+
     case 'open_file': {
       // Open a file with default app, wait for it to load, maximize, and click content for focus
       let filePath = action.path || action.file || '';
@@ -424,7 +440,7 @@ public class WU {
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, open_file, run_command, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, open_file, view_image, run_command, done` };
   }
 }
 
@@ -469,7 +485,11 @@ Available actions:
     This opens the file, waits for the app to load, MAXIMIZES the window, and clicks the center to give content focus.
     Use this instead of Start-Process when you need to VIEW a file (PDF, image, document).
     After open_file, the content area has focus — you can immediately use keyboard shortcuts (Ctrl+F, Page Down, etc.)
-12. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
+12. {"thought": "...", "action": "view_image", "path": "$HOME/Desktop/IMG_001.jpg"} - View an image file directly
+    This reads the image and shows it to you WITHOUT opening any app. Much faster than open_file for images.
+    Use this to quickly identify what an image shows (food, landscape, chart, receipt, etc.)
+    IMPORTANT: Use view_image for classifying images. Use open_file only for PDFs or documents.
+13. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 CRITICAL rules:
 - ALWAYS try run_command FIRST before using any GUI app. run_command is faster, more reliable, and takes 1 step instead of 10+.
@@ -483,10 +503,10 @@ CRITICAL rules:
 - For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
-- For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST open each image to see what it shows.
-  Use open_file to view each image, take a screenshot to see its content, then classify it.
+- For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST look at each image to classify it.
+  Use view_image to quickly see what each image shows — it's much faster than open_file.
+  Efficient workflow: 1) List files with run_command, 2) view_image each file to see content, 3) create folders + move files with run_command.
   Group files by their VISUAL CONTENT (food, nature, charts, receipts, etc), NOT by file extension.
-  Efficient workflow: 1) List files with run_command, 2) open_file each image to see content, 3) create folders with run_command, 4) move files with run_command.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
@@ -827,8 +847,24 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         const isShortType = (actionType === 'type' || actionType === 'type_text')
           && action.text && action.text.length <= 5;
         const isCommandAction = (actionType === 'run_command' || actionType === 'shell' || actionType === 'exec');
+        const isViewImage = (actionType === 'view_image') && execResult.image;
 
-        if (isShortType || isCommandAction) {
+        if (isViewImage) {
+          // view_image: send the image file directly to model's vision input (no screen capture needed)
+          await trajectory.recordStep({
+            timestamp: new Date().toISOString(),
+            action,
+            result: execResult.text,
+            model_raw_output: rawResponse,
+            model_thought: modelThought,
+            duration_ms: Date.now() - stepStartTime,
+          }).catch(() => {});
+          messages.push({
+            role: 'user',
+            content: `${execResult.text}\n\nDescribe what this image shows in detail, then decide which category it belongs to. Respond with your next action as JSON.`,
+            images: [execResult.image],
+          });
+        } else if (isShortType || isCommandAction) {
           await trajectory.recordStep({
             timestamp: new Date().toISOString(),
             action,
@@ -1391,11 +1427,9 @@ const DEMO_TASKS = [
       try {
         const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
         const { status } = require('child_process').spawnSync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'verify'], { timeout: 10000 });
-        if (status === 0) return true;
+        return status === 0;
       } catch {}
-      const s = summary.toLowerCase();
-      return (s.includes('organiz') || s.includes('moved') || s.includes('sorted') || s.includes('folder'))
-        && s.length > 30;
+      return false;
     },
     cleanup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
