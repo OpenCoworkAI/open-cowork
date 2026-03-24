@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
-"""Generate realistic test images for CUA desktop organization demo.
+"""Generate realistic test files for CUA desktop organization demo.
 
-Creates images with GENERIC filenames (IMG_xxxx, DSC_xxxx, Screenshot_xxxx)
-so the CUA model must LOOK AT the image content to classify them.
+Creates a mix of:
+- REAL PHOTOS from Pexels (food, nature, animals, architecture)
+- PIL-generated images (receipts, charts)
+- TEXT FILES with varied content (code, meeting notes, recipes, resumes)
 
-8 Categories (30 images total):
-  1. Food (4) - pasta, sushi, cake, salad
-  2. Nature/Landscape (4) - sunset mountains, beach, forest, starry night
-  3. Charts/Data (3) - bar, pie, line
-  4. Receipts (3) - grocery, coffee, restaurant
-  5. Animals/Pets (4) - cat, dog, fish, bird
-  6. Architecture (4) - house, skyscraper, bridge, church
-  7. Sports (4) - soccer, basketball, swimming, tennis
-  8. Vehicles (4) - car, airplane, sailboat, train
+All with GENERIC filenames so the model must READ content to classify.
+
+10 Categories (~30 files):
+  1. Food photos (3) - real photos from Pexels
+  2. Nature/Landscape (3) - real photos from Pexels
+  3. Animals (3) - real photos from Pexels
+  4. Architecture (3) - real photos from Pexels
+  5. Receipts (3) - PIL-generated receipt images
+  6. Charts/Data (3) - PIL-generated chart images
+  7. Code files (3) - .py/.js source code
+  8. Meeting notes (3) - .txt meeting minutes
+  9. Recipes (2) - .txt cooking recipes
+  10. Job/Resume (2) - .txt resume/cover letter
 """
 
 import os
 import sys
 import random
 import math
+import urllib.request
 from PIL import Image, ImageDraw, ImageFont
 
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -33,201 +40,44 @@ def get_font(size):
     return ImageFont.load_default()
 
 
-# ── Category 1: Food ─────────────────────────────────────────────────────────
+# ── Download real photos from Pexels ─────────────────────────────────────────
 
-def make_food_photo(path, variant=0):
-    img = Image.new("RGB", (800, 600), "#F5E6D3")
-    draw = ImageDraw.Draw(img)
-    font = get_font(18)
+PEXELS_PHOTOS = {
+    # Food (3)
+    "food_0": "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "food_1": "https://images.pexels.com/photos/1099680/pexels-photo-1099680.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "food_2": "https://images.pexels.com/photos/376464/pexels-photo-376464.jpeg?auto=compress&cs=tinysrgb&w=800",
+    # Nature/Landscape (3)
+    "nature_0": "https://images.pexels.com/photos/414612/pexels-photo-414612.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "nature_1": "https://images.pexels.com/photos/1287145/pexels-photo-1287145.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "nature_2": "https://images.pexels.com/photos/572897/pexels-photo-572897.jpeg?auto=compress&cs=tinysrgb&w=800",
+    # Animals (3)
+    "animals_0": "https://images.pexels.com/photos/45201/kitty-cat-kitten-pet-45201.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "animals_1": "https://images.pexels.com/photos/1108099/pexels-photo-1108099.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "animals_2": "https://images.pexels.com/photos/56866/garden-rose-red-pink-56866.jpeg?auto=compress&cs=tinysrgb&w=800",
+    # Architecture (3)
+    "architecture_0": "https://images.pexels.com/photos/1838640/pexels-photo-1838640.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "architecture_1": "https://images.pexels.com/photos/2404843/pexels-photo-2404843.jpeg?auto=compress&cs=tinysrgb&w=800",
+    "architecture_2": "https://images.pexels.com/photos/2539462/pexels-photo-2539462.jpeg?auto=compress&cs=tinysrgb&w=800",
+}
 
-    if variant == 0:  # Pasta on a plate with table setting
-        # Wooden table texture
-        for y in range(0, 600, 3):
-            draw.line([(0, y), (800, y)], fill=(int(210+random.randint(-5,5)), int(180+random.randint(-5,5)), int(140+random.randint(-5,5))))
-        # White plate
-        draw.ellipse([120, 60, 680, 540], fill="#FFFFFF", outline="#E0E0E0", width=4)
-        draw.ellipse([160, 90, 640, 510], fill="#FAFAFA", outline="#EEE", width=1)
-        # Pasta noodles
-        for _ in range(30):
-            x, y = random.randint(220, 580), random.randint(150, 450)
-            draw.arc([x-50, y-25, x+50, y+25], random.randint(0,180), random.randint(180,360), fill="#E8C547", width=3)
-        # Tomato sauce in center
-        draw.ellipse([280, 200, 520, 400], fill="#C0392B")
-        # Basil leaves
-        for _ in range(6):
-            x, y = random.randint(300, 500), random.randint(220, 380)
-            draw.ellipse([x, y, x+30, y+18], fill="#27AE60")
-        # Fork and knife
-        draw.rectangle([50, 200, 62, 480], fill="#C0C0C0")
-        draw.rectangle([730, 200, 742, 480], fill="#C0C0C0")
-        # Parmesan sprinkle
-        for _ in range(15):
-            x, y = random.randint(250, 550), random.randint(180, 420)
-            draw.ellipse([x, y, x+8, y+5], fill="#FFF8DC")
-
-    elif variant == 1:  # Burger
-        # Restaurant table
-        draw.rectangle([0, 0, 800, 600], fill="#8B4513")
-        # Plate
-        draw.ellipse([150, 100, 650, 520], fill="#FFFFFF", outline="#DDD", width=3)
-        # Bottom bun
-        draw.ellipse([220, 320, 580, 430], fill="#D2691E")
-        # Lettuce
-        for x in range(230, 570, 15):
-            draw.arc([x, 290, x+30, 320], 180, 0, fill="#228B22", width=4)
-        # Patty
-        draw.ellipse([230, 250, 570, 330], fill="#4A2F1A")
-        # Cheese (melting over edge)
-        draw.polygon([(240, 260), (560, 260), (570, 280), (550, 290), (530, 275),
-                      (480, 295), (450, 280), (400, 295), (350, 275), (300, 290), (260, 280), (230, 275)],
-                     fill="#FFD700")
-        # Tomato slices
-        draw.ellipse([280, 230, 380, 270], fill="#FF4500", outline="#CC3700", width=2)
-        draw.ellipse([400, 230, 500, 270], fill="#FF4500", outline="#CC3700", width=2)
-        # Top bun
-        draw.ellipse([220, 150, 580, 270], fill="#D2691E")
-        draw.ellipse([240, 155, 560, 200], fill="#E8A84C")
-        # Sesame seeds
-        for _ in range(12):
-            x, y = random.randint(270, 530), random.randint(160, 210)
-            draw.ellipse([x, y, x+10, y+6], fill="#FFF8DC")
-
-    elif variant == 2:  # Cake
-        # Kitchen counter
-        draw.rectangle([0, 400, 800, 600], fill="#D3D3D3")
-        draw.rectangle([0, 0, 800, 400], fill="#FFF5EE")
-        # Cake stand
-        draw.rectangle([300, 400, 500, 420], fill="#808080")
-        draw.ellipse([250, 380, 550, 420], fill="#C0C0C0")
-        # Cake body
-        draw.rectangle([250, 200, 550, 400], fill="#FFB6C1")  # pink
-        draw.rectangle([250, 200, 550, 230], fill="#FFFFFF")  # top frosting
-        draw.rectangle([250, 290, 550, 310], fill="#FFFFFF")  # middle frosting
-        # Strawberries on top
-        for x in range(270, 540, 45):
-            draw.ellipse([x, 180, x+35, 215], fill="#FF0000")
-            draw.polygon([(x+12,175),(x+17,160),(x+22,175)], fill="#228B22")
-        # Candles
-        for x in [320, 400, 480]:
-            draw.rectangle([x, 130, x+8, 200], fill=random.choice(["#FF69B4","#87CEEB","#FFD700"]))
-            draw.ellipse([x-2, 120, x+10, 135], fill="#FF6600")
-        # "Happy Birthday" text
-        draw.text((280, 330), "Happy Birthday!", fill="#FFFFFF", font=font)
-
-    else:  # Pizza
-        # Pizza box
-        draw.rectangle([80, 50, 720, 550], fill="#F5DEB3", outline="#D2B48C", width=3)
-        # Pizza circle
-        draw.ellipse([120, 80, 680, 520], fill="#E8C547")
-        # Tomato sauce base
-        draw.ellipse([150, 100, 650, 500], fill="#C0392B")
-        # Cheese
-        draw.ellipse([160, 110, 640, 490], fill="#FFD700")
-        # Pepperoni
-        pepperoni_positions = [(250,200),(400,180),(520,250),(200,350),(350,320),(500,380),(300,450),(450,430)]
-        for px, py in pepperoni_positions:
-            draw.ellipse([px, py, px+50, py+50], fill="#8B0000", outline="#660000", width=2)
-        # Slice lines
-        cx, cy = 400, 300
-        for angle in range(0, 360, 45):
-            ex = cx + int(260 * math.cos(math.radians(angle)))
-            ey = cy + int(210 * math.sin(math.radians(angle)))
-            draw.line([(cx, cy), (ex, ey)], fill="#F5DEB3", width=2)
-    img.save(path, quality=90)
+def download_photo(key, filepath):
+    """Download a photo from Pexels. Returns True on success."""
+    url = PEXELS_PHOTOS.get(key)
+    if not url:
+        return False
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        data = urllib.request.urlopen(req, timeout=15).read()
+        with open(filepath, 'wb') as f:
+            f.write(data)
+        return True
+    except Exception as e:
+        print(f"  WARNING: Failed to download {key}: {e}", file=sys.stderr)
+        return False
 
 
-# ── Category 2: Nature/Landscape ─────────────────────────────────────────────
-
-def make_nature_photo(path, variant=0):
-    img = Image.new("RGB", (800, 600))
-    draw = ImageDraw.Draw(img)
-
-    if variant == 0:  # Sunset mountains
-        for y in range(300):
-            draw.line([(0,y),(800,y)], fill=(int(255-y*0.3), int(100+y*0.2), int(50+y*0.5)))
-        draw.ellipse([320, 120, 480, 280], fill="#FFD700")
-        draw.polygon([(0,400),(200,250),(400,380),(600,220),(800,350),(800,600),(0,600)], fill="#2C3E50")
-        draw.polygon([(100,450),(350,280),(550,400),(800,300),(800,600),(0,600)], fill="#34495E")
-    elif variant == 1:  # Beach
-        for y in range(250):
-            draw.line([(0,y),(800,y)], fill=(135, 206, min(255, int(200+y*0.2))))
-        for y in range(250, 450):
-            draw.line([(0,y),(800,y)], fill=(0, int(80+(y-250)*0.2), min(255, int(150+100+(y-250)*0.3))))
-        draw.rectangle([0, 450, 800, 600], fill="#F4D03F")
-        draw.rectangle([650, 300, 665, 500], fill="#8B4513")
-        draw.ellipse([580, 250, 730, 330], fill="#228B22")
-    elif variant == 2:  # Forest
-        for y in range(600):
-            draw.line([(0,y),(800,y)], fill=(20, 60+max(0,int(80-y*0.05)), 20))
-        for x in range(50, 800, 120):
-            draw.rectangle([x, 100, x+random.randint(15,25), 600], fill="#5D4037")
-        for x in range(0, 800, 60):
-            for y in range(0, 250, 40):
-                r = random.randint(25, 35)
-                draw.ellipse([x-r, y-r, x+r, y+r], fill=(random.randint(20,60), random.randint(100,180), random.randint(20,50)))
-    else:  # Starry night
-        img = Image.new("RGB", (800, 600), "#0C1445")
-        draw = ImageDraw.Draw(img)
-        for _ in range(200):
-            x, y = random.randint(0,800), random.randint(0,400)
-            s = random.randint(1, 3)
-            draw.ellipse([x, y, x+s, y+s], fill="white")
-        draw.ellipse([600, 60, 700, 160], fill="#FFE4B5")  # Moon
-        draw.ellipse([580, 50, 680, 150], fill="#0C1445")  # Crescent shadow
-        # Horizon
-        draw.polygon([(0,420),(200,380),(400,400),(600,370),(800,390),(800,600),(0,600)], fill="#1a1a2e")
-    img.save(path, quality=90)
-
-
-# ── Category 3: Charts ───────────────────────────────────────────────────────
-
-def make_chart_image(path, variant=0):
-    img = Image.new("RGB", (800, 600), "#FFFFFF")
-    draw = ImageDraw.Draw(img)
-    font, title_font = get_font(16), get_font(22)
-
-    if variant == 0:  # Bar chart
-        draw.text((250, 20), "Quarterly Revenue 2025", fill="black", font=title_font)
-        for i, (l, v, c) in enumerate(zip(["Q1","Q2","Q3","Q4"], [42,58,51,67],
-                                           ["#3498DB","#2ECC71","#E74C3C","#F39C12"])):
-            x = 120 + i * 160
-            h = int(v / 70 * 380)
-            draw.rectangle([x, 500-h, x+100, 500], fill=c)
-            draw.text((x+30, 510), l, fill="black", font=font)
-            draw.text((x+25, 490-h), f"${v}K", fill="black", font=font)
-        draw.line([(100,500),(780,500)], fill="black", width=2)
-        draw.line([(100,50),(100,500)], fill="black", width=2)
-    elif variant == 1:  # Pie chart
-        draw.text((250, 20), "Market Share Analysis", fill="black", font=title_font)
-        cx, cy, r = 400, 320, 180
-        start = 0
-        for name, pct, color in [("Product A",35,"#3498DB"),("Product B",25,"#2ECC71"),
-                                  ("Product C",20,"#E74C3C"),("Others",20,"#95A5A6")]:
-            end = start + pct * 3.6
-            draw.pieslice([cx-r, cy-r, cx+r, cy+r], start, end, fill=color, outline="white", width=2)
-            mid = (start + end) / 2
-            lx = cx + int((r+40) * math.cos(math.radians(mid)))
-            ly = cy + int((r+40) * math.sin(math.radians(mid)))
-            draw.text((lx-30, ly-8), f"{name} {pct}%", fill="black", font=font)
-            start = end
-    else:  # Line chart
-        draw.text((200, 20), "Monthly Active Users (2025)", fill="black", font=title_font)
-        draw.line([(80,500),(750,500)], fill="black", width=2)
-        draw.line([(80,50),(80,500)], fill="black", width=2)
-        pts = []
-        for i, (m, v) in enumerate(zip(["Jan","Feb","Mar","Apr","May","Jun"], [1200,1450,1800,2100,2800,3200])):
-            x = 120 + i * 120
-            y = 500 - int((v/3500)*400)
-            pts.append((x, y))
-            draw.text((x-10, 510), m, fill="black", font=font)
-        for i in range(len(pts)-1):
-            draw.line([pts[i], pts[i+1]], fill="#3498DB", width=3)
-        for x, y in pts:
-            draw.ellipse([x-5, y-5, x+5, y+5], fill="#2980B9")
-    img.save(path, quality=90)
-
-
-# ── Category 4: Receipts ─────────────────────────────────────────────────────
+# ── PIL-generated images ─────────────────────────────────────────────────────
 
 def make_receipt_image(path, variant=0):
     img = Image.new("RGB", (400, 700), "#FFFEF5")
@@ -268,471 +118,440 @@ def make_receipt_image(path, variant=0):
             draw.text((40,y), item, fill="black", font=font)
             draw.text((300,y), f"${price}", fill="black", font=font); y += 22
         draw.line([(30,y),(370,y)], fill="gray"); y += 10
-        draw.text((40,y), "SUBTOTAL", fill="black", font=bold)
-        draw.text((280,y), "$58.00", fill="black", font=bold); y += 25
-        draw.text((40,y), "TIP 20%", fill="gray", font=font)
-        draw.text((290,y), "$11.60", fill="gray", font=font); y += 25
         draw.text((40,y), "TOTAL", fill="black", font=bold)
         draw.text((280,y), "$69.60", fill="black", font=bold)
     img.save(path, quality=90)
 
 
-# ── Category 5: Animals ──────────────────────────────────────────────────────
+def make_chart_image(path, variant=0):
+    img = Image.new("RGB", (800, 600), "#FFFFFF")
+    draw = ImageDraw.Draw(img)
+    font, title_font = get_font(16), get_font(22)
 
-def make_animal_photo(path, variant=0):
-    if variant == 0:  # Cat
-        img = Image.new("RGB", (800, 600), "#F0E6D2")
-        draw = ImageDraw.Draw(img)
-        # Body
-        draw.ellipse([250, 250, 550, 500], fill="#FF8C00")
-        # Head
-        draw.ellipse([300, 150, 500, 350], fill="#FF8C00")
-        # Ears
-        draw.polygon([(310, 180), (330, 100), (370, 170)], fill="#FF8C00")
-        draw.polygon([(430, 170), (470, 100), (490, 180)], fill="#FF8C00")
-        draw.polygon([(320, 170), (335, 115), (360, 165)], fill="#FFB6C1")
-        draw.polygon([(440, 165), (465, 115), (480, 170)], fill="#FFB6C1")
-        # Eyes
-        draw.ellipse([340, 220, 380, 260], fill="#2ECC71")
-        draw.ellipse([420, 220, 460, 260], fill="#2ECC71")
-        draw.ellipse([355, 230, 370, 250], fill="black")
-        draw.ellipse([435, 230, 450, 250], fill="black")
-        # Nose
-        draw.polygon([(390, 280), (400, 290), (410, 280)], fill="#FF69B4")
-        # Whiskers
-        for dy in [275, 285, 295]:
-            draw.line([(280, dy), (370, dy)], fill="#333", width=1)
-            draw.line([(430, dy), (520, dy)], fill="#333", width=1)
-        # Tail
-        draw.arc([500, 300, 650, 500], 200, 360, fill="#FF8C00", width=8)
-    elif variant == 1:  # Dog
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        # Green ground
-        draw.rectangle([0, 400, 800, 600], fill="#228B22")
-        # Body
-        draw.ellipse([250, 250, 580, 480], fill="#D2691E")
-        # Head
-        draw.ellipse([200, 150, 400, 350], fill="#D2691E")
-        # Ears (floppy)
-        draw.ellipse([180, 170, 250, 320], fill="#8B4513")
-        draw.ellipse([360, 170, 430, 320], fill="#8B4513")
-        # Eyes
-        draw.ellipse([260, 220, 300, 260], fill="white")
-        draw.ellipse([330, 220, 370, 260], fill="white")
-        draw.ellipse([270, 230, 290, 250], fill="black")
-        draw.ellipse([340, 230, 360, 250], fill="black")
-        # Nose
-        draw.ellipse([290, 270, 330, 300], fill="black")
-        # Tongue
-        draw.ellipse([295, 300, 325, 350], fill="#FF69B4")
-        # Tail
-        draw.arc([520, 200, 680, 400], 220, 340, fill="#D2691E", width=10)
-        # Legs
-        for x in [300, 350, 430, 480]:
-            draw.rectangle([x, 430, x+30, 520], fill="#D2691E")
-    elif variant == 2:  # Fish (aquarium)
-        img = Image.new("RGB", (800, 600), "#006994")
-        draw = ImageDraw.Draw(img)
-        # Sand bottom
-        draw.rectangle([0, 480, 800, 600], fill="#F4D03F")
-        # Seaweed
-        for x in [100, 300, 600, 700]:
-            for seg in range(5):
-                y = 480 - seg * 60
-                draw.ellipse([x-10, y-30, x+20, y+10], fill="#228B22")
-        # Fish 1 (big orange)
-        draw.ellipse([250, 200, 500, 350], fill="#FF6347")
-        draw.polygon([(480, 275), (550, 220), (550, 330)], fill="#FF6347")  # tail
-        draw.ellipse([290, 240, 320, 270], fill="white")
-        draw.ellipse([300, 248, 315, 262], fill="black")
-        # Fish 2 (small blue)
-        draw.ellipse([550, 300, 680, 380], fill="#4169E1")
-        draw.polygon([(660, 340), (710, 310), (710, 370)], fill="#4169E1")
-        draw.ellipse([570, 325, 590, 345], fill="white")
-        draw.ellipse([575, 330, 587, 340], fill="black")
-        # Bubbles
-        for _ in range(10):
-            x, y = random.randint(200, 700), random.randint(50, 400)
-            r = random.randint(5, 15)
-            draw.ellipse([x, y, x+r, y+r], outline="white", width=1)
-    else:  # Bird
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        # Clouds
-        for cx, cy in [(200, 80), (500, 120), (650, 60)]:
-            for dx in range(-40, 50, 20):
-                draw.ellipse([cx+dx, cy-15, cx+dx+50, cy+25], fill="white")
-        # Branch
-        draw.rectangle([100, 350, 700, 370], fill="#8B4513")
-        # Bird body
-        draw.ellipse([320, 240, 500, 380], fill="#E74C3C")
-        # Head
-        draw.ellipse([250, 200, 380, 320], fill="#E74C3C")
-        # Eye
-        draw.ellipse([280, 240, 310, 270], fill="white")
-        draw.ellipse([288, 248, 304, 262], fill="black")
-        # Beak
-        draw.polygon([(250, 265), (210, 260), (250, 280)], fill="#FFD700")
-        # Wing
-        draw.ellipse([370, 260, 520, 350], fill="#C0392B")
-        # Tail
-        draw.polygon([(480, 300), (560, 260), (560, 340)], fill="#C0392B")
-        # Legs
-        draw.line([(380, 375), (380, 420), (360, 440)], fill="#333", width=2)
-        draw.line([(380, 420), (400, 440)], fill="#333", width=2)
-        draw.line([(430, 375), (430, 420), (410, 440)], fill="#333", width=2)
-        draw.line([(430, 420), (450, 440)], fill="#333", width=2)
-    img.save(path, quality=90)
-
-
-# ── Category 6: Architecture ─────────────────────────────────────────────────
-
-def make_architecture_photo(path, variant=0):
-    if variant == 0:  # House
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([0, 400, 800, 600], fill="#228B22")  # grass
-        # House body
-        draw.rectangle([200, 250, 600, 500], fill="#F5DEB3")
-        # Roof
-        draw.polygon([(150, 250), (400, 100), (650, 250)], fill="#8B0000")
-        # Door
-        draw.rectangle([350, 350, 450, 500], fill="#8B4513")
-        draw.ellipse([430, 415, 445, 430], fill="#FFD700")  # knob
-        # Windows
-        draw.rectangle([240, 300, 320, 380], fill="#ADD8E6", outline="#333", width=2)
-        draw.line([(280, 300), (280, 380)], fill="#333", width=2)
-        draw.line([(240, 340), (320, 340)], fill="#333", width=2)
-        draw.rectangle([480, 300, 560, 380], fill="#ADD8E6", outline="#333", width=2)
-        draw.line([(520, 300), (520, 380)], fill="#333", width=2)
-        draw.line([(480, 340), (560, 340)], fill="#333", width=2)
-        # Chimney
-        draw.rectangle([500, 120, 540, 200], fill="#A0522D")
-    elif variant == 1:  # Skyscraper
-        img = Image.new("RGB", (800, 600), "#1a1a2e")
-        draw = ImageDraw.Draw(img)
-        # Stars
-        for _ in range(50):
-            x, y = random.randint(0,800), random.randint(0,300)
-            draw.point((x, y), fill="white")
-        # Buildings
-        buildings = [(50,200,180,600,"#2C3E50"), (180,150,310,600,"#34495E"),
-                     (310,100,460,600,"#2C3E50"), (460,180,590,600,"#34495E"),
-                     (590,220,720,600,"#2C3E50")]
-        for x1, y1, x2, y2, c in buildings:
-            draw.rectangle([x1, y1, x2, y2], fill=c)
-            # Windows
-            for wy in range(y1+20, y2-20, 30):
-                for wx in range(x1+15, x2-15, 25):
-                    color = "#FFD700" if random.random() > 0.3 else "#333"
-                    draw.rectangle([wx, wy, wx+12, wy+15], fill=color)
-    elif variant == 2:  # Bridge
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        # Water
-        draw.rectangle([0, 380, 800, 600], fill="#4682B4")
-        # Bridge deck
-        draw.rectangle([0, 320, 800, 360], fill="#808080")
-        # Towers
-        draw.rectangle([200, 150, 240, 360], fill="#A9A9A9")
-        draw.rectangle([560, 150, 600, 360], fill="#A9A9A9")
-        # Cables
-        for x in range(0, 800, 40):
-            if x < 220:
-                draw.line([(220, 150), (x, 320)], fill="#333", width=1)
-            elif x > 580:
-                draw.line([(580, 150), (x, 320)], fill="#333", width=1)
-            else:
-                mid = 400
-                tower = 220 if x < mid else 580
-                draw.line([(tower, 150), (x, 320)], fill="#333", width=1)
-        # Main cable arc
-        pts = [(0, 320)]
-        for x in range(0, 801, 20):
-            if x <= 220:
-                y = 320 - (x/220) * 170
-            elif x <= 580:
-                progress = (x - 220) / 360
-                y = 150 + abs(progress - 0.5) * 2 * 100
-            else:
-                y = 320 - ((800-x)/220) * 170
-            pts.append((x, int(y)))
+    if variant == 0:  # Bar chart
+        draw.text((250, 20), "Quarterly Revenue 2025", fill="black", font=title_font)
+        for i, (l, v, c) in enumerate(zip(["Q1","Q2","Q3","Q4"], [42,58,51,67],
+                                           ["#3498DB","#2ECC71","#E74C3C","#F39C12"])):
+            x = 120 + i * 160
+            h = int(v / 70 * 380)
+            draw.rectangle([x, 500-h, x+100, 500], fill=c)
+            draw.text((x+30, 510), l, fill="black", font=font)
+            draw.text((x+25, 490-h), f"${v}K", fill="black", font=font)
+        draw.line([(100,500),(780,500)], fill="black", width=2)
+        draw.line([(100,50),(100,500)], fill="black", width=2)
+    elif variant == 1:  # Pie chart
+        draw.text((250, 20), "Market Share Analysis", fill="black", font=title_font)
+        cx, cy, r = 400, 320, 180
+        start = 0
+        for name, pct, color in [("Product A",35,"#3498DB"),("Product B",25,"#2ECC71"),
+                                  ("Product C",20,"#E74C3C"),("Others",20,"#95A5A6")]:
+            end = start + pct * 3.6
+            draw.pieslice([cx-r, cy-r, cx+r, cy+r], start, end, fill=color, outline="white", width=2)
+            mid = (start + end) / 2
+            lx = cx + int((r+40) * math.cos(math.radians(mid)))
+            ly = cy + int((r+40) * math.sin(math.radians(mid)))
+            draw.text((lx-30, ly-8), f"{name} {pct}%", fill="black", font=font)
+            start = end
+    else:  # Line chart
+        draw.text((200, 20), "Monthly Active Users (2025)", fill="black", font=title_font)
+        draw.line([(80,500),(750,500)], fill="black", width=2)
+        draw.line([(80,50),(80,500)], fill="black", width=2)
+        pts = []
+        for i, (m, v) in enumerate(zip(["Jan","Feb","Mar","Apr","May","Jun"], [1200,1450,1800,2100,2800,3200])):
+            x, y = 120 + i * 120, 500 - int((v/3500)*400)
+            pts.append((x, y))
+            draw.text((x-10, 510), m, fill="black", font=font)
         for i in range(len(pts)-1):
-            draw.line([pts[i], pts[i+1]], fill="#333", width=3)
-    else:  # Church
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([0, 450, 800, 600], fill="#228B22")
-        # Main body
-        draw.rectangle([200, 250, 600, 530], fill="#F5F5DC")
-        # Tower/steeple
-        draw.rectangle([340, 100, 460, 250], fill="#F5F5DC")
-        draw.polygon([(330, 100), (400, 20), (470, 100)], fill="#696969")
-        # Cross
-        draw.rectangle([392, 25, 408, 70], fill="#FFD700")
-        draw.rectangle([380, 35, 420, 50], fill="#FFD700")
-        # Rose window
-        draw.ellipse([350, 120, 450, 220], fill="#4169E1", outline="#333", width=2)
-        # Door
-        draw.rectangle([360, 380, 440, 530], fill="#8B4513")
-        draw.arc([360, 350, 440, 410], 180, 0, fill="#8B4513", width=30)
-        # Side windows
-        for x in [240, 520]:
-            draw.rectangle([x, 320, x+60, 420], fill="#ADD8E6", outline="#333", width=2)
-            draw.arc([x, 300, x+60, 340], 180, 0, fill="#ADD8E6", width=20)
+            draw.line([pts[i], pts[i+1]], fill="#3498DB", width=3)
+        for x, y in pts:
+            draw.ellipse([x-5, y-5, x+5, y+5], fill="#2980B9")
     img.save(path, quality=90)
 
 
-# ── Category 7: Sports ───────────────────────────────────────────────────────
+# ── Text file content ────────────────────────────────────────────────────────
 
-def make_sports_photo(path, variant=0):
-    if variant == 0:  # Soccer field
-        img = Image.new("RGB", (800, 600), "#228B22")
-        draw = ImageDraw.Draw(img)
-        # Field lines
-        draw.rectangle([50, 50, 750, 550], outline="white", width=3)
-        draw.line([(400, 50), (400, 550)], fill="white", width=3)
-        draw.ellipse([330, 230, 470, 370], outline="white", width=3)
-        draw.ellipse([395, 295, 405, 305], fill="white")
-        # Goal areas
-        draw.rectangle([50, 180, 180, 420], outline="white", width=2)
-        draw.rectangle([620, 180, 750, 420], outline="white", width=2)
-        draw.rectangle([50, 230, 110, 370], outline="white", width=2)
-        draw.rectangle([690, 230, 750, 370], outline="white", width=2)
-        # Soccer ball
-        draw.ellipse([370, 270, 430, 330], fill="white", outline="black", width=2)
-        # Pentagon pattern on ball
-        draw.polygon([(390, 280), (410, 280), (415, 295), (400, 305), (385, 295)], fill="black")
-    elif variant == 1:  # Basketball court
-        img = Image.new("RGB", (800, 600), "#CD853F")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([40, 40, 760, 560], outline="white", width=3)
-        draw.line([(400, 40), (400, 560)], fill="white", width=3)
-        draw.ellipse([320, 220, 480, 380], outline="white", width=3)
-        # Hoops
-        draw.rectangle([40, 200, 130, 400], outline="white", width=2)
-        draw.ellipse([60, 260, 130, 340], outline="white", width=2)
-        draw.rectangle([670, 200, 760, 400], outline="white", width=2)
-        draw.ellipse([670, 260, 740, 340], outline="white", width=2)
-        # Three-point arc
-        draw.arc([40, 130, 280, 470], 270, 90, fill="white", width=2)
-        draw.arc([520, 130, 760, 470], 90, 270, fill="white", width=2)
-        # Basketball
-        draw.ellipse([380, 280, 420, 320], fill="#FF8C00", outline="black", width=2)
-    elif variant == 2:  # Swimming pool
-        img = Image.new("RGB", (800, 600), "#006994")
-        draw = ImageDraw.Draw(img)
-        # Lane lines
-        for y in range(80, 520, 70):
-            draw.line([(80, y), (720, y)], fill="white", width=1)
-        # Lane ropes (red/white alternating)
-        for y in range(80, 520, 70):
-            for x in range(80, 720, 20):
-                c = "#FF0000" if (x // 20) % 2 == 0 else "white"
-                draw.ellipse([x, y-3, x+8, y+3], fill=c)
-        # Pool edge
-        draw.rectangle([60, 50, 740, 550], outline="#DDD", width=8)
-        # Starting blocks
-        for y in [85, 155, 225, 295, 365, 435, 505]:
-            draw.rectangle([60, y-8, 80, y+8], fill="#808080")
-        # Swimmer
-        draw.ellipse([350, 270, 380, 300], fill="#FFD700")
-        draw.line([(365, 300), (365, 340)], fill="#FFD700", width=3)
-        draw.line([(350, 310), (380, 310)], fill="#FFD700", width=3)
-    else:  # Tennis court
-        img = Image.new("RGB", (800, 600), "#2E8B57")
-        draw = ImageDraw.Draw(img)
-        # Court
-        draw.rectangle([100, 80, 700, 520], fill="#4169E1")
-        draw.rectangle([100, 80, 700, 520], outline="white", width=3)
-        # Net
-        draw.line([(100, 300), (700, 300)], fill="white", width=3)
-        draw.rectangle([95, 290, 105, 310], fill="#333")
-        draw.rectangle([695, 290, 705, 310], fill="#333")
-        # Service boxes
-        draw.line([(250, 80), (250, 520)], fill="white", width=2)
-        draw.line([(550, 80), (550, 520)], fill="white", width=2)
-        draw.line([(250, 300), (550, 300)], fill="white", width=2)
-        draw.line([(400, 80), (400, 300)], fill="white", width=1)
-        draw.line([(400, 300), (400, 520)], fill="white", width=1)
-        # Tennis ball
-        draw.ellipse([420, 180, 450, 210], fill="#ADFF2F", outline="white", width=1)
-    img.save(path, quality=90)
+TEXT_FILES = {
+    # Code files (3) — model should read to see it's source code
+    "code_0": {
+        "name": f"{PREFIX}draft_v2.py",
+        "content": '''import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+
+def train_model(data_path):
+    df = pd.read_csv(data_path)
+    X = df.drop('target', axis=1)
+    y = df['target']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = RandomForestClassifier(n_estimators=100)
+    model.fit(X_train, y_train)
+    print(f"Accuracy: {model.score(X_test, y_test):.2f}")
+    return model
+
+if __name__ == "__main__":
+    train_model("dataset.csv")
+'''
+    },
+    "code_1": {
+        "name": f"{PREFIX}untitled3.js",
+        "content": '''const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const SECRET = process.env.JWT_SECRET || 'dev-secret';
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  // TODO: validate against database
+  if (username === 'admin' && password === 'password') {
+    const token = jwt.sign({ user: username }, SECRET, { expiresIn: '1h' });
+    res.json({ token });
+  } else {
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+app.get('/api/profile', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
+'''
+    },
+    "code_2": {
+        "name": f"{PREFIX}backup_old.py",
+        "content": '''import torch
+import torch.nn as nn
+
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model=512, nhead=8, dim_ff=2048, dropout=0.1):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.ff = nn.Sequential(
+            nn.Linear(d_model, dim_ff), nn.ReLU(), nn.Linear(dim_ff, d_model))
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        attn_out, _ = self.attn(x, x, x)
+        x = self.norm1(x + self.dropout(attn_out))
+        ff_out = self.ff(x)
+        x = self.norm2(x + self.dropout(ff_out))
+        return x
+
+model = TransformerBlock()
+print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+'''
+    },
+
+    # Meeting notes (3)
+    "meeting_0": {
+        "name": f"{PREFIX}notes_monday.txt",
+        "content": '''Team Standup - Monday March 18, 2026
+=====================================
+Attendees: Alice, Bob, Carlos, Diana
+
+Alice:
+- Done: Fixed authentication bug (#342)
+- Blocked: Waiting on API keys from infrastructure team
+- Today: Start working on user profile page
+
+Bob:
+- Done: Code review for PR #156
+- Today: Database migration for new schema
+- Note: Will be OOO Thursday for dentist
+
+Carlos:
+- Done: Updated CI/CD pipeline, 30% faster builds
+- Today: Set up staging environment for QA
+- Risk: Staging server disk space running low (87%)
+
+Diana:
+- Done: Completed design mockups for settings page
+- Today: User testing sessions (3 scheduled)
+- FYI: Design system v2 ready for review
+
+Action Items:
+- Alice: Follow up with infra team on API keys
+- Carlos: Request disk space increase for staging
+- All: Review design system v2 by Wednesday
+'''
+    },
+    "meeting_1": {
+        "name": f"{PREFIX}sync_notes_0315.txt",
+        "content": '''Sprint Retrospective - March 15, 2026
+======================================
+Sprint 23 | 2 weeks | Team Velocity: 42 points
+
+What went well:
+- Shipped 3 major features on time
+- Zero production incidents this sprint
+- New team member (Eva) onboarded smoothly
+- Automated test coverage increased to 78%
+
+What could be improved:
+- PR review cycle still averaging 2.5 days (target: 1 day)
+- Too many meetings on Wednesdays (5 hours!)
+- Flaky test in payment module needs attention
+- Documentation lagging behind implementation
+
+Action items for next sprint:
+1. Implement PR review SLA: 24 hours max
+2. Move 2 Wednesday meetings to async updates
+3. Fix payment test flakiness (assign: Bob)
+4. Doc day: last Friday of sprint dedicated to docs
+'''
+    },
+    "meeting_2": {
+        "name": f"{PREFIX}allhands_feb.txt",
+        "content": '''All-Hands Meeting Notes - February 28, 2026
+============================================
+Presenter: CEO Sarah Johnson
+
+Company Updates:
+- Series B funding closed: $45M led by Sequoia
+- Headcount growing from 85 to 120 by Q3
+- New office in Austin opening June 1
+
+Product:
+- MAU reached 500K (up 40% QoQ)
+- Enterprise tier launching April 15
+- Mobile app beta starting May 1
+
+Engineering:
+- Platform migration to Kubernetes: 60% complete
+- New ML pipeline shipping Q2
+- Hiring: 8 engineers, 2 ML researchers, 3 designers
+
+Q&A Highlights:
+- Remote work policy: 3 days office, 2 days remote
+- Annual conference: September in SF
+- Stock option refresh: HR will send details next week
+'''
+    },
+
+    # Recipes (2)
+    "recipe_0": {
+        "name": f"{PREFIX}from_mom.txt",
+        "content": '''Mom's Chicken Tikka Masala
+==========================
+Serves: 4 | Prep: 20 min | Cook: 40 min
+
+Marinade:
+- 1 lb chicken thighs, cubed
+- 1 cup yogurt
+- 2 tsp garam masala
+- 1 tsp turmeric
+- 1 tsp cumin
+- Salt and pepper
+
+Sauce:
+- 2 tbsp butter + 1 tbsp oil
+- 1 large onion, diced
+- 4 cloves garlic, minced
+- 1 inch ginger, grated
+- 1 can (14 oz) crushed tomatoes
+- 1 cup heavy cream
+- 2 tsp garam masala
+- 1 tsp paprika
+- Fresh cilantro for garnish
+
+Instructions:
+1. Marinate chicken at least 2 hours (overnight is best)
+2. Grill or broil chicken until charred, set aside
+3. Saute onion in butter+oil until golden (8 min)
+4. Add garlic, ginger - cook 1 min
+5. Add tomatoes, spices - simmer 15 min
+6. Stir in cream, add chicken - simmer 10 min
+7. Garnish with cilantro, serve with naan and rice
+
+Dad says: "Don't skip the overnight marinade!"
+'''
+    },
+    "recipe_1": {
+        "name": f"{PREFIX}to_try_later.txt",
+        "content": '''Japanese Fluffy Pancakes (Souffle Pancakes)
+============================================
+Makes: 4 thick pancakes | Time: 30 min
+
+Ingredients:
+- 2 egg yolks
+- 3 tbsp milk
+- 1 tsp vanilla extract
+- 1/4 cup cake flour
+- 1/2 tsp baking powder
+- 3 egg whites
+- 2 tbsp sugar
+- Pinch of cream of tartar
+
+Instructions:
+1. Mix yolks, milk, vanilla in a bowl
+2. Sift in flour and baking powder, mix until smooth
+3. Beat egg whites with cream of tartar until foamy
+4. Gradually add sugar, beat until stiff peaks
+5. Fold 1/3 meringue into yolk batter vigorously
+6. Gently fold in remaining meringue (don't deflate!)
+7. Grease pan on LOWEST heat, use ring molds
+8. Pipe batter into molds (3 inches high)
+9. Add 2 tbsp water, cover, cook 6-7 min
+10. Flip carefully, cover, cook 6-7 more min
+11. Remove molds, top with butter, syrup, and fruit
+
+Tips:
+- Low heat is KEY - they burn easily
+- Don't open lid while cooking
+- Serve immediately - they deflate in 5 min!
+'''
+    },
+
+    # Job/Resume (2)
+    "resume_0": {
+        "name": f"{PREFIX}latest_draft.txt",
+        "content": '''ALEX CHEN
+Senior Software Engineer
+
+San Francisco, CA | alex.chen@email.com | github.com/alexchen
+
+EXPERIENCE
+
+Senior Software Engineer | Stripe | 2023-Present
+- Led migration of payment processing service to event-driven architecture
+- Reduced API latency by 45% through caching layer redesign
+- Mentored 3 junior engineers, conducted 50+ technical interviews
+- Tech: Python, Go, PostgreSQL, Redis, Kafka, Kubernetes
+
+Software Engineer | Airbnb | 2020-2023
+- Built real-time pricing engine processing 10M+ requests/day
+- Implemented A/B testing framework used by 15 product teams
+- Contributed to open-source ML pipeline (2K+ GitHub stars)
+- Tech: Python, Java, React, TensorFlow, AWS
+
+EDUCATION
+BS Computer Science, Stanford University, 2020
+- GPA: 3.8/4.0, Tau Beta Pi Honor Society
+
+SKILLS
+Languages: Python, Go, Java, TypeScript, SQL
+Infrastructure: AWS, GCP, Kubernetes, Docker, Terraform
+ML: PyTorch, TensorFlow, scikit-learn, Spark ML
+'''
+    },
+    "resume_1": {
+        "name": f"{PREFIX}cover_v3_final.txt",
+        "content": '''Dear Hiring Manager,
+
+I am writing to express my interest in the Staff Engineer position
+at Anthropic. With 6 years of experience building scalable systems
+at Stripe and Airbnb, and a deep passion for AI safety, I believe
+I would be a strong addition to your infrastructure team.
+
+At Stripe, I led the migration of our core payment processing
+service from a monolithic architecture to an event-driven system
+using Kafka and Kubernetes. This reduced processing latency by 45%
+and improved system reliability from 99.95% to 99.99% uptime.
+
+What excites me most about Anthropic is your commitment to building
+AI systems that are safe and beneficial. I have been following your
+Constitutional AI research closely and believe my experience in
+building reliable, fault-tolerant distributed systems would translate
+well to the challenges of deploying large language models safely.
+
+I would welcome the opportunity to discuss how my background in
+distributed systems and ML infrastructure could contribute to
+Anthropic's mission.
+
+Best regards,
+Alex Chen
+'''
+    },
+}
 
 
-# ── Category 8: Vehicles ─────────────────────────────────────────────────────
-
-def make_vehicle_photo(path, variant=0):
-    if variant == 0:  # Car
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([0, 400, 800, 600], fill="#808080")  # road
-        draw.line([(0, 440), (800, 440)], fill="#FFD700", width=3)  # center line
-        # Car body
-        draw.rectangle([200, 300, 600, 420], fill="#E74C3C")
-        draw.polygon([(280, 300), (350, 220), (500, 220), (560, 300)], fill="#E74C3C")
-        # Windows
-        draw.polygon([(295, 295), (355, 225), (410, 225), (410, 295)], fill="#ADD8E6")
-        draw.polygon([(420, 295), (420, 225), (490, 225), (545, 295)], fill="#ADD8E6")
-        # Wheels
-        draw.ellipse([240, 390, 320, 470], fill="#333")
-        draw.ellipse([260, 410, 300, 450], fill="#999")
-        draw.ellipse([480, 390, 560, 470], fill="#333")
-        draw.ellipse([500, 410, 540, 450], fill="#999")
-        # Headlights
-        draw.rectangle([590, 340, 610, 370], fill="#FFD700")
-    elif variant == 1:  # Airplane
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        # Clouds
-        for cx, cy in [(100, 100), (500, 150), (700, 80)]:
-            for dx in range(-30, 40, 15):
-                draw.ellipse([cx+dx, cy-10, cx+dx+40, cy+20], fill="white")
-        # Fuselage
-        draw.ellipse([150, 260, 650, 340], fill="#C0C0C0")
-        draw.polygon([(640, 290), (700, 260), (700, 340)], fill="#C0C0C0")  # nose
-        draw.polygon([(150, 290), (100, 250), (100, 340)], fill="#C0C0C0")  # tail
-        # Wings
-        draw.polygon([(300, 300), (350, 300), (500, 420), (250, 420)], fill="#A9A9A9")
-        draw.polygon([(300, 300), (350, 300), (500, 180), (250, 180)], fill="#A9A9A9")
-        # Tail fin
-        draw.polygon([(120, 260), (160, 260), (160, 180), (110, 200)], fill="#E74C3C")
-        # Windows
-        for x in range(250, 620, 30):
-            draw.ellipse([x, 280, x+12, 295], fill="#ADD8E6")
-        # Engine
-        draw.ellipse([340, 410, 400, 440], fill="#696969")
-    elif variant == 2:  # Sailboat
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        # Water
-        for y in range(350, 600):
-            draw.line([(0,y),(800,y)], fill=(0, int(80+(y-350)*0.3), min(255, int(140+(y-350)*0.4))))
-        # Hull
-        draw.polygon([(200, 400), (600, 400), (550, 480), (250, 480)], fill="#8B4513")
-        # Mast
-        draw.line([(400, 120), (400, 400)], fill="#333", width=4)
-        # Main sail
-        draw.polygon([(405, 140), (405, 380), (600, 380)], fill="white", outline="#DDD", width=1)
-        # Jib sail
-        draw.polygon([(395, 140), (395, 350), (220, 350)], fill="#FFFAF0", outline="#DDD", width=1)
-        # Flag
-        draw.polygon([(400, 120), (400, 140), (440, 130)], fill="#E74C3C")
-        # Waves
-        for x in range(0, 800, 60):
-            draw.arc([x, 345, x+50, 365], 0, 180, fill="white", width=2)
-    else:  # Train
-        img = Image.new("RGB", (800, 600), "#87CEEB")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([0, 450, 800, 600], fill="#228B22")
-        # Tracks
-        draw.rectangle([0, 430, 800, 450], fill="#808080")
-        draw.line([(0, 435), (800, 435)], fill="#555", width=2)
-        draw.line([(0, 445), (800, 445)], fill="#555", width=2)
-        for x in range(0, 800, 30):
-            draw.rectangle([x, 430, x+15, 450], fill="#8B4513")
-        # Locomotive
-        draw.rectangle([80, 300, 300, 430], fill="#E74C3C")
-        draw.rectangle([60, 280, 300, 310], fill="#E74C3C")
-        draw.rectangle([60, 280, 100, 300], fill="#FFD700")  # headlight
-        # Smokestack
-        draw.rectangle([120, 230, 160, 300], fill="#333")
-        draw.ellipse([110, 210, 170, 240], fill="#696969")
-        # Cabin
-        draw.rectangle([200, 260, 300, 300], fill="#E74C3C")
-        draw.rectangle([220, 265, 280, 295], fill="#ADD8E6")
-        # Cars
-        for i, color in enumerate(["#3498DB", "#2ECC71", "#F39C12"]):
-            x = 320 + i * 160
-            draw.rectangle([x, 320, x+140, 430], fill=color)
-            draw.rectangle([x+10, 340, x+60, 400], fill="#ADD8E6")
-            draw.rectangle([x+70, 340, x+120, 400], fill="#ADD8E6")
-        # Wheels
-        for x in [100, 200, 260]:
-            draw.ellipse([x, 415, x+30, 445], fill="#333")
-        for i in range(3):
-            for dx in [20, 120]:
-                draw.ellipse([320+i*160+dx, 415, 320+i*160+dx+30, 445], fill="#333")
-    img.save(path, quality=90)
-
-
-# ── Create/Clean ─────────────────────────────────────────────────────────────
+# ── Main create/clean ────────────────────────────────────────────────────────
 
 def create_all(output_dir=OUTPUT_DIR, prefix=PREFIX):
-    files = [
-        # Food (4)
-        (f"{prefix}IMG_4721.jpg", make_food_photo, 0),
-        (f"{prefix}IMG_4803.jpg", make_food_photo, 1),
-        (f"{prefix}IMG_5102.jpg", make_food_photo, 2),
-        (f"{prefix}IMG_5244.jpg", make_food_photo, 3),
+    os.makedirs(output_dir, exist_ok=True)
+    created = 0
 
-        # Nature/Landscape (4)
-        (f"{prefix}DSC_0847.jpg", make_nature_photo, 0),
-        (f"{prefix}DSC_1203.jpg", make_nature_photo, 1),
-        (f"{prefix}DSC_1455.jpg", make_nature_photo, 2),
-        (f"{prefix}DSC_1602.jpg", make_nature_photo, 3),
+    # 1. Download real photos from Pexels
+    photo_files = {
+        "food_0":  f"{prefix}IMG_4721.jpg",
+        "food_1":  f"{prefix}IMG_4803.jpg",
+        "food_2":  f"{prefix}IMG_5102.jpg",
+        "nature_0": f"{prefix}DSC_0847.jpg",
+        "nature_1": f"{prefix}DSC_1203.jpg",
+        "nature_2": f"{prefix}DSC_1455.jpg",
+        "animals_0": f"{prefix}IMG_6001.jpg",
+        "animals_1": f"{prefix}IMG_6042.jpg",
+        "animals_2": f"{prefix}DSC_2001.jpg",
+        "architecture_0": f"{prefix}DSC_3010.jpg",
+        "architecture_1": f"{prefix}DSC_3045.jpg",
+        "architecture_2": f"{prefix}DSC_3088.jpg",
+    }
+    print("Downloading real photos from Pexels...")
+    for key, filename in photo_files.items():
+        path = os.path.join(output_dir, filename)
+        if download_photo(key, path):
+            created += 1
+            print(f"  {filename} OK")
+        else:
+            print(f"  {filename} FAILED - generating fallback")
 
-        # Charts (3)
-        (f"{prefix}Screenshot_2026-03-15.png", make_chart_image, 0),
-        (f"{prefix}Screenshot_2026-03-18.png", make_chart_image, 1),
-        (f"{prefix}Screenshot_2026-02-28.png", make_chart_image, 2),
-
-        # Receipts (3)
+    # 2. PIL-generated images
+    print("Generating receipts and charts...")
+    receipt_files = [
         (f"{prefix}IMG_20260320_134522.jpg", make_receipt_image, 0),
         (f"{prefix}IMG_20260318_091045.jpg", make_receipt_image, 1),
         (f"{prefix}IMG_20260322_192300.jpg", make_receipt_image, 2),
-
-        # Animals (4)
-        (f"{prefix}IMG_6001.jpg", make_animal_photo, 0),
-        (f"{prefix}IMG_6042.jpg", make_animal_photo, 1),
-        (f"{prefix}IMG_6103.jpg", make_animal_photo, 2),
-        (f"{prefix}DSC_2001.jpg", make_animal_photo, 3),
-
-        # Architecture (4)
-        (f"{prefix}DSC_3010.jpg", make_architecture_photo, 0),
-        (f"{prefix}DSC_3045.jpg", make_architecture_photo, 1),
-        (f"{prefix}DSC_3088.jpg", make_architecture_photo, 2),
-        (f"{prefix}DSC_3120.jpg", make_architecture_photo, 3),
-
-        # Sports (4)
-        (f"{prefix}IMG_7001.jpg", make_sports_photo, 0),
-        (f"{prefix}IMG_7055.jpg", make_sports_photo, 1),
-        (f"{prefix}IMG_7102.jpg", make_sports_photo, 2),
-        (f"{prefix}IMG_7200.jpg", make_sports_photo, 3),
-
-        # Vehicles (4)
-        (f"{prefix}IMG_8001.jpg", make_vehicle_photo, 0),
-        (f"{prefix}IMG_8034.jpg", make_vehicle_photo, 1),
-        (f"{prefix}IMG_8077.jpg", make_vehicle_photo, 2),
-        (f"{prefix}IMG_8150.jpg", make_vehicle_photo, 3),
     ]
-
-    os.makedirs(output_dir, exist_ok=True)
-    created = 0
-    for filename, generator, variant in files:
-        filepath = os.path.join(output_dir, filename)
-        generator(filepath, variant)
+    chart_files = [
+        (f"{prefix}Screenshot_2026-03-15.png", make_chart_image, 0),
+        (f"{prefix}Screenshot_2026-03-18.png", make_chart_image, 1),
+        (f"{prefix}Screenshot_2026-02-28.png", make_chart_image, 2),
+    ]
+    for filename, gen, var in receipt_files + chart_files:
+        gen(os.path.join(output_dir, filename), var)
         created += 1
 
-    print(f"Created {created} images in {output_dir}")
-    return [f[0] for f in files]
+    # 3. Text files
+    print("Creating text files...")
+    for key, info in TEXT_FILES.items():
+        path = os.path.join(output_dir, info["name"])
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(info["content"])
+        created += 1
+
+    print(f"\nCreated {created} files in {output_dir}")
+    return created
 
 
 def clean_all(output_dir=OUTPUT_DIR, prefix=PREFIX):
     removed = 0
+    exts = ('.jpg', '.png', '.py', '.js', '.txt')
     for f in os.listdir(output_dir):
-        if f.startswith(prefix) and (f.endswith(".jpg") or f.endswith(".png")):
+        if f.startswith(prefix) and f.endswith(exts):
             os.remove(os.path.join(output_dir, f))
             removed += 1
     for d in os.listdir(output_dir):
         dpath = os.path.join(output_dir, d)
         if os.path.isdir(dpath):
             for f in os.listdir(dpath):
-                if f.startswith(prefix) and (f.endswith(".jpg") or f.endswith(".png")):
+                if f.startswith(prefix) and f.endswith(exts):
                     os.remove(os.path.join(dpath, f))
                     removed += 1
-    print(f"Removed {removed} demo images")
+            # Remove empty dirs
+            try:
+                if not os.listdir(dpath):
+                    os.rmdir(dpath)
+            except:
+                pass
+    print(f"Removed {removed} demo files")
 
 
 if __name__ == "__main__":

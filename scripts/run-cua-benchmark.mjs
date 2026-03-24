@@ -514,15 +514,15 @@ CRITICAL rules:
 - For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
-- For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST look at each image to classify it.
-  Use view_image to quickly see what each image shows — it's much faster than open_file.
+- For organizing files: You MUST look at file contents to classify them — DO NOT organize by file extension!
   IMPORTANT workflow:
-  1) List ALL files: Get-ChildItem "$HOME\\Desktop" -Filter "demo_*" -Name  (this gets BOTH .jpg AND .png)
-  2) view_image EACH file — after viewing, note which folder it belongs to
-  3) Create all folders at once: mkdir "$HOME\\Desktop\\Food"; mkdir "$HOME\\Desktop\\Animals"; etc.
-  4) Move EACH file to its specific folder based on what you saw!
-     Do NOT dump all files into one folder. Move food to Food, animals to Animals, etc.
-  Group files by their VISUAL CONTENT (food, nature, charts, receipts, animals, sports, etc), NOT by file extension.
+  1) List ALL files: Get-ChildItem "$HOME\\Desktop" -Filter "demo_*" -Name  (this gets .jpg, .png, .txt, .py, .js)
+  2) For IMAGES (.jpg/.png): use view_image to see what each image shows
+  3) For TEXT files (.txt/.py/.js): use run_command to read content: Get-Content "$HOME\\Desktop\\filename.txt" -Head 10
+  4) Based on what you saw/read, decide which topic folder each file belongs to
+  5) Create all folders at once, then move EACH file to its correct folder
+  Group files by their CONTENT TOPIC (food, nature, animals, meetings, recipes, code, etc), NOT by file extension.
+  A .txt recipe file goes in "Recipes", NOT in "Documents". A .py code file goes in "Code", NOT in "Scripts".
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
@@ -1460,7 +1460,7 @@ const DEMO_TASKS = [
     id: 'demo-organize-desktop',
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
-    instruction: 'My Desktop has 30 image files with camera-style names like IMG_xxxx and DSC_xxxx. I have no idea what\'s in them. Please look at each image, figure out what it shows, and organize them into folders by content (e.g. food photos, landscapes, animals, sports, vehicles, etc).',
+    instruction: 'My Desktop is full of random files — photos with camera names like IMG_xxxx and DSC_xxxx, plus some text files and code snippets. I have no idea what\'s in most of them. Please look at each file, figure out what it is, and organize everything into folders by topic (e.g. food photos, landscapes, animals, meeting notes, recipes, code, etc).',
     maxSteps: 100,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');

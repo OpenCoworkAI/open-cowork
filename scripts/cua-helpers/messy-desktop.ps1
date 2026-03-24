@@ -1,11 +1,10 @@
-# messy-desktop.ps1 — Create a messy Desktop with image files for CUA benchmark
+# messy-desktop.ps1 — Create a messy Desktop with mixed files for CUA benchmark
 # Usage: powershell -ExecutionPolicy Bypass -File messy-desktop.ps1 [create|clean|verify]
 #
-# This version creates IMAGES with generic filenames (IMG_xxxx, DSC_xxxx, Screenshot_xxxx).
-# The CUA model must OPEN and LOOK AT each image to classify them — demonstrating vision capability.
-#
-# 5 categories (13 images total):
-#   Food photos (3), Nature/travel (3), Work charts (3), Receipts (2), UI screenshots (2)
+# Creates 28 files: 12 real photos (Pexels) + 6 PIL images + 10 text files
+# ALL with generic filenames — model must READ content to classify.
+# 10 categories: food, nature, animals, architecture, receipts, charts,
+#                code, meetings, recipes, job/resume
 
 param(
     [Parameter(Position=0)]
@@ -17,50 +16,50 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $Prefix = "demo_"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Image filenames and their expected categories (8 categories, 30 images)
-$ImageCategories = @{
-    # Food (4)
+# File → category mapping (28 files, 10 categories)
+$FileCategories = @{
+    # Photos: Food (3)
     "${Prefix}IMG_4721.jpg"              = "food"
     "${Prefix}IMG_4803.jpg"              = "food"
     "${Prefix}IMG_5102.jpg"              = "food"
-    "${Prefix}IMG_5244.jpg"              = "food"
-    # Nature/Landscape (4)
+    # Photos: Nature (3)
     "${Prefix}DSC_0847.jpg"              = "nature"
     "${Prefix}DSC_1203.jpg"              = "nature"
     "${Prefix}DSC_1455.jpg"              = "nature"
-    "${Prefix}DSC_1602.jpg"              = "nature"
-    # Charts (3)
-    "${Prefix}Screenshot_2026-03-15.png" = "charts"
-    "${Prefix}Screenshot_2026-03-18.png" = "charts"
-    "${Prefix}Screenshot_2026-02-28.png" = "charts"
-    # Receipts (3)
-    "${Prefix}IMG_20260320_134522.jpg"   = "receipts"
-    "${Prefix}IMG_20260318_091045.jpg"   = "receipts"
-    "${Prefix}IMG_20260322_192300.jpg"   = "receipts"
-    # Animals (4)
+    # Photos: Animals (3)
     "${Prefix}IMG_6001.jpg"              = "animals"
     "${Prefix}IMG_6042.jpg"              = "animals"
-    "${Prefix}IMG_6103.jpg"              = "animals"
     "${Prefix}DSC_2001.jpg"              = "animals"
-    # Architecture (4)
+    # Photos: Architecture (3)
     "${Prefix}DSC_3010.jpg"              = "architecture"
     "${Prefix}DSC_3045.jpg"              = "architecture"
     "${Prefix}DSC_3088.jpg"              = "architecture"
-    "${Prefix}DSC_3120.jpg"              = "architecture"
-    # Sports (4)
-    "${Prefix}IMG_7001.jpg"              = "sports"
-    "${Prefix}IMG_7055.jpg"              = "sports"
-    "${Prefix}IMG_7102.jpg"              = "sports"
-    "${Prefix}IMG_7200.jpg"              = "sports"
-    # Vehicles (4)
-    "${Prefix}IMG_8001.jpg"              = "vehicles"
-    "${Prefix}IMG_8034.jpg"              = "vehicles"
-    "${Prefix}IMG_8077.jpg"              = "vehicles"
-    "${Prefix}IMG_8150.jpg"              = "vehicles"
+    # Images: Receipts (3)
+    "${Prefix}IMG_20260320_134522.jpg"   = "receipts"
+    "${Prefix}IMG_20260318_091045.jpg"   = "receipts"
+    "${Prefix}IMG_20260322_192300.jpg"   = "receipts"
+    # Images: Charts (3)
+    "${Prefix}Screenshot_2026-03-15.png" = "charts"
+    "${Prefix}Screenshot_2026-03-18.png" = "charts"
+    "${Prefix}Screenshot_2026-02-28.png" = "charts"
+    # Text: Code (3)
+    "${Prefix}draft_v2.py"               = "code"
+    "${Prefix}untitled3.js"              = "code"
+    "${Prefix}backup_old.py"             = "code"
+    # Text: Meeting notes (3)
+    "${Prefix}notes_monday.txt"          = "meetings"
+    "${Prefix}sync_notes_0315.txt"       = "meetings"
+    "${Prefix}allhands_feb.txt"          = "meetings"
+    # Text: Recipes (2)
+    "${Prefix}from_mom.txt"              = "recipes"
+    "${Prefix}to_try_later.txt"          = "recipes"
+    # Text: Job/Resume (2)
+    "${Prefix}latest_draft.txt"          = "job"
+    "${Prefix}cover_v3_final.txt"        = "job"
 }
 
 function Do-Create {
-    Write-Host "Generating demo images on Desktop..." -ForegroundColor Cyan
+    Write-Host "Generating demo files on Desktop..." -ForegroundColor Cyan
     $pyScript = Join-Path $ScriptDir "generate_demo_images.py"
     if (-not (Test-Path $pyScript)) {
         Write-Host "ERROR: generate_demo_images.py not found at $pyScript" -ForegroundColor Red
@@ -68,15 +67,15 @@ function Do-Create {
     }
     python $pyScript create
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Image generation failed" -ForegroundColor Red
+        Write-Host "ERROR: File generation failed" -ForegroundColor Red
         exit 1
     }
-    $count = (Get-ChildItem "$Desktop\${Prefix}*" -File | Where-Object { $_.Extension -in '.jpg','.png' }).Count
-    Write-Host "Created $count images on Desktop (8 categories)." -ForegroundColor Green
+    $count = (Get-ChildItem "$Desktop\${Prefix}*" -File -ErrorAction SilentlyContinue).Count
+    Write-Host "Created $count files on Desktop (10 categories)." -ForegroundColor Green
 }
 
 function Do-Clean {
-    Write-Host "Cleaning up demo images..." -ForegroundColor Cyan
+    Write-Host "Cleaning up demo files..." -ForegroundColor Cyan
     python (Join-Path $ScriptDir "generate_demo_images.py") clean
 
     # Also remove any folders that only contained demo files
@@ -88,7 +87,6 @@ function Do-Clean {
                 Remove-Item $_.FullName -Force
                 $removed++
             }
-            # Remove empty dirs
             if (-not (Get-ChildItem $_.FullName -ErrorAction SilentlyContinue)) {
                 Remove-Item $_.FullName -Force
             }
@@ -98,20 +96,20 @@ function Do-Clean {
 }
 
 function Do-Verify {
-    Write-Host "Verifying image organization..." -ForegroundColor Cyan
-    $totalFiles = $ImageCategories.Count
+    Write-Host "Verifying file organization..." -ForegroundColor Cyan
+    $totalFiles = $FileCategories.Count
 
     # Count loose files still on Desktop root
     $looseFiles = @()
-    foreach ($name in $ImageCategories.Keys) {
+    foreach ($name in $FileCategories.Keys) {
         if (Test-Path (Join-Path $Desktop $name)) {
             $looseFiles += $name
         }
     }
 
-    # Count files that moved into subfolders
+    # Count files in subfolders and check topic coherence
     $organized = 0
-    $categoryFolders = @{}  # folder -> list of categories found in it
+    $categoryFolders = @{}
 
     Get-ChildItem $Desktop -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $folderName = $_.Name
@@ -120,7 +118,7 @@ function Do-Verify {
             $categories = @()
             foreach ($f in $demoFiles) {
                 $organized++
-                $cat = $ImageCategories[$f.Name]
+                $cat = $FileCategories[$f.Name]
                 if ($cat -and $cat -notin $categories) {
                     $categories += $cat
                 }
@@ -128,53 +126,49 @@ function Do-Verify {
             $categoryFolders[$folderName] = @{
                 files = $demoFiles.Count
                 categories = $categories
-                coherent = ($categories.Count -eq 1)  # all files in folder are same category
+                coherent = ($categories.Count -le 2)  # allow merging 2 similar categories
             }
         }
     }
 
-    # Count how many folders are "coherent" (all files share one category)
     $coherentFolders = ($categoryFolders.Values | Where-Object { $_.coherent }).Count
     $totalFolders = $categoryFolders.Count
-
     $pctOrganized = if ($totalFiles -gt 0) { [math]::Round($organized / $totalFiles * 100) } else { 0 }
 
     Write-Host ""
     Write-Host "Results:" -ForegroundColor White
-    Write-Host "  Total images: $totalFiles"
+    Write-Host "  Total files: $totalFiles"
     Write-Host "  Organized into folders: $organized ($pctOrganized%)"
     Write-Host "  Still loose on Desktop: $($looseFiles.Count)"
     Write-Host "  Folders used: $totalFolders"
     Write-Host "  Content-coherent folders: $coherentFolders / $totalFolders"
     Write-Host ""
 
-    foreach ($folder in $categoryFolders.Keys) {
+    foreach ($folder in $categoryFolders.Keys | Sort-Object) {
         $info = $categoryFolders[$folder]
         $status = if ($info.coherent) { "[OK]" } else { "[MIXED]" }
         Write-Host "  $status $folder : $($info.files) files, categories: $($info.categories -join ', ')"
     }
 
     # PASS criteria:
-    # 1. At least 60% of files moved into folders (model may miss some file types like .png)
-    # 2. At least 3 folders used
-    # 3. At least 2 folders are content-coherent (same-category files grouped together)
-    #    This proves the model looked at images, not just sorted by extension
+    # 1. At least 60% of files moved into folders
+    # 2. At least 4 folders used (10 categories, some merging OK)
+    # 3. At least 3 folders are content-coherent
     $pass = ($organized -ge [math]::Floor($totalFiles * 0.6)) -and
-            ($totalFolders -ge 3) -and
-            ($coherentFolders -ge 2)
+            ($totalFolders -ge 4) -and
+            ($coherentFolders -ge 3)
 
     Write-Host ""
     if ($pass) {
-        Write-Host "PASS - Files organized by visual content!" -ForegroundColor Green
+        Write-Host "PASS - Files organized by content!" -ForegroundColor Green
         exit 0
     } else {
-        if ($coherentFolders -lt 2) {
-            Write-Host "FAIL - Files moved but NOT grouped by content." -ForegroundColor Red
-            Write-Host "  The model should LOOK AT each image and group similar content together." -ForegroundColor Yellow
-        } elseif ($organized -lt [math]::Floor($totalFiles * 0.8)) {
+        if ($coherentFolders -lt 3) {
+            Write-Host "FAIL - Not enough coherent folders ($coherentFolders, need 3+)." -ForegroundColor Red
+        } elseif ($organized -lt [math]::Floor($totalFiles * 0.6)) {
             Write-Host "FAIL - Not enough files organized ($organized / $totalFiles)." -ForegroundColor Red
         } else {
-            Write-Host "FAIL - Not enough folders used ($totalFolders, need 3+)." -ForegroundColor Red
+            Write-Host "FAIL - Not enough folders used ($totalFolders, need 4+)." -ForegroundColor Red
         }
         exit 1
     }
