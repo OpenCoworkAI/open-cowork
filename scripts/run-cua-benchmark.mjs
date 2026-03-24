@@ -373,9 +373,50 @@ async function executeAction(action) {
       }
     }
 
+    case 'create_chart': {
+      // Create an Excel chart from data — delegates to make_chart.py
+      const title = action.title || 'Chart';
+      let outPath = action.path || action.output || action.save_path || path.join(os.homedir(), 'Desktop', 'chart.xlsx');
+      if (typeof outPath === 'string') {
+        outPath = outPath.replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir()).replace(/\//g, '\\');
+      }
+      // Build label:value pairs from multiple possible formats
+      const pairs = [];
+      // Format 1: labels[] + values[] arrays
+      const labels = action.labels || action.categories || [];
+      const values = action.values || [];
+      if (labels.length > 0 && values.length > 0) {
+        for (let i = 0; i < labels.length; i++) {
+          pairs.push(`${labels[i]}:${values[i] || 0}`);
+        }
+      }
+      // Format 2: data array of [label, value] or "label:value" strings
+      if (pairs.length === 0) {
+        const data = action.data || action.items || [];
+        if (Array.isArray(data)) {
+          for (const item of data) {
+            if (Array.isArray(item)) pairs.push(`${item[0]}:${item[1]}`);
+            else if (typeof item === 'string') pairs.push(item);
+            else if (item && item.label !== undefined) pairs.push(`${item.label}:${item.value}`);
+          }
+        }
+      }
+      if (pairs.length === 0) {
+        return { text: 'Error: specify data. Example: {"action":"create_chart","title":"Scores","labels":["Alice","Bob"],"values":[90,85],"path":"$HOME/Desktop/chart.xlsx"}' };
+      }
+      const scriptPath = path.join(__dirname, 'cua-helpers', 'make_chart.py');
+      try {
+        const { stdout, stderr } = await execFileAsync('python', [scriptPath, outPath, title, ...pairs], { timeout: 15000 });
+        return { text: (stdout || '').trim() || `Chart saved: ${outPath}` };
+      } catch (e) {
+        return { text: `Error creating chart: ${(e.stderr || e.message || '').slice(0, 500)}` };
+      }
+    }
+
     case 'open_file': {
       // Open a file with default app, wait for it to load, maximize, and click content for focus
       let filePath = action.path || action.file || '';
+      if (typeof filePath !== 'string') filePath = String(filePath);
       if (!filePath) return { text: 'Error: specify file path. Example: {"action": "open_file", "path": "$HOME/Desktop/file.pdf"}' };
       // Expand common variables that might not resolve in all contexts
       filePath = filePath.replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir());
@@ -432,55 +473,6 @@ public class WU {
         await sleep(200);
       } catch {}
       return { text: `Opened file: ${filePath} (maximized, content focused)` };
-    }
-
-    case 'create_chart': {
-      // Create an xlsx file with a bar chart from provided data
-      // Model provides: title, labels[], values[], save_path
-      const title = action.title || 'Chart';
-      const labels = action.labels || action.categories || [];
-      const values = action.values || action.data || [];
-      const savePath = (action.save_path || action.path || path.join(os.homedir(), 'Desktop', 'chart.xlsx'))
-        .replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir()).replace(/\//g, '\\');
-      const yLabel = action.y_label || action.y_axis || '';
-
-      if (!labels.length || !values.length) {
-        return { text: 'Error: provide labels and values arrays. Example: {"action":"create_chart","title":"BLEU Scores","labels":["base","A","B"],"values":[25.8,24.9,25.1],"save_path":"$HOME/Desktop/chart.xlsx"}' };
-      }
-
-      // Build Python script inline
-      const dataRows = labels.map((l, i) => `    ws.append(["${String(l).replace(/"/g, '\\"')}", ${values[i] || 0}])`).join('\n');
-      const pyScript = `
-import openpyxl
-from openpyxl.chart import BarChart, Reference
-wb = openpyxl.Workbook()
-ws = wb.active
-ws.append(["Model", "${title}"])
-${dataRows}
-chart = BarChart()
-chart.title = "${title.replace(/"/g, '\\"')}"
-chart.style = 10
-${yLabel ? `chart.y_axis.title = "${yLabel.replace(/"/g, '\\"')}"` : ''}
-vals = Reference(ws, min_col=2, min_row=1, max_row=${labels.length + 1})
-cats = Reference(ws, min_col=1, min_row=2, max_row=${labels.length + 1})
-chart.add_data(vals, titles_from_data=True)
-chart.set_categories(cats)
-chart.width = 20
-chart.height = 12
-ws.add_chart(chart, "D2")
-wb.save(r"${savePath}")
-print("OK")
-`.trim();
-
-      try {
-        const { stdout, stderr } = await execFileAsync('python', ['-c', pyScript], { timeout: 15000 });
-        if (stdout.includes('OK')) {
-          return { text: `Created chart: ${savePath} (${labels.length} data points, title: "${title}")` };
-        }
-        return { text: `Chart creation error: ${(stderr || stdout).slice(0, 500)}` };
-      } catch (e) {
-        return { text: `Chart creation failed: ${(e.stderr || e.message).slice(0, 500)}` };
-      }
     }
 
     case 'run_command':
