@@ -29,10 +29,18 @@ import type { GlobalNoticeAction } from './store';
 // Check if running in Electron
 const isElectronEnv = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
-const ChatView = lazy(() => import('./components/ChatView').then((module) => ({ default: module.ChatView })));
-const ContextPanel = lazy(() => import('./components/ContextPanel').then((module) => ({ default: module.ContextPanel })));
-const ConfigModal = lazy(() => import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal })));
-const SettingsPanel = lazy(() => import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel })));
+const ChatView = lazy(() =>
+  import('./components/ChatView').then((module) => ({ default: module.ChatView }))
+);
+const ContextPanel = lazy(() =>
+  import('./components/ContextPanel').then((module) => ({ default: module.ContextPanel }))
+);
+const ConfigModal = lazy(() =>
+  import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
+);
+const SettingsPanel = lazy(() =>
+  import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
+);
 
 function MainPanelFallback() {
   return (
@@ -43,7 +51,12 @@ function MainPanelFallback() {
 }
 
 function ContextPanelFallback() {
-  return <div className="hidden xl:block w-[340px] shrink-0 border-l border-border-subtle bg-background/60" aria-hidden="true" />;
+  return (
+    <div
+      className="hidden xl:block w-[340px] shrink-0 border-l border-border-subtle bg-background/60"
+      aria-hidden="true"
+    />
+  );
 }
 
 function App() {
@@ -55,7 +68,8 @@ function App() {
   const { sidebarCollapsed } = useLayoutState();
   const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
   const globalNotice = useGlobalNotice();
-  const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } = useSandboxSetupState();
+  const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } =
+    useSandboxSetupState();
   const sandboxSyncStatus = useSandboxSyncStatus();
   const { pendingPermission, pendingSudoPassword } = usePendingDialogs();
 
@@ -75,21 +89,18 @@ function App() {
   const sidebarBeforeSettings = useRef(false);
 
   useEffect(() => {
-    // Only run once on mount
     if (initialized.current) return;
     initialized.current = true;
 
     if (isElectron) {
       listSessions();
     }
-  }, []); // Empty deps - run once
+  }, [isElectron, listSessions]);
 
   // Apply theme to document root
   useEffect(() => {
     const effectiveTheme =
-      settings.theme === 'system'
-        ? (systemDarkMode ? 'dark' : 'light')
-        : settings.theme;
+      settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
 
     if (effectiveTheme === 'light') {
       document.documentElement.classList.add('light');
@@ -113,22 +124,25 @@ function App() {
       setSidebarCollapsed(false);
       sidebarBeforeSettings.current = false;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSettings]);
 
   // Handle config save
-  const handleConfigSave = useCallback(async (newConfig: Partial<AppConfig>) => {
-    if (!isElectronEnv) {
-      console.log('[App] Browser mode - config save simulated');
-      return;
-    }
-    
-    const result = await window.electronAPI.config.save(newConfig);
-    if (result.success) {
-      setIsConfigured(Boolean(result.config?.isConfigured));
-      setAppConfig(result.config);
-    }
-  }, [setIsConfigured, setAppConfig]);
+  const handleConfigSave = useCallback(
+    async (newConfig: Partial<AppConfig>) => {
+      if (!isElectronEnv) {
+        console.log('[App] Browser mode - config save simulated');
+        return;
+      }
+
+      const result = await window.electronAPI.config.save(newConfig);
+      if (result.success) {
+        setIsConfigured(Boolean(result.config?.isConfigured));
+        setAppConfig(result.config);
+      }
+    },
+    [setIsConfigured, setAppConfig]
+  );
 
   // Handle config modal close
   const handleConfigClose = useCallback(() => {
@@ -140,12 +154,15 @@ function App() {
     setSandboxSetupComplete(true);
   }, [setSandboxSetupComplete]);
 
-  const handleGlobalNoticeAction = useCallback((action: GlobalNoticeAction) => {
-    if (action === 'open_api_settings') {
-      setShowConfigModal(true);
-    }
-    clearGlobalNotice();
-  }, [clearGlobalNotice, setShowConfigModal]);
+  const handleGlobalNoticeAction = useCallback(
+    (action: GlobalNoticeAction) => {
+      if (action === 'open_api_settings') {
+        setShowConfigModal(true);
+      }
+      clearGlobalNotice();
+    },
+    [clearGlobalNotice, setShowConfigModal]
+  );
 
   // Determine if we should show the sandbox setup dialog
   // Show if there's progress and setup is not complete
@@ -155,7 +172,7 @@ function App() {
     <div className="h-full w-full min-h-0 flex flex-col overflow-hidden bg-background">
       {/* Titlebar - draggable region */}
       <Titlebar />
-      
+
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Sidebar */}
@@ -166,13 +183,21 @@ function App() {
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
           {showSettings ? (
-            <PanelErrorBoundary name="SettingsPanel" resetKey="settings" fallback={<MainPanelFallback />}>
+            <PanelErrorBoundary
+              name="SettingsPanel"
+              resetKey="settings"
+              fallback={<MainPanelFallback />}
+            >
               <Suspense fallback={<MainPanelFallback />}>
                 <SettingsPanel onClose={() => setShowSettings(false)} />
               </Suspense>
             </PanelErrorBoundary>
           ) : activeSessionId ? (
-            <PanelErrorBoundary name="ChatView" resetKey={activeSessionId} fallback={<MainPanelFallback />}>
+            <PanelErrorBoundary
+              name="ChatView"
+              resetKey={activeSessionId}
+              fallback={<MainPanelFallback />}
+            >
               <Suspense fallback={<MainPanelFallback />}>
                 <ChatView />
               </Suspense>
@@ -184,20 +209,24 @@ function App() {
 
         {/* Context Panel - only show when in session and not in settings */}
         {activeSessionId && !showSettings && (
-          <PanelErrorBoundary name="ContextPanel" resetKey={activeSessionId} fallback={<ContextPanelFallback />}>
+          <PanelErrorBoundary
+            name="ContextPanel"
+            resetKey={activeSessionId}
+            fallback={<ContextPanelFallback />}
+          >
             <Suspense fallback={<ContextPanelFallback />}>
               <ContextPanel />
             </Suspense>
           </PanelErrorBoundary>
         )}
       </div>
-      
+
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}
 
       {/* Sudo Password Dialog */}
       {pendingSudoPassword && <SudoPasswordDialog request={pendingSudoPassword} />}
-      
+
       {/* Config Modal */}
       <PanelErrorBoundary name="ConfigModal" fallback={null}>
         <Suspense fallback={null}>
@@ -213,12 +242,12 @@ function App() {
 
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (
-        <SandboxSetupDialog 
+        <SandboxSetupDialog
           progress={sandboxSetupProgress}
           onComplete={handleSandboxSetupComplete}
         />
       )}
-      
+
       {/* Sandbox Sync Toast */}
       <SandboxSyncToast status={sandboxSyncStatus} />
 

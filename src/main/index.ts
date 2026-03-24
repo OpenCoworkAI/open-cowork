@@ -84,6 +84,14 @@ import {
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 
+function omitCredentialPassword<T extends { password?: unknown }>(
+  credential: T
+): Omit<T, 'password'> {
+  const safeCredential = { ...credential };
+  delete safeCredential.password;
+  return safeCredential;
+}
+
 // Current working directory (persisted between sessions)
 let currentWorkingDir: string | null = null;
 
@@ -1634,8 +1642,7 @@ ipcMain.handle('credentials.getById', (_event, id: string) => {
     const cred = credentialsStore.getById(id);
     if (!cred) return undefined;
     // Strip password field before sending to renderer
-    const safeCred = { ...cred, password: undefined };
-    return safeCred;
+    return omitCredentialPassword(cred);
   } catch (error) {
     logError('[Credentials] Error getting credential:', error);
     return undefined;
@@ -1646,7 +1653,7 @@ ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) =
   try {
     const creds = credentialsStore.getByType(type);
     // Strip password field before sending to renderer
-    return creds.map((c) => ({ ...c, password: undefined }));
+    return creds.map(omitCredentialPassword);
   } catch (error) {
     logError('[Credentials] Error getting credentials by type:', error);
     return [];
@@ -1657,7 +1664,7 @@ ipcMain.handle('credentials.getByService', (_event, service: string) => {
   try {
     const creds = credentialsStore.getByService(service);
     // Strip password field before sending to renderer
-    return creds.map((c) => ({ ...c, password: undefined }));
+    return creds.map(omitCredentialPassword);
   } catch (error) {
     logError('[Credentials] Error getting credentials by service:', error);
     return [];
@@ -1669,8 +1676,7 @@ ipcMain.handle(
   (_event, credential: Omit<UserCredential, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const saved = credentialsStore.save(credential);
-      const { password: _pw, ...safe } = saved;
-      return safe;
+      return omitCredentialPassword(saved);
     } catch (error) {
       logError('[Credentials] Error saving credential:', error);
       throw error;
@@ -1688,8 +1694,7 @@ ipcMain.handle(
     try {
       const updated = credentialsStore.update(id, updates);
       if (!updated) return undefined;
-      const { password: _pw, ...safe } = updated;
-      return safe;
+      return omitCredentialPassword(updated);
     } catch (error) {
       logError('[Credentials] Error updating credential:', error);
       throw error;

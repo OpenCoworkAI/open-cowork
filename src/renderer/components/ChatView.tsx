@@ -132,43 +132,46 @@ export function ChatView() {
   const timerActive = Boolean(executionClock?.startAt && executionClock.endAt === null);
 
   // Debounced scroll function to prevent scroll conflicts
-  const scrollToBottom = useRef((behavior: ScrollBehavior = 'auto', immediate: boolean = false) => {
-    // Cancel any pending scroll requests
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-    if (scrollRequestRef.current) {
-      cancelAnimationFrame(scrollRequestRef.current);
-      scrollRequestRef.current = null;
-    }
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = 'auto', immediate: boolean = false) => {
+      // Cancel any pending scroll requests
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+      if (scrollRequestRef.current) {
+        cancelAnimationFrame(scrollRequestRef.current);
+        scrollRequestRef.current = null;
+      }
 
-    const performScroll = () => {
-      if (!isUserAtBottomRef.current) return;
+      const performScroll = () => {
+        if (!isUserAtBottomRef.current) return;
 
-      // Mark as scrolling to prevent concurrent scrolls
-      isScrollingRef.current = true;
+        // Mark as scrolling to prevent concurrent scrolls
+        isScrollingRef.current = true;
 
-      messagesEndRef.current?.scrollIntoView({ behavior });
+        messagesEndRef.current?.scrollIntoView({ behavior });
 
-      // Reset scrolling flag after a short delay
-      setTimeout(
-        () => {
-          isScrollingRef.current = false;
-        },
-        behavior === 'smooth' ? 300 : 50
-      );
-    };
+        // Reset scrolling flag after a short delay
+        setTimeout(
+          () => {
+            isScrollingRef.current = false;
+          },
+          behavior === 'smooth' ? 300 : 50
+        );
+      };
 
-    if (immediate) {
-      performScroll();
-    } else {
-      // Use RAF + timeout for debouncing
-      scrollRequestRef.current = requestAnimationFrame(() => {
-        scrollTimeoutRef.current = setTimeout(performScroll, 16); // ~1 frame delay
-      });
-    }
-  }).current;
+      if (immediate) {
+        performScroll();
+      } else {
+        // Use RAF + timeout for debouncing
+        scrollRequestRef.current = requestAnimationFrame(() => {
+          scrollTimeoutRef.current = setTimeout(performScroll, 16); // ~1 frame delay
+        });
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -211,9 +214,11 @@ export function ChatView() {
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
-  }, [messages.length, partialMessage.length, partialThinking.length]);
+  }, [messages.length, partialMessage.length, partialThinking.length, scrollToBottom]);
 
   // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)
+  // scrollToBottom is stable via useCallback; recreating the observer is unnecessary.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const container = scrollContainerRef.current;
     const messagesContainer = messagesContainerRef.current;
@@ -232,6 +237,7 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // ResizeObserver is stable — no need to recreate on message count changes
 
   // Cleanup scroll timeouts on unmount

@@ -16,13 +16,17 @@ function registerStoreMocks(userDataPath: string): void {
   }));
 
   vi.doMock('electron-store', () => {
-    class MockStore<T extends Record<string, unknown>> {
+    class MockStore {
       public path: string;
       private internalStore: Record<string, unknown>;
       private readonly encryptionKey?: string;
       private readonly defaults: Record<string, unknown>;
 
-      constructor(options: { name?: string; defaults?: Record<string, unknown>; encryptionKey?: string }) {
+      constructor(options: {
+        name?: string;
+        defaults?: Record<string, unknown>;
+        encryptionKey?: string;
+      }) {
         const name = options.name || 'config';
         this.path = path.join(userDataPath, `${name}.json`);
         this.defaults = { ...(options.defaults || {}) };
@@ -82,8 +86,8 @@ describe('createEncryptedStoreWithKeyRotation', () => {
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
     vi.resetModules();
-    vi.unmock('electron');
-    vi.unmock('electron-store');
+    vi.doUnmock('electron');
+    vi.doUnmock('electron-store');
   });
 
   it('backs up unreadable encrypted stores and recreates defaults', async () => {
@@ -101,7 +105,8 @@ describe('createEncryptedStoreWithKeyRotation', () => {
       })
     );
 
-    const { createEncryptedStoreWithKeyRotation } = await import('../src/main/utils/store-encryption');
+    const { createEncryptedStoreWithKeyRotation } =
+      await import('../src/main/utils/store-encryption');
     const store = createEncryptedStoreWithKeyRotation<Record<string, unknown>>({
       stableKey: 'stable-key',
       legacyKeys: ['legacy-key-1', 'legacy-key-2'],
@@ -120,7 +125,9 @@ describe('createEncryptedStoreWithKeyRotation', () => {
       apiKey: '',
     });
 
-    const backups = fs.readdirSync(tempDir).filter((file) => file.startsWith('config.json.unreadable-recovery-'));
+    const backups = fs
+      .readdirSync(tempDir)
+      .filter((file) => file.startsWith('config.json.unreadable-recovery-'));
     expect(backups).toHaveLength(1);
     expect(fs.existsSync(path.join(tempDir, backups[0]))).toBe(true);
     expect(fs.existsSync(storePath)).toBe(false);

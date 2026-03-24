@@ -60,7 +60,22 @@ async function getLogContent(logger: typeof import('../src/main/utils/logger')):
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  return fs.readFileSync(logFilePath!, 'utf8');
+  let lastContent = '';
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const content = fs.readFileSync(logFilePath!, 'utf8');
+      if (content.length > 0 && content === lastContent) {
+        return content;
+      }
+      lastContent = content;
+    } catch {
+      // Retry until the file is readable and content stabilizes.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  return lastContent;
 }
 
 describe('logger context (AsyncLocalStorage)', () => {
@@ -122,12 +137,9 @@ describe('logger context (AsyncLocalStorage)', () => {
   it('runWithLogContext propagates sessionId and traceId to logCtx output', async () => {
     const logger = await import('../src/main/utils/logger');
 
-    logger.runWithLogContext(
-      { sessionId: 'test-session-1234', traceId: 'abc12345' },
-      () => {
-        logger.logCtx('[Test] context aware log');
-      }
-    );
+    logger.runWithLogContext({ sessionId: 'test-session-1234', traceId: 'abc12345' }, () => {
+      logger.logCtx('[Test] context aware log');
+    });
 
     const content = await getLogContent(logger);
     expect(content).toContain('[sid:test-ses]');
@@ -150,19 +162,13 @@ describe('logger context (AsyncLocalStorage)', () => {
   it('nested runWithLogContext overrides parent context', async () => {
     const logger = await import('../src/main/utils/logger');
 
-    logger.runWithLogContext(
-      { sessionId: 'outer-session-id00', traceId: 'outer000' },
-      () => {
-        logger.logCtx('[Test] outer log');
-        logger.runWithLogContext(
-          { sessionId: 'inner-session-id00', traceId: 'inner000' },
-          () => {
-            logger.logCtx('[Test] inner log');
-          }
-        );
-        logger.logCtx('[Test] outer again');
-      }
-    );
+    logger.runWithLogContext({ sessionId: 'outer-session-id00', traceId: 'outer000' }, () => {
+      logger.logCtx('[Test] outer log');
+      logger.runWithLogContext({ sessionId: 'inner-session-id00', traceId: 'inner000' }, () => {
+        logger.logCtx('[Test] inner log');
+      });
+      logger.logCtx('[Test] outer again');
+    });
 
     const content = await getLogContent(logger);
     const lines = content.split('\n');
@@ -183,13 +189,10 @@ describe('logger context (AsyncLocalStorage)', () => {
   it('logCtxWarn and logCtxError include context prefix in file', async () => {
     const logger = await import('../src/main/utils/logger');
 
-    logger.runWithLogContext(
-      { sessionId: 'warn-error-sess', traceId: 'we123456' },
-      () => {
-        logger.logCtxWarn('[Test] warning message');
-        logger.logCtxError('[Test] error message');
-      }
-    );
+    logger.runWithLogContext({ sessionId: 'warn-error-sess', traceId: 'we123456' }, () => {
+      logger.logCtxWarn('[Test] warning message');
+      logger.logCtxError('[Test] error message');
+    });
 
     const content = await getLogContent(logger);
     expect(content).toContain('[WARN]');
@@ -208,12 +211,9 @@ describe('logger context (AsyncLocalStorage)', () => {
 
     const startTime = Date.now() - 42;
 
-    logger.runWithLogContext(
-      { sessionId: 'timing-session0', traceId: 'tim12345' },
-      () => {
-        logger.logTiming('test-operation', startTime);
-      }
-    );
+    logger.runWithLogContext({ sessionId: 'timing-session0', traceId: 'tim12345' }, () => {
+      logger.logTiming('test-operation', startTime);
+    });
 
     const content = await getLogContent(logger);
     expect(content).toContain('[TIMING] test-operation:');
@@ -234,12 +234,9 @@ describe('logger context (AsyncLocalStorage)', () => {
   it('original log/logError still work inside and outside context', async () => {
     const logger = await import('../src/main/utils/logger');
 
-    logger.runWithLogContext(
-      { sessionId: 'compat-session0', traceId: 'compat00' },
-      () => {
-        logger.log('[Test] original log inside context');
-      }
-    );
+    logger.runWithLogContext({ sessionId: 'compat-session0', traceId: 'compat00' }, () => {
+      logger.log('[Test] original log inside context');
+    });
     logger.log('[Test] original log outside context');
 
     const content = await getLogContent(logger);

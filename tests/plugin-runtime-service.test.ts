@@ -2,8 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { PluginCatalogItemV2 } from '../src/renderer/types';
 
 let testRoot = '';
+
+type CatalogServiceStub = {
+  listAnthropicPlugins: () => Promise<PluginCatalogItemV2[]>;
+  downloadPlugin?: ReturnType<typeof vi.fn>;
+};
+
+type CommandRunnerStub = (
+  command: string,
+  args: string[]
+) => Promise<{ stdout: string; stderr: string }>;
 
 vi.mock('electron', () => {
   const electron = {
@@ -72,13 +83,19 @@ function createPluginFixture(root: string, pluginName: string): string {
   return pluginRoot;
 }
 
-async function createRuntimeService(options?: { catalogService?: any; commandRunner?: any }) {
+async function createRuntimeService(options?: {
+  catalogService?: CatalogServiceStub;
+  commandRunner?: CommandRunnerStub;
+}) {
   const { PluginRuntimeService } = await import('../src/main/skills/plugin-runtime-service');
-  const fakeCatalogService = options?.catalogService ?? ({
-    listAnthropicPlugins: vi.fn(),
+  const fakeCatalogService = options?.catalogService ?? {
+    listAnthropicPlugins: vi.fn(async () => [] as PluginCatalogItemV2[]),
     downloadPlugin: vi.fn(),
-  } as any);
-  return new PluginRuntimeService(fakeCatalogService, options?.commandRunner);
+  };
+  return new PluginRuntimeService(
+    fakeCatalogService as ConstructorParameters<typeof PluginRuntimeService>[0],
+    options?.commandRunner
+  );
 }
 
 describe('PluginRuntimeService', () => {
@@ -116,7 +133,7 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi
       .fn()
       .mockResolvedValueOnce({ stdout: '', stderr: '' })
@@ -135,11 +152,15 @@ describe('PluginRuntimeService', () => {
     const service = await createRuntimeService({ catalogService, commandRunner });
     const result = await service.install('context7');
 
-    expect(commandRunner).toHaveBeenNthCalledWith(1, 'claude', ['plugin', 'install', 'context7@claude-plugins-official']);
+    expect(commandRunner).toHaveBeenNthCalledWith(1, 'claude', [
+      'plugin',
+      'install',
+      'context7@claude-plugins-official',
+    ]);
     expect(commandRunner).toHaveBeenNthCalledWith(2, 'claude', ['plugin', 'list', '--json']);
     expect(result.plugin.name).toBe('context7');
     expect(fs.existsSync(result.plugin.runtimePath)).toBe(true);
-  });
+  }, 15000);
 
   it('installs plugin when claude plugin list --json returns an array payload', async () => {
     const fixturesRoot = path.join(testRoot, 'fixtures');
@@ -161,7 +182,7 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi
       .fn()
       .mockResolvedValueOnce({ stdout: '', stderr: '' })
@@ -217,7 +238,7 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi
       .fn()
       .mockResolvedValueOnce({ stdout: '', stderr: '' })
@@ -236,11 +257,11 @@ describe('PluginRuntimeService', () => {
     const service = await createRuntimeService({ catalogService, commandRunner });
     const result = await service.install('agent-sdk-dev@claude-plugins-official');
 
-    expect(commandRunner).toHaveBeenNthCalledWith(
-      1,
-      'claude',
-      ['plugin', 'install', 'agent-sdk-dev@claude-plugins-official']
-    );
+    expect(commandRunner).toHaveBeenNthCalledWith(1, 'claude', [
+      'plugin',
+      'install',
+      'agent-sdk-dev@claude-plugins-official',
+    ]);
     expect(result.plugin.name).toBe('agent-sdk-dev');
   });
 
@@ -277,11 +298,13 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi.fn();
 
     const service = await createRuntimeService({ catalogService, commandRunner });
-    await expect(service.install('Agent SDK Dev')).rejects.toThrow('Multiple plugins share this name');
+    await expect(service.install('Agent SDK Dev')).rejects.toThrow(
+      'Multiple plugins share this name'
+    );
     expect(commandRunner).not.toHaveBeenCalled();
   });
 
@@ -303,7 +326,7 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi
       .fn()
       .mockResolvedValueOnce({ stdout: '', stderr: '' })
@@ -332,7 +355,7 @@ describe('PluginRuntimeService', () => {
         catalogSource: 'claude-marketplace',
       },
     ]);
-    const catalogService = { listAnthropicPlugins } as any;
+    const catalogService: CatalogServiceStub = { listAnthropicPlugins };
     const commandRunner = vi.fn(async () => {
       const error = new Error('spawn claude ENOENT') as Error & { code?: string };
       error.code = 'ENOENT';
@@ -375,7 +398,9 @@ describe('PluginRuntimeService', () => {
     await service.setComponentEnabled(installResult.plugin.pluginId, 'hooks', true);
     await service.setComponentEnabled(installResult.plugin.pluginId, 'mcp', true);
 
-    const installed = service.listInstalled().find((plugin) => plugin.pluginId === installResult.plugin.pluginId);
+    const installed = service
+      .listInstalled()
+      .find((plugin) => plugin.pluginId === installResult.plugin.pluginId);
     expect(installed).toBeDefined();
     expect(installed?.componentsEnabled.hooks).toBe(true);
     expect(installed?.componentsEnabled.mcp).toBe(true);

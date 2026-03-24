@@ -14,8 +14,8 @@ describe('credentials IPC password stripping', () => {
       )?.[0] ?? '';
 
     expect(saveBlock).toContain('const saved = credentialsStore.save(credential)');
-    expect(saveBlock).toContain('password: _pw');
-    expect(saveBlock).toContain('return safe');
+    expect(source).toContain('function omitCredentialPassword');
+    expect(saveBlock).toContain('return omitCredentialPassword(saved)');
     // Must NOT return the raw save result directly
     expect(saveBlock).not.toMatch(/return credentialsStore\.save\(/);
   });
@@ -29,8 +29,8 @@ describe('credentials IPC password stripping', () => {
       )?.[0] ?? '';
 
     expect(updateBlock).toContain('const updated = credentialsStore.update(id, updates)');
-    expect(updateBlock).toContain('password: _pw');
-    expect(updateBlock).toContain('return safe');
+    expect(source).toContain('function omitCredentialPassword');
+    expect(updateBlock).toContain('return omitCredentialPassword(updated)');
     // Must NOT return the raw update result directly
     expect(updateBlock).not.toMatch(/return credentialsStore\.update\(/);
   });

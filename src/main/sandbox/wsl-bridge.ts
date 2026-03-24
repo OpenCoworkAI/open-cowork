@@ -868,7 +868,7 @@ export class WSLBridge implements SandboxExecutor {
       this.isInitialized = false;
 
       // Reject all pending requests
-      for (const [_id, pending] of this.pendingRequests) {
+      for (const pending of this.pendingRequests.values()) {
         pending.reject(new Error('WSL agent process exited'));
         clearTimeout(pending.timeout);
       }

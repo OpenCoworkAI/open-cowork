@@ -721,7 +721,7 @@ export class LimaBridge implements SandboxExecutor {
       this.limaProcess = null;
       this.isInitialized = false;
 
-      for (const [_id, pending] of this.pendingRequests) {
+      for (const pending of this.pendingRequests.values()) {
         pending.reject(new Error('Lima agent process exited'));
         clearTimeout(pending.timeout);
       }

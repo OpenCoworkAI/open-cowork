@@ -92,9 +92,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
 
   // Mark tab as viewed when it becomes active
   useEffect(() => {
-    if (!viewedTabs.has(activeTab)) {
-      setViewedTabs((prev) => new Set([...prev, activeTab]));
-    }
+    setViewedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])));
   }, [activeTab]);
 
   const tabs = [

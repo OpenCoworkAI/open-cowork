@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { MountedPath } from '../src/renderer/types';
 import { PathResolver } from '../src/main/sandbox/path-resolver';
 
 describe('PathResolver containment', () => {
@@ -6,7 +8,7 @@ describe('PathResolver containment', () => {
     const resolver = new PathResolver();
     resolver.registerSession('session-1', [
       { virtual: '/mnt/workspace', real: '/tmp/project' },
-    ] as any);
+    ] as MountedPath[]);
 
     expect(resolver.resolve('session-1', '/mnt/workspace-evil/secret.txt')).toBeNull();
   });
@@ -15,7 +17,7 @@ describe('PathResolver containment', () => {
     const resolver = new PathResolver();
     resolver.registerSession('session-1', [
       { virtual: '/mnt/workspace', real: '/tmp/project' },
-    ] as any);
+    ] as MountedPath[]);
 
     expect(resolver.virtualize('session-1', '/tmp/project-evil/secret.txt')).toBeNull();
   });
@@ -24,10 +26,10 @@ describe('PathResolver containment', () => {
     const resolver = new PathResolver();
     resolver.registerSession('session-1', [
       { virtual: '/mnt/workspace', real: '/tmp/project' },
-    ] as any);
+    ] as MountedPath[]);
 
     expect(resolver.resolve('session-1', '/mnt/workspace/notes..final.md')).toBe(
-      '/tmp/project/notes..final.md'
+      path.join('/tmp/project', 'notes..final.md')
     );
   });
 });

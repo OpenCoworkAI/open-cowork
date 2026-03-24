@@ -20,6 +20,24 @@ function isDanglingSymlink(filePath: string): boolean {
   }
 }
 
+function supportsDirectorySymlinks(): boolean {
+  const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-symlink-probe-'));
+  const targetPath = path.join(probeDir, 'target');
+  const linkPath = path.join(probeDir, 'link');
+
+  try {
+    fs.mkdirSync(targetPath);
+    fs.symlinkSync(targetPath, linkPath, 'dir');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+const itIfDirectorySymlinkSupported = supportsDirectorySymlinks() ? it : it.skip;
+
 describe('isDanglingSymlink', () => {
   let tmpDir: string;
 
@@ -43,7 +61,7 @@ describe('isDanglingSymlink', () => {
     expect(isDanglingSymlink(dirPath)).toBe(false);
   });
 
-  it('returns false for a valid symlink', () => {
+  itIfDirectorySymlinkSupported('returns false for a valid symlink', () => {
     const targetPath = path.join(tmpDir, 'target');
     fs.mkdirSync(targetPath);
     const linkPath = path.join(tmpDir, 'link');
@@ -51,9 +69,9 @@ describe('isDanglingSymlink', () => {
     expect(isDanglingSymlink(linkPath)).toBe(false);
   });
 
-  it('returns true for a dangling symlink', () => {
+  itIfDirectorySymlinkSupported('returns true for a dangling symlink', () => {
     const linkPath = path.join(tmpDir, 'dangling');
-    fs.symlinkSync('/nonexistent/path/that/does/not/exist', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-target'), linkPath, 'dir');
     expect(isDanglingSymlink(linkPath)).toBe(true);
   });
 
@@ -61,21 +79,24 @@ describe('isDanglingSymlink', () => {
     expect(isDanglingSymlink(path.join(tmpDir, 'nope'))).toBe(false);
   });
 
-  it('returns true when symlink target is removed after creation', () => {
-    const targetPath = path.join(tmpDir, 'target-dir');
-    fs.mkdirSync(targetPath);
-    const linkPath = path.join(tmpDir, 'link-to-target');
-    fs.symlinkSync(targetPath, linkPath, 'dir');
+  itIfDirectorySymlinkSupported(
+    'returns true when symlink target is removed after creation',
+    () => {
+      const targetPath = path.join(tmpDir, 'target-dir');
+      fs.mkdirSync(targetPath);
+      const linkPath = path.join(tmpDir, 'link-to-target');
+      fs.symlinkSync(targetPath, linkPath, 'dir');
 
-    // Symlink is valid before removal
-    expect(isDanglingSymlink(linkPath)).toBe(false);
+      // Symlink is valid before removal
+      expect(isDanglingSymlink(linkPath)).toBe(false);
 
-    // Remove the target
-    fs.rmSync(targetPath, { recursive: true });
+      // Remove the target
+      fs.rmSync(targetPath, { recursive: true });
 
-    // Now the symlink is dangling
-    expect(isDanglingSymlink(linkPath)).toBe(true);
-  });
+      // Now the symlink is dangling
+      expect(isDanglingSymlink(linkPath)).toBe(true);
+    }
+  );
 });
 
 describe('dangling symlink cleanup in skill directories', () => {
@@ -89,24 +110,24 @@ describe('dangling symlink cleanup in skill directories', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('fs.existsSync returns false for dangling symlinks', () => {
+  itIfDirectorySymlinkSupported('fs.existsSync returns false for dangling symlinks', () => {
     const linkPath = path.join(tmpDir, 'docx');
-    fs.symlinkSync('/nonexistent/asar/path', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-asar-path'), linkPath, 'dir');
     expect(fs.existsSync(linkPath)).toBe(false);
   });
 
-  it('fs.mkdirSync fails on path with dangling symlink', () => {
+  itIfDirectorySymlinkSupported('fs.mkdirSync fails on path with dangling symlink', () => {
     const linkPath = path.join(tmpDir, 'docx');
-    fs.symlinkSync('/nonexistent/asar/path', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-asar-path'), linkPath, 'dir');
 
     expect(() => {
       fs.mkdirSync(linkPath, { recursive: true });
     }).toThrow();
   });
 
-  it('unlinkSync removes a dangling symlink', () => {
+  itIfDirectorySymlinkSupported('unlinkSync removes a dangling symlink', () => {
     const linkPath = path.join(tmpDir, 'docx');
-    fs.symlinkSync('/nonexistent/asar/path', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-asar-path'), linkPath, 'dir');
 
     // Confirm it's dangling
     expect(isDanglingSymlink(linkPath)).toBe(true);
@@ -123,17 +144,17 @@ describe('dangling symlink cleanup in skill directories', () => {
     expect(fs.statSync(linkPath).isDirectory()).toBe(true);
   });
 
-  it('readdirSync lists dangling symlinks by name', () => {
+  itIfDirectorySymlinkSupported('readdirSync lists dangling symlinks by name', () => {
     const linkPath = path.join(tmpDir, 'docx');
-    fs.symlinkSync('/nonexistent/asar/path', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-asar-path'), linkPath, 'dir');
 
     const entries = fs.readdirSync(tmpDir);
     expect(entries).toContain('docx');
   });
 
-  it('statSync throws ENOENT on dangling symlinks', () => {
+  itIfDirectorySymlinkSupported('statSync throws ENOENT on dangling symlinks', () => {
     const linkPath = path.join(tmpDir, 'docx');
-    fs.symlinkSync('/nonexistent/asar/path', linkPath, 'dir');
+    fs.symlinkSync(path.join(tmpDir, 'missing-asar-path'), linkPath, 'dir');
 
     expect(() => {
       fs.statSync(linkPath);
