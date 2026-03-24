@@ -517,12 +517,12 @@ CRITICAL rules:
 - For organizing files: If files have generic names (IMG_xxxx, DSC_xxxx), you MUST look at each image to classify it.
   Use view_image to quickly see what each image shows — it's much faster than open_file.
   IMPORTANT workflow:
-  1) List files with run_command
+  1) List ALL files: Get-ChildItem "$HOME\\Desktop" -Filter "demo_*" -Name  (this gets BOTH .jpg AND .png)
   2) view_image EACH file — after viewing, note which folder it belongs to
-  3) Create all folders at once with run_command (e.g., mkdir Food, Landscapes, Receipts)
-  4) Move files to correct folders — move EACH file to its specific folder based on what you saw!
-     Do NOT dump all files into one folder. Move food images to Food, landscapes to Landscapes, etc.
-  Group files by their VISUAL CONTENT (food, nature, charts, receipts, etc), NOT by file extension.
+  3) Create all folders at once: mkdir "$HOME\\Desktop\\Food"; mkdir "$HOME\\Desktop\\Animals"; etc.
+  4) Move EACH file to its specific folder based on what you saw!
+     Do NOT dump all files into one folder. Move food to Food, animals to Animals, etc.
+  Group files by their VISUAL CONTENT (food, nature, charts, receipts, animals, sports, etc), NOT by file extension.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
