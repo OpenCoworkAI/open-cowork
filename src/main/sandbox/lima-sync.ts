@@ -26,9 +26,6 @@ function validateSessionId(sessionId: string): void {
   }
 }
 
-/** Expected sandbox root suffix — all sandbox paths must resolve within this */
-const SANDBOX_ROOT_SUFFIX = '/.claude/sandbox';
-
 export interface LimaSyncSession {
   sessionId: string;
   macPath: string; // Original macOS path (e.g., /Users/username/project)
@@ -263,12 +260,14 @@ export class LimaSync {
       // Verify the sandbox path resolves to a location within the sandbox root
       // to prevent rm -rf from following symlinks outside the sandbox
       const realPathResult = await this.limaExec(
-        `realpath '${LimaSync.shellEscapePath(session.sandboxPath)}' 2>/dev/null || echo '${LimaSync.shellEscapePath(session.sandboxPath)}'`
+        `realpath '${LimaSync.shellEscapePath(session.sandboxPath)}'`
       );
       const realPath = realPathResult.stdout.trim();
-      if (!realPath.includes(SANDBOX_ROOT_SUFFIX + '/')) {
+      // Derive sandbox root from the session's sandboxPath (strip /{sessionId} suffix)
+      const sandboxRoot = session.sandboxPath.substring(0, session.sandboxPath.lastIndexOf('/'));
+      if (!realPath.startsWith(sandboxRoot + '/')) {
         logError(
-          `[LimaSync] Refusing to delete: real path "${realPath}" is not within sandbox root`
+          `[LimaSync] Refusing to delete: real path "${realPath}" is not within sandbox root "${sandboxRoot}"`
         );
         sessions.delete(sessionId);
         return;

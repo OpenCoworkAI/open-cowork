@@ -29,9 +29,6 @@ function validateSessionId(sessionId: string): void {
   }
 }
 
-/** Expected sandbox root suffix — all sandbox paths must resolve within this */
-const SANDBOX_ROOT_SUFFIX = '/.claude/sandbox';
-
 export interface SyncSession {
   sessionId: string;
   windowsPath: string; // Original Windows path (e.g., D:\project)
@@ -109,7 +106,10 @@ export class SandboxSync {
 
       // Verify sandbox still exists in WSL
       try {
-        await this.wslExec(distro, `test -d "${existingSession.sandboxPath}"`);
+        await this.wslExec(
+          distro,
+          `test -d '${this.shellEscapePath(existingSession.sandboxPath)}'`
+        );
         return {
           success: true,
           sandboxPath: existingSession.sandboxPath,
@@ -135,7 +135,7 @@ export class SandboxSync {
 
     try {
       // Create sandbox directory
-      await this.wslExec(distro, `mkdir -p "${sandboxPath}"`);
+      await this.wslExec(distro, `mkdir -p '${this.shellEscapePath(sandboxPath)}'`);
 
       // Convert Windows path to WSL /mnt/ path for rsync source
       const wslSourcePath = pathConverter.toWSL(windowsPath);
@@ -145,14 +145,20 @@ export class SandboxSync {
       const excludeArgs = SYNC_EXCLUDES.map((e) => `--exclude="${e}"`).join(' ');
 
       // Sync files from Windows to sandbox
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${wslSourcePath}/" "${sandboxPath}/"`;
+      const rsyncCmd = `rsync -av --delete ${excludeArgs} '${this.shellEscapePath(wslSourcePath)}/' '${this.shellEscapePath(sandboxPath)}/'`;
       log(`[SandboxSync] Running: ${rsyncCmd}`);
 
       await this.wslExec(distro, rsyncCmd, 300000); // 5 min timeout
 
       // Count files and get size
-      const countResult = await this.wslExec(distro, `find "${sandboxPath}" -type f | wc -l`);
-      const sizeResult = await this.wslExec(distro, `du -sb "${sandboxPath}" | cut -f1`);
+      const countResult = await this.wslExec(
+        distro,
+        `find '${this.shellEscapePath(sandboxPath)}' -type f | wc -l`
+      );
+      const sizeResult = await this.wslExec(
+        distro,
+        `du -sb '${this.shellEscapePath(sandboxPath)}' | cut -f1`
+      );
 
       const fileCount = parseInt(countResult.stdout.trim()) || 0;
       const totalSize = parseInt(sizeResult.stdout.trim()) || 0;
@@ -195,6 +201,7 @@ export class SandboxSync {
    * Called after each message to persist changes while keeping sandbox alive
    */
   static async syncToWindows(sessionId: string): Promise<SyncResult> {
+    validateSessionId(sessionId);
     const session = sessions.get(sessionId);
     if (!session) {
       logError(`[SandboxSync] Session not found: ${sessionId}`);
@@ -220,7 +227,7 @@ export class SandboxSync {
       // Sync back to Windows (via /mnt/)
       // NOTE: We use --delete to ensure files deleted/moved in sandbox are also deleted locally
       // This is important for file organization tasks where files are moved to new locations
-      const rsyncCmd = `rsync -av --delete ${excludeArgs} "${session.sandboxPath}/" "${wslDestPath}/"`;
+      const rsyncCmd = `rsync -av --delete ${excludeArgs} '${this.shellEscapePath(session.sandboxPath)}/' '${this.shellEscapePath(wslDestPath)}/'`;
       log(`[SandboxSync] Running: ${rsyncCmd}`);
 
       await this.wslExec(session.distro, rsyncCmd, 300000); // 5 min timeout
@@ -260,6 +267,7 @@ export class SandboxSync {
    * Clean up sandbox directory for a specific session
    */
   static async cleanup(sessionId: string): Promise<void> {
+    validateSessionId(sessionId);
     const session = sessions.get(sessionId);
     if (!session) {
       return;
@@ -272,18 +280,20 @@ export class SandboxSync {
       // to prevent rm -rf from following symlinks outside the sandbox
       const realPathResult = await this.wslExec(
         session.distro,
-        `realpath "${session.sandboxPath}" 2>/dev/null || echo "${session.sandboxPath}"`
+        `realpath '${this.shellEscapePath(session.sandboxPath)}'`
       );
       const realPath = realPathResult.stdout.trim();
-      if (!realPath.includes(SANDBOX_ROOT_SUFFIX + '/')) {
+      // Derive sandbox root from the session's sandboxPath (strip /{sessionId} suffix)
+      const sandboxRoot = session.sandboxPath.substring(0, session.sandboxPath.lastIndexOf('/'));
+      if (!realPath.startsWith(sandboxRoot + '/')) {
         logError(
-          `[SandboxSync] Refusing to delete: real path "${realPath}" is not within sandbox root`
+          `[SandboxSync] Refusing to delete: real path "${realPath}" is not within sandbox root "${sandboxRoot}"`
         );
         sessions.delete(sessionId);
         return;
       }
 
-      await this.wslExec(session.distro, `rm -rf "${session.sandboxPath}"`);
+      await this.wslExec(session.distro, `rm -rf '${this.shellEscapePath(session.sandboxPath)}'`);
       sessions.delete(sessionId);
       log(`[SandboxSync] Cleanup complete for session ${sessionId}`);
     } catch (error) {
@@ -296,6 +306,7 @@ export class SandboxSync {
    * Called when a session/conversation is deleted
    */
   static async syncAndCleanup(sessionId: string): Promise<SyncResult> {
+    validateSessionId(sessionId);
     log(`[SandboxSync] Sync and cleanup for session ${sessionId}`);
 
     // First sync changes back to Windows
@@ -334,10 +345,10 @@ export class SandboxSync {
 
       // Ensure destination directory exists
       const destDir = sandboxDestPath.substring(0, sandboxDestPath.lastIndexOf('/'));
-      await this.wslExec(session.distro, `mkdir -p "${destDir}"`);
+      await this.wslExec(session.distro, `mkdir -p '${this.shellEscapePath(destDir)}'`);
 
       // Copy file
-      const cpCmd = `cp "${wslSourcePath}" "${sandboxDestPath}"`;
+      const cpCmd = `cp '${this.shellEscapePath(wslSourcePath)}' '${this.shellEscapePath(sandboxDestPath)}'`;
       log(`[SandboxSync] Running: ${cpCmd}`);
       await this.wslExec(session.distro, cpCmd, 60000); // 1 min timeout
 
@@ -502,6 +513,16 @@ export class SandboxSync {
       log(`[SandboxSync] wslExec stderr: ${result.stderr.substring(0, 500)}`);
     }
     return { stdout: result.stdout, stderr: result.stderr };
+  }
+
+  /**
+   * Escape a filesystem path for safe interpolation into a POSIX single-quoted shell string.
+   * Single quotes in the path are replaced with the sequence '\'' (end quote, literal
+   * single-quote, reopen quote) which is the standard POSIX escaping technique.
+   * The returned value does NOT include the surrounding single-quote delimiters.
+   */
+  private static shellEscapePath(p: string): string {
+    return p.replace(/'/g, "'\\''");
   }
 
   /**

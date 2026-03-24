@@ -8,7 +8,7 @@
  * - Path conversion between Windows and WSL
  */
 
-import { spawn, exec, execFile, ChildProcess } from 'child_process';
+import { spawn, execFile, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
@@ -36,7 +36,6 @@ async function loadBootstrap() {
   return getSandboxBootstrap();
 }
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 function escapeForDoubleQuotes(s: string): string {
@@ -160,14 +159,14 @@ export class WSLBridge implements SandboxExecutor {
     try {
       // First, try a simple WSL command to check if it works at all
       try {
-        await execAsync('wsl --status', { timeout: 5000 });
+        await execFileAsync('wsl', ['--status'], { timeout: 5000 });
       } catch (statusError) {
         log('[WSL] WSL --status failed, WSL may not be properly configured');
         // Continue anyway, as --status might not be available on older versions
       }
 
       // Get list of distros - use encoding: 'buffer' to handle UTF-16
-      const { stdout } = await execAsync('wsl --list --quiet', {
+      const { stdout } = await execFileAsync('wsl', ['--list', '--quiet'], {
         encoding: 'buffer' as BufferEncoding,
         timeout: 10000,
       });
@@ -211,10 +210,11 @@ export class WSLBridge implements SandboxExecutor {
       let nodeVersion = '';
       try {
         // Use simpler command format without bash -c
-        const nodeResult = await execAsync(`wsl -d ${selectedDistro} -e node --version`, {
-          timeout: 10000,
-          encoding: 'utf-8',
-        });
+        const nodeResult = await execFileAsync(
+          'wsl',
+          ['-d', selectedDistro, '-e', 'node', '--version'],
+          { timeout: 10000, encoding: 'utf-8' }
+        );
         const output = nodeResult.stdout.trim();
         if (output.startsWith('v')) {
           nodeAvailable = true;
@@ -224,8 +224,16 @@ export class WSLBridge implements SandboxExecutor {
       } catch (error) {
         // Try alternative: check with nvm
         try {
-          const nvmResult = await execAsync(
-            `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null && node --version"`,
+          const nvmResult = await execFileAsync(
+            'wsl',
+            [
+              '-d',
+              selectedDistro,
+              '-e',
+              'bash',
+              '-c',
+              'source ~/.nvm/nvm.sh 2>/dev/null && node --version',
+            ],
             { timeout: 10000, encoding: 'utf-8' }
           );
           const output = nvmResult.stdout.trim();
@@ -244,8 +252,16 @@ export class WSLBridge implements SandboxExecutor {
       let claudeCodeAvailable = false;
       if (nodeAvailable) {
         try {
-          const claudeResult = await execAsync(
-            `wsl -d ${selectedDistro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; which claude && claude --version"`,
+          const claudeResult = await execFileAsync(
+            'wsl',
+            [
+              '-d',
+              selectedDistro,
+              '-e',
+              'bash',
+              '-c',
+              'source ~/.nvm/nvm.sh 2>/dev/null; which claude && claude --version',
+            ],
             { timeout: 10000, encoding: 'utf-8' }
           );
           const output = claudeResult.stdout.trim();
@@ -264,10 +280,11 @@ export class WSLBridge implements SandboxExecutor {
       let pipAvailable = false;
       let pythonVersion = '';
       try {
-        const pythonResult = await execAsync(`wsl -d ${selectedDistro} -e python3 --version`, {
-          timeout: 10000,
-          encoding: 'utf-8',
-        });
+        const pythonResult = await execFileAsync(
+          'wsl',
+          ['-d', selectedDistro, '-e', 'python3', '--version'],
+          { timeout: 10000, encoding: 'utf-8' }
+        );
         const output = pythonResult.stdout.trim();
         if (output.startsWith('Python')) {
           pythonAvailable = true;
@@ -276,10 +293,11 @@ export class WSLBridge implements SandboxExecutor {
 
           // Also check if pip is available
           try {
-            await execAsync(`wsl -d ${selectedDistro} -e python3 -m pip --version`, {
-              timeout: 10000,
-              encoding: 'utf-8',
-            });
+            await execFileAsync(
+              'wsl',
+              ['-d', selectedDistro, '-e', 'python3', '-m', 'pip', '--version'],
+              { timeout: 10000, encoding: 'utf-8' }
+            );
             pipAvailable = true;
             log('[WSL] pip is available');
           } catch {
@@ -317,7 +335,7 @@ export class WSLBridge implements SandboxExecutor {
   static async testDistro(distro: string): Promise<boolean> {
     try {
       WSLBridge.validateDistroName(distro);
-      const { stdout } = await execAsync(`wsl -d ${distro} -e echo "OK"`, {
+      const { stdout } = await execFileAsync('wsl', ['-d', distro, '-e', 'echo', 'OK'], {
         timeout: 10000,
         encoding: 'utf-8',
       });
@@ -361,7 +379,7 @@ export class WSLBridge implements SandboxExecutor {
     // Fallback to apt if nvm fails and sudo is available
     try {
       // Check if we can run sudo without password
-      await execAsync(`wsl -d ${distro} -e sudo -n true`, { timeout: 5000 });
+      await execFileAsync('wsl', ['-d', distro, '-e', 'sudo', '-n', 'true'], { timeout: 5000 });
       log('[WSL] Passwordless sudo available, trying apt installation...');
 
       // Update package list and install Node.js via NodeSource
@@ -373,14 +391,14 @@ export class WSLBridge implements SandboxExecutor {
 
       for (const cmd of commands) {
         log(`[WSL] Running: ${cmd}`);
-        await execAsync(`wsl -d ${distro} -e bash -c "${cmd}"`, {
+        await execFileAsync('wsl', ['-d', distro, '-e', 'bash', '-c', cmd], {
           timeout: 300000,
           encoding: 'utf-8',
         });
       }
 
       // Verify installation
-      const { stdout } = await execAsync(`wsl -d ${distro} -e node --version`, {
+      const { stdout } = await execFileAsync('wsl', ['-d', distro, '-e', 'node', '--version'], {
         timeout: 5000,
         encoding: 'utf-8',
       });
@@ -463,7 +481,7 @@ export class WSLBridge implements SandboxExecutor {
       // Try apt installation (Python is usually pre-installed or easily installable)
       // First check if we can run sudo
       try {
-        await execAsync(`wsl -d ${distro} -e sudo -n true`, { timeout: 5000 });
+        await execFileAsync('wsl', ['-d', distro, '-e', 'sudo', '-n', 'true'], { timeout: 5000 });
       } catch {
         log('[WSL] Passwordless sudo not available for Python install');
         // Python might already be installed, just not python3
@@ -472,16 +490,32 @@ export class WSLBridge implements SandboxExecutor {
 
       // Install python3 and pip
       log('[WSL] Installing python3 and pip via apt...');
-      await execAsync(
-        `wsl -d ${distro} -e bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv"`,
+      await execFileAsync(
+        'wsl',
+        [
+          '-d',
+          distro,
+          '-e',
+          'bash',
+          '-c',
+          'sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv',
+        ],
         { timeout: 180000, encoding: 'utf-8' }
       );
 
       // Create python symlink (many tools expect 'python' command)
       log('[WSL] Creating python symlink...');
       try {
-        await execAsync(
-          `wsl -d ${distro} -e bash -c "sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true"`,
+        await execFileAsync(
+          'wsl',
+          [
+            '-d',
+            distro,
+            '-e',
+            'bash',
+            '-c',
+            'sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true',
+          ],
           { timeout: 10000, encoding: 'utf-8' }
         );
         log('[WSL] Created python -> python3 symlink');
@@ -490,10 +524,11 @@ export class WSLBridge implements SandboxExecutor {
       }
 
       // Verify installation
-      const verifyResult = await execAsync(`wsl -d ${distro} -e python3 --version`, {
-        timeout: 10000,
-        encoding: 'utf-8',
-      });
+      const verifyResult = await execFileAsync(
+        'wsl',
+        ['-d', distro, '-e', 'python3', '--version'],
+        { timeout: 10000, encoding: 'utf-8' }
+      );
 
       const version = verifyResult.stdout.trim();
       if (version.startsWith('Python')) {
@@ -533,8 +568,16 @@ export class WSLBridge implements SandboxExecutor {
     try {
       // Install packages with pip (user install to avoid permission issues)
       const packagesStr = packages.map((p) => `"${p}"`).join(' ');
-      await execAsync(
-        `wsl -d ${distro} -e bash -c "python3 -m pip install --user ${packagesStr} 2>&1 | tail -5"`,
+      await execFileAsync(
+        'wsl',
+        [
+          '-d',
+          distro,
+          '-e',
+          'bash',
+          '-c',
+          `python3 -m pip install --user ${packagesStr} 2>&1 | tail -5`,
+        ],
         { timeout: 300000, encoding: 'utf-8' } // 5 min timeout for package install
       );
       log('[WSL] Skill dependencies installed successfully');
@@ -557,26 +600,43 @@ export class WSLBridge implements SandboxExecutor {
     try {
       // Method 1: Try apt-get (requires sudo)
       try {
-        await execAsync(`wsl -d ${distro} -e sudo -n true`, { timeout: 5000 });
+        await execFileAsync('wsl', ['-d', distro, '-e', 'sudo', '-n', 'true'], { timeout: 5000 });
         log('[WSL] Passwordless sudo available, installing python3-pip via apt...');
-        await execAsync(
-          `wsl -d ${distro} -e bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip"`,
+        await execFileAsync(
+          'wsl',
+          [
+            '-d',
+            distro,
+            '-e',
+            'bash',
+            '-c',
+            'sudo DEBIAN_FRONTEND=noninteractive apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip',
+          ],
           { timeout: 180000, encoding: 'utf-8' }
         );
       } catch {
         log('[WSL] Passwordless sudo not available, trying get-pip.py...');
         // Method 2: Use get-pip.py (no sudo required for user install)
-        await execAsync(
-          `wsl -d ${distro} -e bash -c "curl -sSL https://bootstrap.pypa.io/get-pip.py | python3 - --user"`,
+        await execFileAsync(
+          'wsl',
+          [
+            '-d',
+            distro,
+            '-e',
+            'bash',
+            '-c',
+            'curl -sSL https://bootstrap.pypa.io/get-pip.py | python3 - --user',
+          ],
           { timeout: 120000, encoding: 'utf-8' }
         );
       }
 
       // Verify installation
-      const verifyResult = await execAsync(`wsl -d ${distro} -e python3 -m pip --version`, {
-        timeout: 10000,
-        encoding: 'utf-8',
-      });
+      const verifyResult = await execFileAsync(
+        'wsl',
+        ['-d', distro, '-e', 'python3', '-m', 'pip', '--version'],
+        { timeout: 10000, encoding: 'utf-8' }
+      );
 
       const version = verifyResult.stdout.trim();
       if (version.includes('pip')) {
@@ -602,14 +662,23 @@ export class WSLBridge implements SandboxExecutor {
     try {
       // Install with nvm environment (most common setup)
       log('[WSL] Installing claude-code via npm...');
-      await execAsync(
-        `wsl -d ${distro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; npm install -g @anthropic-ai/claude-code"`,
+      await execFileAsync(
+        'wsl',
+        [
+          '-d',
+          distro,
+          '-e',
+          'bash',
+          '-c',
+          'source ~/.nvm/nvm.sh 2>/dev/null; npm install -g @anthropic-ai/claude-code',
+        ],
         { timeout: 180000, encoding: 'utf-8' }
       );
 
       // Verify installation
-      const verifyResult = await execAsync(
-        `wsl -d ${distro} -e bash -c "source ~/.nvm/nvm.sh 2>/dev/null; claude --version"`,
+      const verifyResult = await execFileAsync(
+        'wsl',
+        ['-d', distro, '-e', 'bash', '-c', 'source ~/.nvm/nvm.sh 2>/dev/null; claude --version'],
         { timeout: 10000, encoding: 'utf-8' }
       );
 
@@ -622,10 +691,11 @@ export class WSLBridge implements SandboxExecutor {
       // Try with sudo as fallback (for system-installed node)
       try {
         log('[WSL] Trying claude-code install with sudo...');
-        await execAsync(`wsl -d ${distro} -e sudo npm install -g @anthropic-ai/claude-code`, {
-          timeout: 180000,
-          encoding: 'utf-8',
-        });
+        await execFileAsync(
+          'wsl',
+          ['-d', distro, '-e', 'sudo', 'npm', 'install', '-g', '@anthropic-ai/claude-code'],
+          { timeout: 180000, encoding: 'utf-8' }
+        );
         return true;
       } catch (sudoError) {
         logError('[WSL] Failed to install claude-code with sudo:', sudoError);
@@ -735,6 +805,15 @@ export class WSLBridge implements SandboxExecutor {
    */
   private async startAgent(): Promise<void> {
     const agentPath = this.getAgentScriptPath();
+
+    // Validate that agentPath contains an expected path segment
+    const normalizedAgentPath = agentPath.replace(/\\/g, '/');
+    if (
+      !normalizedAgentPath.includes('/wsl-agent/') &&
+      !normalizedAgentPath.includes('/dist-wsl-agent/')
+    ) {
+      throw new Error(`Agent path does not contain expected path segment: ${agentPath}`);
+    }
 
     // Check if agent script exists
     if (!fs.existsSync(agentPath)) {
