@@ -11,7 +11,7 @@ interface ContextStrategy {
 
 /**
  * MemoryManager - Handles message history and context management
- * 
+ *
  * Two main functions:
  * 1. Message storage and retrieval
  * 2. Intelligent context management for Claude API calls
@@ -97,7 +97,7 @@ export class MemoryManager {
 
     // Simple text search (FTS5 would be more efficient for large datasets)
     const queryLower = query.toLowerCase();
-    
+
     return messages.filter((message) => {
       return message.content.some((block) => {
         if (block.type === 'text') {
@@ -132,7 +132,7 @@ export class MemoryManager {
    */
   compressContext(messages: Message[]): ContextStrategy {
     const recentCount = 20; // Keep last 20 messages
-    
+
     if (messages.length <= recentCount) {
       return {
         type: 'full',
@@ -156,20 +156,20 @@ export class MemoryManager {
   /**
    * Get relevant context based on current prompt (for retrieval)
    */
-  getRelevantContext(
-    sessionId: string,
-    currentPrompt: string
-  ): Message[] {
+  getRelevantContext(sessionId: string, currentPrompt: string): Message[] {
     const messages = this.getMessageHistory(sessionId);
-    
+
     // Simple relevance scoring based on keyword overlap
     const promptWords = new Set(
-      currentPrompt.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+      currentPrompt
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3)
     );
 
     const scoredMessages = messages.map((message) => {
       let score = 0;
-      
+
       for (const block of message.content) {
         if (block.type === 'text') {
           const messageWords = block.text.toLowerCase().split(/\s+/);
@@ -218,23 +218,25 @@ export class MemoryManager {
    */
   private generateSummary(messages: Message[]): string {
     // In production, this would call Claude API to generate a proper summary
-    const userMessages = messages.filter(m => m.role === 'user');
+    const userMessages = messages.filter((m) => m.role === 'user');
     const topicSet = new Set<string>();
 
     for (const message of userMessages) {
       for (const block of message.content) {
         if (block.type === 'text') {
           // Extract key topics (simple keyword extraction)
-          const words = block.text.split(/\s+/).filter(w => w.length > 5);
-          words.slice(0, 3).forEach(w => topicSet.add(w.toLowerCase()));
+          const words = block.text.split(/\s+/).filter((w) => w.length > 5);
+          words.slice(0, 3).forEach((w) => topicSet.add(w.toLowerCase()));
         }
       }
     }
 
     const topics = Array.from(topicSet).slice(0, 5).join(', ');
-    
-    return `Previous conversation covered topics including: ${topics}. ` +
-      `The conversation had ${messages.length} messages.`;
+
+    return (
+      `Previous conversation covered topics including: ${topics}. ` +
+      `The conversation had ${messages.length} messages.`
+    );
   }
 
   /**
@@ -269,29 +271,21 @@ export class MemoryManager {
       entry.createdAt
     );
 
-    // Update FTS index
-    const ftsStmt = this.db.prepare(`
-      INSERT INTO memory_fts (rowid, content)
-      SELECT rowid, content FROM memory_entries WHERE id = ?
-    `);
-    ftsStmt.run(entry.id);
-
     return entry;
   }
 
   /**
-   * Search memory entries using FTS
+   * Search memory entries using LIKE-based text search
    */
   searchMemory(sessionId: string, query: string): MemoryEntry[] {
     const stmt = this.db.prepare(`
-      SELECT me.* FROM memory_entries me
-      JOIN memory_fts fts ON me.rowid = fts.rowid
-      WHERE me.session_id = ? AND memory_fts MATCH ?
-      ORDER BY rank
+      SELECT * FROM memory_entries
+      WHERE session_id = ? AND content LIKE ?
+      ORDER BY created_at DESC
       LIMIT 20
     `);
 
-    const rows = stmt.all(sessionId, query) as Record<string, unknown>[];
+    const rows = stmt.all(sessionId, `%${query}%`) as Record<string, unknown>[];
 
     return rows.map((row) => {
       let metadata;
@@ -335,4 +329,3 @@ export class MemoryManager {
     }
   }
 }
-

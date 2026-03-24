@@ -231,7 +231,8 @@ function buildMacMenu() {
         {
           label: 'Preferences…',
           accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
+          click: () =>
+            mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
         },
         { type: 'separator' },
         { role: 'services' },
@@ -267,12 +268,7 @@ function buildMacMenu() {
     },
     {
       label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'close' },
-        { type: 'separator' },
-        { role: 'front' },
-      ],
+      submenu: [{ role: 'minimize' }, { role: 'close' }, { type: 'separator' }, { role: 'front' }],
     },
   ];
 
@@ -382,17 +378,18 @@ function createWindow() {
   const savedTheme = getSavedThemePreference();
   applyNativeThemePreference(savedTheme);
   const effectiveTheme = resolveEffectiveTheme(savedTheme);
-  const THEME = effectiveTheme === 'dark'
-    ? {
-        background: DARK_BG,
-        titleBar: DARK_BG,
-        titleBarSymbol: '#f1ece4',
-      }
-    : {
-        background: LIGHT_BG,
-        titleBar: LIGHT_BG,
-        titleBarSymbol: '#1a1a1a',
-      };
+  const THEME =
+    effectiveTheme === 'dark'
+      ? {
+          background: DARK_BG,
+          titleBar: DARK_BG,
+          titleBarSymbol: '#f1ece4',
+        }
+      : {
+          background: LIGHT_BG,
+          titleBar: LIGHT_BG,
+          titleBarSymbol: '#1a1a1a',
+        };
 
   // Platform-specific window configuration
   const isMac = process.platform === 'darwin';
@@ -677,7 +674,10 @@ async function startSandboxBootstrap(): Promise<void> {
 
 // 发送事件到渲染进程（含远程会话拦截）
 function sendToRenderer(event: ServerEvent) {
-  const payload = 'payload' in event ? (event.payload as { sessionId?: string; [key: string]: unknown }) : undefined;
+  const payload =
+    'payload' in event
+      ? (event.payload as { sessionId?: string; [key: string]: unknown })
+      : undefined;
   const sessionId = payload?.sessionId;
 
   // 判断是否远程会话
@@ -848,7 +848,8 @@ app
         },
         {
           label: 'Settings',
-          click: () => mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
+          click: () =>
+            mainWindow?.webContents.send('server-event', { type: 'navigate', payload: 'settings' }),
         },
       ]);
       app.dock?.setMenu(dockMenu);
@@ -870,26 +871,22 @@ app
         type: 'native-theme.changed',
         payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
       });
-      if (
-        getSavedThemePreference() === 'system'
-        && mainWindow
-        && !mainWindow.isDestroyed()
-      ) {
-        mainWindow.setBackgroundColor(
-          nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG
-        );
+      if (getSavedThemePreference() === 'system' && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG);
       }
     });
 
     // Auto-updater: check for updates in production
     if (!isDev) {
-      import('electron-updater').then(({ autoUpdater }) => {
-        autoUpdater.checkForUpdatesAndNotify().catch((err: unknown) => {
-          log('[AutoUpdater] Update check failed:', err);
+      import('electron-updater')
+        .then(({ autoUpdater }) => {
+          autoUpdater.checkForUpdatesAndNotify().catch((err: unknown) => {
+            log('[AutoUpdater] Update check failed:', err);
+          });
+        })
+        .catch((err: unknown) => {
+          log('[AutoUpdater] Failed to load electron-updater:', err);
         });
-      }).catch((err: unknown) => {
-        log('[AutoUpdater] Failed to load electron-updater:', err);
-      });
     }
 
     startNavServer(() => mainWindow);
@@ -996,7 +993,10 @@ let isCleaningUp = false;
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
   });
 
   return Promise.race([operation, timeoutPromise]).finally(() => {
@@ -1102,7 +1102,11 @@ app.on('before-quit', async (event) => {
     // In dev mode, exit quickly — no need for async sandbox cleanup
     if (process.env.VITE_DEV_SERVER_URL) {
       stopNavServer();
-      try { closeDatabase(); } catch { /* best-effort */ }
+      try {
+        closeDatabase();
+      } catch {
+        /* best-effort */
+      }
       closeLogFile();
       tray?.destroy();
       tray = null;
@@ -1524,7 +1528,6 @@ ipcMain.handle('config.discover-local', async (_event, payload?: { baseUrl?: str
   }
 });
 
-
 // MCP Server IPC handlers
 ipcMain.handle('mcp.getServers', () => {
   try {
@@ -1639,7 +1642,7 @@ ipcMain.handle('credentials.getByType', (_event, type: UserCredential['type']) =
   try {
     const creds = credentialsStore.getByType(type);
     // Strip password field before sending to renderer
-    return creds.map(c => ({ ...c, password: undefined }));
+    return creds.map((c) => ({ ...c, password: undefined }));
   } catch (error) {
     logError('[Credentials] Error getting credentials by type:', error);
     return [];
@@ -1650,7 +1653,7 @@ ipcMain.handle('credentials.getByService', (_event, service: string) => {
   try {
     const creds = credentialsStore.getByService(service);
     // Strip password field before sending to renderer
-    return creds.map(c => ({ ...c, password: undefined }));
+    return creds.map((c) => ({ ...c, password: undefined }));
   } catch (error) {
     logError('[Credentials] Error getting credentials by service:', error);
     return [];
@@ -1661,7 +1664,9 @@ ipcMain.handle(
   'credentials.save',
   (_event, credential: Omit<UserCredential, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      return credentialsStore.save(credential);
+      const saved = credentialsStore.save(credential);
+      const { password: _pw, ...safe } = saved;
+      return safe;
     } catch (error) {
       logError('[Credentials] Error saving credential:', error);
       throw error;
@@ -1677,7 +1682,10 @@ ipcMain.handle(
     updates: Partial<Omit<UserCredential, 'id' | 'createdAt' | 'updatedAt'>>
   ) => {
     try {
-      return credentialsStore.update(id, updates);
+      const updated = credentialsStore.update(id, updates);
+      if (!updated) return undefined;
+      const { password: _pw, ...safe } = updated;
+      return safe;
     } catch (error) {
       logError('[Credentials] Error updating credential:', error);
       throw error;
@@ -1891,7 +1899,6 @@ ipcMain.handle('plugins.uninstall', async (_event, pluginId: string) => {
   }
 });
 
-
 // Window control IPC handlers
 ipcMain.on('window.minimize', () => {
   try {
@@ -1993,7 +2000,6 @@ ipcMain.handle('sandbox.installPythonInWSL', async (_event, distro: string) => {
   }
 });
 
-
 // Lima IPC handlers (macOS)
 ipcMain.handle('sandbox.checkLima', async () => {
   try {
@@ -2048,7 +2054,6 @@ ipcMain.handle('sandbox.installPythonInLima', async () => {
     return false;
   }
 });
-
 
 // Logs IPC handlers
 ipcMain.handle('logs.getPath', () => {
@@ -2688,18 +2693,16 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
 
     case 'settings.update':
       if (
-        event.payload.theme === 'dark'
-        || event.payload.theme === 'light'
-        || event.payload.theme === 'system'
+        event.payload.theme === 'dark' ||
+        event.payload.theme === 'light' ||
+        event.payload.theme === 'system'
       ) {
         const nextTheme = event.payload.theme as AppTheme;
         configStore.update({ theme: nextTheme });
         applyNativeThemePreference(nextTheme);
         if (mainWindow && !mainWindow.isDestroyed()) {
           const effectiveTheme = resolveEffectiveTheme(nextTheme);
-          mainWindow.setBackgroundColor(
-            effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG
-          );
+          mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
         }
         sendToRenderer({
           type: 'config.status',
