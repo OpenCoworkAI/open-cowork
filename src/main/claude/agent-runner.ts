@@ -27,12 +27,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
-import { credentialsStore, type UserCredential } from '../credentials/credentials-store';
-import { log, logWarn, logError, logCtx, logCtxWarn, logCtxError, logTiming } from '../utils/logger';
+// credentials-store import removed: credentials should not be injected into prompts
+import {
+  log,
+  logWarn,
+  logError,
+  logCtx,
+  logCtxWarn,
+  logCtxError,
+  logTiming,
+} from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
@@ -65,7 +73,8 @@ const VIRTUAL_WORKSPACE_PATH = '/workspace';
 function estimateCharsPerToken(sampleText: string): number {
   if (!sampleText || sampleText.length === 0) return 4;
   const sample = sampleText.substring(0, 500);
-  const cjkCount = (sample.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []).length;
+  const cjkCount = (sample.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || [])
+    .length;
   const cjkRatio = cjkCount / sample.length;
   return 4 - cjkRatio * 2.5; // Range: 1.5 (pure CJK) ~ 4 (pure English)
 }
@@ -89,9 +98,8 @@ function getBundledNodePaths(): { node: string; npx: string } | null {
   const binDir = platform === 'win32' ? resourcesPath : path.join(resourcesPath, 'bin');
   const nodePath = path.join(binDir, platform === 'win32' ? 'node.exe' : 'node');
   const npxPath = path.join(binDir, platform === 'win32' ? 'npx.cmd' : 'npx');
-  cachedBundledNodePaths = (fs.existsSync(nodePath) && fs.existsSync(npxPath))
-    ? { node: nodePath, npx: npxPath }
-    : null;
+  cachedBundledNodePaths =
+    fs.existsSync(nodePath) && fs.existsSync(npxPath) ? { node: nodePath, npx: npxPath } : null;
   return cachedBundledNodePaths;
 }
 
@@ -180,11 +188,13 @@ async function enrichProcessPathForBuild(): Promise<void> {
   if (platform === 'darwin' || platform === 'linux') {
     try {
       const shell = getDefaultShell();
-      const output = (execFileSync(shell, ['-l', '-c', 'echo $PATH'], {
-        encoding: 'utf-8',
-        timeout: 5000,
-        env: { HOME: os.homedir() },
-      }) as string).trim();
+      const output = (
+        execFileSync(shell, ['-l', '-c', 'echo $PATH'], {
+          encoding: 'utf-8',
+          timeout: 5000,
+          env: { HOME: os.homedir() },
+        }) as string
+      ).trim();
       if (output) {
         shellPaths = output.split(':').filter((p: string) => p.trim());
         log(`[ClaudeAgentRunner] Restored ${shellPaths.length} paths from login shell`);
@@ -195,10 +205,17 @@ async function enrichProcessPathForBuild(): Promise<void> {
     }
   } else if (platform === 'win32') {
     try {
-      const output = (execFileSync('powershell.exe', [
-        '-NoProfile', '-Command',
-        "[Environment]::GetEnvironmentVariable('Path', 'User') + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine')",
-      ], { encoding: 'utf-8', timeout: 5000 }) as string).trim();
+      const output = (
+        execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            "[Environment]::GetEnvironmentVariable('Path', 'User') + ';' + [Environment]::GetEnvironmentVariable('Path', 'Machine')",
+          ],
+          { encoding: 'utf-8', timeout: 5000 }
+        ) as string
+      ).trim();
       if (output) {
         shellPaths = output.split(';').filter((p: string) => p.trim());
         log(`[ClaudeAgentRunner] Restored ${shellPaths.length} paths from Windows registry`);
@@ -240,7 +257,9 @@ async function enrichProcessPathForBuild(): Promise<void> {
   }
 
   process.env.PATH = merged.join(delimiter);
-  log(`[ClaudeAgentRunner] Enriched process.env.PATH for build mode: ${bundledDirs.length} bundled + ${shellPaths.length} shell + ${currentPaths.length} process → ${merged.length} total`);
+  log(
+    `[ClaudeAgentRunner] Enriched process.env.PATH for build mode: ${bundledDirs.length} bundled + ${shellPaths.length} shell + ${currentPaths.length} process → ${merged.length} total`
+  );
 }
 
 // Shared pi-ai auth storage — created once, reused across sessions.
@@ -253,7 +272,9 @@ function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
   const mcpTools = mcpManager.getTools();
   return mcpTools.map((mcpTool) => {
     // Wrap the raw JSON Schema inputSchema as a TypeBox TSchema
-    const parameters = Type.Unsafe<Record<string, unknown>>(mcpTool.inputSchema as Record<string, unknown>);
+    const parameters = Type.Unsafe<Record<string, unknown>>(
+      mcpTool.inputSchema as Record<string, unknown>
+    );
 
     const toolDef: ToolDefinition<TSchema, unknown> = {
       name: mcpTool.name,
@@ -352,9 +373,7 @@ function toErrorText(error: unknown): string {
   return serialized;
 }
 
-function normalizeTokenUsage(
-  usage: unknown
-): Message['tokenUsage'] | undefined {
+function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined {
   if (!usage || typeof usage !== 'object') {
     return undefined;
   }
@@ -381,7 +400,11 @@ function normalizeTokenUsage(
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
   saveMessage?: (message: Message) => void;
-  requestSudoPassword?: (sessionId: string, toolUseId: string, command: string) => Promise<string | null>;
+  requestSudoPassword?: (
+    sessionId: string,
+    toolUseId: string,
+    command: string
+  ) => Promise<string | null>;
 }
 
 interface CachedPiSession {
@@ -394,7 +417,7 @@ interface CachedPiSession {
 
 /**
  * ClaudeAgentRunner - Uses @mariozechner/pi-coding-agent SDK
- * 
+ *
  * Environment variables should be set before running:
  *   ANTHROPIC_BASE_URL=https://openrouter.ai/api
  *   ANTHROPIC_AUTH_TOKEN=your_openrouter_api_key
@@ -403,7 +426,11 @@ interface CachedPiSession {
 export class ClaudeAgentRunner {
   private sendToRenderer: (event: ServerEvent) => void;
   private saveMessage?: (message: Message) => void;
-  private requestSudoPassword?: (sessionId: string, toolUseId: string, command: string) => Promise<string | null>;
+  private requestSudoPassword?: (
+    sessionId: string,
+    toolUseId: string,
+    command: string
+  ) => Promise<string | null>;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
   // @ts-expect-error stored for future plugin support
@@ -411,6 +438,7 @@ export class ClaudeAgentRunner {
   private _skillsAdapter?: SkillsAdapter;
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
+  private static readonly MAX_CACHED_SESSIONS = 50;
 
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
@@ -423,7 +451,11 @@ export class ClaudeAgentRunner {
   clearSdkSession(sessionId: string): void {
     const cached = this.piSessions.get(sessionId);
     if (cached) {
-      try { cached.session.dispose(); } catch (e) { logWarn('[ClaudeAgentRunner] dispose error:', e); }
+      try {
+        cached.session.dispose();
+      } catch (e) {
+        logWarn('[ClaudeAgentRunner] dispose error:', e);
+      }
       this.piSessions.delete(sessionId);
       log('[ClaudeAgentRunner] Disposed pi session for:', sessionId);
     }
@@ -441,69 +473,9 @@ export class ClaudeAgentRunner {
     log('[ClaudeAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
   }
 
-  /**
-   * Get saved credentials prompt for system instructions
-   * Credentials are provided directly to the agent for automated login
-   */
-  private getCredentialsPrompt(): string {
-    try {
-      const credentials = credentialsStore.getAll();
-      if (credentials.length === 0) {
-        return '';
-      }
-
-      // Group credentials by type
-      const emailCredentials = credentials.filter(c => c.type === 'email');
-      const websiteCredentials = credentials.filter(c => c.type === 'website');
-      const apiCredentials = credentials.filter(c => c.type === 'api');
-      const otherCredentials = credentials.filter(c => c.type === 'other');
-
-      // Format credentials with masked password for system prompt.
-      // Credentials should be passed through a secure channel (e.g., MCP tool
-      // call or secure IPC), not embedded as plaintext in the prompt.
-      const formatCredential = (c: UserCredential) => {
-        const lines = [`- **${c.name}**${c.service ? ` (${c.service})` : ''}`];
-        lines.push(`  - Username/Email: \`${c.username}\``);
-        lines.push(`  - Password: \`****\``);
-        if (c.url) lines.push(`  - URL: ${c.url}`);
-        if (c.notes) lines.push(`  - Notes: ${c.notes}`);
-        return lines.join('\n');
-      };
-
-      const sections: string[] = [];
-      
-      if (emailCredentials.length > 0) {
-        sections.push(`**Email Accounts (${emailCredentials.length}):**\n${emailCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (websiteCredentials.length > 0) {
-        sections.push(`**Website Accounts (${websiteCredentials.length}):**\n${websiteCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (apiCredentials.length > 0) {
-        sections.push(`**API Keys (${apiCredentials.length}):**\n${apiCredentials.map(formatCredential).join('\n\n')}`);
-      }
-      if (otherCredentials.length > 0) {
-        sections.push(`**Other Credentials (${otherCredentials.length}):**\n${otherCredentials.map(formatCredential).join('\n\n')}`);
-      }
-
-      return `
-<saved_credentials>
-The user has saved ${credentials.length} credential(s) for automated login. Use these credentials when the user asks you to access their accounts.
-
-${sections.join('\n\n')}
-
-**IMPORTANT - How to use credentials:**
-- Use these credentials directly when logging into websites or services
-- For email access (e.g., Gmail), use the Chrome MCP tools to navigate to the login page and enter the credentials
-- NEVER display, share, or echo passwords in your responses to the user
-- Only use credentials for tasks the user explicitly requests
-- If login fails, inform the user but do not expose the password
-</saved_credentials>
-`;
-    } catch (error) {
-      logError('[AgentRunner] Failed to get credentials prompt:', error);
-      return '';
-    }
-  }
+  // TODO: Credentials should be served via a secure MCP tool or IPC channel,
+  // not injected as plaintext into the system prompt. The getCredentialsPrompt()
+  // method was removed to eliminate credential leakage risk.
 
   /**
    * Generate bundled executable path hints for production mode system prompt.
@@ -557,10 +529,10 @@ ${hints.join('\n')}
     // In development, skills are in the project's .claude/skills directory
     // In production, they're bundled with the app (in app.asar.unpacked for asarUnpack files)
     const appPath = app.getAppPath();
-    
+
     // For asarUnpack files, replace .asar with .asar.unpacked
     const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
-    
+
     const possiblePaths = [
       // Development: relative to this file
       path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
@@ -571,14 +543,14 @@ ${hints.join('\n')}
       // Alternative: in resources folder
       path.join(process.resourcesPath || '', 'skills'),
     ];
-    
+
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) {
         log('[ClaudeAgentRunner] Found built-in skills at:', p);
         return p;
       }
     }
-    
+
     logWarn('[ClaudeAgentRunner] No built-in skills directory found');
     return '';
   }
@@ -605,9 +577,16 @@ ${hints.join('\n')}
       if (fs.statSync(resolvedPath).isDirectory()) {
         return resolvedPath;
       }
-      logWarn('[ClaudeAgentRunner] Configured skills path is not a directory, fallback to runtime path:', resolvedPath);
+      logWarn(
+        '[ClaudeAgentRunner] Configured skills path is not a directory, fallback to runtime path:',
+        resolvedPath
+      );
     } catch (error) {
-      logWarn('[ClaudeAgentRunner] Configured skills path is unavailable, fallback to runtime path:', resolvedPath, error);
+      logWarn(
+        '[ClaudeAgentRunner] Configured skills path is unavailable, fallback to runtime path:',
+        resolvedPath,
+        error
+      );
     }
 
     return this.getRuntimeSkillsDir();
@@ -715,14 +694,14 @@ ${hints.join('\n')}
     this.mcpManager = mcpManager;
     this._pluginRuntimeService = pluginRuntimeService;
     this._skillsAdapter = skillsAdapter;
-    
+
     log('[ClaudeAgentRunner] Initialized with pi-coding-agent SDK');
     log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
     if (mcpManager) {
       log('[ClaudeAgentRunner] MCP support enabled');
     }
   }
-  
+
   /**
    * Check if a command contains sudo
    */
@@ -763,7 +742,9 @@ ${hints.join('\n')}
             if (!password) {
               log('[ClaudeAgentRunner] Sudo password cancelled by user');
               return {
-                content: [{ type: 'text' as const, text: 'Command cancelled: user denied sudo password.' }],
+                content: [
+                  { type: 'text' as const, text: 'Command cancelled: user denied sudo password.' },
+                ],
                 details: undefined as unknown,
               };
             }
@@ -771,28 +752,30 @@ ${hints.join('\n')}
             // Add -S flag to sudo invocations that don't already have it
             const rewrittenCommand = command.replace(/\bsudo\b(?!\s+-S)/g, 'sudo -S');
 
-            // Use a unique env var name per invocation to avoid race conditions
-            // when multiple sessions run sudo concurrently.
-            const envVarName = `__SUDO_PW_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-            // Pass password via env var and pipe it through printf,
-            // so the password never appears in process args (unlike echo 'pw' |).
-            // process.env is inherited by child_process.spawn synchronously.
-            const wrappedCommand = `printf '%s\\n' "$${envVarName}" | ${rewrittenCommand}`;
-            process.env[envVarName] = password;
-
-            log('[ClaudeAgentRunner] Executing sudo command with password injection (via env)');
+            // Pass password via stdin pipe so it never appears in process args
+            // or environment variables. Uses spawnSync with stdio: 'pipe'.
+            log(
+              '[ClaudeAgentRunner] Executing sudo command with password injection (via stdin pipe)'
+            );
             try {
-              const result = await originalExecute(
-                toolCallId,
-                { ...params, command: wrappedCommand },
-                signal,
-                onUpdate,
-                ctx
-              );
-              return result;
-            } finally {
-              delete process.env[envVarName];
+              const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+              const shellArgs =
+                process.platform === 'win32' ? ['/c', rewrittenCommand] : ['-c', rewrittenCommand];
+              const result = spawnSync(shell, shellArgs, {
+                input: password + '\n',
+                encoding: 'utf-8',
+                timeout: (params.timeout ?? 120) * 1000,
+                stdio: ['pipe', 'pipe', 'pipe'],
+                cwd: undefined,
+              });
+              const output = (result.stdout || '') + (result.stderr || '');
+              return {
+                content: [{ type: 'text' as const, text: output || '(no output)' }],
+                details: undefined as unknown,
+              };
+            } catch (sudoErr) {
+              logError('[ClaudeAgentRunner] Sudo command failed:', sudoErr);
+              throw sudoErr instanceof Error ? sudoErr : new Error(String(sudoErr));
             }
           }
 
@@ -824,9 +807,8 @@ ${hints.join('\n')}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ctx: any
         ) => {
-          const effectiveParams = params.timeout != null
-            ? params
-            : { ...params, timeout: DEFAULT_BASH_TIMEOUT_SECONDS };
+          const effectiveParams =
+            params.timeout != null ? params : { ...params, timeout: DEFAULT_BASH_TIMEOUT_SECONDS };
           return originalExecute(toolCallId, effectiveParams, signal, onUpdate, ctx);
         },
       } as ToolDefinition;
@@ -839,11 +821,12 @@ ${hints.join('\n')}
   private getCurrentModelString(preferredModel?: string): string {
     const routeModel = preferredModel?.trim();
     const configuredModel = configStore.get('model')?.trim();
-    const model = routeModel
-      || configuredModel
-      || 'anthropic/claude-sonnet-4';
+    const model = routeModel || configuredModel || 'anthropic/claude-sonnet-4';
     logCtx('[ClaudeAgentRunner] Current model:', model);
-    logCtx('[ClaudeAgentRunner] Model source:', routeModel ? 'runtimeRoute.model' : configuredModel ? 'configStore.model' : 'default');
+    logCtx(
+      '[ClaudeAgentRunner] Model source:',
+      routeModel ? 'runtimeRoute.model' : configuredModel ? 'configStore.model' : 'default'
+    );
     return model;
   }
 
@@ -863,12 +846,17 @@ ${hints.join('\n')}
     // Sandbox isolation state (defined outside try for finally access)
     let sandboxPath: string | null = null;
     let useSandboxIsolation = false;
-    
+
     // Helper to convert real sandbox paths back to virtual workspace paths in output
+    // Cache the compiled regex to avoid recompilation on every call
+    let sandboxPathRegex: RegExp | null = null;
     const sanitizeOutputPaths = (content: string): string => {
       if (!sandboxPath || !useSandboxIsolation) return content;
+      if (!sandboxPathRegex) {
+        sandboxPathRegex = new RegExp(sandboxPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      }
       // Replace real sandbox path with virtual workspace path
-      return content.replace(new RegExp(sandboxPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), VIRTUAL_WORKSPACE_PATH);
+      return content.replace(sandboxPathRegex, VIRTUAL_WORKSPACE_PATH);
     };
 
     const thinkingStepId = uuidv4();
@@ -900,10 +888,10 @@ ${hints.join('\n')}
 
       if (sandbox.isWSL && sandbox.wslStatus?.distro && workingDir) {
         log('[ClaudeAgentRunner] WSL mode active, initializing sandbox sync...');
-        
+
         // Only show sync UI for new sessions (first message)
         const isNewSession = !SandboxSync.hasSession(session.id);
-        
+
         if (isNewSession) {
           // Notify UI: syncing files (only for new sessions)
           this.sendToRenderer({
@@ -916,7 +904,7 @@ ${hints.join('\n')}
             },
           });
         }
-        
+
         const syncResult = await SandboxSync.initSync(
           workingDir,
           session.id,
@@ -927,21 +915,23 @@ ${hints.join('\n')}
           sandboxPath = syncResult.sandboxPath;
           useSandboxIsolation = true;
           log(`[ClaudeAgentRunner] Sandbox initialized: ${sandboxPath}`);
-          log(`[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`);
-          
+          log(
+            `[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`
+          );
+
           if (isNewSession) {
             // Update UI with file count (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'syncing_skills',
-              message: 'Configuring skills...',
-              detail: 'Copying built-in skills to sandbox',
-              fileCount: syncResult.fileCount,
-              totalSize: syncResult.totalSize,
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'syncing_skills',
+                message: 'Configuring skills...',
+                detail: 'Copying built-in skills to sandbox',
+                fileCount: syncResult.fileCount,
+                totalSize: syncResult.totalSize,
+              },
+            });
           }
 
           // Copy skills to sandbox ~/.claude/skills/
@@ -953,19 +943,24 @@ ${hints.join('\n')}
             // Create .claude/skills directory in sandbox
             execFileSync('wsl', ['-d', distro, '-e', 'mkdir', '-p', sandboxSkillsPath], {
               encoding: 'utf-8',
-              timeout: 10000
+              timeout: 10000,
             });
 
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-              // Use rsync to recursively copy all skills (much faster and handles subdirectories)
+              // Use rsync via execFileSync with array args to avoid shell injection
               const wslSourcePath = pathConverter.toWSL(builtinSkillsPath);
-              const rsyncCmd = `rsync -av "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(
+                `[ClaudeAgentRunner] Copying skills with rsync: ${wslSourcePath}/ -> ${sandboxSkillsPath}/`
+              );
 
-              execFileSync('wsl', ['-d', distro, '-e', 'bash', '-c', rsyncCmd], {
-                encoding: 'utf-8',
-                timeout: 120000  // 2 min timeout for large skill directories
-              });
+              execFileSync(
+                'wsl',
+                ['-d', distro, '-e', 'rsync', '-av', wslSourcePath + '/', sandboxSkillsPath + '/'],
+                {
+                  encoding: 'utf-8',
+                  timeout: 120000, // 2 min timeout for large skill directories
+                }
+              );
             }
 
             const appSkillsDir = this.getRuntimeSkillsDir();
@@ -977,20 +972,32 @@ ${hints.join('\n')}
 
             if (fs.existsSync(appSkillsDir)) {
               const wslSourcePath = pathConverter.toWSL(appSkillsDir);
-              const rsyncCmd = `rsync -avL "${wslSourcePath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(
+                `[ClaudeAgentRunner] Copying app skills with rsync: ${wslSourcePath}/ -> ${sandboxSkillsPath}/`
+              );
 
-              execFileSync('wsl', ['-d', distro, '-e', 'bash', '-c', rsyncCmd], {
-                encoding: 'utf-8',
-                timeout: 120000  // 2 min timeout for large skill directories
-              });
+              execFileSync(
+                'wsl',
+                ['-d', distro, '-e', 'rsync', '-avL', wslSourcePath + '/', sandboxSkillsPath + '/'],
+                {
+                  encoding: 'utf-8',
+                  timeout: 120000, // 2 min timeout for large skill directories
+                }
+              );
             }
 
             // List copied skills for verification
-            const copiedSkills = execFileSync('wsl', ['-d', distro, '-e', 'ls', sandboxSkillsPath], {
-              encoding: 'utf-8',
-              timeout: 10000
-            }).trim().split(/\r?\n/).filter(Boolean);
+            const copiedSkills = execFileSync(
+              'wsl',
+              ['-d', distro, '-e', 'ls', sandboxSkillsPath],
+              {
+                encoding: 'utf-8',
+                timeout: 10000,
+              }
+            )
+              .trim()
+              .split(/\r?\n/)
+              .filter(Boolean);
 
             log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
             log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
@@ -1001,32 +1008,32 @@ ${hints.join('\n')}
           if (isNewSession) {
             // Notify UI: sync complete (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'ready',
-              message: 'Sandbox ready',
-              detail: `Synced ${syncResult.fileCount} files`,
-              fileCount: syncResult.fileCount,
-              totalSize: syncResult.totalSize,
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'ready',
+                message: 'Sandbox ready',
+                detail: `Synced ${syncResult.fileCount} files`,
+                fileCount: syncResult.fileCount,
+                totalSize: syncResult.totalSize,
+              },
+            });
           }
         } else {
           logError('[ClaudeAgentRunner] Sandbox sync failed:', syncResult.error);
           log('[ClaudeAgentRunner] Falling back to /mnt/ access (less secure)');
-          
+
           if (isNewSession) {
             // Notify UI: error (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'error',
-              message: 'Sandbox file sync failed, falling back to direct access mode',
-              detail: 'Falling back to direct access mode (less secure)',
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'error',
+                message: 'Sandbox file sync failed, falling back to direct access mode',
+                detail: 'Falling back to direct access mode (less secure)',
+              },
+            });
           }
         }
       }
@@ -1034,12 +1041,12 @@ ${hints.join('\n')}
       // Initialize sandbox sync if Lima mode is active
       if (sandbox.isLima && sandbox.limaStatus?.instanceRunning && workingDir) {
         log('[ClaudeAgentRunner] Lima mode active, initializing sandbox sync...');
-        
+
         const { LimaSync } = await import('../sandbox/lima-sync');
-        
+
         // Only show sync UI for new sessions (first message)
         const isNewLimaSession = !LimaSync.hasSession(session.id);
-        
+
         if (isNewLimaSession) {
           // Notify UI: syncing files (only for new sessions)
           this.sendToRenderer({
@@ -1052,31 +1059,30 @@ ${hints.join('\n')}
             },
           });
         }
-        
-        const syncResult = await LimaSync.initSync(
-          workingDir,
-          session.id
-        );
+
+        const syncResult = await LimaSync.initSync(workingDir, session.id);
 
         if (syncResult.success) {
           sandboxPath = syncResult.sandboxPath;
           useSandboxIsolation = true;
           log(`[ClaudeAgentRunner] Sandbox initialized: ${sandboxPath}`);
-          log(`[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`);
-          
+          log(
+            `[ClaudeAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`
+          );
+
           if (isNewLimaSession) {
             // Update UI with file count (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'syncing_skills',
-              message: 'Configuring skills...',
-              detail: 'Copying built-in skills to sandbox',
-              fileCount: syncResult.fileCount,
-              totalSize: syncResult.totalSize,
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'syncing_skills',
+                message: 'Configuring skills...',
+                detail: 'Copying built-in skills to sandbox',
+                fileCount: syncResult.fileCount,
+                totalSize: syncResult.totalSize,
+              },
+            });
           }
 
           // Copy skills to sandbox ~/.claude/skills/
@@ -1085,21 +1091,38 @@ ${hints.join('\n')}
             const sandboxSkillsPath = `${sandboxPath}/.claude/skills`;
 
             // Create .claude/skills directory in sandbox
-            execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'mkdir', '-p', sandboxSkillsPath], {
-              encoding: 'utf-8',
-              timeout: 10000
-            });
+            execFileSync(
+              'limactl',
+              ['shell', 'claude-sandbox', '--', 'mkdir', '-p', sandboxSkillsPath],
+              {
+                encoding: 'utf-8',
+                timeout: 10000,
+              }
+            );
 
             if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-              // Use rsync to recursively copy all skills (much faster and handles subdirectories)
+              // Use rsync via execFileSync with array args to avoid shell injection
               // Lima mounts /Users directly, so paths are the same
-              const rsyncCmd = `rsync -av "${builtinSkillsPath}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying skills with rsync: ${rsyncCmd}`);
+              log(
+                `[ClaudeAgentRunner] Copying skills with rsync: ${builtinSkillsPath}/ -> ${sandboxSkillsPath}/`
+              );
 
-              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'bash', '-c', rsyncCmd], {
-                encoding: 'utf-8',
-                timeout: 120000  // 2 min timeout for large skill directories
-              });
+              execFileSync(
+                'limactl',
+                [
+                  'shell',
+                  'claude-sandbox',
+                  '--',
+                  'rsync',
+                  '-av',
+                  builtinSkillsPath + '/',
+                  sandboxSkillsPath + '/',
+                ],
+                {
+                  encoding: 'utf-8',
+                  timeout: 120000, // 2 min timeout for large skill directories
+                }
+              );
             }
 
             const appSkillsDir = this.getRuntimeSkillsDir();
@@ -1110,20 +1133,40 @@ ${hints.join('\n')}
             this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
 
             if (fs.existsSync(appSkillsDir)) {
-              const rsyncCmd = `rsync -avL "${appSkillsDir}/" "${sandboxSkillsPath}/"`;
-              log(`[ClaudeAgentRunner] Copying app skills with rsync: ${rsyncCmd}`);
+              log(
+                `[ClaudeAgentRunner] Copying app skills with rsync: ${appSkillsDir}/ -> ${sandboxSkillsPath}/`
+              );
 
-              execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'bash', '-c', rsyncCmd], {
-                encoding: 'utf-8',
-                timeout: 120000  // 2 min timeout for large skill directories
-              });
+              execFileSync(
+                'limactl',
+                [
+                  'shell',
+                  'claude-sandbox',
+                  '--',
+                  'rsync',
+                  '-avL',
+                  appSkillsDir + '/',
+                  sandboxSkillsPath + '/',
+                ],
+                {
+                  encoding: 'utf-8',
+                  timeout: 120000, // 2 min timeout for large skill directories
+                }
+              );
             }
 
             // List copied skills for verification
-            const copiedSkills = execFileSync('limactl', ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath], {
-              encoding: 'utf-8',
-              timeout: 10000
-            }).trim().split(/\r?\n/).filter(Boolean);
+            const copiedSkills = execFileSync(
+              'limactl',
+              ['shell', 'claude-sandbox', '--', 'ls', sandboxSkillsPath],
+              {
+                encoding: 'utf-8',
+                timeout: 10000,
+              }
+            )
+              .trim()
+              .split(/\r?\n/)
+              .filter(Boolean);
 
             log(`[ClaudeAgentRunner] Skills copied to sandbox: ${sandboxSkillsPath}`);
             log(`[ClaudeAgentRunner]   Skills: ${copiedSkills.join(', ')}`);
@@ -1134,44 +1177,44 @@ ${hints.join('\n')}
           if (isNewLimaSession) {
             // Notify UI: sync complete (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'ready',
-              message: 'Sandbox ready',
-              detail: `Synced ${syncResult.fileCount} files`,
-              fileCount: syncResult.fileCount,
-              totalSize: syncResult.totalSize,
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'ready',
+                message: 'Sandbox ready',
+                detail: `Synced ${syncResult.fileCount} files`,
+                fileCount: syncResult.fileCount,
+                totalSize: syncResult.totalSize,
+              },
+            });
           }
         } else {
           logError('[ClaudeAgentRunner] Sandbox sync failed:', syncResult.error);
           log('[ClaudeAgentRunner] Falling back to direct access (less secure)');
-          
+
           if (isNewLimaSession) {
             // Notify UI: error (only for new sessions)
             this.sendToRenderer({
-            type: 'sandbox.sync',
-            payload: {
-              sessionId: session.id,
-              phase: 'error',
-              message: 'Sandbox file sync failed, falling back to direct access mode',
-              detail: 'Falling back to direct access mode (less secure)',
-            },
-          });
+              type: 'sandbox.sync',
+              payload: {
+                sessionId: session.id,
+                phase: 'error',
+                message: 'Sandbox file sync failed, falling back to direct access mode',
+                detail: 'Falling back to direct access mode (less secure)',
+              },
+            });
           }
         }
       }
 
       // Check if current user message includes images
-      const lastUserMessage = existingMessages.length > 0
-        ? existingMessages[existingMessages.length - 1]
-        : null;
+      const lastUserMessage =
+        existingMessages.length > 0 ? existingMessages[existingMessages.length - 1] : null;
 
       logCtx('[ClaudeAgentRunner] Total messages:', existingMessages.length);
 
-      const hasImages = lastUserMessage?.content.some((c) => (c as { type?: string }).type === 'image') || false;
+      const hasImages =
+        lastUserMessage?.content.some((c) => (c as { type?: string }).type === 'image') || false;
       if (hasImages) {
         log('[ClaudeAgentRunner] User message contains images');
       }
@@ -1183,7 +1226,7 @@ ${hints.join('\n')}
       const modelString = this.getCurrentModelString(runtimeConfig.model);
       const configProtocol = resolvePiRouteProtocol(
         runtimeConfig.provider,
-        runtimeConfig.customProtocol,
+        runtimeConfig.customProtocol
       );
       let usedSyntheticModel = false;
       let piModel = resolvePiRegistryModel(modelString, {
@@ -1211,7 +1254,7 @@ ${hints.join('\n')}
           undefined,
           undefined,
           runtimeConfig.contextWindow,
-          runtimeConfig.maxTokens,
+          runtimeConfig.maxTokens
         );
         // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
         // that resolvePiRegistryModel applies to registry models
@@ -1221,7 +1264,12 @@ ${hints.join('\n')}
           rawProvider: runtimeConfig.provider,
           customProtocol: runtimeConfig.customProtocol,
         });
-        logCtxWarn('[ClaudeAgentRunner] Model not in pi-ai registry, using synthetic model:', modelString, '→', piModel.api);
+        logCtxWarn(
+          '[ClaudeAgentRunner] Model not in pi-ai registry, using synthetic model:',
+          modelString,
+          '→',
+          piModel.api
+        );
       }
       logCtx('[ClaudeAgentRunner] Resolved pi-ai model:', piModel.provider, piModel.id);
 
@@ -1241,7 +1289,7 @@ ${hints.join('\n')}
             ollamaInfo.contextWindow,
             '(was:',
             piModel.contextWindow,
-            ')',
+            ')'
           );
           piModel = { ...piModel, contextWindow: ollamaInfo.contextWindow };
         }
@@ -1261,9 +1309,8 @@ ${hints.join('\n')}
       const apiKey = runtimeConfig.apiKey?.trim();
       if (apiKey) {
         // Map our config provider to pi-ai provider name
-        const piProvider = provider === 'custom'
-          ? (runtimeConfig.customProtocol || 'anthropic')
-          : provider;
+        const piProvider =
+          provider === 'custom' ? runtimeConfig.customProtocol || 'anthropic' : provider;
         authStorage.setRuntimeApiKey(piProvider, apiKey);
         // Also set the key for the model's native provider (e.g., when using
         // google/gemini via openrouter, pi-ai looks up "google" not "openrouter")
@@ -1274,12 +1321,15 @@ ${hints.join('\n')}
         log('[ClaudeAgentRunner] Set runtime API key for config provider:', piProvider);
       } else {
         if (provider === 'ollama') {
-          log('[ClaudeAgentRunner] Ollama configured without explicit API key; relying on OpenAI-compatible placeholder/env auth path', safeStringify({
-            provider,
-            modelProvider: piModel.provider,
-            modelId: piModel.id,
-            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
-          }));
+          log(
+            '[ClaudeAgentRunner] Ollama configured without explicit API key; relying on OpenAI-compatible placeholder/env auth path',
+            safeStringify({
+              provider,
+              modelProvider: piModel.provider,
+              modelId: piModel.id,
+              baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+            })
+          );
         } else {
           logWarn('[ClaudeAgentRunner] No API key configured for provider:', provider);
         }
@@ -1292,7 +1342,8 @@ ${hints.join('\n')}
 
       // pi-coding-agent handles path sandboxing via its own tools
       const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
-      const effectiveCwd = (useSandboxIsolation && sandboxPath) ? sandboxPath : (workingDir || process.cwd());
+      const effectiveCwd =
+        useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
@@ -1303,6 +1354,9 @@ ${hints.join('\n')}
       // wastes ~10-30 syscalls per query for no benefit. Call invalidateSkillsSetup()
       // to force a re-run after the user installs or removes a skill.
       if (!this._skillsSetupDone) {
+        // Set flag at start to prevent re-entrant calls from concurrent queries
+        this._skillsSetupDone = true;
+
         // Ensure app Claude config directory exists
         if (!fs.existsSync(userClaudeDir)) {
           fs.mkdirSync(userClaudeDir, { recursive: true });
@@ -1330,7 +1384,10 @@ ${hints.join('\n')}
                 log(`[ClaudeAgentRunner] Linked built-in skill: ${skillName}`);
               } catch (err) {
                 // If symlink fails (e.g., on Windows without permissions), copy the directory
-                logWarn(`[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`, err);
+                logWarn(
+                  `[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`,
+                  err
+                );
                 this.copyDirectorySync(builtinSkillPath, userSkillPath);
               }
             }
@@ -1339,7 +1396,6 @@ ${hints.join('\n')}
 
         this.syncUserSkillsToAppDir(appSkillsDir);
         this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
-        this._skillsSetupDone = true;
       }
 
       // Build available skills section dynamically — now handled by pi's DefaultResourceLoader
@@ -1387,37 +1443,34 @@ ${hints.join('\n')}
       let contextualPrompt = prompt;
       if (!cachedSession) {
         // Cold start: inject recent history into prompt if available
-        const conversationMessages = existingMessages
-          .filter(msg => msg.role === 'user' || msg.role === 'assistant');
-        const historyMessages = (
-          conversationMessages.length > 0
-            && conversationMessages[conversationMessages.length - 1]?.role === 'user'
-        )
-          ? conversationMessages.slice(0, -1)
-          : conversationMessages;
+        const conversationMessages = existingMessages.filter(
+          (msg) => msg.role === 'user' || msg.role === 'assistant'
+        );
+        // Filter out messages that contain images (images can't be serialized into text preamble)
+        const textOnlyMessages = conversationMessages.filter(
+          (msg) => !msg.content.some((c) => (c as { type?: string }).type === 'image')
+        );
+        const historyMessages =
+          textOnlyMessages.length > 0 &&
+          textOnlyMessages[textOnlyMessages.length - 1]?.role === 'user'
+            ? textOnlyMessages.slice(0, -1)
+            : textOnlyMessages;
 
-        if (historyMessages.length > 0 && !hasImages) {
+        if (historyMessages.length > 0) {
           // Content-aware chars-per-token estimation (CJK text uses ~1.5 chars/token vs ~4 for English)
           const contextWindow = piModel.contextWindow || 128000;
-          const historyBudgetRatio =
-            provider === 'ollama' && contextWindow < 16384 ? 0.15 : 0.3;
-          const historyTokenBudget = Math.floor(
-            contextWindow * historyBudgetRatio,
-          );
+          const historyBudgetRatio = provider === 'ollama' && contextWindow < 16384 ? 0.15 : 0.3;
+          const historyTokenBudget = Math.floor(contextWindow * historyBudgetRatio);
 
           // Sample recent messages to estimate chars-per-token ratio
           const sampleText = historyMessages
             .slice(-3)
             .flatMap((m) =>
-              m.content
-                .filter((c) => c.type === 'text')
-                .map((c) => (c as { text: string }).text),
+              m.content.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text)
             )
             .join('');
           const charsPerToken = estimateCharsPerToken(sampleText);
-          const historyCharBudget = Math.floor(
-            historyTokenBudget * charsPerToken,
-          );
+          const historyCharBudget = Math.floor(historyTokenBudget * charsPerToken);
 
           const historyItems: string[] = [];
           let charCount = 0;
@@ -1438,9 +1491,7 @@ ${hints.join('\n')}
           if (historyItems.length > 0) {
             const trimmedCount = historyMessages.length - historyItems.length;
             const historyNote =
-              trimmedCount > 0
-                ? `[${trimmedCount} older messages omitted]\n`
-                : '';
+              trimmedCount > 0 ? `[${trimmedCount} older messages omitted]\n` : '';
             const preamble = `<conversation_history>\n${historyNote}${historyItems.join('\n')}\n</conversation_history>`;
             contextualPrompt = `${preamble}\n\n${prompt}`;
             log(
@@ -1454,7 +1505,7 @@ ${hints.join('\n')}
               charCount,
               ', charsPerToken:',
               charsPerToken.toFixed(2),
-              ')',
+              ')'
             );
           }
         }
@@ -1477,7 +1528,10 @@ ${hints.join('\n')}
         let allConfigs: ReturnType<typeof mcpConfigStore.getEnabledServers> = [];
         try {
           allConfigs = mcpConfigStore.getEnabledServers();
-          log('[ClaudeAgentRunner] Enabled MCP configs:', allConfigs.map((c) => c.name));
+          log(
+            '[ClaudeAgentRunner] Enabled MCP configs:',
+            allConfigs.map((c) => c.name)
+          );
         } catch (error) {
           logWarn(
             '[ClaudeAgentRunner] Failed to read enabled MCP configs; MCP tools will be unavailable this query',
@@ -1505,9 +1559,12 @@ ${hints.join('\n')}
 
               if (config.type === 'stdio') {
                 // 当命令是 npx 或 node 时优先使用内置路径
-                const command = (config.command === 'npx' && bundledNpx)
-                  ? bundledNpx
-                  : (config.command === 'node' && bundledNodePaths ? bundledNodePaths.node : config.command);
+                const command =
+                  config.command === 'npx' && bundledNpx
+                    ? bundledNpx
+                    : config.command === 'node' && bundledNodePaths
+                      ? bundledNodePaths.node
+                      : config.command;
 
                 // 使用内置 npx/node 时，将内置 node bin 注入 PATH
                 const serverEnv = { ...config.env };
@@ -1527,15 +1584,19 @@ ${hints.join('\n')}
                 let resolvedArgs = config.args || [];
 
                 // Check if any args contain placeholders that need resolving
-                const hasPlaceholders = resolvedArgs.some((arg) =>
-                  arg.includes('{SOFTWARE_DEV_SERVER_PATH}') ||
-                  arg.includes('{GUI_OPERATE_SERVER_PATH}')
+                const hasPlaceholders = resolvedArgs.some(
+                  (arg) =>
+                    arg.includes('{SOFTWARE_DEV_SERVER_PATH}') ||
+                    arg.includes('{GUI_OPERATE_SERVER_PATH}')
                 );
 
                 if (hasPlaceholders) {
                   // Get the appropriate preset based on config name
                   let presetKey: string | null = null;
-                  if (config.name === 'Software_Development' || config.name === 'Software Development') {
+                  if (
+                    config.name === 'Software_Development' ||
+                    config.name === 'Software Development'
+                  ) {
                     presetKey = 'software-development';
                   } else if (config.name === 'GUI_Operate' || config.name === 'GUI Operate') {
                     presetKey = 'gui-operate';
@@ -1601,18 +1662,16 @@ ${hints.join('\n')}
       }
       logTiming('after building MCP servers config', runStartTime);
 
-      const workspaceInfoPrompt = useSandboxIsolation && sandboxPath
-        ? `<workspace_info>
+      const workspaceInfoPrompt =
+        useSandboxIsolation && sandboxPath
+          ? `<workspace_info>
 Your current workspace is located at: ${VIRTUAL_WORKSPACE_PATH}
 This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the root path for file operations.
 </workspace_info>`
-        : workingDir
-          ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
-          : '';
+          : workingDir
+            ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
+            : '';
 
-      const includeCredentialsPrompt = /login|sign[\s-]?in|credential|password|gmail|邮箱|登录|账号|密码/i.test(prompt);
-      // Cowork-specific rules appended to pi's native system prompt.
-      // Skills and tool descriptions are handled by pi's DefaultResourceLoader.
       const coworkAppendPrompt = [
         'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
         `CRITICAL BEHAVIORAL RULES:
@@ -1630,9 +1689,10 @@ Tool routing:
 - If user explicitly asks to use Chrome/browser/web navigation, prioritize Chrome MCP tools (mcp__Chrome__*) over generic WebSearch/WebFetch.
 - Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
 </tool_behavior>`,
-        includeCredentialsPrompt ? this.getCredentialsPrompt() : '',
         this.getBundledPathHints(),
-      ].filter((section): section is string => Boolean(section && section.trim())).join('\n\n');
+      ]
+        .filter((section): section is string => Boolean(section && section.trim()))
+        .join('\n\n');
 
       logTiming('before pi-coding-agent session creation', runStartTime);
 
@@ -1650,7 +1710,10 @@ Tool routing:
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       if (mcpCustomTools.length > 0) {
-        log(`[ClaudeAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`, mcpCustomTools.map(t => t.name).join(', '));
+        log(
+          `[ClaudeAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`,
+          mcpCustomTools.map((t) => t.name).join(', ')
+        );
       }
 
       // Enrich process.env.PATH for build mode — ensures Skill commands (python3, node)
@@ -1660,7 +1723,9 @@ Tool routing:
       const codingTools = createCodingTools(effectiveCwd);
 
       // Inject a default 120s timeout for bash commands when the model omits one
-      const withTimeout = ClaudeAgentRunner.wrapBashToolWithDefaultTimeout(codingTools as ToolDefinition[]);
+      const withTimeout = ClaudeAgentRunner.wrapBashToolWithDefaultTimeout(
+        codingTools as ToolDefinition[]
+      );
 
       // Wrap the bash tool to intercept sudo commands and request passwords
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
@@ -1671,8 +1736,12 @@ Tool routing:
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[ClaudeAgentRunner] Session reuse check: cached=${!!cachedSession}`);
       logCtx(`[ClaudeAgentRunner] Model=${piModel.id}, thinkingLevel=${thinkingLevel}`);
-      log(`[ClaudeAgentRunner] Built-in tools (${wrappedTools.length}): ${wrappedTools.map((t: { name?: string; type?: string }) => t.name || t.type).join(', ')}`);
-      log(`[ClaudeAgentRunner] Custom MCP tools (${mcpCustomTools.length}): ${mcpCustomTools.map(t => t.name).join(', ')}`);
+      log(
+        `[ClaudeAgentRunner] Built-in tools (${wrappedTools.length}): ${wrappedTools.map((t: { name?: string; type?: string }) => t.name || t.type).join(', ')}`
+      );
+      log(
+        `[ClaudeAgentRunner] Custom MCP tools (${mcpCustomTools.length}): ${mcpCustomTools.map((t) => t.name).join(', ')}`
+      );
 
       let piSession: PiAgentSession;
       if (cachedSession) {
@@ -1681,21 +1750,30 @@ Tool routing:
 
         // Hot-swap model/thinking if changed — SDK supports this natively
         if (cachedSession.modelId !== piModel.id) {
-          logCtx('[ClaudeAgentRunner] Model changed, hot-swapping:', cachedSession.modelId, '→', piModel.id);
+          logCtx(
+            '[ClaudeAgentRunner] Model changed, hot-swapping:',
+            cachedSession.modelId,
+            '→',
+            piModel.id
+          );
           await piSession.setModel(piModel);
           cachedSession.modelId = piModel.id;
           // Update Ollama num_ctx ref if present
           if (cachedSession.ollamaNumCtx) {
-            cachedSession.ollamaNumCtx.value =
-              piModel.contextWindow || 128000;
+            cachedSession.ollamaNumCtx.value = piModel.contextWindow || 128000;
             log(
               '[ClaudeAgentRunner] Updated Ollama num_ctx on hot-swap:',
-              cachedSession.ollamaNumCtx.value,
+              cachedSession.ollamaNumCtx.value
             );
           }
         }
         if (cachedSession.thinkingLevel !== thinkingLevel) {
-          logCtx('[ClaudeAgentRunner] Thinking level changed, hot-swapping:', cachedSession.thinkingLevel, '→', thinkingLevel);
+          logCtx(
+            '[ClaudeAgentRunner] Thinking level changed, hot-swapping:',
+            cachedSession.thinkingLevel,
+            '→',
+            thinkingLevel
+          );
           piSession.setThinkingLevel(thinkingLevel);
           cachedSession.thinkingLevel = thinkingLevel;
         }
@@ -1728,7 +1806,7 @@ Tool routing:
           log(
             '[ClaudeAgentRunner] Ollama small context model, disabling auto-compaction (contextWindow:',
             contextWindow,
-            ')',
+            ')'
           );
         } else if (provider === 'ollama' && contextWindow < 65536) {
           // Medium context: scale reserves proportionally
@@ -1739,7 +1817,7 @@ Tool routing:
           };
           log(
             '[ClaudeAgentRunner] Ollama medium context, scaled compaction:',
-            JSON.stringify(compactionSettings),
+            JSON.stringify(compactionSettings)
           );
         } else {
           compactionSettings = { enabled: true };
@@ -1762,7 +1840,22 @@ Tool routing:
         });
         piSession = newPiSession;
 
-        // Store session for reuse
+        // Store session for reuse — evict oldest if cache is full
+        if (this.piSessions.size >= ClaudeAgentRunner.MAX_CACHED_SESSIONS) {
+          const oldestKey = this.piSessions.keys().next().value;
+          if (oldestKey) {
+            const oldest = this.piSessions.get(oldestKey);
+            if (oldest) {
+              try {
+                oldest.session.dispose();
+              } catch (e) {
+                logWarn('[ClaudeAgentRunner] dispose error on eviction:', e);
+              }
+            }
+            this.piSessions.delete(oldestKey);
+            log('[ClaudeAgentRunner] Evicted oldest cached session:', oldestKey);
+          }
+        }
         this.piSessions.set(session.id, {
           session: piSession,
           modelId: piModel.id,
@@ -1775,7 +1868,10 @@ Tool routing:
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const agent = piSession.agent as any;
           const originalOnPayload = agent._onPayload as
-            | ((payload: Record<string, unknown>, modelArg: unknown) => Promise<Record<string, unknown>>)
+            | ((
+                payload: Record<string, unknown>,
+                modelArg: unknown
+              ) => Promise<Record<string, unknown>>)
             | undefined;
           const ollamaNumCtx = {
             value: piModel.contextWindow || 128000,
@@ -1790,7 +1886,7 @@ Tool routing:
           this.piSessions.get(session.id)!.ollamaNumCtx = ollamaNumCtx;
           log(
             '[ClaudeAgentRunner] Ollama _onPayload wrapper installed, num_ctx:',
-            ollamaNumCtx.value,
+            ollamaNumCtx.value
           );
         }
 
@@ -1836,14 +1932,17 @@ Tool routing:
           title: 'Processing request...',
         });
         if (provider === 'ollama') {
-          log('[ClaudeAgentRunner] Ollama first stream event received', safeStringify({
-            sessionId: session.id,
-            eventType,
-            modelId: piModel.id,
-            modelProvider: piModel.provider,
-            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
-            latencyMs: firstStreamEventAt - promptStartedAt,
-          }));
+          log(
+            '[ClaudeAgentRunner] Ollama first stream event received',
+            safeStringify({
+              sessionId: session.id,
+              eventType,
+              modelId: piModel.id,
+              modelProvider: piModel.provider,
+              baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+              latencyMs: firstStreamEventAt - promptStartedAt,
+            })
+          );
         }
       };
 
@@ -1865,302 +1964,322 @@ Tool routing:
 
       const getStreamEventSummary = () =>
         Object.fromEntries(
-          Array.from(streamEventCounts.entries()).sort(([left], [right]) => left.localeCompare(right))
+          Array.from(streamEventCounts.entries()).sort(([left], [right]) =>
+            left.localeCompare(right)
+          )
         );
 
       const unsubscribe = piSession.subscribe((event) => {
         try {
-        if (controller.signal.aborted) return;
+          if (controller.signal.aborted) return;
 
-        // Reset activity timeout on meaningful events
-        resetActivityTimeout();
+          // Reset activity timeout on meaningful events
+          resetActivityTimeout();
 
-        if (event.type === 'message_update') {
-          const updateType = event.assistantMessageEvent.type;
-          recordStreamEvent(updateType);
-          if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {
-            log(`[ClaudeAgentRunner] Event: ${event.type} → ${updateType}`);
+          if (event.type === 'message_update') {
+            const updateType = event.assistantMessageEvent.type;
+            recordStreamEvent(updateType);
+            if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {
+              log(`[ClaudeAgentRunner] Event: ${event.type} → ${updateType}`);
+            }
+          } else if (event.type === 'message_start') {
+            log(
+              '[ClaudeAgentRunner] Event: message_start',
+              safeStringify(summarizeMessageForLog(event.message), 2)
+            );
+          } else if (event.type === 'message_end') {
+            log(
+              '[ClaudeAgentRunner] Event: message_end',
+              safeStringify(
+                {
+                  message: summarizeMessageForLog(event.message),
+                  messageUpdateCounts: getStreamEventSummary(),
+                },
+                2
+              )
+            );
+          } else if (event.type === 'turn_end') {
+            log(`[ClaudeAgentRunner] Event: ${event.type}`);
+          } else {
+            log(`[ClaudeAgentRunner] Event: ${event.type}`);
           }
-        } else if (event.type === 'message_start') {
-          log('[ClaudeAgentRunner] Event: message_start', safeStringify(summarizeMessageForLog(event.message), 2));
-        } else if (event.type === 'message_end') {
-          log(
-            '[ClaudeAgentRunner] Event: message_end',
-            safeStringify(
-              {
-                message: summarizeMessageForLog(event.message),
-                messageUpdateCounts: getStreamEventSummary(),
-              },
-              2
-            )
-          );
-        } else if (event.type === 'turn_end') {
-          log(`[ClaudeAgentRunner] Event: ${event.type}`);
-        } else {
-          log(`[ClaudeAgentRunner] Event: ${event.type}`);
-        }
 
-        switch (event.type) {
-          case 'message_update': {
-            if (controller.signal.aborted) break;
-            const ame = event.assistantMessageEvent;
-            if (ame.type === 'text_delta') {
-              markFirstStreamEvent(ame.type);
-              const parsed = thinkParser.push(ame.delta);
-              if (parsed.thinking) {
+          switch (event.type) {
+            case 'message_update': {
+              if (controller.signal.aborted) break;
+              const ame = event.assistantMessageEvent;
+              if (ame.type === 'text_delta') {
+                markFirstStreamEvent(ame.type);
+                const parsed = thinkParser.push(ame.delta);
+                if (parsed.thinking) {
+                  this.sendToRenderer({
+                    type: 'stream.thinking',
+                    payload: { sessionId: session.id, delta: parsed.thinking },
+                  });
+                }
+                if (parsed.text) {
+                  streamedText += parsed.text;
+                  this.sendPartial(session.id, parsed.text);
+                }
+              } else if (ame.type === 'thinking_delta') {
+                markFirstStreamEvent(ame.type);
+                // Forward thinking delta to renderer for real-time display
                 this.sendToRenderer({
                   type: 'stream.thinking',
-                  payload: { sessionId: session.id, delta: parsed.thinking },
+                  payload: { sessionId: session.id, delta: ame.delta },
+                });
+              } else if (ame.type === 'toolcall_start') {
+                markFirstStreamEvent(ame.type);
+                const partial = ame.partial;
+                const toolContent = partial?.content?.[ame.contentIndex];
+                const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
+                const toolCallId = toolContent?.type === 'toolCall' ? toolContent.id : uuidv4();
+                this.sendTraceStep(session.id, {
+                  id: toolCallId,
+                  type: 'tool_call',
+                  status: 'running',
+                  title: toolName,
+                  toolName,
+                  toolInput:
+                    toolContent?.type === 'toolCall'
+                      ? (toolContent.arguments as Record<string, unknown>) || {}
+                      : undefined,
+                  timestamp: Date.now(),
+                });
+              } else if (ame.type === 'done') {
+                // Some providers emit 'done' via message_update — we handle it
+                // in message_end below as a unified path for all providers.
+                log('[ClaudeAgentRunner] message_update done event (handled in message_end)');
+              } else if (ame.type === 'error') {
+                const errorDetail = JSON.stringify(ame.error?.content || 'no content');
+                logCtxError('[ClaudeAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
+              }
+              break;
+            }
+
+            case 'message_end': {
+              // Unified handler: send the final assistant message to the renderer.
+              // Works for all providers (some emit 'done' via message_update, others don't).
+              if (controller.signal.aborted) break;
+
+              // Flush any buffered content from the think-tag parser
+              const flushed = thinkParser.flush();
+              if (flushed.thinking) {
+                this.sendToRenderer({
+                  type: 'stream.thinking',
+                  payload: { sessionId: session.id, delta: flushed.thinking },
                 });
               }
-              if (parsed.text) {
-                streamedText += parsed.text;
-                this.sendPartial(session.id, parsed.text);
+              if (flushed.text) {
+                streamedText += flushed.text;
+                this.sendPartial(session.id, flushed.text);
               }
-            } else if (ame.type === 'thinking_delta') {
-              markFirstStreamEvent(ame.type);
-              // Forward thinking delta to renderer for real-time display
-              this.sendToRenderer({
-                type: 'stream.thinking',
-                payload: { sessionId: session.id, delta: ame.delta },
+
+              const msg = event.message;
+              if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
+                log('[ClaudeAgentRunner] message_end raw message:', safeStringify(msg, 2));
+              }
+              const resolvedPayload = resolveMessageEndPayload({
+                message: msg as Parameters<typeof resolveMessageEndPayload>[0]['message'],
+                streamedText,
               });
-            } else if (ame.type === 'toolcall_start') {
-              markFirstStreamEvent(ame.type);
-              const partial = ame.partial;
-              const toolContent = partial?.content?.[ame.contentIndex];
-              const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
-              const toolCallId = toolContent?.type === 'toolCall' ? toolContent.id : uuidv4();
+              streamedText = resolvedPayload.nextStreamedText;
+              if (provider === 'ollama') {
+                log(
+                  '[ClaudeAgentRunner] Ollama message_end diagnostics',
+                  safeStringify({
+                    sessionId: session.id,
+                    modelId: piModel.id,
+                    modelProvider: piModel.provider,
+                    usedSyntheticModel,
+                    receivedFirstStreamEvent,
+                    firstStreamLatencyMs: firstStreamEventAt
+                      ? firstStreamEventAt - promptStartedAt
+                      : null,
+                    stopReason: (msg as { stopReason?: unknown })?.stopReason ?? null,
+                    contentBlocks: Array.isArray((msg as { content?: unknown[] })?.content)
+                      ? ((msg as { content?: unknown[] }).content?.length ?? 0)
+                      : 0,
+                    emittedError: Boolean(resolvedPayload.errorText),
+                  })
+                );
+              }
+              if (resolvedPayload.errorText) {
+                terminalErrorText = resolvedPayload.errorText;
+                if (!hasEmittedError) {
+                  hasEmittedError = true;
+                  this.sendMessage(session.id, {
+                    id: uuidv4(),
+                    sessionId: session.id,
+                    role: 'assistant',
+                    content: [
+                      {
+                        type: 'text',
+                        text: `**Error**: ${resolvedPayload.errorText}\n\n${
+                          /\b4\d{2}\b/.test(resolvedPayload.errorText)
+                            ? '_请检查配置后重试。_'
+                            : '_Agent 正在自动重试，请稍候..._'
+                        }`,
+                      },
+                    ],
+                    timestamp: Date.now(),
+                  });
+                }
+                break;
+              }
+              if (resolvedPayload.shouldEmitMessage) {
+                const contentBlocks: ContentBlock[] = [];
+                for (const block of resolvedPayload.effectiveContent) {
+                  if (block.type === 'text') {
+                    const { cleanText, artifacts } = extractArtifactsFromText(block.text);
+                    if (cleanText) {
+                      contentBlocks.push({ type: 'text', text: sanitizeOutputPaths(cleanText) });
+                    }
+                    if (artifacts.length > 0) {
+                      for (const step of buildArtifactTraceSteps(artifacts)) {
+                        this.sendTraceStep(session.id, step);
+                      }
+                    }
+                  } else if (block.type === 'toolCall') {
+                    contentBlocks.push({
+                      type: 'tool_use',
+                      id: block.id,
+                      name: block.name,
+                      input: block.arguments,
+                    });
+                  } else if (block.type === 'thinking') {
+                    // Include thinking blocks in the final message for UI display
+                    contentBlocks.push({
+                      type: 'thinking',
+                      thinking: block.thinking,
+                    });
+                  } else {
+                    // Unknown block type — pass through as text so content isn't silently lost
+                    const unknownBlock = block as { type?: string; text?: string };
+                    log(`[ClaudeAgentRunner] Unknown content block type: ${unknownBlock.type}`);
+                    const text = unknownBlock.text || JSON.stringify(block);
+                    if (text) contentBlocks.push({ type: 'text', text });
+                  }
+                }
+                // Always clear partial text; send message even if only artifacts were extracted
+                this.sendToRenderer({
+                  type: 'stream.partial',
+                  payload: { sessionId: session.id, delta: '' },
+                });
+                if (contentBlocks.length > 0) {
+                  const msgWithUsage = msg as { usage?: unknown };
+                  const tokenUsage = normalizeTokenUsage(msgWithUsage.usage);
+                  if (msgWithUsage.usage) {
+                    log(
+                      '[ClaudeAgentRunner] normalized usage:',
+                      safeStringify(
+                        {
+                          raw: msgWithUsage.usage,
+                          normalized: tokenUsage,
+                        },
+                        2
+                      )
+                    );
+                  }
+                  const assistantMsg: Message = {
+                    id: uuidv4(),
+                    sessionId: session.id,
+                    role: 'assistant',
+                    content: contentBlocks,
+                    timestamp: Date.now(),
+                    tokenUsage,
+                  };
+                  this.sendMessage(session.id, assistantMsg);
+                }
+              }
+              break;
+            }
+
+            case 'tool_execution_start': {
+              logCtx(`[ClaudeAgentRunner] Tool execution start: ${event.toolName}`);
+              break;
+            }
+
+            case 'tool_execution_end': {
+              if (controller.signal.aborted) break;
+              const toolCallId = event.toolCallId;
+              const isError = event.isError;
+              const outputText =
+                typeof event.result === 'string'
+                  ? event.result
+                  : JSON.stringify(event.result || '');
+              this.sendTraceUpdate(session.id, toolCallId, {
+                status: isError ? 'error' : 'completed',
+                toolName: event.toolName,
+                toolOutput: sanitizeOutputPaths(outputText).slice(0, 800),
+              });
+
+              // Send tool result message
+              const toolResultMsg: Message = {
+                id: uuidv4(),
+                sessionId: session.id,
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'tool_result',
+                    toolUseId: toolCallId,
+                    content: sanitizeOutputPaths(outputText),
+                    isError,
+                  },
+                ],
+                timestamp: Date.now(),
+              };
+              this.sendMessage(session.id, toolResultMsg);
+              break;
+            }
+
+            case 'agent_end': {
+              logCtx('[ClaudeAgentRunner] Agent finished');
+              break;
+            }
+
+            case 'auto_compaction_start': {
+              log('[ClaudeAgentRunner] Auto-compaction started, reason:', event.reason);
+              compactionStepId = `compaction-${Date.now()}`;
               this.sendTraceStep(session.id, {
-                id: toolCallId,
-                type: 'tool_call',
+                id: compactionStepId,
+                type: 'thinking',
                 status: 'running',
-                title: toolName,
-                toolName,
-                toolInput: toolContent?.type === 'toolCall' ? (toolContent.arguments as Record<string, unknown> || {}) : undefined,
+                title: `Compacting context (${event.reason})...`,
                 timestamp: Date.now(),
               });
-            } else if (ame.type === 'done') {
-              // Some providers emit 'done' via message_update — we handle it
-              // in message_end below as a unified path for all providers.
-              log('[ClaudeAgentRunner] message_update done event (handled in message_end)');
-            } else if (ame.type === 'error') {
-              const errorDetail = JSON.stringify(ame.error?.content || 'no content');
-              logCtxError('[ClaudeAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
-            }
-            break;
-          }
-
-          case 'message_end': {
-            // Unified handler: send the final assistant message to the renderer.
-            // Works for all providers (some emit 'done' via message_update, others don't).
-            if (controller.signal.aborted) break;
-
-            // Flush any buffered content from the think-tag parser
-            const flushed = thinkParser.flush();
-            if (flushed.thinking) {
-              this.sendToRenderer({
-                type: 'stream.thinking',
-                payload: { sessionId: session.id, delta: flushed.thinking },
-              });
-            }
-            if (flushed.text) {
-              streamedText += flushed.text;
-              this.sendPartial(session.id, flushed.text);
+              break;
             }
 
-            const msg = event.message;
-            if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
+            case 'auto_compaction_end': {
+              const status = event.aborted ? 'error' : event.errorMessage ? 'error' : 'completed';
+              const title = event.aborted
+                ? 'Context compaction aborted'
+                : event.errorMessage
+                  ? `Context compaction failed: ${event.errorMessage}`
+                  : 'Context compaction completed';
               log(
-                '[ClaudeAgentRunner] message_end raw message:',
-                safeStringify(msg, 2)
+                '[ClaudeAgentRunner] Auto-compaction ended:',
+                title,
+                'willRetry:',
+                event.willRetry
               );
-            }
-            const resolvedPayload = resolveMessageEndPayload({
-              message: msg as Parameters<typeof resolveMessageEndPayload>[0]['message'],
-              streamedText,
-            });
-            streamedText = resolvedPayload.nextStreamedText;
-            if (provider === 'ollama') {
-              log('[ClaudeAgentRunner] Ollama message_end diagnostics', safeStringify({
-                sessionId: session.id,
-                modelId: piModel.id,
-                modelProvider: piModel.provider,
-                usedSyntheticModel,
-                receivedFirstStreamEvent,
-                firstStreamLatencyMs: firstStreamEventAt ? firstStreamEventAt - promptStartedAt : null,
-                stopReason: (msg as { stopReason?: unknown })?.stopReason ?? null,
-                contentBlocks: Array.isArray((msg as { content?: unknown[] })?.content)
-                  ? ((msg as { content?: unknown[] }).content?.length ?? 0)
-                  : 0,
-                emittedError: Boolean(resolvedPayload.errorText),
-              }));
-            }
-            if (resolvedPayload.errorText) {
-              terminalErrorText = resolvedPayload.errorText;
-              if (!hasEmittedError) {
-                hasEmittedError = true;
-                this.sendMessage(session.id, {
-                  id: uuidv4(),
-                  sessionId: session.id,
-                  role: 'assistant',
-                  content: [{
-                    type: 'text',
-                    text: `**Error**: ${resolvedPayload.errorText}\n\n${
-                      /\b4\d{2}\b/.test(resolvedPayload.errorText)
-                        ? '_请检查配置后重试。_'
-                        : '_Agent 正在自动重试，请稍候..._'
-                    }`,
-                  }],
+              if (compactionStepId) {
+                this.sendTraceUpdate(session.id, compactionStepId, { status, title });
+                compactionStepId = undefined;
+              } else {
+                // Fallback: no matching start event, send as new step
+                this.sendTraceStep(session.id, {
+                  id: `compaction-end-${Date.now()}`,
+                  type: 'thinking',
+                  status,
+                  title,
                   timestamp: Date.now(),
                 });
               }
               break;
             }
-            if (resolvedPayload.shouldEmitMessage) {
-              const contentBlocks: ContentBlock[] = [];
-              for (const block of resolvedPayload.effectiveContent) {
-                if (block.type === 'text') {
-                  const { cleanText, artifacts } = extractArtifactsFromText(block.text);
-                  if (cleanText) {
-                    contentBlocks.push({ type: 'text', text: sanitizeOutputPaths(cleanText) });
-                  }
-                  if (artifacts.length > 0) {
-                    for (const step of buildArtifactTraceSteps(artifacts)) {
-                      this.sendTraceStep(session.id, step);
-                    }
-                  }
-                } else if (block.type === 'toolCall') {
-                  contentBlocks.push({
-                    type: 'tool_use',
-                    id: block.id,
-                    name: block.name,
-                    input: block.arguments,
-                  });
-                } else if (block.type === 'thinking') {
-                  // Include thinking blocks in the final message for UI display
-                  contentBlocks.push({
-                    type: 'thinking',
-                    thinking: block.thinking,
-                  });
-                } else {
-                  // Unknown block type — pass through as text so content isn't silently lost
-                  const unknownBlock = block as { type?: string; text?: string };
-                  log(`[ClaudeAgentRunner] Unknown content block type: ${unknownBlock.type}`);
-                  const text = unknownBlock.text || JSON.stringify(block);
-                  if (text) contentBlocks.push({ type: 'text', text });
-                }
-              }
-              // Always clear partial text; send message even if only artifacts were extracted
-              this.sendToRenderer({
-                type: 'stream.partial',
-                payload: { sessionId: session.id, delta: '' },
-              });
-              if (contentBlocks.length > 0) {
-                const msgWithUsage = msg as { usage?: unknown };
-                const tokenUsage = normalizeTokenUsage(msgWithUsage.usage);
-                if (msgWithUsage.usage) {
-                  log(
-                    '[ClaudeAgentRunner] normalized usage:',
-                    safeStringify(
-                      {
-                        raw: msgWithUsage.usage,
-                        normalized: tokenUsage,
-                      },
-                      2
-                    )
-                  );
-                }
-                const assistantMsg: Message = {
-                  id: uuidv4(),
-                  sessionId: session.id,
-                  role: 'assistant',
-                  content: contentBlocks,
-                  timestamp: Date.now(),
-                  tokenUsage,
-                };
-                this.sendMessage(session.id, assistantMsg);
-              }
-            }
-            break;
           }
-
-          case 'tool_execution_start': {
-            logCtx(`[ClaudeAgentRunner] Tool execution start: ${event.toolName}`);
-            break;
-          }
-
-          case 'tool_execution_end': {
-            if (controller.signal.aborted) break;
-            const toolCallId = event.toolCallId;
-            const isError = event.isError;
-            const outputText = typeof event.result === 'string'
-              ? event.result
-              : JSON.stringify(event.result || '');
-            this.sendTraceUpdate(session.id, toolCallId, {
-              status: isError ? 'error' : 'completed',
-              toolName: event.toolName,
-              toolOutput: sanitizeOutputPaths(outputText).slice(0, 800),
-            });
-
-            // Send tool result message
-            const toolResultMsg: Message = {
-              id: uuidv4(),
-              sessionId: session.id,
-              role: 'assistant',
-              content: [{
-                type: 'tool_result',
-                toolUseId: toolCallId,
-                content: sanitizeOutputPaths(outputText),
-                isError,
-              }],
-              timestamp: Date.now(),
-            };
-            this.sendMessage(session.id, toolResultMsg);
-            break;
-          }
-
-          case 'agent_end': {
-            logCtx('[ClaudeAgentRunner] Agent finished');
-            break;
-          }
-
-          case 'auto_compaction_start': {
-            log('[ClaudeAgentRunner] Auto-compaction started, reason:', event.reason);
-            compactionStepId = `compaction-${Date.now()}`;
-            this.sendTraceStep(session.id, {
-              id: compactionStepId,
-              type: 'thinking',
-              status: 'running',
-              title: `Compacting context (${event.reason})...`,
-              timestamp: Date.now(),
-            });
-            break;
-          }
-
-          case 'auto_compaction_end': {
-            const status = event.aborted ? 'error' : (event.errorMessage ? 'error' : 'completed');
-            const title = event.aborted
-              ? 'Context compaction aborted'
-              : event.errorMessage
-                ? `Context compaction failed: ${event.errorMessage}`
-                : 'Context compaction completed';
-            log('[ClaudeAgentRunner] Auto-compaction ended:', title, 'willRetry:', event.willRetry);
-            if (compactionStepId) {
-              this.sendTraceUpdate(session.id, compactionStepId, { status, title });
-              compactionStepId = undefined;
-            } else {
-              // Fallback: no matching start event, send as new step
-              this.sendTraceStep(session.id, {
-                id: `compaction-end-${Date.now()}`,
-                type: 'thinking',
-                status,
-                title,
-                timestamp: Date.now(),
-              });
-            }
-            break;
-          }
-        }
         } catch (subscribeErr) {
           logError('[ClaudeAgentRunner] Error in subscribe callback:', subscribeErr);
           if (compactionStepId) {
@@ -2184,29 +2303,36 @@ Tool routing:
         }
       });
 
-      // Execute the prompt with activity-based timeout
+      // Execute the prompt — unsubscribe in finally to prevent event listener leak
       try {
         resetActivityTimeout();
         if (provider === 'ollama') {
-          log('[ClaudeAgentRunner] Starting Ollama prompt', safeStringify({
-            sessionId: session.id,
-            modelId: piModel.id,
-            modelProvider: piModel.provider,
-            baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
-            usedSyntheticModel,
-            hasExplicitApiKey: Boolean(apiKey),
-            thinkingLevel,
-          }));
+          log(
+            '[ClaudeAgentRunner] Starting Ollama prompt',
+            safeStringify({
+              sessionId: session.id,
+              modelId: piModel.id,
+              modelProvider: piModel.provider,
+              baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
+              usedSyntheticModel,
+              hasExplicitApiKey: Boolean(apiKey),
+              thinkingLevel,
+            })
+          );
         }
-        try {
-          const promptResult = await piSession.prompt(contextualPrompt);
-          log('[ClaudeAgentRunner] prompt() returned:', JSON.stringify(promptResult ?? 'void').substring(0, 1000));
-        } finally {
-          if (activityTimeoutId) clearTimeout(activityTimeoutId);
-          if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
-        }
+        const promptResult = await piSession.prompt(contextualPrompt);
+        log(
+          '[ClaudeAgentRunner] prompt() returned:',
+          JSON.stringify(promptResult ?? 'void').substring(0, 1000)
+        );
       } finally {
-        try { unsubscribe(); } catch (e) { logWarn('[ClaudeAgentRunner] unsubscribe error:', e); }
+        try {
+          unsubscribe();
+        } catch (e) {
+          logWarn('[ClaudeAgentRunner] unsubscribe error:', e);
+        }
+        if (activityTimeoutId) clearTimeout(activityTimeoutId);
+        if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
       }
 
       logTiming('pi-coding-agent prompt completed', runStartTime);
@@ -2233,7 +2359,6 @@ Tool routing:
           title: terminalErrorText ? 'Request failed' : 'Task completed',
         });
       }
-
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         if (abortedByTimeout) {
@@ -2316,14 +2441,18 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: `**Warning**: Sandbox sync failed: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}` }],
+            content: [
+              {
+                type: 'text',
+                text: `**Warning**: Sandbox sync failed: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`,
+              },
+            ],
             timestamp: Date.now(),
           });
         }
       }
     }
   }
-
 
   cancel(sessionId: string): void {
     const controller = this.activeControllers.get(sessionId);
@@ -2352,5 +2481,4 @@ Tool routing:
   private sendPartial(sessionId: string, delta: string): void {
     this.sendToRenderer({ type: 'stream.partial', payload: { sessionId, delta } });
   }
-
 }

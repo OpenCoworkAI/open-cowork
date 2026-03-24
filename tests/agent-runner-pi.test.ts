@@ -7,9 +7,15 @@ const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
 
 describe('ClaudeAgentRunner pi-coding-agent integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
-    expect(agentRunnerContent).toContain("import { mcpConfigStore } from '../mcp/mcp-config-store'");
-    expect(agentRunnerContent).not.toContain("const { configStore } = await import('../config/config-store')");
-    expect(agentRunnerContent).not.toContain("const { mcpConfigStore } = await import('../mcp/mcp-config-store')");
+    expect(agentRunnerContent).toContain(
+      "import { mcpConfigStore } from '../mcp/mcp-config-store'"
+    );
+    expect(agentRunnerContent).not.toContain(
+      "const { configStore } = await import('../config/config-store')"
+    );
+    expect(agentRunnerContent).not.toContain(
+      "const { mcpConfigStore } = await import('../mcp/mcp-config-store')"
+    );
   });
 
   it('keeps MCP config build resilient', () => {
@@ -18,13 +24,19 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
   });
 
   it('uses standard markdown link guidance for sources citations', () => {
-    expect(agentRunnerContent).toContain('otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL)');
+    expect(agentRunnerContent).toContain(
+      'otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL)'
+    );
   });
 
   it('avoids duplicating the current user prompt in contextual history assembly', () => {
     expect(agentRunnerContent).toContain('const conversationMessages = existingMessages');
-    expect(agentRunnerContent).toContain('conversationMessages.slice(0, -1)');
-    expect(agentRunnerContent).toContain("conversationMessages[conversationMessages.length - 1]?.role === 'user'");
+    // Image-containing messages are filtered out individually (not skipping entire history)
+    expect(agentRunnerContent).toContain('const textOnlyMessages = conversationMessages');
+    expect(agentRunnerContent).toContain('textOnlyMessages.slice(0, -1)');
+    expect(agentRunnerContent).toContain(
+      "textOnlyMessages[textOnlyMessages.length - 1]?.role === 'user'"
+    );
   });
 
   it('keeps MCP server logging compact unless full debug logging is enabled', () => {
@@ -35,7 +47,9 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
 
   it('summarizes noisy SDK message updates instead of logging every text delta', () => {
     expect(agentRunnerContent).toContain('const streamEventCounts = new Map<string, number>();');
-    expect(agentRunnerContent).toContain("if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {");
+    expect(agentRunnerContent).toContain(
+      "if (updateType !== 'text_delta' && updateType !== 'thinking_delta') {"
+    );
     expect(agentRunnerContent).toContain("'[ClaudeAgentRunner] Event: message_end'");
     expect(agentRunnerContent).toContain('messageUpdateCounts: getStreamEventSummary()');
     expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
@@ -43,8 +57,12 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
   });
 
   it('reuses the shared user-facing error helper', () => {
-    expect(agentRunnerContent).toContain("import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end'");
-    expect(agentRunnerContent).toContain('const errorText = toUserFacingErrorText(toErrorText(error));');
+    expect(agentRunnerContent).toContain(
+      "import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end'"
+    );
+    expect(agentRunnerContent).toContain(
+      'const errorText = toUserFacingErrorText(toErrorText(error));'
+    );
   });
 
   it('uses pi DefaultResourceLoader with additionalSkillPaths and appendSystemPrompt', () => {
@@ -54,9 +72,15 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
   });
 
   it('recreates cached pi sessions when the runtime signature changes', () => {
-    expect(agentRunnerContent).toContain("import { buildPiSessionRuntimeSignature } from './pi-session-runtime'");
-    expect(agentRunnerContent).toContain('const sessionRuntimeSignature = buildPiSessionRuntimeSignature({');
-    expect(agentRunnerContent).toContain('cachedSession.runtimeSignature !== sessionRuntimeSignature');
+    expect(agentRunnerContent).toContain(
+      "import { buildPiSessionRuntimeSignature } from './pi-session-runtime'"
+    );
+    expect(agentRunnerContent).toContain(
+      'const sessionRuntimeSignature = buildPiSessionRuntimeSignature({'
+    );
+    expect(agentRunnerContent).toContain(
+      'cachedSession.runtimeSignature !== sessionRuntimeSignature'
+    );
     expect(agentRunnerContent).toContain('Runtime changed, recreating cached pi session:');
     expect(agentRunnerContent).toContain('runtimeSignature: sessionRuntimeSignature');
   });
@@ -81,7 +105,9 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
 
   it('chat-first behavioral rules are present', () => {
     expect(agentRunnerContent).toContain('CHAT FIRST');
-    expect(agentRunnerContent).toContain('Do NOT create, write, or edit files unless the user explicitly asks');
+    expect(agentRunnerContent).toContain(
+      'Do NOT create, write, or edit files unless the user explicitly asks'
+    );
     expect(agentRunnerContent).toContain('START DOING IT');
   });
 });
