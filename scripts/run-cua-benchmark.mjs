@@ -242,7 +242,7 @@ async function executeAction(action) {
     }
     // Key-as-action format: {"action": {"open_file": "path"}} or {"action": {"run_command": "cmd"}}
     const knownActions = ['screenshot','click','double_click','right_click','type','key_press',
-      'scroll','launch_app','focus_window','open_file','view_image','run_command','done'];
+      'scroll','launch_app','focus_window','open_file','view_image','run_command','create_chart','done'];
     for (const k of knownActions) {
       if (inner[k] !== undefined) {
         const val = inner[k];
@@ -312,9 +312,18 @@ async function executeAction(action) {
     case 'key_press':
     case 'key':
     case 'hotkey': {
-      const key = action.key || '';
-      const mods = action.modifiers || [];
-      return { text: await performKeyPress(key, Array.isArray(mods) ? mods : [mods]) };
+      // Handle multiple key field sources: action.key, action.key_press, action.hotkey
+      let key = action.key || action.key_press || action.hotkey || '';
+      let mods = action.modifiers || [];
+      if (!Array.isArray(mods)) mods = [mods];
+      // If key_press field exists as a separate key source (e.g. {"key":"ctrl","key_press":"f","modifiers":["ctrl"]})
+      // and key is a modifier, use key_press value as the real key
+      const modNames = new Set(['ctrl','control','alt','shift']);
+      if (typeof key === 'string' && modNames.has(key.toLowerCase()) && action.key_press && action.key_press !== key) {
+        mods = [...mods, key];
+        key = action.key_press;
+      }
+      return { text: await performKeyPress(key, mods) };
     }
 
     case 'scroll': {
@@ -425,10 +434,60 @@ public class WU {
       return { text: `Opened file: ${filePath} (maximized, content focused)` };
     }
 
+    case 'create_chart': {
+      // Create an xlsx file with a bar chart from provided data
+      // Model provides: title, labels[], values[], save_path
+      const title = action.title || 'Chart';
+      const labels = action.labels || action.categories || [];
+      const values = action.values || action.data || [];
+      const savePath = (action.save_path || action.path || path.join(os.homedir(), 'Desktop', 'chart.xlsx'))
+        .replace(/\$HOME/g, os.homedir()).replace(/\$env:USERPROFILE/gi, os.homedir()).replace(/\//g, '\\');
+      const yLabel = action.y_label || action.y_axis || '';
+
+      if (!labels.length || !values.length) {
+        return { text: 'Error: provide labels and values arrays. Example: {"action":"create_chart","title":"BLEU Scores","labels":["base","A","B"],"values":[25.8,24.9,25.1],"save_path":"$HOME/Desktop/chart.xlsx"}' };
+      }
+
+      // Build Python script inline
+      const dataRows = labels.map((l, i) => `    ws.append(["${String(l).replace(/"/g, '\\"')}", ${values[i] || 0}])`).join('\n');
+      const pyScript = `
+import openpyxl
+from openpyxl.chart import BarChart, Reference
+wb = openpyxl.Workbook()
+ws = wb.active
+ws.append(["Model", "${title}"])
+${dataRows}
+chart = BarChart()
+chart.title = "${title.replace(/"/g, '\\"')}"
+chart.style = 10
+${yLabel ? `chart.y_axis.title = "${yLabel.replace(/"/g, '\\"')}"` : ''}
+vals = Reference(ws, min_col=2, min_row=1, max_row=${labels.length + 1})
+cats = Reference(ws, min_col=1, min_row=2, max_row=${labels.length + 1})
+chart.add_data(vals, titles_from_data=True)
+chart.set_categories(cats)
+chart.width = 20
+chart.height = 12
+ws.add_chart(chart, "D2")
+wb.save(r"${savePath}")
+print("OK")
+`.trim();
+
+      try {
+        const { stdout, stderr } = await execFileAsync('python', ['-c', pyScript], { timeout: 15000 });
+        if (stdout.includes('OK')) {
+          return { text: `Created chart: ${savePath} (${labels.length} data points, title: "${title}")` };
+        }
+        return { text: `Chart creation error: ${(stderr || stdout).slice(0, 500)}` };
+      } catch (e) {
+        return { text: `Chart creation failed: ${(e.stderr || e.message).slice(0, 500)}` };
+      }
+    }
+
     case 'run_command':
     case 'shell':
     case 'exec': {
       let cmd = action.command || action.cmd || '';
+      if (typeof cmd !== 'string') cmd = JSON.stringify(cmd);
       if (!cmd) return { text: 'Error: specify command. Example: {"action": "run_command", "command": "hostname"}' };
       // Convert literal \n to PowerShell newline (`n) inside quoted strings
       // But NOT when \n is part of a path like \nature or \new
@@ -474,7 +533,7 @@ public class WU {
       return { done: true, text: action.summary || action.result || 'Task completed.' };
 
     default:
-      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, open_file, view_image, run_command, done` };
+      return { text: `Unknown action: ${type}. Valid: screenshot, click, double_click, right_click, type, key_press, scroll, launch_app, focus_window, open_file, view_image, run_command, create_chart, done` };
   }
 }
 
@@ -524,7 +583,10 @@ Available actions:
     This reads the image and shows it to you WITHOUT opening any app. Much faster than open_file for images.
     Use this to quickly identify what an image shows (food, landscape, chart, receipt, etc.)
     IMPORTANT: Use view_image for classifying images. Use open_file only for PDFs or documents.
-13. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
+13. {"thought": "...", "action": "create_chart", "title": "BLEU Scores", "labels": ["base","A","B"], "values": [25.8,24.9,25.1], "save_path": "$HOME/Desktop/chart.xlsx"} - Create an xlsx with bar chart
+    Provide title, labels array, values array, and save_path. The chart is created automatically.
+    Use this instead of writing Python scripts — it's faster and never has encoding issues.
+14. {"thought": "...", "action": "done", "summary": "Task completed. Result: ..."} - Report completion
 
 CRITICAL rules:
 - ALWAYS try run_command FIRST before using any GUI app. run_command is faster, more reliable, and takes 1 step instead of 10+.
@@ -560,12 +622,9 @@ CRITICAL rules:
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
-- For Excel/spreadsheet charts: Use the pre-installed chart helper script:
-  run_command: python scripts/cua-helpers/make_chart.py "$HOME/Desktop/output.xlsx" "Chart Title" "Label1:Value1" "Label2:Value2" ...
-  Example: python scripts/cua-helpers/make_chart.py "$HOME/Desktop/BLEU_Scores.xlsx" "BLEU Score Comparison" "base:25.8" "(A):24.9" "(B):25.1"
-  This creates an xlsx file with data + bar chart in ONE command. No need to write Python code!
-  After creating the xlsx, use open_file to open it in Excel and verify the chart.
-  Then report done with a summary of what the chart shows.
+- For Excel/spreadsheet/chart tasks: Use the create_chart action — it's ONE step:
+  {"action": "create_chart", "title": "BLEU Scores", "labels": ["base","(A)","(B)"], "values": [25.8,24.9,25.1], "save_path": "$HOME/Desktop/chart.xlsx"}
+  After creating, use open_file to open and verify the chart. Do NOT write Python scripts manually.
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
   1. FIRST click the PDF content area (center of the page) to give it focus
@@ -643,6 +702,13 @@ function parseAction(text) {
     // Fix: double-quoted keys with extra quotes: ""key"" → "key"
     fixed = fixed.replace(/""+/g, '"');
     try { return JSON.parse(fixed); } catch {}
+  }
+
+  // Fix: {"action": {"type": "text": "Table 3"}} — colon instead of comma after "text"
+  // This is a common 4B model error: {"type": "text": "value"} should be {"action": "type", "text": "value"}
+  const typeColonFix = noThink.match(/"type"\s*:\s*"text"\s*:\s*"([^"]*?)"/);
+  if (typeColonFix) {
+    return { action: 'type', text: typeColonFix[1] };
   }
 
   return null;
