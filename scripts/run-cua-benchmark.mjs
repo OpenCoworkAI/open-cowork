@@ -1460,7 +1460,7 @@ const DEMO_TASKS = [
     id: 'demo-organize-desktop',
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
-    instruction: 'My Desktop is full of random files — photos with camera names like IMG_xxxx and DSC_xxxx, plus some text files and code snippets. I have no idea what\'s in most of them. Please look at each file, figure out what it is, and organize everything into folders by topic (e.g. food photos, landscapes, animals, meeting notes, recipes, code, etc).',
+    instruction: 'My Desktop is a total mess — 35 files dumped together from different projects. There are photos, code files, spreadsheets, notes, JSON configs, and more. The filenames are useless (IMG_xxxx, notes_0318.txt, config.json, etc). Please look at each file\'s content and organize them into project folders. I think there are about 5 different projects mixed together.',
     maxSteps: 100,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');

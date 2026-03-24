@@ -1,10 +1,8 @@
-# messy-desktop.ps1 — Create a messy Desktop with mixed files for CUA benchmark
+# messy-desktop.ps1 — Create a messy Desktop with 35 mixed files for CUA benchmark
 # Usage: powershell -ExecutionPolicy Bypass -File messy-desktop.ps1 [create|clean|verify]
 #
-# Creates 28 files: 12 real photos (Pexels) + 6 PIL images + 10 text files
-# ALL with generic filenames — model must READ content to classify.
-# 10 categories: food, nature, animals, architecture, receipts, charts,
-#                code, meetings, recipes, job/resume
+# 5 themes x 7 files = 35 total (photos + charts + code + text + data)
+# Model must READ each file's content to classify — filenames are deliberately generic.
 
 param(
     [Parameter(Position=0)]
@@ -16,46 +14,48 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $Prefix = "demo_"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# File → category mapping (28 files, 10 categories)
-$FileCategories = @{
-    # Photos: Food (3)
-    "${Prefix}IMG_4721.jpg"              = "food"
-    "${Prefix}IMG_4803.jpg"              = "food"
-    "${Prefix}IMG_5102.jpg"              = "food"
-    # Photos: Nature (3)
-    "${Prefix}DSC_0847.jpg"              = "nature"
-    "${Prefix}DSC_1203.jpg"              = "nature"
-    "${Prefix}DSC_1455.jpg"              = "nature"
-    # Photos: Animals (3)
-    "${Prefix}IMG_6001.jpg"              = "animals"
-    "${Prefix}IMG_6042.jpg"              = "animals"
-    "${Prefix}DSC_2001.jpg"              = "animals"
-    # Photos: Architecture (3)
-    "${Prefix}DSC_3010.jpg"              = "architecture"
-    "${Prefix}DSC_3045.jpg"              = "architecture"
-    "${Prefix}DSC_3088.jpg"              = "architecture"
-    # Images: Receipts (3)
-    "${Prefix}IMG_20260320_134522.jpg"   = "receipts"
-    "${Prefix}IMG_20260318_091045.jpg"   = "receipts"
-    "${Prefix}IMG_20260322_192300.jpg"   = "receipts"
-    # Images: Charts (3)
-    "${Prefix}Screenshot_2026-03-15.png" = "charts"
-    "${Prefix}Screenshot_2026-03-18.png" = "charts"
-    "${Prefix}Screenshot_2026-02-28.png" = "charts"
-    # Text: Code (3)
-    "${Prefix}draft_v2.py"               = "code"
-    "${Prefix}untitled3.js"              = "code"
-    "${Prefix}backup_old.py"             = "code"
-    # Text: Meeting notes (3)
-    "${Prefix}notes_monday.txt"          = "meetings"
-    "${Prefix}sync_notes_0315.txt"       = "meetings"
-    "${Prefix}allhands_feb.txt"          = "meetings"
-    # Text: Recipes (2)
-    "${Prefix}from_mom.txt"              = "recipes"
-    "${Prefix}to_try_later.txt"          = "recipes"
-    # Text: Job/Resume (2)
-    "${Prefix}latest_draft.txt"          = "job"
-    "${Prefix}cover_v3_final.txt"        = "job"
+# File → theme mapping (35 files, 5 themes)
+$FileThemes = @{
+    # Japan Trip (7)
+    "${Prefix}IMG_4721.jpg"              = "japan"
+    "${Prefix}IMG_4856.jpg"              = "japan"
+    "${Prefix}screenshot_0315.png"       = "japan"
+    "${Prefix}notes_0318.txt"            = "japan"
+    "${Prefix}budget_v2.csv"             = "japan"
+    "${Prefix}phrases.txt"               = "japan"
+    "${Prefix}checklist.md"              = "japan"
+    # Work Dashboard (7)
+    "${Prefix}wireframe_02.png"          = "dashboard"
+    "${Prefix}app_v3.js"                 = "dashboard"
+    "${Prefix}query_final.sql"           = "dashboard"
+    "${Prefix}meeting_notes_0320.txt"    = "dashboard"
+    "${Prefix}metrics_q1.csv"            = "dashboard"
+    "${Prefix}response_sample.json"      = "dashboard"
+    "${Prefix}review_comments.md"        = "dashboard"
+    # ML Course (7)
+    "${Prefix}plot_results.png"          = "ml"
+    "${Prefix}confusion_mtx.png"         = "ml"
+    "${Prefix}train_v2.py"              = "ml"
+    "${Prefix}homework3.py"             = "ml"
+    "${Prefix}lecture_0312.txt"          = "ml"
+    "${Prefix}dataset_clean.csv"        = "ml"
+    "${Prefix}config.json"              = "ml"
+    # Moving/Apartment (7)
+    "${Prefix}IMG_5102.jpg"              = "moving"
+    "${Prefix}IMG_5118.jpg"              = "moving"
+    "${Prefix}floorplan_v2.png"          = "moving"
+    "${Prefix}comparison.csv"            = "moving"
+    "${Prefix}todo_list.txt"             = "moving"
+    "${Prefix}expenses.json"             = "moving"
+    "${Prefix}inventory.md"              = "moving"
+    # Fitness Plan (7)
+    "${Prefix}IMG_5234.jpg"              = "fitness"
+    "${Prefix}IMG_5301.jpg"              = "fitness"
+    "${Prefix}progress_chart.png"        = "fitness"
+    "${Prefix}log_march.csv"             = "fitness"
+    "${Prefix}meal_plan.txt"             = "fitness"
+    "${Prefix}tracker.json"              = "fitness"
+    "${Prefix}routine.py"                = "fitness"
 }
 
 function Do-Create {
@@ -71,14 +71,13 @@ function Do-Create {
         exit 1
     }
     $count = (Get-ChildItem "$Desktop\${Prefix}*" -File -ErrorAction SilentlyContinue).Count
-    Write-Host "Created $count files on Desktop (10 categories)." -ForegroundColor Green
+    Write-Host "Created $count files on Desktop (5 themes x 7 files)." -ForegroundColor Green
 }
 
 function Do-Clean {
     Write-Host "Cleaning up demo files..." -ForegroundColor Cyan
     python (Join-Path $ScriptDir "generate_demo_images.py") clean
 
-    # Also remove any folders that only contained demo files
     $removed = 0
     Get-ChildItem $Desktop -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $demoFiles = Get-ChildItem $_.FullName -Filter "${Prefix}*" -File -Recurse -ErrorAction SilentlyContinue
@@ -97,79 +96,66 @@ function Do-Clean {
 
 function Do-Verify {
     Write-Host "Verifying file organization..." -ForegroundColor Cyan
-    $totalFiles = $FileCategories.Count
+    $totalFiles = $FileThemes.Count
 
-    # Count loose files still on Desktop root
-    $looseFiles = @()
-    foreach ($name in $FileCategories.Keys) {
-        if (Test-Path (Join-Path $Desktop $name)) {
-            $looseFiles += $name
-        }
+    # Count loose files
+    $looseCount = 0
+    foreach ($name in $FileThemes.Keys) {
+        if (Test-Path (Join-Path $Desktop $name)) { $looseCount++ }
     }
 
-    # Count files in subfolders and check topic coherence
+    # Analyze folders
     $organized = 0
-    $categoryFolders = @{}
+    $folderInfo = @{}
 
     Get-ChildItem $Desktop -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $folderName = $_.Name
         $demoFiles = @(Get-ChildItem $_.FullName -Filter "${Prefix}*" -File -Recurse -ErrorAction SilentlyContinue)
         if ($demoFiles.Count -ge 1) {
-            $categories = @()
+            $themes = @()
             foreach ($f in $demoFiles) {
                 $organized++
-                $cat = $FileCategories[$f.Name]
-                if ($cat -and $cat -notin $categories) {
-                    $categories += $cat
-                }
+                $t = $FileThemes[$f.Name]
+                if ($t -and $t -notin $themes) { $themes += $t }
             }
-            $categoryFolders[$folderName] = @{
+            $folderInfo[$folderName] = @{
                 files = $demoFiles.Count
-                categories = $categories
-                coherent = ($categories.Count -le 2)  # allow merging 2 similar categories
+                themes = $themes
+                coherent = ($themes.Count -le 2)  # allow merging 2 related themes
             }
         }
     }
 
-    $coherentFolders = ($categoryFolders.Values | Where-Object { $_.coherent }).Count
-    $totalFolders = $categoryFolders.Count
-    $pctOrganized = if ($totalFiles -gt 0) { [math]::Round($organized / $totalFiles * 100) } else { 0 }
+    $coherent = ($folderInfo.Values | Where-Object { $_.coherent }).Count
+    $totalFolders = $folderInfo.Count
+    $pct = if ($totalFiles -gt 0) { [math]::Round($organized / $totalFiles * 100) } else { 0 }
 
     Write-Host ""
     Write-Host "Results:" -ForegroundColor White
     Write-Host "  Total files: $totalFiles"
-    Write-Host "  Organized into folders: $organized ($pctOrganized%)"
-    Write-Host "  Still loose on Desktop: $($looseFiles.Count)"
-    Write-Host "  Folders used: $totalFolders"
-    Write-Host "  Content-coherent folders: $coherentFolders / $totalFolders"
+    Write-Host "  Organized: $organized ($pct%)"
+    Write-Host "  Loose: $looseCount"
+    Write-Host "  Folders: $totalFolders"
+    Write-Host "  Theme-coherent: $coherent / $totalFolders"
     Write-Host ""
 
-    foreach ($folder in $categoryFolders.Keys | Sort-Object) {
-        $info = $categoryFolders[$folder]
+    foreach ($folder in $folderInfo.Keys | Sort-Object) {
+        $info = $folderInfo[$folder]
         $status = if ($info.coherent) { "[OK]" } else { "[MIXED]" }
-        Write-Host "  $status $folder : $($info.files) files, categories: $($info.categories -join ', ')"
+        Write-Host "  $status $folder : $($info.files) files, themes: $($info.themes -join ', ')"
     }
 
-    # PASS criteria:
-    # 1. At least 60% of files moved into folders
-    # 2. At least 4 folders used (10 categories, some merging OK)
-    # 3. At least 3 folders are content-coherent
+    # PASS: 60%+ organized, 3+ folders, 3+ coherent
     $pass = ($organized -ge [math]::Floor($totalFiles * 0.6)) -and
-            ($totalFolders -ge 4) -and
-            ($coherentFolders -ge 3)
+            ($totalFolders -ge 3) -and
+            ($coherent -ge 3)
 
     Write-Host ""
     if ($pass) {
-        Write-Host "PASS - Files organized by content!" -ForegroundColor Green
+        Write-Host "PASS" -ForegroundColor Green
         exit 0
     } else {
-        if ($coherentFolders -lt 3) {
-            Write-Host "FAIL - Not enough coherent folders ($coherentFolders, need 3+)." -ForegroundColor Red
-        } elseif ($organized -lt [math]::Floor($totalFiles * 0.6)) {
-            Write-Host "FAIL - Not enough files organized ($organized / $totalFiles)." -ForegroundColor Red
-        } else {
-            Write-Host "FAIL - Not enough folders used ($totalFolders, need 4+)." -ForegroundColor Red
-        }
+        Write-Host "FAIL" -ForegroundColor Red
         exit 1
     }
 }
