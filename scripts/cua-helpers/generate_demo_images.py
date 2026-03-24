@@ -38,50 +38,101 @@ def get_font(size):
 def make_food_photo(path, variant=0):
     img = Image.new("RGB", (800, 600), "#F5E6D3")
     draw = ImageDraw.Draw(img)
+    font = get_font(18)
 
-    if variant == 0:  # Pasta
-        draw.ellipse([150, 80, 650, 520], fill="#FFFFFF", outline="#DDD", width=3)
-        for _ in range(20):
-            x, y = random.randint(220, 580), random.randint(160, 440)
-            draw.arc([x-40, y-20, x+40, y+20], random.randint(0,180), random.randint(180,360), fill="#E8C547", width=2)
-        draw.ellipse([300, 220, 500, 380], fill="#C0392B")
-        for _ in range(5):
-            x, y = random.randint(280, 520), random.randint(200, 400)
-            draw.ellipse([x, y, x+25, y+15], fill="#27AE60")
-        draw.rectangle([660, 200, 670, 500], fill="#C0C0C0")
-    elif variant == 1:  # Sushi
-        draw.rectangle([100, 150, 700, 450], fill="#2C3E50")
-        for i in range(6):
-            x = 150 + i * 90
-            c = ["#FF6B6B","#FFA07A","#FF4500","#E74C3C","#FF6347"][i % 5]
-            draw.ellipse([x, 220, x+70, 280], fill=c)
-            draw.ellipse([x+5, 225, x+65, 275], fill="#FFFFFF")
-            draw.rectangle([x+15, 240, x+55, 260], fill=c)
-        draw.line([600,130,720,480], fill="#8B4513", width=3)
-        draw.line([610,130,730,480], fill="#8B4513", width=3)
-    elif variant == 2:  # Cake
-        draw.rectangle([200, 200, 600, 500], fill="#F4A460")
-        draw.rectangle([200, 200, 600, 260], fill="#FFFFFF")
-        draw.rectangle([200, 300, 600, 310], fill="#FFFFFF")
-        for x in range(230, 580, 60):
-            draw.ellipse([x, 180, x+30, 210], fill="#FF0000")
-            draw.polygon([(x+10,175),(x+15,165),(x+20,175)], fill="#228B22")
-        for x in [300, 400, 500]:
-            draw.rectangle([x, 150, x+8, 200], fill="#FFD700")
-            draw.ellipse([x-3, 140, x+11, 155], fill="#FF6600")
-    else:  # Salad bowl
-        draw.ellipse([100, 100, 700, 550], fill="#8B4513", outline="#654321", width=4)
-        draw.ellipse([120, 120, 680, 530], fill="#2E8B57")
-        # Vegetables
-        for _ in range(8):
-            x, y = random.randint(180, 620), random.randint(180, 470)
-            draw.ellipse([x, y, x+40, y+25], fill="#FF6347")  # tomato
+    if variant == 0:  # Pasta on a plate with table setting
+        # Wooden table texture
+        for y in range(0, 600, 3):
+            draw.line([(0, y), (800, y)], fill=(int(210+random.randint(-5,5)), int(180+random.randint(-5,5)), int(140+random.randint(-5,5))))
+        # White plate
+        draw.ellipse([120, 60, 680, 540], fill="#FFFFFF", outline="#E0E0E0", width=4)
+        draw.ellipse([160, 90, 640, 510], fill="#FAFAFA", outline="#EEE", width=1)
+        # Pasta noodles
+        for _ in range(30):
+            x, y = random.randint(220, 580), random.randint(150, 450)
+            draw.arc([x-50, y-25, x+50, y+25], random.randint(0,180), random.randint(180,360), fill="#E8C547", width=3)
+        # Tomato sauce in center
+        draw.ellipse([280, 200, 520, 400], fill="#C0392B")
+        # Basil leaves
         for _ in range(6):
-            x, y = random.randint(180, 620), random.randint(180, 470)
-            draw.ellipse([x, y, x+20, y+20], fill="#FFD700")  # corn
-        for _ in range(5):
-            x, y = random.randint(180, 620), random.randint(180, 470)
-            draw.rectangle([x, y, x+35, y+8], fill="#F0E68C")  # cheese
+            x, y = random.randint(300, 500), random.randint(220, 380)
+            draw.ellipse([x, y, x+30, y+18], fill="#27AE60")
+        # Fork and knife
+        draw.rectangle([50, 200, 62, 480], fill="#C0C0C0")
+        draw.rectangle([730, 200, 742, 480], fill="#C0C0C0")
+        # Parmesan sprinkle
+        for _ in range(15):
+            x, y = random.randint(250, 550), random.randint(180, 420)
+            draw.ellipse([x, y, x+8, y+5], fill="#FFF8DC")
+
+    elif variant == 1:  # Burger
+        # Restaurant table
+        draw.rectangle([0, 0, 800, 600], fill="#8B4513")
+        # Plate
+        draw.ellipse([150, 100, 650, 520], fill="#FFFFFF", outline="#DDD", width=3)
+        # Bottom bun
+        draw.ellipse([220, 320, 580, 430], fill="#D2691E")
+        # Lettuce
+        for x in range(230, 570, 15):
+            draw.arc([x, 290, x+30, 320], 180, 0, fill="#228B22", width=4)
+        # Patty
+        draw.ellipse([230, 250, 570, 330], fill="#4A2F1A")
+        # Cheese (melting over edge)
+        draw.polygon([(240, 260), (560, 260), (570, 280), (550, 290), (530, 275),
+                      (480, 295), (450, 280), (400, 295), (350, 275), (300, 290), (260, 280), (230, 275)],
+                     fill="#FFD700")
+        # Tomato slices
+        draw.ellipse([280, 230, 380, 270], fill="#FF4500", outline="#CC3700", width=2)
+        draw.ellipse([400, 230, 500, 270], fill="#FF4500", outline="#CC3700", width=2)
+        # Top bun
+        draw.ellipse([220, 150, 580, 270], fill="#D2691E")
+        draw.ellipse([240, 155, 560, 200], fill="#E8A84C")
+        # Sesame seeds
+        for _ in range(12):
+            x, y = random.randint(270, 530), random.randint(160, 210)
+            draw.ellipse([x, y, x+10, y+6], fill="#FFF8DC")
+
+    elif variant == 2:  # Cake
+        # Kitchen counter
+        draw.rectangle([0, 400, 800, 600], fill="#D3D3D3")
+        draw.rectangle([0, 0, 800, 400], fill="#FFF5EE")
+        # Cake stand
+        draw.rectangle([300, 400, 500, 420], fill="#808080")
+        draw.ellipse([250, 380, 550, 420], fill="#C0C0C0")
+        # Cake body
+        draw.rectangle([250, 200, 550, 400], fill="#FFB6C1")  # pink
+        draw.rectangle([250, 200, 550, 230], fill="#FFFFFF")  # top frosting
+        draw.rectangle([250, 290, 550, 310], fill="#FFFFFF")  # middle frosting
+        # Strawberries on top
+        for x in range(270, 540, 45):
+            draw.ellipse([x, 180, x+35, 215], fill="#FF0000")
+            draw.polygon([(x+12,175),(x+17,160),(x+22,175)], fill="#228B22")
+        # Candles
+        for x in [320, 400, 480]:
+            draw.rectangle([x, 130, x+8, 200], fill=random.choice(["#FF69B4","#87CEEB","#FFD700"]))
+            draw.ellipse([x-2, 120, x+10, 135], fill="#FF6600")
+        # "Happy Birthday" text
+        draw.text((280, 330), "Happy Birthday!", fill="#FFFFFF", font=font)
+
+    else:  # Pizza
+        # Pizza box
+        draw.rectangle([80, 50, 720, 550], fill="#F5DEB3", outline="#D2B48C", width=3)
+        # Pizza circle
+        draw.ellipse([120, 80, 680, 520], fill="#E8C547")
+        # Tomato sauce base
+        draw.ellipse([150, 100, 650, 500], fill="#C0392B")
+        # Cheese
+        draw.ellipse([160, 110, 640, 490], fill="#FFD700")
+        # Pepperoni
+        pepperoni_positions = [(250,200),(400,180),(520,250),(200,350),(350,320),(500,380),(300,450),(450,430)]
+        for px, py in pepperoni_positions:
+            draw.ellipse([px, py, px+50, py+50], fill="#8B0000", outline="#660000", width=2)
+        # Slice lines
+        cx, cy = 400, 300
+        for angle in range(0, 360, 45):
+            ex = cx + int(260 * math.cos(math.radians(angle)))
+            ey = cy + int(210 * math.sin(math.radians(angle)))
+            draw.line([(cx, cy), (ex, ey)], fill="#F5DEB3", width=2)
     img.save(path, quality=90)
 
 
