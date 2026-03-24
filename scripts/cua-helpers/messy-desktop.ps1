@@ -104,13 +104,15 @@ function Do-Verify {
         if (Test-Path (Join-Path $Desktop $name)) { $looseCount++ }
     }
 
-    # Analyze folders
+    # Analyze folders — check ALL directories recursively (model may nest: Desktop/projects/JapanTrip/...)
     $organized = 0
     $folderInfo = @{}
 
-    Get-ChildItem $Desktop -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        $folderName = $_.Name
-        $demoFiles = @(Get-ChildItem $_.FullName -Filter "${Prefix}*" -File -Recurse -ErrorAction SilentlyContinue)
+    # Get all directories at any depth that contain demo files
+    $allDirs = Get-ChildItem $Desktop -Directory -Recurse -ErrorAction SilentlyContinue
+    foreach ($dir in $allDirs) {
+        # Only count leaf directories (those with demo files directly inside, not subdirs)
+        $demoFiles = @(Get-ChildItem $dir.FullName -Filter "${Prefix}*" -File -ErrorAction SilentlyContinue)
         if ($demoFiles.Count -ge 1) {
             $themes = @()
             foreach ($f in $demoFiles) {
@@ -118,7 +120,7 @@ function Do-Verify {
                 $t = $FileThemes[$f.Name]
                 if ($t -and $t -notin $themes) { $themes += $t }
             }
-            $folderInfo[$folderName] = @{
+            $folderInfo[$dir.Name] = @{
                 files = $demoFiles.Count
                 themes = $themes
                 coherent = ($themes.Count -le 2)  # allow merging 2 related themes

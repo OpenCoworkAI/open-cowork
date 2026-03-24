@@ -514,15 +514,25 @@ CRITICAL rules:
 - For Settings: ALWAYS use the specific page name ("settings-display", "settings-network", "settings-themes"). Do NOT use generic "settings".
 - If a DIFFERENT window appears after your action, use launch_app again to refocus.
   Do NOT use Alt+Tab or click the taskbar — they are unreliable.
-- For organizing files: You MUST look at file contents to classify them — DO NOT organize by file extension!
-  IMPORTANT workflow:
-  1) List ALL files: Get-ChildItem "$HOME\\Desktop" -Filter "demo_*" -Name  (this gets .jpg, .png, .txt, .py, .js)
-  2) For IMAGES (.jpg/.png): use view_image to see what each image shows
-  3) For TEXT files (.txt/.py/.js): use run_command to read content: Get-Content "$HOME\\Desktop\\filename.txt" -Head 10
-  4) Based on what you saw/read, decide which topic folder each file belongs to
-  5) Create all folders at once, then move EACH file to its correct folder
-  Group files by their CONTENT TOPIC (food, nature, animals, meetings, recipes, code, etc), NOT by file extension.
-  A .txt recipe file goes in "Recipes", NOT in "Documents". A .py code file goes in "Code", NOT in "Scripts".
+- CRITICAL: When asked to "organize files", you MUST physically create folders and MOVE files using mkdir + Move-Item.
+  Do NOT just analyze/describe/summarize the files. The task is NOT done until files are physically moved into folders.
+- For organizing files: You MUST read file contents to classify them — DO NOT guess from filenames or extensions!
+  EFFICIENT workflow (important — follow this order to avoid wasting steps):
+  PHASE 1 - READ EVERYTHING FIRST (do NOT create folders or move files yet):
+    1) List ALL files: Get-ChildItem "$HOME\\Desktop" -Filter "demo_*" -Name
+    2) For TEXT files (.txt/.py/.js/.csv/.json/.sql/.md/.html): read in BATCHES with run_command:
+       Get-Content "$HOME\\Desktop\\demo_file1.txt" -Head 3; Get-Content "$HOME\\Desktop\\demo_file2.py" -Head 3
+       Read 5-8 files per command using semicolons. You only need the first 3-5 lines to classify.
+    3) For IMAGES (.jpg/.png): use view_image to see what each shows.
+    4) Keep a mental list: file → project/topic mapping.
+  PHASE 2 - CREATE FOLDERS AND MOVE FILES (only after reading ALL files):
+    5) Create all folders in ONE command: mkdir "$HOME\\Desktop\\Folder1"; mkdir "$HOME\\Desktop\\Folder2"; ...
+    6) Move files in BATCHES per folder:
+       Move-Item "$HOME\\Desktop\\demo_a.txt","$HOME\\Desktop\\demo_b.py" "$HOME\\Desktop\\Folder1\\"
+       Use comma-separated paths to move multiple files at once!
+  The task is DONE only when all demo_* files are inside project folders, not loose on the Desktop.
+  Group files by their CONTENT TOPIC or PROJECT, NOT by file extension.
+  Example: a .csv budget, .txt itinerary, .jpg photo, and .md checklist for the same trip → all go in "Travel" folder.
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
@@ -1460,7 +1470,7 @@ const DEMO_TASKS = [
     id: 'demo-organize-desktop',
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
-    instruction: 'My Desktop is a total mess — 35 files dumped together from different projects. There are photos, code files, spreadsheets, notes, JSON configs, and more. The filenames are useless (IMG_xxxx, notes_0318.txt, config.json, etc). Please look at each file\'s content and organize them into project folders. I think there are about 5 different projects mixed together.',
+    instruction: 'My Desktop is a total mess — 35 files dumped together from different projects. There are photos, code files, spreadsheets, notes, JSON configs, and more. The filenames are useless (IMG_xxxx, notes_0318.txt, config.json, etc). Please look at each file\'s content, create project folders on the Desktop, and MOVE the files into the correct folders. I think there are about 5 different projects mixed together. When done, the Desktop should have project folders with files inside — no loose files remaining.',
     maxSteps: 100,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
