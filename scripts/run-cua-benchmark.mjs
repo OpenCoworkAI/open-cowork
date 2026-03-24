@@ -1683,6 +1683,9 @@ async function runBenchmark(tasks, runs = 1, variant = 'default') {
         for (const app of appsToKill) {
           await execFileAsync('taskkill', ['/IM', `${app}.exe`, '/F']).catch(() => {});
         }
+        // Edge multi-process: kill twice with delay to catch child processes
+        await sleep(500);
+        await execFileAsync('taskkill', ['/IM', 'msedge.exe', '/F']).catch(() => {});
         // Clear Windows 11 Notepad tab session to prevent history restoration
         const notepadState = path.join(
           process.env.LOCALAPPDATA || '',
