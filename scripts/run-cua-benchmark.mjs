@@ -240,6 +240,22 @@ async function executeAction(action) {
     if (inner.summary || inner.done) {
       return { done: true, text: inner.summary || inner.done || 'Task completed.' };
     }
+    // Key-as-action format: {"action": {"open_file": "path"}} or {"action": {"run_command": "cmd"}}
+    const knownActions = ['screenshot','click','double_click','right_click','type','key_press',
+      'scroll','launch_app','focus_window','open_file','view_image','run_command','done'];
+    for (const k of knownActions) {
+      if (inner[k] !== undefined) {
+        const val = inner[k];
+        if (k === 'run_command') return executeAction({ ...action, action: k, command: val });
+        if (k === 'open_file') return executeAction({ ...action, action: k, path: val });
+        if (k === 'view_image') return executeAction({ ...action, action: k, path: val });
+        if (k === 'launch_app') return executeAction({ ...action, action: k, app: val });
+        if (k === 'focus_window') return executeAction({ ...action, action: k, process: val });
+        if (k === 'type') return executeAction({ ...action, action: k, text: val });
+        if (k === 'done') return { done: true, text: typeof val === 'string' ? val : 'Task completed.' };
+        return executeAction({ ...action, action: k });
+      }
+    }
   }
 
   // Normalize alternative formats the model sometimes uses:
@@ -392,6 +408,14 @@ public class WU {
         const { x: sx, y: sy } = mapCoords(cx, cy);
         await runPy('click', [String(sx), String(sy)]);
         await sleep(300);
+        // For PDFs: press F11 for full-screen mode so more content is visible
+        if (filePath.toLowerCase().endsWith('.pdf')) {
+          await runPy('key_press', ['f11']);
+          await sleep(800);
+          // Click center again after full-screen to ensure PDF content has focus
+          await runPy('click', [String(sx), String(sy)]);
+          await sleep(300);
+        }
         // Press Escape to dismiss any popups (Document Recovery, Copilot, etc.)
         await runPy('key_press', ['escape']);
         await sleep(200);
@@ -537,18 +561,27 @@ CRITICAL rules:
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
 - For Excel/spreadsheet tasks: NEVER type data cell-by-cell in the GUI — it takes too many steps.
-  Use run_command with Python openpyxl to create xlsx files WITH charts in a single command:
-  python -c "
-  import openpyxl; from openpyxl.chart import BarChart, Reference
-  wb=openpyxl.Workbook(); ws=wb.active
-  for r in [['Name','Score'],['Alice',90],['Bob',85]]: ws.append(r)
-  chart=BarChart(); chart.title='Scores'
-  vals=Reference(ws,min_col=2,min_row=1,max_row=3)
-  cats=Reference(ws,min_col=1,min_row=2,max_row=3)
-  chart.add_data(vals,titles_from_data=True); chart.set_categories(cats)
-  ws.add_chart(chart,'D2')
-  wb.save('C:/Users/USERNAME/Desktop/result.xlsx')
-  "
+  Use TWO run_command steps:
+  Step 1 — Write a Python script file:
+  run_command: Set-Content -Path "$HOME/Desktop/make_chart.py" -Value @'
+import openpyxl
+from openpyxl.chart import BarChart, Reference
+wb = openpyxl.Workbook()
+ws = wb.active
+for r in [["Name","Score"],["Alice",90],["Bob",85]]:
+    ws.append(r)
+chart = BarChart()
+chart.title = "Scores"
+vals = Reference(ws, min_col=2, min_row=1, max_row=3)
+cats = Reference(ws, min_col=1, min_row=2, max_row=3)
+chart.add_data(vals, titles_from_data=True)
+chart.set_categories(cats)
+ws.add_chart(chart, "D2")
+wb.save("C:/Users/USERNAME/Desktop/result.xlsx")
+'@
+  Step 2 — Run the script:
+  run_command: python "$HOME/Desktop/make_chart.py"
+  IMPORTANT: Always use TWO steps (write script, then run). Do NOT put long Python code inline.
   IMPORTANT: Use forward slashes (/) in Python file paths, NOT backslashes.
   After creating the xlsx, use open_file to open it in Excel so you can see and verify the chart.
   Then report done with a summary of what the chart shows.
@@ -559,6 +592,8 @@ CRITICAL rules:
   3. Use Page Down key to move one full page at a time
   4. Click the page number field in the toolbar and type a number to jump to that page
   IMPORTANT: Always click the PDF content BEFORE using any keyboard shortcut (Ctrl+F, Page Down, etc.)
+  CRITICAL: Once you can READ data from a table (even partial data), IMMEDIATELY proceed to create the chart.
+  Do NOT keep scrolling to see every row. Use what you can see — partial data is fine for a chart.
   IMPORTANT: When using Ctrl+F, ALWAYS press Ctrl+A first to select all text in the search box, THEN type your search term.
   This prevents old search text from concatenating with your new search.
 - For Notepad Find and Replace (Ctrl+H): type in Find field, press Tab, type in Replace field, then press Alt+A to Replace All.
@@ -579,7 +614,7 @@ async function chatRaw(messages) {
     model: MODEL,
     messages,
     stream: false,
-    options: { temperature: 0, num_ctx: 8192 },
+    options: { temperature: 0, num_ctx: 8192, num_predict: 1024 },
     keep_alive: '30m',
   };
 
@@ -639,12 +674,33 @@ class LoopDetector {
   record(action) {
     const key = JSON.stringify(action);
     this.history.push(key);
-    if (this.history.length > 10) this.history = this.history.slice(-10);
+    if (this.history.length > 20) this.history = this.history.slice(-20);
+
+    // Check 1: Same action 3+ times consecutively
     let count = 0;
     for (let i = this.history.length - 1; i >= 0; i--) {
       if (this.history[i] === key) count++; else break;
     }
-    return count >= 3;
+    if (count >= 3) return true;
+
+    // Check 2: Alternating pattern — same action type appears 4+ times in last 8 actions
+    if (this.history.length >= 8) {
+      const recent = this.history.slice(-8);
+      const typeKey = typeof action.action === 'string' ? action.action.toLowerCase() : '';
+      if (typeKey) {
+        let typeCount = 0;
+        for (const h of recent) {
+          try {
+            const parsed = JSON.parse(h);
+            const pType = typeof parsed.action === 'string' ? parsed.action.toLowerCase() : '';
+            if (pType === typeKey) typeCount++;
+          } catch {}
+        }
+        if (typeCount >= 4) return true;
+      }
+    }
+
+    return false;
   }
 }
 
@@ -852,7 +908,7 @@ async function runCuaTask(instruction, maxSteps = 15, validate = null) {
         // Recovery action menu (TASK 1b)
         messages.push({
           role: 'user',
-          content: `You are repeating the same action with no effect. Try one of these recovery strategies:\n\n1. {"thought": "Let me take a fresh screenshot to re-examine", "action": "screenshot"}\n2. {"thought": "Let me press Escape to dismiss any dialog", "action": "key_press", "key": "escape"}\n3. {"thought": "Let me try a keyboard shortcut instead", "action": "key_press", "key": "...", "modifiers": ["ctrl"]}\n4. {"thought": "I am stuck and cannot complete the task", "action": "done", "summary": "Failed: [explain what went wrong]"}\n\nDo NOT repeat the same action again.`,
+          content: `You are repeating the same actions with no progress. STOP and change strategy.\n\nIf you already read data from a table/document, PROCEED to the next step NOW:\n- Use run_command with Python to create the output (xlsx, chart, etc.)\n- Use the data you already saw — do NOT try to read more.\n\nRecovery options:\n1. {"thought": "I have the data, let me create the chart now", "action": "run_command", "command": "python -c \\"...\\"}\n2. {"thought": "Let me take a fresh screenshot", "action": "screenshot"}\n3. {"thought": "I cannot complete this", "action": "done", "summary": "Failed: ..."}\n\nDo NOT scroll or search again.`,
         });
         continue;
       }
