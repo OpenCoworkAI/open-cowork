@@ -10,7 +10,7 @@ import { isPathWithinRoot } from './path-containment';
 
 /**
  * ToolExecutor - Secure tool execution framework
- * 
+ *
  * All file operations go through PathResolver for security validation.
  */
 export class ToolExecutor {
@@ -61,15 +61,21 @@ export class ToolExecutor {
    */
   private assertInsideMount(targetPath: string, mounts: MountedPath[]): string {
     const normalizedTarget = path.normalize(targetPath);
+    const isWindows = process.platform === 'win32';
 
-    // Symlink resolve if exists
-    const realPath = fs.existsSync(normalizedTarget)
-      ? fs.realpathSync(normalizedTarget)
-      : normalizedTarget;
+    // Symlink resolve if exists; fall back to normalizedTarget on error
+    let realPath: string;
+    try {
+      realPath = fs.existsSync(normalizedTarget)
+        ? fs.realpathSync(normalizedTarget)
+        : normalizedTarget;
+    } catch {
+      realPath = normalizedTarget;
+    }
 
     const allowed = mounts.some((m) => {
       const mountRoot = path.normalize(m.real);
-      return isPathWithinRoot(realPath, mountRoot);
+      return isPathWithinRoot(realPath, mountRoot, isWindows);
     });
 
     if (!allowed) {
@@ -92,7 +98,9 @@ export class ToolExecutor {
 
       return fs.readFileSync(pathToRead, 'utf-8');
     } catch (error) {
-      throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -108,10 +116,12 @@ export class ToolExecutor {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      
+
       fs.writeFileSync(pathToWrite, content, 'utf-8');
     } catch (error) {
-      throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -131,15 +141,17 @@ export class ToolExecutor {
 
       for (const entry of entries) {
         const prefix = entry.isDirectory() ? '[DIR]' : '[FILE]';
-        const size = entry.isFile() 
+        const size = entry.isFile()
           ? ` (${this.formatSize(fs.statSync(path.join(pathToList, entry.name)).size)})`
           : '';
         result.push(`${prefix} ${entry.name}${size}`);
       }
-      
+
       return result.length > 0 ? result.join('\n') : 'Directory is empty';
     } catch (error) {
-      throw new Error(`Failed to list directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to list directory: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -170,7 +182,10 @@ export class ToolExecutor {
         signal: AbortSignal.timeout(15000),
       });
     } catch (error) {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw new Error('请求超时，请检查网络连接后重试');
       }
       throw error;
@@ -183,9 +198,10 @@ export class ToolExecutor {
     const contentType = response.headers.get('content-type') || 'unknown';
     const body = await response.text();
     const limit = 20000;
-    const truncated = body.length > limit
-      ? `${body.slice(0, limit)}\n\n[Truncated ${body.length - limit} chars]`
-      : body;
+    const truncated =
+      body.length > limit
+        ? `${body.slice(0, limit)}\n\n[Truncated ${body.length - limit} chars]`
+        : body;
 
     return `URL: ${parsed.toString()}\nStatus: ${response.status}\nContent-Type: ${contentType}\n\n${truncated}`;
   }
@@ -213,7 +229,10 @@ export class ToolExecutor {
         signal: AbortSignal.timeout(10000),
       });
     } catch (error) {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw new Error('请求超时，请检查网络连接后重试');
       }
       throw error;
@@ -223,7 +242,7 @@ export class ToolExecutor {
       throw new Error(`Search request failed with status ${response.status}`);
     }
 
-    const data = await response.json() as Record<string, unknown>;
+    const data = (await response.json()) as Record<string, unknown>;
     const heading = typeof data.Heading === 'string' ? data.Heading : '';
     const abstractText = typeof data.AbstractText === 'string' ? data.AbstractText : '';
     const relatedTopics = Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [];
@@ -295,8 +314,12 @@ export class ToolExecutor {
     }
 
     // Block path traversal attempts
-    // eslint-disable-next-line no-useless-escape
-    if (/(?:^|[\s;|&])\.\.(?:[\s;|&\/\\]|$)/.test(command) || command.includes('../') || command.includes('..\\')) {
+    if (
+      // eslint-disable-next-line no-useless-escape
+      /(?:^|[\s;|&])\.\.(?:[\s;|&\/\\]|$)/.test(command) ||
+      command.includes('../') ||
+      command.includes('..\\')
+    ) {
       throw new Error('Command blocked: path traversal (..) is not allowed');
     }
 
@@ -382,7 +405,14 @@ export class ToolExecutor {
         ? (() => {
             const scriptPath = path.join(os.tmpdir(), `oc-exec-${Date.now()}.ps1`);
             fs.writeFileSync(scriptPath, `chcp 65001 > $null; ${command}`, 'utf-8');
-            return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+            return [
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              scriptPath,
+            ];
           })()
         : ['-c', command];
 
@@ -408,7 +438,13 @@ export class ToolExecutor {
       });
 
       proc.on('close', (code) => {
-        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) { try { fs.unlinkSync(args[args.length - 1]); } catch { /* cleanup best-effort */ } }
+        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) {
+          try {
+            fs.unlinkSync(args[args.length - 1]);
+          } catch {
+            /* cleanup best-effort */
+          }
+        }
         if (code === 0) {
           resolve(stdout || 'Command completed successfully');
         } else {
@@ -444,7 +480,9 @@ export class ToolExecutor {
         try {
           regex = new RegExp(pattern, 'gi');
         } catch (regexError) {
-          throw new Error(`Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`);
+          throw new Error(
+            `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`
+          );
         }
         await this.searchDirectoryContents(pathToSearch, regex, results);
         return results.length > 0 ? results.slice(0, 50).join('\n') : 'No matches found';
@@ -473,13 +511,13 @@ export class ToolExecutor {
   ): Promise<void> {
     try {
       const resolvedPath = this.resolveWorkspacePath(sessionId, filePath);
-      
+
       if (!fs.existsSync(resolvedPath)) {
         throw new Error(`File not found: ${filePath}`);
       }
 
       const content = fs.readFileSync(resolvedPath, 'utf-8');
-      
+
       if (!content.includes(oldString)) {
         throw new Error(`String not found in file: "${oldString.slice(0, 50)}..."`);
       }
@@ -494,11 +532,7 @@ export class ToolExecutor {
   /**
    * Glob - find files by pattern
    */
-  async glob(
-    sessionId: string,
-    pattern: string,
-    searchPath: string
-  ): Promise<string> {
+  async glob(sessionId: string, pattern: string, searchPath: string): Promise<string> {
     try {
       const pathToSearch = this.resolveWorkspacePath(sessionId, searchPath || '.');
 
@@ -511,7 +545,7 @@ export class ToolExecutor {
         nodir: false,
         ignore: ['**/node_modules/**', '**/.git/**'],
       });
-      
+
       return files.length > 0 ? files.slice(0, 100).join('\n') : 'No files found';
     } catch (error) {
       throw new Error(`Glob failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -521,11 +555,7 @@ export class ToolExecutor {
   /**
    * Grep - search file contents with regex
    */
-  async grep(
-    sessionId: string,
-    pattern: string,
-    searchPath: string
-  ): Promise<string> {
+  async grep(sessionId: string, pattern: string, searchPath: string): Promise<string> {
     try {
       const pathToSearch = this.resolveWorkspacePath(sessionId, searchPath || '.');
 
@@ -541,10 +571,12 @@ export class ToolExecutor {
       try {
         regex = new RegExp(pattern, 'gi');
       } catch (regexError) {
-        throw new Error(`Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`);
+        throw new Error(
+          `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`
+        );
       }
       await this.searchDirectoryContents(pathToSearch, regex, results);
-      
+
       return results.length > 0 ? results.slice(0, 50).join('\n') : 'No matches found';
     } catch (error) {
       throw new Error(`Grep failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -584,14 +616,31 @@ export class ToolExecutor {
         await this.searchDirectoryContents(fullPath, regex, results, maxResults);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
-        const textExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.txt', '.css', '.html', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h'];
-        
+        const textExtensions = [
+          '.ts',
+          '.tsx',
+          '.js',
+          '.jsx',
+          '.json',
+          '.md',
+          '.txt',
+          '.css',
+          '.html',
+          '.py',
+          '.rs',
+          '.go',
+          '.java',
+          '.c',
+          '.cpp',
+          '.h',
+        ];
+
         if (!textExtensions.includes(ext) && ext !== '') continue;
 
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
           const lines = content.split(/\r?\n/);
-          
+
           lines.forEach((line, index) => {
             if (results.length < maxResults && regex.test(line)) {
               results.push(`${fullPath}:${index + 1}: ${line.trim().slice(0, 100)}`);
@@ -637,11 +686,7 @@ export class ToolExecutor {
       case 'glob':
         return this.globSearch(input.pattern as string, context);
       case 'grep':
-        return this.grepLegacy(
-          input.pattern as string,
-          input.path as string | undefined,
-          context
-        );
+        return this.grepLegacy(input.pattern as string, input.path as string | undefined, context);
       case 'bash':
         return this.bash(input.command as string, context);
       default:
@@ -652,10 +697,7 @@ export class ToolExecutor {
   /**
    * Read file contents (legacy)
    */
-  private async read(
-    virtualPath: string,
-    context: ExecutionContext
-  ): Promise<ToolResult> {
+  private async read(virtualPath: string, context: ExecutionContext): Promise<ToolResult> {
     try {
       const realPath = this.pathResolver.resolve(context.sessionId, virtualPath);
       if (!realPath) {
@@ -717,7 +759,7 @@ export class ToolExecutor {
       }
 
       const content = fs.readFileSync(realPath, 'utf-8');
-      
+
       if (!content.includes(oldString)) {
         return { success: false, error: 'Old string not found in file' };
       }
@@ -737,10 +779,7 @@ export class ToolExecutor {
   /**
    * Search for files matching a pattern (legacy)
    */
-  private async globSearch(
-    pattern: string,
-    context: ExecutionContext
-  ): Promise<ToolResult> {
+  private async globSearch(pattern: string, context: ExecutionContext): Promise<ToolResult> {
     try {
       const mounts = this.pathResolver.getMounts(context.sessionId);
       if (mounts.length === 0) {
@@ -795,7 +834,10 @@ export class ToolExecutor {
       try {
         regex = new RegExp(pattern, 'gm');
       } catch (regexError) {
-        return { success: false, error: `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}` };
+        return {
+          success: false,
+          error: `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`,
+        };
       }
       const results: string[] = [];
 
@@ -807,7 +849,7 @@ export class ToolExecutor {
 
         const content = fs.readFileSync(realPath, 'utf-8');
         const lines = content.split(/\r?\n/);
-        
+
         lines.forEach((line, index) => {
           if (regex.test(line)) {
             results.push(`${virtualPath}:${index + 1}:${line}`);
@@ -835,17 +877,17 @@ export class ToolExecutor {
   /**
    * Execute a bash command (legacy)
    */
-  private async bash(
-    command: string,
-    context: ExecutionContext
-  ): Promise<ToolResult> {
+  private async bash(command: string, context: ExecutionContext): Promise<ToolResult> {
     const cwd = context.cwd || process.cwd();
 
     // Use the same sandbox validation as executeCommand
     try {
       this.validateCommandSandbox(context.sessionId, command, cwd);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Sandbox validation failed' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Sandbox validation failed',
+      };
     }
 
     return new Promise((resolve) => {
@@ -855,7 +897,14 @@ export class ToolExecutor {
         ? (() => {
             const scriptPath = path.join(os.tmpdir(), `oc-exec-${Date.now()}.ps1`);
             fs.writeFileSync(scriptPath, `chcp 65001 > $null; ${command}`, 'utf-8');
-            return ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+            return [
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              scriptPath,
+            ];
           })()
         : ['-c', command];
 
@@ -881,7 +930,13 @@ export class ToolExecutor {
       });
 
       proc.on('close', (code) => {
-        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) { try { fs.unlinkSync(args[args.length - 1]); } catch { /* cleanup best-effort */ } }
+        if (isWindows && args[args.length - 1]?.endsWith('.ps1')) {
+          try {
+            fs.unlinkSync(args[args.length - 1]);
+          } catch {
+            /* cleanup best-effort */
+          }
+        }
         if (code === 0) {
           resolve({ success: true, output: stdout || 'Command completed' });
         } else {

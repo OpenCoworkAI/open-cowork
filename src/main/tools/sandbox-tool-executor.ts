@@ -1,6 +1,6 @@
 /**
  * Sandbox Tool Executor - Secure tool execution using SandboxAdapter
- * 
+ *
  * This executor uses the SandboxAdapter to run commands and file operations
  * in an isolated environment (WSL on Windows, native on Mac/Linux).
  */
@@ -100,7 +100,9 @@ export class SandboxToolExecutor {
       const pathToRead = this.resolveWorkspacePath(sessionId, filePath);
       return await this.sandboxAdapter.readFile(pathToRead);
     } catch (error) {
-      throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -110,17 +112,19 @@ export class SandboxToolExecutor {
   async writeFile(sessionId: string, filePath: string, content: string): Promise<void> {
     try {
       const pathToWrite = this.resolveWorkspacePath(sessionId, filePath);
-      
+
       // Ensure directory exists
       const dir = path.dirname(pathToWrite);
       const dirExists = await this.sandboxAdapter.fileExists(dir);
       if (!dirExists) {
         await this.sandboxAdapter.createDirectory(dir);
       }
-      
+
       await this.sandboxAdapter.writeFile(pathToWrite, content);
     } catch (error) {
-      throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -135,15 +139,16 @@ export class SandboxToolExecutor {
       const result: string[] = [];
       for (const entry of entries) {
         const prefix = entry.isDirectory ? '[DIR]' : '[FILE]';
-        const size = !entry.isDirectory && entry.size !== undefined
-          ? ` (${this.formatSize(entry.size)})`
-          : '';
+        const size =
+          !entry.isDirectory && entry.size !== undefined ? ` (${this.formatSize(entry.size)})` : '';
         result.push(`${prefix} ${entry.name}${size}`);
       }
-      
+
       return result.length > 0 ? result.join('\n') : 'Directory is empty';
     } catch (error) {
-      throw new Error(`Failed to list directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to list directory: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -156,7 +161,7 @@ export class SandboxToolExecutor {
 
     // Execute in sandbox
     const result = await this.sandboxAdapter.executeCommand(command, resolvedCwd);
-    
+
     if (result.success) {
       return result.stdout || 'Command completed successfully';
     } else {
@@ -175,19 +180,19 @@ export class SandboxToolExecutor {
   ): Promise<void> {
     try {
       const resolvedPath = this.resolveWorkspacePath(sessionId, filePath);
-      
+
       const exists = await this.sandboxAdapter.fileExists(resolvedPath);
       if (!exists) {
         throw new Error(`File not found: ${filePath}`);
       }
 
       const content = await this.sandboxAdapter.readFile(resolvedPath);
-      
+
       if (!content.includes(oldString)) {
         throw new Error(`String not found in file: "${oldString.slice(0, 50)}..."`);
       }
 
-      const newContent = content.replace(oldString, newString);
+      const newContent = content.split(oldString).join(newString);
       await this.sandboxAdapter.writeFile(resolvedPath, newContent);
     } catch (error) {
       throw new Error(`Edit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -209,7 +214,15 @@ export class SandboxToolExecutor {
       if (contentSearch) {
         // Content search - read files and search
         const results: string[] = [];
-        const regex = new RegExp(pattern, 'gi');
+        if (pattern.length > 1000) return 'Pattern too long';
+        let regex: RegExp;
+        try {
+          regex = new RegExp(pattern, 'gi');
+        } catch (regexError) {
+          throw new Error(
+            `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`
+          );
+        }
         await this.searchDirectoryContents(pathToSearch, regex, results);
         return results.length > 0 ? results.slice(0, 50).join('\n') : 'No matches found';
       } else {
@@ -231,11 +244,7 @@ export class SandboxToolExecutor {
   /**
    * Glob - find files by pattern
    */
-  async glob(
-    sessionId: string,
-    pattern: string,
-    searchPath: string
-  ): Promise<string> {
+  async glob(sessionId: string, pattern: string, searchPath: string): Promise<string> {
     try {
       const pathToSearch = this.resolveWorkspacePath(sessionId, searchPath || '.');
 
@@ -244,7 +253,7 @@ export class SandboxToolExecutor {
         nodir: false,
         ignore: ['**/node_modules/**', '**/.git/**'],
       });
-      
+
       return files.length > 0 ? files.slice(0, 100).join('\n') : 'No files found';
     } catch (error) {
       throw new Error(`Glob failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -254,18 +263,22 @@ export class SandboxToolExecutor {
   /**
    * Grep - search file contents with regex
    */
-  async grep(
-    sessionId: string,
-    pattern: string,
-    searchPath: string
-  ): Promise<string> {
+  async grep(sessionId: string, pattern: string, searchPath: string): Promise<string> {
     try {
       const pathToSearch = this.resolveWorkspacePath(sessionId, searchPath || '.');
 
       const results: string[] = [];
-      const regex = new RegExp(pattern, 'gi');
+      if (pattern.length > 1000) return 'Pattern too long';
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern, 'gi');
+      } catch (regexError) {
+        throw new Error(
+          `Invalid regex pattern: ${regexError instanceof Error ? regexError.message : 'unknown error'}`
+        );
+      }
       await this.searchDirectoryContents(pathToSearch, regex, results);
-      
+
       return results.length > 0 ? results.slice(0, 50).join('\n') : 'No matches found';
     } catch (error) {
       throw new Error(`Grep failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -299,7 +312,10 @@ export class SandboxToolExecutor {
         signal: AbortSignal.timeout(15000),
       });
     } catch (error) {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw new Error('请求超时，请检查网络连接后重试');
       }
       throw error;
@@ -312,9 +328,10 @@ export class SandboxToolExecutor {
     const contentType = response.headers.get('content-type') || 'unknown';
     const body = await response.text();
     const limit = 20000;
-    const truncated = body.length > limit
-      ? `${body.slice(0, limit)}\n\n[Truncated ${body.length - limit} chars]`
-      : body;
+    const truncated =
+      body.length > limit
+        ? `${body.slice(0, limit)}\n\n[Truncated ${body.length - limit} chars]`
+        : body;
 
     return `URL: ${parsed.toString()}\nStatus: ${response.status}\nContent-Type: ${contentType}\n\n${truncated}`;
   }
@@ -342,7 +359,10 @@ export class SandboxToolExecutor {
         signal: AbortSignal.timeout(10000),
       });
     } catch (error) {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw new Error('请求超时，请检查网络连接后重试');
       }
       throw error;
@@ -352,7 +372,7 @@ export class SandboxToolExecutor {
       throw new Error(`Search request failed with status ${response.status}`);
     }
 
-    const data = await response.json() as Record<string, unknown>;
+    const data = (await response.json()) as Record<string, unknown>;
     const heading = typeof data.Heading === 'string' ? data.Heading : '';
     const abstractText = typeof data.AbstractText === 'string' ? data.AbstractText : '';
     const relatedTopics = Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [];
@@ -413,6 +433,14 @@ export class SandboxToolExecutor {
   ): Promise<void> {
     if (results.length >= maxResults) return;
 
+    // Cap total output at 10MB to prevent memory exhaustion
+    const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+    let totalBytes = 0;
+    for (const r of results) {
+      totalBytes += r.length;
+    }
+    if (totalBytes >= MAX_OUTPUT_BYTES) return;
+
     try {
       const entries = await this.sandboxAdapter.listDirectory(dirPath);
 
@@ -428,14 +456,31 @@ export class SandboxToolExecutor {
           await this.searchDirectoryContents(fullPath, regex, results, maxResults);
         } else {
           const ext = path.extname(entry.name).toLowerCase();
-          const textExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.txt', '.css', '.html', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h'];
-          
+          const textExtensions = [
+            '.ts',
+            '.tsx',
+            '.js',
+            '.jsx',
+            '.json',
+            '.md',
+            '.txt',
+            '.css',
+            '.html',
+            '.py',
+            '.rs',
+            '.go',
+            '.java',
+            '.c',
+            '.cpp',
+            '.h',
+          ];
+
           if (!textExtensions.includes(ext) && ext !== '') continue;
 
           try {
             const content = await this.sandboxAdapter.readFile(fullPath);
             const lines = content.split(/\r?\n/);
-            
+
             lines.forEach((line, index) => {
               if (results.length < maxResults && regex.test(line)) {
                 results.push(`${fullPath}:${index + 1}: ${line.trim().slice(0, 100)}`);
@@ -512,7 +557,7 @@ export class SandboxToolExecutor {
           const matches = await this.grep(
             context.sessionId,
             input.pattern as string,
-            input.path as string || '.'
+            (input.path as string) || '.'
           );
           return { success: true, output: matches };
         } catch (error) {
@@ -528,7 +573,10 @@ export class SandboxToolExecutor {
           );
           return { success: true, output };
         } catch (error) {
-          return { success: false, error: error instanceof Error ? error.message : 'Command failed' };
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Command failed',
+          };
         }
 
       default:
