@@ -427,10 +427,10 @@ async function executeAction(action) {
       try {
         if (filePath.toLowerCase().endsWith('.pdf')) {
           // Open PDF in InPrivate mode so Edge doesn't remember last scroll position
-          // This forces the model to actually navigate to find content
+          // Open PDF in Edge normally (not InPrivate — InPrivate breaks PDF search/navigation)
           const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`;
           await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
-            `Start-Process msedge -ArgumentList "--inprivate","${fileUrl}"`]);
+            `Start-Process msedge -ArgumentList "${fileUrl}"`]);
         } else {
           await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${filePath}"`]);
         }
@@ -623,6 +623,8 @@ CRITICAL rules:
 - For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
   1. FIRST click the PDF content area (center of the page) to give it focus
   2. Use Ctrl+F to search for specific text (e.g., search "Table 3" to find a table)
+     IMPORTANT: After typing your search term and pressing Enter, press Enter AGAIN to go to the NEXT match.
+     The first match may be a text reference, not the actual table. Keep pressing Enter until you see the actual table/content.
   3. Use Page Down key to move one full page at a time
   4. Click the page number field in the toolbar and type a number to jump to that page
   IMPORTANT: Always click the PDF content BEFORE using any keyboard shortcut (Ctrl+F, Page Down, etc.)
