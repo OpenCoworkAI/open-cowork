@@ -130,7 +130,6 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'apiKey',
   'baseUrl',
   'customProtocol',
-  'model',
   'activeProfileKey',
   'activeConfigSetId',
   'claudeCodePath',
@@ -1217,11 +1216,11 @@ export class ConfigStore {
       }
       if (updates.baseUrl !== undefined) {
         const baseUrl = updates.baseUrl?.trim();
-        nextActiveProfile.baseUrl = baseUrl || this.getDefaultProfile(nextActiveProfileKey).baseUrl;
+        nextActiveProfile.baseUrl = baseUrl ?? '';
       }
       if (updates.model !== undefined) {
         const model = updates.model?.trim();
-        nextActiveProfile.model = model || this.getDefaultProfile(nextActiveProfileKey).model;
+        nextActiveProfile.model = model ?? '';
       }
       nextProfiles[nextActiveProfileKey] = this.normalizeProfile(
         nextActiveProfileKey,

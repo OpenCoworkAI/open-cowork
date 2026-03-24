@@ -50,14 +50,28 @@ describe('ConfigStore lightweight reads', () => {
 
   it('reads direct scalar keys without invoking full normalization pipeline', () => {
     const store = new ConfigStore();
-    const normalizeSpy = vi.spyOn(store as unknown as { normalizeConfig: () => unknown }, 'normalizeConfig');
+    const normalizeSpy = vi.spyOn(
+      store as unknown as { normalizeConfig: () => unknown },
+      'normalizeConfig'
+    );
 
     const provider = store.get('provider');
-    const model = store.get('model');
 
     expect(provider).toBe('openrouter');
-    expect(typeof model).toBe('string');
     expect(normalizeSpy).not.toHaveBeenCalled();
+  });
+
+  it('reads model through getAll() to ensure normalizeModelIds is applied', () => {
+    const store = new ConfigStore();
+    const normalizeSpy = vi.spyOn(
+      store as unknown as { normalizeConfig: () => unknown },
+      'normalizeConfig'
+    );
+
+    const model = store.get('model');
+
+    expect(typeof model).toBe('string');
+    expect(normalizeSpy).toHaveBeenCalled();
   });
 
   it('preserves behavior for profile reads through getAll()', () => {

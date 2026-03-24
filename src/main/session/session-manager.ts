@@ -723,7 +723,8 @@ export class SessionManager {
       }
       return !this.db.sessions.get(session.id);
     };
-    const userMessageCount = existingMessages.filter((message) => message.role === 'user').length;
+    const userMessageCount =
+      existingMessages.filter((message) => message.role === 'user').length + 1;
     try {
       await maybeGenerateSessionTitle({
         sessionId: session.id,
@@ -974,12 +975,12 @@ export class SessionManager {
   }
 
   private updateSessionTitle(sessionId: string, title: string): boolean {
-    this.db.sessions.update(sessionId, { title });
-    const updated = this.db.sessions.get(sessionId);
-    if (!updated) {
+    const existing = this.db.sessions.get(sessionId);
+    if (!existing) {
       log('[SessionTitle] Skip title update for deleted session:', sessionId);
       return false;
     }
+    this.db.sessions.update(sessionId, { title });
     this.sendToRenderer({
       type: 'session.update',
       payload: { sessionId, updates: { title } },
