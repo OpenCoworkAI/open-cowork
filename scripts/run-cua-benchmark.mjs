@@ -373,7 +373,15 @@ async function executeAction(action) {
       // Normalize forward slashes to backslashes for Windows
       filePath = filePath.replace(/\//g, '\\');
       try {
-        await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${filePath}"`]);
+        if (filePath.toLowerCase().endsWith('.pdf')) {
+          // Open PDF in InPrivate mode so Edge doesn't remember last scroll position
+          // This forces the model to actually navigate to find content
+          const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`;
+          await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+            `Start-Process msedge -ArgumentList "--inprivate","${fileUrl}"`]);
+        } else {
+          await execFileAsync('powershell.exe', ['-NoProfile', '-Command', `Start-Process "${filePath}"`]);
+        }
       } catch (e) {
         return { text: `Error opening file: ${e.message}` };
       }
@@ -408,15 +416,7 @@ public class WU {
         const { x: sx, y: sy } = mapCoords(cx, cy);
         await runPy('click', [String(sx), String(sy)]);
         await sleep(300);
-        // For PDFs: press F11 for full-screen mode so more content is visible
-        if (filePath.toLowerCase().endsWith('.pdf')) {
-          await runPy('key_press', ['f11']);
-          await sleep(800);
-          // Click center again after full-screen to ensure PDF content has focus
-          await runPy('click', [String(sx), String(sy)]);
-          await sleep(300);
-        }
-        // Press Escape to dismiss any popups (Document Recovery, Copilot, etc.)
+        // Press Escape to dismiss any popups (Document Recovery, Copilot, InPrivate banner, etc.)
         await runPy('key_press', ['escape']);
         await sleep(200);
         await runPy('key_press', ['escape']);
@@ -560,30 +560,11 @@ CRITICAL rules:
 - For Calculator: ALWAYS type the full expression as one string (e.g., type "25*16="). NEVER click calculator buttons.
   Standard Calculator doesn't support parentheses. To calculate (A+B)*C, type "A+B*C=" (it evaluates left-to-right).
   For advanced math, use run_command: [math]::sqrt(144) or [math]::pow(2,10).
-- For Excel/spreadsheet tasks: NEVER type data cell-by-cell in the GUI — it takes too many steps.
-  Use TWO run_command steps:
-  Step 1 — Write a Python script file:
-  run_command: Set-Content -Path "$HOME/Desktop/make_chart.py" -Value @'
-import openpyxl
-from openpyxl.chart import BarChart, Reference
-wb = openpyxl.Workbook()
-ws = wb.active
-for r in [["Name","Score"],["Alice",90],["Bob",85]]:
-    ws.append(r)
-chart = BarChart()
-chart.title = "Scores"
-vals = Reference(ws, min_col=2, min_row=1, max_row=3)
-cats = Reference(ws, min_col=1, min_row=2, max_row=3)
-chart.add_data(vals, titles_from_data=True)
-chart.set_categories(cats)
-ws.add_chart(chart, "D2")
-wb.save("C:/Users/USERNAME/Desktop/result.xlsx")
-'@
-  Step 2 — Run the script:
-  run_command: python "$HOME/Desktop/make_chart.py"
-  IMPORTANT: Always use TWO steps (write script, then run). Do NOT put long Python code inline.
-  IMPORTANT: Use forward slashes (/) in Python file paths, NOT backslashes.
-  After creating the xlsx, use open_file to open it in Excel so you can see and verify the chart.
+- For Excel/spreadsheet charts: Use the pre-installed chart helper script:
+  run_command: python scripts/cua-helpers/make_chart.py "$HOME/Desktop/output.xlsx" "Chart Title" "Label1:Value1" "Label2:Value2" ...
+  Example: python scripts/cua-helpers/make_chart.py "$HOME/Desktop/BLEU_Scores.xlsx" "BLEU Score Comparison" "base:25.8" "(A):24.9" "(B):25.1"
+  This creates an xlsx file with data + bar chart in ONE command. No need to write Python code!
+  After creating the xlsx, use open_file to open it in Excel and verify the chart.
   Then report done with a summary of what the chart shows.
 - For Edge browser: use Ctrl+L to focus the address bar before typing a URL or search query. Do NOT click the address bar.
 - For PDFs in Edge: NEVER use scroll to navigate — it barely moves. Instead:
