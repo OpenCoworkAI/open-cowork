@@ -528,7 +528,7 @@ export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
     port: 18789,
     bind: '127.0.0.1',
     auth: {
-      mode: 'allowlist',  // Empty allowlist = allow everyone
+      mode: 'allowlist',  // Empty allowlist = deny all (configure specific user IDs to allow access)
       allowlist: [],
       requirePairing: false,
     },

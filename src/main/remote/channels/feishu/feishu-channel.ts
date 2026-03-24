@@ -143,12 +143,16 @@ export class FeishuChannel extends ChannelBase {
     const verificationToken = this.config?.verificationToken;
     if (!verificationToken) return true; // Skip if not configured
 
-    const content = timestamp + nonce + verificationToken + body;
-    const computedSignature = crypto.createHmac('sha256', '').update(content).digest('hex');
-    return crypto.timingSafeEqual(
-      Buffer.from(computedSignature, 'hex'),
-      Buffer.from(signature, 'hex')
-    );
+    try {
+      const content = timestamp + nonce + verificationToken + body;
+      const computedSignature = crypto.createHmac('sha256', verificationToken).update(content).digest('hex');
+      const sigBuf = Buffer.from(signature, 'hex');
+      const computedBuf = Buffer.from(computedSignature, 'hex');
+      if (sigBuf.length !== computedBuf.length) return false;
+      return crypto.timingSafeEqual(sigBuf, computedBuf);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -246,6 +250,11 @@ export class FeishuChannel extends ChannelBase {
       
       // Build remote message
       // Use chatId as channelId - Feishu API needs chat_id to send messages
+      const rawText = String(data.text || '');
+      // Strip only the bot's own @mention placeholder from the text
+      const cleanedText = this.stripBotMentionFromText(rawText, {
+        mentions: Array.isArray(data.mentions) ? data.mentions : [],
+      });
       const remoteMessage: RemoteMessage = {
         id: String(data.messageId || ''),
         channelType: 'feishu',
@@ -257,7 +266,7 @@ export class FeishuChannel extends ChannelBase {
         },
         content: {
           type: 'text',
-          text: String(data.text || ''),
+          text: cleanedText,
         },
         timestamp: parseInt(String(data.createTime || '0')) || Date.now(),
         isGroup: data.chatType === 'group',
@@ -321,6 +330,11 @@ export class FeishuChannel extends ChannelBase {
         return;
       }
 
+      // Strip only the bot's own @mention from text content (not all @mentions)
+      if (content.type === 'text' && content.text) {
+        content.text = this.stripBotMentionFromText(content.text, message);
+      }
+
       // Check if mentioned
       const isMentioned = this.checkMentioned(message);
 
@@ -347,6 +361,26 @@ export class FeishuChannel extends ChannelBase {
     } catch (error) {
       logError('[Feishu] Error handling message event:', error);
     }
+  }
+
+  /**
+   * Strip only the bot's own @mention placeholder from message text.
+   * Feishu encodes @mentions as @_user_N keys in the text.
+   * We identify the bot's key via the mentions array and only remove that one.
+   */
+  private stripBotMentionFromText(text: string, message: Record<string, unknown>): string {
+    if (!this.botOpenId || !Array.isArray(message.mentions)) {
+      return text;
+    }
+    let result = text;
+    for (const m of message.mentions as Record<string, unknown>[]) {
+      const mid = m.id as Record<string, unknown> | undefined;
+      if (mid?.open_id === this.botOpenId && typeof m.key === 'string') {
+        // Remove this specific mention key and trailing space
+        result = result.replace(new RegExp(m.key.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + '\\s*', 'g'), '');
+      }
+    }
+    return result.trim();
   }
   
   /**
@@ -604,6 +638,14 @@ export class FeishuChannel extends ChannelBase {
    */
   private async uploadImage(image: { url?: string; base64?: string }): Promise<string> {
     if (image.url) {
+      // Validate URL before fetching to prevent SSRF
+      const parsed = new URL(image.url);
+      if (parsed.protocol !== 'https:') {
+        throw new Error('Only HTTPS image URLs allowed');
+      }
+      if (/^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.)/.test(parsed.hostname)) {
+        throw new Error('Internal URLs not allowed');
+      }
       // Download and upload
       const response = await fetch(image.url);
       const buffer = await response.arrayBuffer();

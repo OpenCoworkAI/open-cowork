@@ -4,6 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
+import * as crypto from 'crypto';
 import { log, logError, logWarn } from '../../utils/logger';
 import type {
   IChannel,
@@ -179,7 +180,7 @@ export abstract class ChannelBase extends EventEmitter implements IChannel {
    * Generate unique message ID
    */
   protected generateMessageId(): string {
-    return `${this.type}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return `${this.type}-${Date.now()}-${crypto.randomUUID()}`;
   }
 }
 

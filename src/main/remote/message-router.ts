@@ -26,6 +26,7 @@ type AgentCallback = (
   workingDirectory: string | undefined,
   channelType: string,
   channelId: string,
+  senderId: string,
   onMessage: (message: Message) => void,
   onPartial: (delta: string) => void,
 ) => Promise<void>;
@@ -328,6 +329,7 @@ export class MessageRouter {
         workingDirectory,
         message.channelType, // Pass channel type for routing
         message.channelId,   // Pass channel ID for routing
+        message.sender.id,   // Pass sender ID for security verification
         // onMessage callback
         (agentMessage) => {
           this.handleAgentMessage(sessionId, message, agentMessage);
@@ -440,11 +442,10 @@ export class MessageRouter {
     let cwd: string | undefined;
     
     if (message.content.type === 'text' && message.content.text) {
-      // Remove @mention if present
+      // Remove mention placeholders (Feishu uses @_user_N style keys)
+      // Only strip internal placeholder-style mentions, not all @word patterns
       let text = message.content.text;
-      
-      // Remove common mention patterns
-      text = text.replace(/@\S+\s*/g, '').trim();
+      text = text.replace(/@_user_\w+\s*/g, '').trim();
       
       // Check for [cwd:路径] prefix
       // Supports both [cwd:路径] and [cwd: 路径] formats
@@ -532,19 +533,20 @@ export class MessageRouter {
     if (!this.responseCallback) {
       return;
     }
-    
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    
+
+    // Log full error internally but only expose a generic message to users
+    logError('[MessageRouter] Error processing message:', error);
+
     const response: RemoteResponse = {
       channelType: originalMessage.channelType,
       channelId: originalMessage.channelId,
       content: {
         type: 'text',
-        text: `❌ 处理消息时发生错误: ${errorMessage}`,
+        text: '❌ An internal error occurred. Please try again later.',
       },
       replyTo: originalMessage.id,
     };
-    
+
     await this.responseCallback(response);
   }
   

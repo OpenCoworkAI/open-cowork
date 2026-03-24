@@ -35,6 +35,7 @@ export class FeishuWSClient extends EventEmitter {
   private connected: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: FeishuWSConfig) {
     super();
@@ -109,13 +110,19 @@ export class FeishuWSClient extends EventEmitter {
    */
   async stop(): Promise<void> {
     log('[FeishuWS] Stopping long connection...');
-    
+
+    // Cancel any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     // Note: The Lark SDK doesn't expose a direct stop method
     // Setting to null will allow garbage collection
     this.wsClient = null;
     this.client = null;
     this.connected = false;
-    
+
     this.emit('disconnected');
     log('[FeishuWS] Long connection stopped');
   }
@@ -307,10 +314,11 @@ export class FeishuWSClient extends EventEmitter {
 
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    
+
     log(`[FeishuWS] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    
-    setTimeout(() => {
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.start().catch((err) => {
         logError('[FeishuWS] Reconnect failed:', err);
       });

@@ -42,6 +42,7 @@ export interface RemoteInteraction {
   type: 'question' | 'permission';
   sessionId: string;      // Actual session ID
   remoteSessionId: string; // Remote session ID (for routing back)
+  ownerSenderId: string;  // Sender ID of the session owner (for security verification)
   questionId?: string;
   toolUseId?: string;
   toolName?: string;
@@ -73,6 +74,9 @@ export class RemoteManager extends EventEmitter {
   
   // Mapping: remote session ID -> channel info (for routing responses back)
   private sessionChannelMapping: Map<string, { channelType: ChannelType; channelId: string }> = new Map();
+
+  // Mapping: remote session ID -> owner sender ID (for interaction security)
+  private sessionOwnerMapping: Map<string, string> = new Map();
   
   // Pending interactions (questions/permissions) waiting for user response
   private pendingInteractions: Map<string, RemoteInteraction> = new Map();
@@ -89,8 +93,8 @@ export class RemoteManager extends EventEmitter {
   // Debounce timers for sending buffered responses
   private sendTimers: Map<string, NodeJS.Timeout> = new Map();
 
-  // Lock for synchronizing pendingInteractions access
-  private interactionLock = false;
+  // Promise-chain mutex for synchronizing pendingInteractions access
+  private lockChain: Promise<void> = Promise.resolve();
 
   // 远程默认工作目录（用于未指定 cwd 的会话）
   private defaultWorkingDirectory?: string;
@@ -108,15 +112,16 @@ export class RemoteManager extends EventEmitter {
     
     // Set up message router callback
     this.messageRouter.setAgentCallback(
-      async (sessionId, prompt, content, workingDirectory, channelType, channelId, onMessage, onPartial) => {
+      async (sessionId, prompt, content, workingDirectory, channelType, channelId, senderId, onMessage, onPartial) => {
         await this.executeAgent(
-          sessionId, 
-          prompt, 
-          content, 
-          workingDirectory, 
-          channelType as ChannelType, 
-          channelId, 
-          onMessage, 
+          sessionId,
+          prompt,
+          content,
+          workingDirectory,
+          channelType as ChannelType,
+          channelId,
+          senderId,
+          onMessage,
           onPartial
         );
       }
@@ -452,6 +457,7 @@ export class RemoteManager extends EventEmitter {
       type: 'question',
       sessionId: actualSessionId,
       remoteSessionId,
+      ownerSenderId: this.sessionOwnerMapping.get(remoteSessionId) || '',
       questionId,
       questions,
       createdAt: Date.now(),
@@ -554,6 +560,7 @@ export class RemoteManager extends EventEmitter {
       type: 'permission',
       sessionId: actualSessionId,
       remoteSessionId,
+      ownerSenderId: this.sessionOwnerMapping.get(remoteSessionId) || '',
       toolUseId,
       toolName,
       input,
@@ -606,14 +613,15 @@ export class RemoteManager extends EventEmitter {
   }
 
   private async withInteractionLock<T>(fn: () => Promise<T>): Promise<T> {
-    while (this.interactionLock) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    this.interactionLock = true;
+    let release!: () => void;
+    const acquired = new Promise<void>(r => { release = r; });
+    const previous = this.lockChain;
+    this.lockChain = acquired;
+    await previous;
     try {
       return await fn();
     } finally {
-      this.interactionLock = false;
+      release();
     }
   }
 
@@ -624,7 +632,7 @@ export class RemoteManager extends EventEmitter {
   handlePotentialInteractionResponse(
     channelType: ChannelType,
     channelId: string,
-    _senderId: string,
+    senderId: string,
     messageText: string
   ): boolean {
     // Find any pending interaction for this user
@@ -634,6 +642,12 @@ export class RemoteManager extends EventEmitter {
       if (!channelInfo) continue;
 
       if (channelInfo.channelType === channelType && channelInfo.channelId === channelId) {
+        // Verify that the responder is the session owner to prevent hijacking
+        if (interaction.ownerSenderId && senderId !== interaction.ownerSenderId) {
+          log('[RemoteManager] Ignoring interaction response from non-owner sender:', senderId);
+          continue;
+        }
+
         log('[RemoteManager] Found pending interaction:', id);
 
         // Remove from pending
@@ -736,6 +750,10 @@ export class RemoteManager extends EventEmitter {
     if (sentHashes.has(hash)) {
       log('[RemoteManager] Skipping duplicate message');
       return;
+    }
+    // Prevent unbounded growth: clear oldest entries when set exceeds 500 entries
+    if (sentHashes.size >= 500) {
+      sentHashes.clear();
     }
     sentHashes.add(hash);
     
@@ -919,6 +937,7 @@ export class RemoteManager extends EventEmitter {
         }
       }
       this.sessionChannelMapping.delete(sessionId);
+      this.sessionOwnerMapping.delete(sessionId);
     }
   }
   
@@ -1002,19 +1021,20 @@ export class RemoteManager extends EventEmitter {
     workingDirectory: string | undefined,
     channelType: ChannelType,
     channelId: string,
+    senderId: string,
     _onMessage: (message: Message) => void,
     _onPartial: (delta: string) => void,
   ): Promise<void> {
     if (!this.agentExecutor) {
       throw new Error('Agent executor not set');
     }
-    
+
     log('[RemoteManager] Executing agent for session:', sessionId);
     log('[RemoteManager] Working directory:', workingDirectory || '(default)');
-    
+
     // Check if this is a new remote session
     const isNewSession = !this.remoteSessionIds.has(sessionId);
-    
+
     if (isNewSession) {
       // Create new session with working directory
       const newSession = await this.agentExecutor.startSession(
@@ -1022,17 +1042,20 @@ export class RemoteManager extends EventEmitter {
         prompt,
         workingDirectory
       );
-      
+
       // Map remote session ID to actual session ID
       this.remoteSessionIds.add(sessionId);
-      
+
       // Store bidirectional mapping
       this.sessionIdMapping.set(newSession.id, sessionId);
       this.reverseSessionIdMapping.set(sessionId, newSession.id);
-      
+
       // Store channel info for routing responses back
       this.sessionChannelMapping.set(sessionId, { channelType, channelId });
-      
+
+      // Store session owner for interaction security verification
+      this.sessionOwnerMapping.set(sessionId, senderId);
+
       log('[RemoteManager] Created new session:', newSession.id, 'for remote:', sessionId, 'cwd:', workingDirectory);
       log('[RemoteManager] Session mapping stored:', newSession.id, '<->', sessionId);
       log('[RemoteManager] Emitting session update to renderer for:', newSession.id);
@@ -1053,7 +1076,7 @@ export class RemoteManager extends EventEmitter {
       this.emitRemoteUserMessage(actualSessionId, content, prompt);
       await this.agentExecutor.continueSession(actualSessionId, prompt, content, workingDirectory);
     }
-    
+
     // Note: The actual response handling is done through the session manager
     // and agent runner callbacks. This is a simplified implementation.
     // In a full implementation, we would:

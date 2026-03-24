@@ -346,7 +346,7 @@ export class RemoteGateway extends EventEmitter {
         
       case 'allowlist':
         if (!allowlist || allowlist.length === 0) {
-          return true; // Empty allowlist means allow all
+          return false; // Empty allowlist means deny all
         }
         return allowlist.includes(message.sender.id);
         
@@ -593,6 +593,7 @@ export class RemoteGateway extends EventEmitter {
         bodyTooLarge = true;
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Request body too large' }));
+        req.destroy();
       }
     });
     
