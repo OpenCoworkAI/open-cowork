@@ -76,7 +76,7 @@ Platform: ${os.platform()}
 Node: ${process.version}
 Working Directory: ${process.cwd()}
 Process ID: ${process.pid}
-Arguments: ${JSON.stringify(process.argv)}
+Arguments: ${JSON.stringify(process.argv.map(arg => /^(sk-|key-|token-|secret-)/i.test(arg) || (arg.length > 40 && /^[A-Za-z0-9+/=_-]+$/.test(arg)) ? '[REDACTED]' : arg))}
 ================================================================================
 `;
     
@@ -95,31 +95,43 @@ Arguments: ${JSON.stringify(process.argv)}
  * @param content - The log content to write
  * @param label - Optional label for the log entry
  */
+const MAX_LOG_SIZE = 50 * 1024 * 1024; // 50MB
+
 export function writeMCPLog(content: string, label?: string): void {
   // Initialize log file on first call
   if (!logInitialized) {
     initializeLogFile();
   }
-  
+
   const timestamp = new Date().toISOString();
   const formattedLabel = label ? ` [${label}]` : '';
-  
+
   // Print to stderr (with simpler format for console)
   console.error(`[${timestamp}]${formattedLabel} ${content}`);
-  
+
   // If log not initialized, can't write to file
   if (!mcpLogFilename || !logInitialized) {
     return;
   }
-  
+
   // Get log path
   const logDir = getLogsDirectory();
   const logPath = path.join(logDir, mcpLogFilename);
-  
+
+  // Log rotation: if file exceeds MAX_LOG_SIZE, rotate it
+  try {
+    const stat = fsSync.statSync(logPath);
+    if (stat.size > MAX_LOG_SIZE) {
+      fsSync.renameSync(logPath, logPath + '.old');
+    }
+  } catch {
+    // File may not exist yet, ignore
+  }
+
   // Format log entry for file (with more detail)
   const labelText = label ? `${label}:\n${'='.repeat(80)}\n` : '';
   const logEntry = `\n${'='.repeat(80)}\n[${timestamp}]${formattedLabel}\n${labelText}${content}\n${'='.repeat(80)}\n`;
-  
+
   try {
     // Use sync write for critical logs (Bootstrap, Error, Fatal, Initialization)
     if (label && (label.includes('Bootstrap') || label.includes('Error') || label.includes('Fatal') || label.includes('Initialization'))) {
@@ -148,7 +160,7 @@ process.on('uncaughtException', (error) => {
       // ignore
     }
   }
-  process.exit(1);
+  // Don't call process.exit(1) — let the MCP SDK handle recovery
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -169,7 +181,7 @@ process.on('unhandledRejection', (reason) => {
 try {
   initializeLogFile();
   writeMCPLog(`mcp-logger.ts module loaded`, 'Module Init');
-  writeMCPLog(`Process: ${process.argv.join(' ')}`, 'Module Init');
+  writeMCPLog(`Process: ${process.argv.map(arg => /^(sk-|key-|token-|secret-)/i.test(arg) || (arg.length > 40 && /^[A-Za-z0-9+/=_-]+$/.test(arg)) ? '[REDACTED]' : arg).join(' ')}`, 'Module Init');
   writeMCPLog(`CWD: ${process.cwd()}`, 'Module Init');
 } catch (error) {
   console.error('[MCP Logger] Failed to initialize at module load:', error);

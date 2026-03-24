@@ -35,6 +35,7 @@ import { promisify } from 'util';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 writeMCPLog('Imported Node.js built-in modules', 'Bootstrap');
 
 const execFileAsync = promisify(execFile);
@@ -393,7 +394,25 @@ async function loadClickHistoryForApp(appName: string): Promise<void> {
     
     try {
       const data = await fs.readFile(filePath, 'utf-8');
-      const appHistory: AppClickHistory = JSON.parse(data);
+      let appHistory: AppClickHistory;
+      try {
+        appHistory = JSON.parse(data);
+      } catch {
+        writeMCPLog(`[ClickHistory] Failed to parse click history JSON for app "${appName}", starting fresh`, 'Click History Parse Error');
+        clickHistory = [];
+        clickHistoryCounter = 0;
+        currentAppName = appName;
+        return;
+      }
+
+      // Basic shape validation
+      if (!appHistory || typeof appHistory !== 'object' || !Array.isArray(appHistory.clicks)) {
+        writeMCPLog(`[ClickHistory] Invalid click history shape for app "${appName}", starting fresh`, 'Click History Parse Error');
+        clickHistory = [];
+        clickHistoryCounter = 0;
+        currentAppName = appName;
+        return;
+      }
       
       // Get current display configuration
       const config = await getDisplayConfiguration();
@@ -804,7 +823,7 @@ async function resolveCliclickPath(): Promise<string | null> {
 
   // 4) PATH lookup
   try {
-    const { stdout } = await executeCommand('/usr/bin/which cliclick', 2000);
+    const { stdout } = await executeCommandSafe('/usr/bin/which', ['cliclick'], { timeout: 2000 });
     const whichPath = stdout.trim();
     if (whichPath) {
       cachedCliclickPath = whichPath;
@@ -944,9 +963,10 @@ async function resolvePythonExec(): Promise<PythonExec | null> {
     writeMCPLog('[resolvePythonExec] Dev mode: Attempting to find Python in current PATH', 'Python Resolve');
     // Try to find python3 in current PATH
     try {
-      const whichCmd = PLATFORM === 'win32' ? 'where python' : 'which python';
-      writeMCPLog(`[resolvePythonExec] Dev mode: Running command: ${whichCmd}`, 'Python Resolve');
-      const { stdout } = await executeCommand(whichCmd, 2000);
+      const whichCmd = PLATFORM === 'win32' ? 'where' : 'which';
+      const pythonArg = PLATFORM === 'win32' ? 'python' : 'python';
+      writeMCPLog(`[resolvePythonExec] Dev mode: Running command: ${whichCmd} ${pythonArg}`, 'Python Resolve');
+      const { stdout } = await executeCommandSafe(whichCmd, [pythonArg], { timeout: 2000 });
       const pythonPath = stdout.trim().split(/\r?\n/).filter(Boolean)[0];
       writeMCPLog(`[resolvePythonExec] Dev mode: which/where result: ${pythonPath}`, 'Python Resolve');
       
@@ -980,13 +1000,13 @@ async function resolvePythonExec(): Promise<PythonExec | null> {
     const python3Cmd = PLATFORM === 'win32' ? 'python' : 'python3';
     writeMCPLog(`[resolvePythonExec] Dev mode: Trying ${python3Cmd} --version as fallback`, 'Python Resolve');
     try {
-      const testResult = await executeCommand(`${python3Cmd} --version`, 2000);
+      const testResult = await executeCommandSafe(python3Cmd, ['--version'], { timeout: 2000 });
       writeMCPLog(`[resolvePythonExec] Dev mode: ${python3Cmd} --version result: stdout=${testResult.stdout}, stderr=${testResult.stderr}`, 'Python Resolve');
       if (testResult.stdout || testResult.stderr) {
         // python is available, try to get its full path for consistency
         let pythonPath = python3Cmd;
         try {
-          const whichResult = await executeCommand(PLATFORM === 'win32' ? `where ${python3Cmd}` : `which ${python3Cmd}`, 2000);
+          const whichResult = await executeCommandSafe(PLATFORM === 'win32' ? 'where' : 'which', [python3Cmd], { timeout: 2000 });
           const resolvedPath = whichResult.stdout.trim().split(/\r?\n/).filter(Boolean)[0];
           writeMCPLog(`[resolvePythonExec] Dev mode: Resolved ${python3Cmd} path: ${resolvedPath}`, 'Python Resolve');
           if (resolvedPath && await pathExists(resolvedPath)) {
@@ -1070,7 +1090,7 @@ async function resolvePythonExec(): Promise<PythonExec | null> {
   // Generic fallback for other platforms: rely on PATH if available
   try {
     writeMCPLog('[resolvePythonExec] Checking PATH for Python (generic fallback)', 'Python Resolve');
-    const { stdout } = await executeCommand(PLATFORM === 'win32' ? 'where python' : 'which python', 2000);
+    const { stdout } = await executeCommandSafe(PLATFORM === 'win32' ? 'where' : 'which', ['python'], { timeout: 2000 });
     const p = stdout.trim().split(/\r?\n/).filter(Boolean)[0];
     if (p) {
       cachedPythonExec = {
@@ -1369,7 +1389,10 @@ async function macWriteClipboardBytes(bytes: Buffer, timeoutMs: number = 5000): 
 /**
  * Execute a command with timeout using execFile (no shell interpolation).
  * The command string is parsed into executable + arguments respecting quotes.
+ * @deprecated Use executeCommandSafe or executeAppleScript instead.
  */
+// @ts-expect-error - Kept for backward compatibility, all callers migrated to executeCommandSafe/executeAppleScript
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function executeCommand(
   command: string,
   timeout: number = 10000
@@ -1406,12 +1429,46 @@ async function executeCommand(
   }
 }
 
+/**
+ * Execute a command safely using execFileAsync (no shell interpolation).
+ * Prefer this over executeCommand when the executable and arguments are known.
+ */
+async function executeCommandSafe(
+  command: string,
+  args: string[],
+  options?: { timeout?: number }
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const result = await execFileAsync(command, args, { timeout: options?.timeout || 30000 });
+    return {
+      stdout: typeof result.stdout === 'string' ? result.stdout : '',
+      stderr: typeof result.stderr === 'string' ? result.stderr : '',
+    };
+  } catch (error: unknown) {
+    throw new Error(`Command execution failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Execute an AppleScript via osascript safely (no shell interpolation).
+ */
+async function executeAppleScript(script: string, timeout: number = 10000): Promise<{ stdout: string; stderr: string }> {
+  return executeCommandSafe('/usr/bin/osascript', ['-e', script], { timeout });
+}
+
+/**
+ * Execute a JXA (JavaScript for Automation) script via osascript safely.
+ */
+async function executeJXAScript(script: string, timeout: number = 10000): Promise<{ stdout: string; stderr: string }> {
+  return executeCommandSafe('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], { timeout });
+}
+
 async function getFrontmostMacApplicationName(): Promise<string | null> {
   if (PLATFORM !== 'darwin') return null;
 
   try {
-    const { stdout } = await executeCommand(
-      `/usr/bin/osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`,
+    const { stdout } = await executeAppleScript(
+      'tell application "System Events" to get name of first process whose frontmost is true',
       5000
     );
     const name = stdout.trim();
@@ -1442,10 +1499,15 @@ async function getMacDockItemsViaAccessibility(): Promise<DockItemInfo[]> {
     'JSON.stringify(out);',
   ].join(' ');
 
-  const command = `/usr/bin/osascript -l JavaScript -e '${jxaScript.replace(/'/g, "'\"'\"'")}'`;
-  const { stdout } = await executeCommand(command, 10000);
+  const { stdout } = await executeJXAScript(jxaScript, 10000);
 
-  const parsed = JSON.parse(stdout.trim()) as DockItemInfo[];
+  let parsed: DockItemInfo[];
+  try {
+    parsed = JSON.parse(stdout.trim()) as DockItemInfo[];
+  } catch {
+    writeMCPLog('[GUI] Failed to parse dock items JSON', 'DockItems Error');
+    parsed = [];
+  }
   return parsed.filter(item =>
     item
     && typeof item.name === 'string'
@@ -1554,12 +1616,13 @@ async function executeCliclick(command: string): Promise<{ stdout: string; stder
     );
   }
 
-  const quotedCliclick = `"${cliclickPath.replace(/"/g, '\\"')}"`;
-  const fullCommand = `${quotedCliclick} ${command}`;
-  writeMCPLog(`[executeCliclick] Executing command: ${fullCommand}`, 'Cliclick Command');
+  // Parse cliclick command string into arguments array
+  // cliclick commands are space-separated tokens like "c:100,200" or "kd:cmd kp:c ku:cmd"
+  const cliclickArgs = command.split(/\s+/).filter(Boolean);
+  writeMCPLog(`[executeCliclick] Executing: ${cliclickPath} ${cliclickArgs.join(' ')}`, 'Cliclick Command');
 
   try {
-  const result = await executeCommand(fullCommand);
+  const result = await executeCommandSafe(cliclickPath, cliclickArgs);
   writeMCPLog(`[executeCliclick] Command completed. stdout: ${result.stdout}, stderr: ${result.stderr}`, 'Cliclick Result');
 
   // cliclick may exit 0 while warning that Accessibility permission is missing.
@@ -1600,12 +1663,12 @@ async function executePowerShell(script: string, timeout: number = 30000): Promi
   // Escape the script for PowerShell command line
   const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
   // Use -WindowStyle Hidden to prevent PowerShell window from stealing focus
-  const command = `powershell -WindowStyle Hidden -NonInteractive -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}`;
-  
+  const psArgs = ['-WindowStyle', 'Hidden', '-NonInteractive', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedScript];
+
   writeMCPLog(`[executePowerShell] Executing script (length: ${script.length})`, 'PowerShell Command');
-  
-  const result = await executeCommand(command, timeout);
-  
+
+  const result = await executeCommandSafe('powershell', psArgs, { timeout });
+
   writeMCPLog(`[executePowerShell] Command completed. stdout length: ${result.stdout.length}`, 'PowerShell Result');
   
   return result;
@@ -1817,7 +1880,13 @@ ConvertTo-Json -InputObject @($result) -Compress
 `;
 
   const result = await executePowerShell(script);
-  let displays: DisplayInfo[] = JSON.parse(result.stdout.trim());
+  let displays: DisplayInfo[];
+  try {
+    displays = JSON.parse(result.stdout.trim());
+  } catch {
+    writeMCPLog('[GUI] Failed to parse Windows display configuration JSON', 'Display Detection Error');
+    throw new Error('Failed to parse Windows display configuration');
+  }
   
   // Ensure displays is an array (PowerShell may return single object instead of array)
   if (!Array.isArray(displays)) {
@@ -2503,8 +2572,8 @@ async function getDisplayConfiguration(): Promise<DisplayConfiguration> {
       
       return displayList
     `;
-    
-    const result = await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+
+    const result = await executeAppleScript(appleScript);
     const output = result.stdout.trim();
     
     if (!output) {
@@ -2635,8 +2704,15 @@ async function getDisplayConfiguration(): Promise<DisplayConfiguration> {
     writeMCPLog(`AppleScript display detection failed, using fallback: ${error instanceof Error ? error.message : String(error)}`, 'Display Detection');
     
     try {
-      const result = await executeCommand('system_profiler SPDisplaysDataType -json');
-      const data = JSON.parse(result.stdout);
+      const result = await executeCommandSafe('system_profiler', ['SPDisplaysDataType', '-json']);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any;
+      try {
+        data = JSON.parse(result.stdout);
+      } catch {
+        writeMCPLog('[GUI] Failed to parse system_profiler JSON output', 'Display Detection Error');
+        throw new Error('Failed to parse system_profiler display data');
+      }
       const displays: DisplayInfo[] = [];
       
       let index = 0;
@@ -2996,7 +3072,7 @@ async function performType(
 
     // Optionally press Enter
     if (pressEnter) {
-      await executeCommand(`osascript -e 'tell application "System Events" to key code 36'`);
+      await executeAppleScript('tell application "System Events" to key code 36');
     }
 
     // Restore previous clipboard if we captured it (best-effort).
@@ -3020,10 +3096,10 @@ async function performType(
     `[performType] Typing via AppleScript keystroke. text length: ${text.length}, inputMethod=${inputMethod}`,
     'Type Operation'
   );
-  await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+  await executeAppleScript(appleScript);
 
   if (pressEnter) {
-    await executeCommand(`osascript -e 'tell application "System Events" to key code 36'`);
+    await executeAppleScript('tell application "System Events" to key code 36');
   }
 
   return `Typed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"${pressEnter ? ' and pressed Enter' : ''}`;
@@ -3149,7 +3225,7 @@ async function performKeyPress(
     const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
     const appleScript = `tell application "System Events" to key code ${specialKeyCode}${usingClause}`;
     writeMCPLog(`[performKeyPress] Using AppleScript key code ${specialKeyCode} for "${key}"`, 'Key Press');
-    await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+    await executeAppleScript(appleScript);
     const modifierStr = modifiers.join('+');
     resultMessage = `Pressed: ${modifierStr ? `${modifierStr}+` : ''}${key}`;
   } else if (cliclickKey && hasCliclick) {
@@ -3182,7 +3258,7 @@ async function performKeyPress(
           const appleScript = `tell application "System Events" to key code ${keyCode}${usingClause}`;
           
           writeMCPLog(`[performKeyPress] Using key code ${keyCode} for ${key} with modifiers: ${modifierFlags.join(', ')}`, 'Key Press');
-          await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+          await executeAppleScript(appleScript);
           const modifierStr = modifiers.join('+');
           resultMessage = `Pressed: ${modifierStr}+${key} (using key code)`;
         } else {
@@ -3196,7 +3272,7 @@ async function performKeyPress(
           const usingClause = modifierFlags.length > 0 ? ` using {${modifierFlags.join(', ')}}` : '';
           const appleScript = `tell application "System Events" to keystroke "${escapedKey}"${usingClause}`;
           
-          await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+          await executeAppleScript(appleScript);
           const modifierStr = modifiers.join('+');
           resultMessage = `Pressed: ${modifierStr}+${key} (using keystroke)`;
         }
@@ -3207,7 +3283,7 @@ async function performKeyPress(
           await executeCliclick(command);
         } else {
           const appleScript = `tell application "System Events" to keystroke "${escapedKey}"`;
-          await executeCommand(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`);
+          await executeAppleScript(appleScript);
           resultMessage = `Pressed: ${key} (using keystroke)`;
         }
       }
@@ -3283,7 +3359,7 @@ Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
     
     for (let i = 0; i < repeatCount; i++) {
       try {
-        await executeCommand(`osascript -e 'tell application "System Events" to key code ${keyCode}'`);
+        await executeAppleScript(`tell application "System Events" to key code ${keyCode}`);
       } catch {
         break;
       }
@@ -3381,10 +3457,7 @@ async function takeScreenshot(
 
   // macOS implementation
   // Use absolute path because packaged apps may have a limited PATH.
-  let command = '/usr/sbin/screencapture -C';
-
-  // -x: no sound
-  command += ' -x';
+  const screencaptureArgs: string[] = ['-C', '-x'];
 
   // If specific display requested
   if (displayIndex !== undefined) {
@@ -3396,7 +3469,7 @@ async function takeScreenshot(
     }
 
     // -D: capture specific display (1-indexed for screencapture)
-    command += ` -D ${displayIndex + 1}`;
+    screencaptureArgs.push('-D', String(displayIndex + 1));
   }
 
   // If region specified
@@ -3406,13 +3479,13 @@ async function takeScreenshot(
       : { globalX: region.x, globalY: region.y };
 
     // -R: capture specific region (x,y,width,height)
-    command += ` -R ${globalX},${globalY},${region.width},${region.height}`;
+    screencaptureArgs.push('-R', `${globalX},${globalY},${region.width},${region.height}`);
   }
 
-  command += ` "${finalPath}"`;
+  screencaptureArgs.push(finalPath);
 
   try {
-  await executeCommand(command);
+  await executeCommandSafe('/usr/sbin/screencapture', screencaptureArgs);
   } catch (error: unknown) {
     const baseMessage = error instanceof Error ? error.message : String(error);
     const hint =
@@ -3442,6 +3515,30 @@ async function takeScreenshot(
 }
 
 /**
+ * Clean up screenshot files older than 1 hour to prevent disk accumulation.
+ */
+function cleanupOldScreenshots(): void {
+  const maxAge = 60 * 60 * 1000; // 1 hour
+  const now = Date.now();
+  try {
+    for (const file of fsSync.readdirSync(SCREENSHOTS_DIR)) {
+      const filePath = path.join(SCREENSHOTS_DIR, file);
+      try {
+        const stat = fsSync.statSync(filePath);
+        if (now - stat.mtimeMs > maxAge) {
+          fsSync.unlinkSync(filePath);
+          writeMCPLog(`[Screenshot Cleanup] Deleted old screenshot: ${file}`, 'Screenshot Cleanup');
+        }
+      } catch {
+        // Ignore errors for individual files
+      }
+    }
+  } catch {
+    // Directory may not exist yet
+  }
+}
+
+/**
  * Take a screenshot and return it with base64 image data for display in the response
  */
 async function takeScreenshotForDisplay(
@@ -3451,6 +3548,9 @@ async function takeScreenshotForDisplay(
   forceRefresh?: boolean,
   // annotateClicks?: boolean
 ): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+  // Clean up old screenshots to prevent disk accumulation
+  cleanupOldScreenshots();
+
   const normalizedDisplayIndex = displayIndex ?? 0;
   const regionKey = toRegionKey(region);
   const requestKey = `${normalizedDisplayIndex}:${regionKey}`;
@@ -4638,7 +4738,7 @@ async function getImageDimensions(imagePath: string): Promise<{ width: number; h
     
     if (platform === 'darwin') {
       // Use absolute path because packaged apps may have a limited PATH.
-      const { stdout } = await executeCommand(`/usr/bin/sips -g pixelWidth -g pixelHeight "${imagePath}"`);
+      const { stdout } = await executeCommandSafe('/usr/bin/sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', imagePath]);
       const widthMatch = stdout.match(/pixelWidth:\s*(\d+)/);
       const heightMatch = stdout.match(/pixelHeight:\s*(\d+)/);
       

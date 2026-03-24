@@ -32,7 +32,6 @@ import { promisify } from 'util';
 import { writeMCPLog } from './mcp-logger';
 
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 // Get workspace directory from environment or use current directory
@@ -104,6 +103,14 @@ interface DockerGUITestConfig {
 
 // Helper: Build Docker image for GUI testing
 async function buildDockerGUITestImage(config: DockerGUITestConfig): Promise<string> {
+  // Validate config values to prevent injection in Dockerfile template
+  if (!Number.isInteger(config.vncPort) || config.vncPort < 1024 || config.vncPort > 65535) {
+    throw new Error(`Invalid VNC port: ${config.vncPort}. Must be an integer between 1024 and 65535.`);
+  }
+  if (!Number.isInteger(config.displayNumber) || config.displayNumber < 0 || config.displayNumber > 99) {
+    throw new Error(`Invalid display number: ${config.displayNumber}. Must be an integer between 0 and 99.`);
+  }
+
   const imageName = 'mcp-gui-test';
   const dockerfilePath = path.join(WORKSPACE_DIR, '.mcp-gui-test', 'Dockerfile');
   
@@ -261,7 +268,12 @@ async function startGUIApplicationInDocker(
       cwd: WORKSPACE_DIR, maxBuffer: 10 * 1024 * 1024, timeout: 300000
     });
     const containerId = stdout.trim();
-    
+
+    // Validate container ID format (hex string, 12-64 chars)
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
+      throw new Error(`Invalid container ID returned from docker run: ${containerId}`);
+    }
+
     writeMCPLog(`[Docker] Container started: ${containerId.substring(0, 12)}`);
     
     // Wait for Xvfb and VNC to start
@@ -2007,8 +2019,8 @@ async function executeClaudeCode(prompt: string, workingDir: string = WORKSPACE_
     const claudeCodePath = process.env.CLAUDE_CODE_PATH || 'claude-code';
     
     // Execute claude-code with the prompt
-    const { stdout, stderr } = await execAsync(
-      `${claudeCodePath} "${prompt.replace(/"/g, '\\"')}"`,
+    const { stdout, stderr } = await execFileAsync(
+      'bash', ['-c', `${claudeCodePath} "${prompt.replace(/"/g, '\\"')}"`],
       {
         cwd: workingDir,
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
@@ -2029,7 +2041,13 @@ async function executeClaudeCode(prompt: string, workingDir: string = WORKSPACE_
 
 // Helper: Read file content
 async function readFile(filePath: string): Promise<string> {
-  const fullPath = path.isAbsolute(filePath) ? filePath : path.join(WORKSPACE_DIR, filePath);
+  if (path.isAbsolute(filePath)) {
+    throw new Error(`Absolute paths not allowed: ${filePath}`);
+  }
+  const fullPath = path.resolve(WORKSPACE_DIR, filePath);
+  if (!fullPath.startsWith(path.resolve(WORKSPACE_DIR))) {
+    throw new Error(`Path traversal detected: ${filePath}`);
+  }
   try {
     return await fs.readFile(fullPath, 'utf-8');
   } catch (error: unknown) {
@@ -2077,7 +2095,8 @@ async function fileExists(filePath: string): Promise<boolean> {
 // Helper: Execute shell command
 async function executeCommand(command: string, workingDir: string = WORKSPACE_DIR): Promise<{ stdout: string; stderr: string }> {
   try {
-    return await execAsync(command, {
+    // Use execFileAsync with bash -c instead of exec to avoid direct shell interpolation
+    return await execFileAsync('bash', ['-c', command], {
       cwd: workingDir,
       maxBuffer: 10 * 1024 * 1024,
       timeout: 300000, // 5 minute timeout
