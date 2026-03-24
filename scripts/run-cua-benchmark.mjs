@@ -1460,8 +1460,8 @@ const DEMO_TASKS = [
     id: 'demo-organize-desktop',
     name: 'Demo: organize messy Desktop',
     tier: 'demo',
-    instruction: 'My Desktop has a bunch of image files with camera-style names like IMG_xxxx and DSC_xxxx. I have no idea what\'s in them. Please look at each image, figure out what it shows, and organize them into folders by content (e.g. food photos, landscapes, receipts, etc).',
-    maxSteps: 70,
+    instruction: 'My Desktop has 30 image files with camera-style names like IMG_xxxx and DSC_xxxx. I have no idea what\'s in them. Please look at each image, figure out what it shows, and organize them into folders by content (e.g. food photos, landscapes, animals, sports, vehicles, etc).',
+    maxSteps: 100,
     setup: async () => {
       const messy = path.join(__dirname, 'cua-helpers', 'messy-desktop.ps1');
       await execFileAsync('powershell', ['-ExecutionPolicy', 'Bypass', '-File', messy, 'create']);

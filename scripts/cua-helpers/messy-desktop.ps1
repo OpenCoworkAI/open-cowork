@@ -17,26 +17,46 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $Prefix = "demo_"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Image filenames and their expected categories
+# Image filenames and their expected categories (8 categories, 30 images)
 $ImageCategories = @{
-    # Food photos
+    # Food (4)
     "${Prefix}IMG_4721.jpg"              = "food"
     "${Prefix}IMG_4803.jpg"              = "food"
     "${Prefix}IMG_5102.jpg"              = "food"
-    # Nature/travel
+    "${Prefix}IMG_5244.jpg"              = "food"
+    # Nature/Landscape (4)
     "${Prefix}DSC_0847.jpg"              = "nature"
     "${Prefix}DSC_1203.jpg"              = "nature"
     "${Prefix}DSC_1455.jpg"              = "nature"
-    # Work charts
+    "${Prefix}DSC_1602.jpg"              = "nature"
+    # Charts (3)
     "${Prefix}Screenshot_2026-03-15.png" = "charts"
     "${Prefix}Screenshot_2026-03-18.png" = "charts"
     "${Prefix}Screenshot_2026-02-28.png" = "charts"
-    # Receipts
+    # Receipts (3)
     "${Prefix}IMG_20260320_134522.jpg"   = "receipts"
     "${Prefix}IMG_20260318_091045.jpg"   = "receipts"
-    # UI screenshots
-    "${Prefix}Screenshot_20260322_103000.png" = "screenshots"
-    "${Prefix}Screenshot_20260321_154530.png" = "screenshots"
+    "${Prefix}IMG_20260322_192300.jpg"   = "receipts"
+    # Animals (4)
+    "${Prefix}IMG_6001.jpg"              = "animals"
+    "${Prefix}IMG_6042.jpg"              = "animals"
+    "${Prefix}IMG_6103.jpg"              = "animals"
+    "${Prefix}DSC_2001.jpg"              = "animals"
+    # Architecture (4)
+    "${Prefix}DSC_3010.jpg"              = "architecture"
+    "${Prefix}DSC_3045.jpg"              = "architecture"
+    "${Prefix}DSC_3088.jpg"              = "architecture"
+    "${Prefix}DSC_3120.jpg"              = "architecture"
+    # Sports (4)
+    "${Prefix}IMG_7001.jpg"              = "sports"
+    "${Prefix}IMG_7055.jpg"              = "sports"
+    "${Prefix}IMG_7102.jpg"              = "sports"
+    "${Prefix}IMG_7200.jpg"              = "sports"
+    # Vehicles (4)
+    "${Prefix}IMG_8001.jpg"              = "vehicles"
+    "${Prefix}IMG_8034.jpg"              = "vehicles"
+    "${Prefix}IMG_8077.jpg"              = "vehicles"
+    "${Prefix}IMG_8150.jpg"              = "vehicles"
 }
 
 function Do-Create {
@@ -52,7 +72,7 @@ function Do-Create {
         exit 1
     }
     $count = (Get-ChildItem "$Desktop\${Prefix}*" -File | Where-Object { $_.Extension -in '.jpg','.png' }).Count
-    Write-Host "Created $count images on Desktop (5 categories)." -ForegroundColor Green
+    Write-Host "Created $count images on Desktop (8 categories)." -ForegroundColor Green
 }
 
 function Do-Clean {
