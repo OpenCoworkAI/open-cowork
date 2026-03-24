@@ -320,9 +320,11 @@ async function executeAction(action) {
       // and key is a modifier, use key_press value as the real key
       const modNames = new Set(['ctrl','control','alt','shift']);
       if (typeof key === 'string' && modNames.has(key.toLowerCase()) && action.key_press && action.key_press !== key) {
-        mods = [...mods, key];
+        if (!mods.some(m => m.toLowerCase() === key.toLowerCase())) mods.push(key);
         key = action.key_press;
       }
+      // Deduplicate modifiers
+      mods = [...new Set(mods.map(m => m.toLowerCase()))];
       return { text: await performKeyPress(key, mods) };
     }
 
