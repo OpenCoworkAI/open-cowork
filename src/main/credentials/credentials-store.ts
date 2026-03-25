@@ -3,7 +3,11 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import { safeStorage } from 'electron';
 import { log, logWarn } from '../utils/logger';
-import { getLegacyDerivedKeyBuffers, getStableDerivedKeyBuffer } from '../utils/store-encryption';
+import {
+  SECURE_SCRYPT_OPTIONS,
+  getLegacyDerivedKeyBuffers,
+  getStableDerivedKeyBuffer,
+} from '../utils/store-encryption';
 
 /**
  * User Credential - stored information for automated login
@@ -89,7 +93,7 @@ function getMachineBoundKey(): Buffer {
   }
 
   const seed = `${os.hostname()}:${os.userInfo().username}:open-cowork-credentials-stable-v1`;
-  _machineBoundKeyCache = crypto.scryptSync(seed, salt, 32, { N: 65536, r: 8, p: 1 });
+  _machineBoundKeyCache = crypto.scryptSync(seed, salt, 32, SECURE_SCRYPT_OPTIONS);
   log(
     '[CredentialsStore] Derived machine-bound key from hostname and username (safeStorage unavailable)'
   );

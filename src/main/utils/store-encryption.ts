@@ -38,10 +38,21 @@ function buildLegacyDirCandidates(moduleDirname: string): string[] {
 }
 
 /** Secure scrypt parameters for new key derivation. */
-const SECURE_SCRYPT_OPTIONS: crypto.ScryptOptions = { N: 65536, r: 8, p: 1 };
+const SCRYPT_MAXMEM_HEADROOM = 1024 * 1024;
+
+function createScryptOptions(N: number, r: number, p: number): crypto.ScryptOptions {
+  return {
+    N,
+    r,
+    p,
+    maxmem: 128 * N * r + SCRYPT_MAXMEM_HEADROOM,
+  };
+}
+
+export const SECURE_SCRYPT_OPTIONS: crypto.ScryptOptions = createScryptOptions(65536, 8, 1);
 
 /** Legacy scrypt parameters — Node.js defaults used by earlier releases. */
-const LEGACY_SCRYPT_OPTIONS: crypto.ScryptOptions = { N: 16384, r: 8, p: 1 };
+export const LEGACY_SCRYPT_OPTIONS: crypto.ScryptOptions = createScryptOptions(16384, 8, 1);
 
 function deriveKeyBuffer(
   seed: string,

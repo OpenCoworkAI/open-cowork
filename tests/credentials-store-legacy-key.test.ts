@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
   stores: new Map<string, Record<string, unknown>>(),
 }));
 
+vi.mock('electron', () => ({
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+  },
+}));
+
 vi.mock('electron-store', () => {
   class MockStore<T extends Record<string, unknown>> {
     public store: Record<string, unknown>;
@@ -49,6 +55,10 @@ describe('credentialsStore legacy key migration', () => {
   beforeEach(() => {
     mocks.stores.clear();
     vi.resetModules();
+  });
+
+  it('initializes when safeStorage falls back to a scrypt-derived machine key', async () => {
+    await expect(import('../src/main/credentials/credentials-store')).resolves.toBeDefined();
   });
 
   it('decrypts credentials written with the legacy credentials-key store and rewrites them as GCM', async () => {

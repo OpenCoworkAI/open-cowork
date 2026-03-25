@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -124,5 +125,16 @@ describe('createEncryptedStoreWithKeyRotation', () => {
     expect(backups).toHaveLength(1);
     expect(fs.existsSync(path.join(tempDir, backups[0]))).toBe(true);
     expect(fs.existsSync(storePath)).toBe(false);
+  });
+
+  it('sets maxmem high enough for secure scrypt derivation', async () => {
+    registerStoreMocks(tempDir);
+
+    const { SECURE_SCRYPT_OPTIONS } = await import('../src/main/utils/store-encryption');
+
+    expect(() =>
+      crypto.scryptSync('stable-seed', 'open-cowork-salt', 32, SECURE_SCRYPT_OPTIONS)
+    ).not.toThrow();
+    expect(SECURE_SCRYPT_OPTIONS.maxmem).toBeGreaterThan(128 * 65536 * 8);
   });
 });
