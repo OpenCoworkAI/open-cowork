@@ -101,7 +101,7 @@ jobs:
       - name: Electron Builder (unsigned)
         run: npx electron-builder --mac dir --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
@@ -158,7 +158,7 @@ jobs:
       - name: Electron Builder
         run: npx electron-builder --win nsis --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
@@ -166,5 +166,7 @@ jobs:
           name: open-cowork-windows
           path: |
             release/*.exe
+            release/*.cmd
+            release/*.ps1
           retention-days: 7
           if-no-files-found: warn

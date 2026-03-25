@@ -57,7 +57,7 @@ jobs:
       - name: Electron Builder (unsigned)
         run: npx electron-builder --mac dmg --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -111,4 +111,6 @@ jobs:
         with:
           files: |
             release/*.exe
+            release/*.cmd
+            release/*.ps1
           draft: true

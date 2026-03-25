@@ -3,49 +3,58 @@
 /**
  * electron-builder afterAllArtifactBuild hook.
  *
- * Creates ULMO (LZMA) compressed DMG files from the `dir` target output.
- * We bypass electron-builder's built-in dmgbuild because it has two issues:
- * 1. Temporary DMG size estimation is too small for large apps
- * 2. Spotlight indexing causes "resource busy" on unmount
+ * Windows:
+ * - copies legacy cleanup helpers into the final release directory so direct
+ *   `electron-builder --win nsis` runs keep the installer remediation assets
  *
- * Using `hdiutil create -srcfolder -format ULMO` directly is more reliable.
- * LZMA achieves ~85-87% compression ratio vs ~79% for zlib.
- *
- * The DMG includes an Applications symlink for drag-to-install UX.
- *
- * Requirements:
- * - macOS only (uses hdiutil)
- * - macOS 10.15 Catalina+ for ULMO support (already met by this project)
+ * macOS:
+ * - creates ULMO (LZMA) compressed DMG files from the `dir` target output
+ * - bypasses electron-builder's built-in dmgbuild because temporary size
+ *   estimation is too small for large apps and Spotlight indexing can cause
+ *   "resource busy" on unmount
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { writeLegacyCleanupArtifacts } = require('./build-windows-artifacts');
 
-/**
- * @param {import('electron-builder').BuildResult} buildResult
- * @returns {string[]} Additional artifact paths
- */
-module.exports = async function afterAllArtifactBuild(buildResult) {
-  // Only run on macOS — hdiutil is macOS-only
-  if (process.platform !== 'darwin') {
-    return [];
-  }
+function resolveOutputDir(buildResult) {
+  const configuredOutDir = buildResult.outDir || buildResult.configuration?.directories?.output || 'release';
+  return path.isAbsolute(configuredOutDir)
+    ? configuredOutDir
+    : path.resolve(process.cwd(), configuredOutDir);
+}
 
-  const { outDir, configuration } = buildResult;
+function addWindowsReleaseArtifacts(buildResult) {
+  const outputDir = resolveOutputDir(buildResult);
+  const copiedPaths = writeLegacyCleanupArtifacts({
+    projectRoot: process.cwd(),
+    outputDir,
+  });
+
+  copiedPaths.forEach((copiedPath) => {
+    console.log('[after-all-artifacts] Added legacy cleanup helper:', copiedPath);
+  });
+
+  return copiedPaths;
+}
+
+async function compressMacArtifacts(buildResult) {
+  const outDir = resolveOutputDir(buildResult);
+  const { configuration } = buildResult;
   const productName = configuration.productName || 'Open Cowork';
   const version = buildResult.configuration.buildVersion ||
     require(path.join(process.cwd(), 'package.json')).version;
 
-  // Find the .app directory in the dir target output
   const macOutDirs = fs.readdirSync(outDir)
-    .filter(d => d.startsWith('mac-'))
-    .map(d => path.join(outDir, d));
+    .filter((dirName) => dirName.startsWith('mac-'))
+    .map((dirName) => path.join(outDir, dirName));
 
   const createdDmgs = [];
 
   for (const macDir of macOutDirs) {
-    const arch = path.basename(macDir).replace('mac-', ''); // e.g. "arm64"
+    const arch = path.basename(macDir).replace('mac-', '');
     const appName = `${productName}.app`;
     const appPath = path.join(macDir, appName);
 
@@ -61,15 +70,12 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
     console.log(`\n[create-dmg] Creating ULMO DMG: ${dmgName}`);
 
     try {
-      // Add Applications symlink for drag-to-install (temporary, removed after DMG creation)
       if (!fs.existsSync(applicationsLink)) {
         fs.symlinkSync('/Applications', applicationsLink);
-        console.log(`  Added Applications symlink for drag-to-install UX`);
+        console.log('  Added Applications symlink for drag-to-install UX');
       }
 
-      // Create ULMO DMG directly (no intermediate UDZO → convert step)
-      // Safe: all paths are build-time artifact paths from electron-builder
-      console.log(`  Creating ULMO DMG (this may take a few minutes)...`);
+      console.log('  Creating ULMO DMG (this may take a few minutes)...');
       execSync(
         `hdiutil create -volname "${productName}" -srcfolder "${macDir}" ` +
         `-ov -format ULMO -imagekey lzma-level=5 "${dmgPath}"`,
@@ -77,24 +83,26 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
       );
 
       const dmgSize = fs.statSync(dmgPath).size;
-      console.log(`  ✓ DMG created: ${(dmgSize / 1024 / 1024).toFixed(1)}MB (ULMO/LZMA compressed)`);
+      console.log(`  DMG created: ${(dmgSize / 1024 / 1024).toFixed(1)}MB (ULMO/LZMA compressed)`);
 
       createdDmgs.push(dmgPath);
-    } catch (err) {
-      console.error(`[create-dmg] Failed: ${err.message}`);
-      if (fs.existsSync(dmgPath)) fs.unlinkSync(dmgPath);
+    } catch (error) {
+      console.error(`[create-dmg] Failed: ${error.message}`);
+      if (fs.existsSync(dmgPath)) {
+        fs.unlinkSync(dmgPath);
+      }
     } finally {
-      // Remove temporary Applications symlink from the dir output
       if (fs.existsSync(applicationsLink) && fs.lstatSync(applicationsLink).isSymbolicLink()) {
         fs.unlinkSync(applicationsLink);
       }
     }
   }
 
-  // Also handle any pre-existing DMGs (if `dmg` target is used on other platforms/configs)
-  const existingDmgs = (buildResult.artifactPaths || []).filter(f => f.endsWith('.dmg'));
+  const existingDmgs = (buildResult.artifactPaths || []).filter((artifactPath) => artifactPath.endsWith('.dmg'));
   for (const dmgPath of existingDmgs) {
-    if (!fs.existsSync(dmgPath) || createdDmgs.includes(dmgPath)) continue;
+    if (!fs.existsSync(dmgPath) || createdDmgs.includes(dmgPath)) {
+      continue;
+    }
 
     const tmpPath = dmgPath.replace('.dmg', '.ulmo.dmg');
     const originalSize = fs.statSync(dmgPath).size;
@@ -108,12 +116,29 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
       fs.unlinkSync(dmgPath);
       fs.renameSync(tmpPath, dmgPath);
       const newSize = fs.statSync(dmgPath).size;
-      console.log(`  ✓ ${(originalSize / 1024 / 1024).toFixed(1)}MB → ${(newSize / 1024 / 1024).toFixed(1)}MB`);
-    } catch (err) {
-      console.error(`[compress-dmg] Failed: ${err.message}`);
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      console.log(`  ${(originalSize / 1024 / 1024).toFixed(1)}MB -> ${(newSize / 1024 / 1024).toFixed(1)}MB`);
+    } catch (error) {
+      console.error(`[compress-dmg] Failed: ${error.message}`);
+      if (fs.existsSync(tmpPath)) {
+        fs.unlinkSync(tmpPath);
+      }
     }
   }
 
   return createdDmgs;
+}
+
+module.exports = async function afterAllArtifactBuild(buildResult) {
+  if (process.platform === 'win32') {
+    return addWindowsReleaseArtifacts(buildResult);
+  }
+
+  if (process.platform !== 'darwin') {
+    return [];
+  }
+
+  return compressMacArtifacts(buildResult);
 };
+
+module.exports.addWindowsReleaseArtifacts = addWindowsReleaseArtifacts;
+module.exports.compressMacArtifacts = compressMacArtifacts;
