@@ -16,6 +16,7 @@ import type { AppConfig, ApiTestResult } from '../types';
 import { useApiConfigState } from '../hooks/useApiConfigState';
 import { ApiConfigSetManager } from './ApiConfigSetManager';
 import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
+import { CodexAuthPanel } from './CodexAuthPanel';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ interface ConfigModalProps {
 }
 
 const PROVIDER_LABELS: Record<
-  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'custom',
+  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'codex_chatgpt' | 'custom',
   string
 > = {
   openrouter: 'OpenRouter',
@@ -34,6 +35,7 @@ const PROVIDER_LABELS: Record<
   openai: 'OpenAI',
   gemini: 'Gemini',
   ollama: 'Ollama',
+  codex_chatgpt: 'Codex',
   custom: 'Custom',
 };
 
@@ -68,6 +70,8 @@ export function ConfigModal({
     testResult,
     friendlyTestDetails,
     isOllamaMode,
+    isCodexMode,
+    codexPath,
     requiresApiKey,
     protocolGuidanceText,
     protocolGuidanceTone,
@@ -86,6 +90,7 @@ export function ConfigModal({
     setModel,
     setCustomModel,
     toggleCustomModel,
+    setCodexPath,
     applyCommonProviderSetup,
     changeProvider,
     changeProtocol,
@@ -201,43 +206,54 @@ export function ConfigModal({
               {t('api.provider')}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
-                (p) => (
-                  <button
-                    key={p}
-                    onClick={() => changeProvider(p)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      provider === p
-                        ? 'bg-accent text-white'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    {presets?.[p]?.name ||
-                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
-                      p}
-                  </button>
-                )
-              )}
+              {(
+                [
+                  'openrouter',
+                  'anthropic',
+                  'openai',
+                  'gemini',
+                  'ollama',
+                  'codex_chatgpt',
+                  'custom',
+                ] as const
+              ).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => changeProvider(p)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    provider === p
+                      ? 'bg-accent text-white'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  }`}
+                >
+                  {presets?.[p]?.name ||
+                    (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
+                    p}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* API Key */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-              <Key className="w-4 h-4" />
-              {t('api.apiKey')}
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-              className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-            />
-            {currentPreset?.keyHint && (
-              <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
-            )}
-          </div>
+          {isCodexMode ? (
+            <CodexAuthPanel codexPath={codexPath} setCodexPath={setCodexPath} />
+          ) : (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <Key className="w-4 h-4" />
+                {t('api.apiKey')}
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
+                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+              {currentPreset?.keyHint && (
+                <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
+              )}
+            </div>
+          )}
 
           {/* Custom Protocol */}
           {provider === 'custom' && (
@@ -335,7 +351,7 @@ export function ConfigModal({
                 {t('api.model')}
               </label>
               <div className="flex items-center gap-2">
-                {isOllamaMode && (
+                {(isOllamaMode || provider === 'codex_chatgpt') && (
                   <button
                     type="button"
                     onClick={() => {
@@ -360,8 +376,12 @@ export function ConfigModal({
                   >
                     <Edit3 className="w-3 h-3" />
                     {isOllamaMode
-                      ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
-                      : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
+                      ? useCustomModel
+                        ? t('api.useDetectedModels')
+                        : t('api.manualModel')
+                      : useCustomModel
+                        ? t('api.usePreset')
+                        : t('api.custom')}
                   </button>
                 )}
               </div>

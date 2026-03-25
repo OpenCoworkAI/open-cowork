@@ -155,6 +155,23 @@
     "enableThinking": "启用思考模式",
     "enableThinkingHint": "显示 Claude 的思考过程。这提供更多透明度，但可能增加 token 消耗。",
     "enableThinkingOllamaHint": "大多数 Ollama 模型不支持思考模式，仅在模型明确支持时启用。",
+    "codex": {
+      "description": "使用与 ChatGPT 账号共享的官方 Codex CLI 登录流程。Open Cowork 不会保存 API Key。",
+      "cliPath": "Codex CLI 路径",
+      "cliPathPlaceholder": "留空则使用 PATH 中的 codex",
+      "cliPathHint": "可选。只有当系统 PATH 中找不到 `codex` 命令时才需要填写。",
+      "statusLabel": "Codex 登录状态",
+      "statusChecking": "正在检查 Codex CLI 状态...",
+      "refreshStatus": "刷新状态",
+      "login": "浏览器登录",
+      "deviceLogin": "设备码登录",
+      "logout": "退出登录",
+      "officialOnly": "该集成只使用官方 Codex CLI 流程，不会抓取 ChatGPT 会话或私有接口。",
+      "manualLoginHint": "手动终端登录命令：`codex login`。",
+      "deviceLoginHint": "如果浏览器登录卡住，或本地 localhost 回调失败，请改用 `codex login --device-auth`。",
+      "logHint": "Codex 登录诊断信息会写入 `codex-login.log`。",
+      "logoutHint": "如果你的 Codex 之前处于 API Key 模式，请先退出登录，再使用 ChatGPT 重新登录。"
+    },
     "testSuccess": "连接成功（{{ms}}ms）",
     "testSuccessNeedSave": "连接测试成功，请点击“保存设置”后再开始会话。",
     "testError": {

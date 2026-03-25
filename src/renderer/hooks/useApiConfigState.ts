@@ -14,10 +14,7 @@ import type {
   ProviderType,
 } from '../types';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
-import {
-  DEFAULT_OLLAMA_BASE_URL,
-  normalizeOllamaBaseUrl,
-} from '../../shared/ollama-base-url';
+import { DEFAULT_OLLAMA_BASE_URL, normalizeOllamaBaseUrl } from '../../shared/ollama-base-url';
 import { API_PROVIDER_PRESETS, getModelInputGuidance } from '../../shared/api-model-presets';
 import {
   COMMON_PROVIDER_SETUPS,
@@ -74,6 +71,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openai',
   'gemini',
   'ollama',
+  'codex_chatgpt',
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
@@ -90,7 +88,8 @@ function isProviderType(value: unknown): value is ProviderType {
     value === 'custom' ||
     value === 'openai' ||
     value === 'gemini' ||
-    value === 'ollama'
+    value === 'ollama' ||
+    value === 'codex_chatgpt'
   );
 }
 
@@ -120,6 +119,9 @@ export function profileKeyToProvider(profileKey: ProviderProfileKey): {
 } {
   if (profileKey === 'ollama') {
     return { provider: 'ollama', customProtocol: 'openai' };
+  }
+  if (profileKey === 'codex_chatgpt') {
+    return { provider: 'codex_chatgpt', customProtocol: 'openai' };
   }
   if (profileKey === 'custom:openai') {
     return { provider: 'custom', customProtocol: 'openai' };
@@ -175,6 +177,9 @@ function modelPresetForProfile(profileKey: ProviderProfileKey, presets: Provider
   if (profileKey === 'ollama') {
     return presets.ollama;
   }
+  if (profileKey === 'codex_chatgpt') {
+    return presets.codex_chatgpt;
+  }
   if (profileKey === 'custom:openai') {
     return presets.openai;
   }
@@ -196,7 +201,7 @@ function defaultProfileForKey(
   return {
     apiKey: '',
     baseUrl: preset.baseUrl,
-    model: profileKey === 'ollama' ? '' : (preset.models[0]?.id || ''),
+    model: profileKey === 'ollama' ? '' : preset.models[0]?.id || '',
     customModel: '',
     useCustomModel: prefersCustomInput,
     contextWindow: '',
@@ -265,9 +270,8 @@ function normalizeProfile(
   );
   return {
     apiKey: profile?.apiKey || '',
-    baseUrl: profileKey === 'ollama'
-      ? (normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl)
-      : rawBaseUrl,
+    baseUrl:
+      profileKey === 'ollama' ? normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl : rawBaseUrl,
     model: hasPresetModel ? modelValue : fallback.model,
     customModel: hasPresetModel ? '' : modelValue,
     useCustomModel: !hasPresetModel,
@@ -359,7 +363,8 @@ function toPersistedProfiles(
 export function buildApiConfigDraftSignature(
   activeProfileKey: ProviderProfileKey,
   profiles: Record<ProviderProfileKey, UIProviderProfile>,
-  enableThinking: boolean
+  enableThinking: boolean,
+  codexPath = ''
 ): string {
   const persisted = toPersistedProfiles(profiles);
   return JSON.stringify({
@@ -371,6 +376,7 @@ export function buildApiConfigDraftSignature(
       baseUrl: persisted[key]?.baseUrl || '',
       model: persisted[key]?.model || '',
     })),
+    codexPath,
   });
 }
 
@@ -570,6 +576,8 @@ interface ApiConfigState {
   pendingConfigSetAction: PendingConfigSetAction | null;
   // Extended thinking flag
   enableThinking: boolean;
+  // Optional Codex CLI path override
+  codexPath: string;
   // Remember last custom protocol so switching back to custom restores it
   lastCustomProtocol: CustomProtocolType;
   // Signature of the last persisted state (used for dirty-check)
@@ -611,6 +619,7 @@ type ApiConfigAction =
         profiles: Record<ProviderProfileKey, UIProviderProfile>;
         activeProfileKey: ProviderProfileKey;
         enableThinking: boolean;
+        codexPath: string;
         configSets: ApiConfigSet[];
         activeConfigSetId: string;
         lastCustomProtocol: CustomProtocolType;
@@ -621,6 +630,7 @@ type ApiConfigAction =
   | { type: 'SET_ACTIVE_PROFILE_KEY'; payload: ProviderProfileKey }
   // Enable thinking toggle
   | { type: 'SET_ENABLE_THINKING'; payload: boolean }
+  | { type: 'SET_CODEX_PATH'; payload: string }
   // Patch one profile in the profiles map
   | { type: 'PATCH_PROFILE'; profileKey: ProviderProfileKey; patch: Partial<UIProviderProfile> }
   // Replace a profile using a functional updater
@@ -679,6 +689,7 @@ function apiConfigReducer(state: ApiConfigState, action: ApiConfigAction): ApiCo
         profiles: action.payload.profiles,
         activeProfileKey: action.payload.activeProfileKey,
         enableThinking: action.payload.enableThinking,
+        codexPath: action.payload.codexPath,
         configSets: action.payload.configSets,
         activeConfigSetId: action.payload.activeConfigSetId,
         pendingConfigSetAction: null,
@@ -691,6 +702,9 @@ function apiConfigReducer(state: ApiConfigState, action: ApiConfigAction): ApiCo
 
     case 'SET_ENABLE_THINKING':
       return { ...state, enableThinking: action.payload };
+
+    case 'SET_CODEX_PATH':
+      return { ...state, codexPath: action.payload };
 
     case 'PATCH_PROFILE':
       return {
@@ -726,7 +740,10 @@ function apiConfigReducer(state: ApiConfigState, action: ApiConfigAction): ApiCo
     case 'CLEAR_DISCOVERED_MODELS':
       return {
         ...state,
-        discoveredModels: clearDiscoveredModelsForProfile(state.discoveredModels, action.profileKey),
+        discoveredModels: clearDiscoveredModelsForProfile(
+          state.discoveredModels,
+          action.profileKey
+        ),
       };
 
     case 'DELETE_DISCOVERED_MODELS': {
@@ -824,34 +841,39 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         ? 'gemini'
         : 'anthropic';
 
-  const [state, dispatch] = useReducer(apiConfigReducer, undefined, (): ApiConfigState => ({
-    presets: FALLBACK_PROVIDER_PRESETS,
-    profiles: initialBootstrap.snapshot.profiles,
-    activeProfileKey: initialBootstrap.snapshot.activeProfileKey,
-    configSets: initialBootstrap.configSets,
-    activeConfigSetId: initialBootstrap.activeConfigSetId,
-    pendingConfigSetAction: null,
-    isMutatingConfigSet: false,
-    lastCustomProtocol: initialLastCustomProtocol,
-    enableThinking: Boolean(initialConfig?.enableThinking),
-    discoveredModels: {},
-    isLoadingConfig: true,
-    savedDraftSignature: '',
-    isSaving: false,
-    isTesting: false,
-    isRefreshingModels: false,
-    isDiscoveringLocalOllama: false,
-    errorText: '',
-    errorKey: null,
-    errorValues: undefined,
-    successText: '',
-    successKey: null,
-    successValues: undefined,
-    lastSaveCompletedAt: 0,
-    testResult: null,
-    diagnosticResult: null,
-    isDiagnosing: false,
-  }));
+  const [state, dispatch] = useReducer(
+    apiConfigReducer,
+    undefined,
+    (): ApiConfigState => ({
+      presets: FALLBACK_PROVIDER_PRESETS,
+      profiles: initialBootstrap.snapshot.profiles,
+      activeProfileKey: initialBootstrap.snapshot.activeProfileKey,
+      configSets: initialBootstrap.configSets,
+      activeConfigSetId: initialBootstrap.activeConfigSetId,
+      pendingConfigSetAction: null,
+      isMutatingConfigSet: false,
+      lastCustomProtocol: initialLastCustomProtocol,
+      enableThinking: Boolean(initialConfig?.enableThinking),
+      codexPath: initialConfig?.codexPath || '',
+      discoveredModels: {},
+      isLoadingConfig: true,
+      savedDraftSignature: '',
+      isSaving: false,
+      isTesting: false,
+      isRefreshingModels: false,
+      isDiscoveringLocalOllama: false,
+      errorText: '',
+      errorKey: null,
+      errorValues: undefined,
+      successText: '',
+      successKey: null,
+      successValues: undefined,
+      lastSaveCompletedAt: 0,
+      testResult: null,
+      diagnosticResult: null,
+      isDiagnosing: false,
+    })
+  );
 
   // Destructure state for convenience — avoids `state.X` in every expression
   const {
@@ -864,6 +886,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     isMutatingConfigSet,
     lastCustomProtocol,
     enableThinking,
+    codexPath,
     discoveredModels,
     isLoadingConfig,
     savedDraftSignature,
@@ -929,13 +952,13 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     profiles[activeProfileKey] || defaultProfileForKey(activeProfileKey, presets);
   const modelPreset = modelPresetForProfile(activeProfileKey, presets);
   const currentPreset = modelPreset;
-  const hasDiscoveredOllamaModels =
-    provider === 'ollama' && Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);
-  const modelOptions = provider === 'ollama'
-    ? (discoveredModels[activeProfileKey] || [])
-    : hasDiscoveredOllamaModels
-      ? (discoveredModels[activeProfileKey] || [])
-      : modelPreset.models;
+  const supportsModelRefresh = provider === 'ollama' || provider === 'codex_chatgpt';
+  const hasRefreshedModels =
+    supportsModelRefresh &&
+    Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);
+  const modelOptions = hasRefreshedModels
+    ? discoveredModels[activeProfileKey] || []
+    : modelPreset.models;
   const modelInputGuidance = getModelInputGuidance(provider, customProtocol);
 
   const currentConfigSet = useMemo(
@@ -956,10 +979,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const customModel = currentProfile.customModel;
   const useCustomModel = currentProfile.useCustomModel;
   const shouldShowOllamaManualModelToggle =
-    provider !== 'ollama'
-      || useCustomModel
-      || Boolean(error)
-      || modelOptions.length === 0;
+    provider !== 'ollama' || useCustomModel || Boolean(error) || modelOptions.length === 0;
   const contextWindow = currentProfile.contextWindow;
   const maxTokens = currentProfile.maxTokens;
   const detectedProviderSetup = useMemo(
@@ -1104,6 +1124,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   ]);
 
   const allowEmptyApiKey =
+    provider === 'codex_chatgpt' ||
     provider === 'ollama' ||
     (provider === 'custom' &&
       ((customProtocol === 'anthropic' && isCustomAnthropicLoopbackGateway(baseUrl)) ||
@@ -1111,8 +1132,8 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         (customProtocol === 'gemini' && isCustomGeminiLoopbackGateway(baseUrl))));
   const requiresApiKey = !allowEmptyApiKey;
   const currentDraftSignature = useMemo(
-    () => buildApiConfigDraftSignature(activeProfileKey, profiles, enableThinking),
-    [activeProfileKey, profiles, enableThinking]
+    () => buildApiConfigDraftSignature(activeProfileKey, profiles, enableThinking, codexPath),
+    [activeProfileKey, codexPath, enableThinking, profiles]
   );
   const hasUnsavedChanges =
     savedDraftSignature !== '' && currentDraftSignature !== savedDraftSignature;
@@ -1138,13 +1159,15 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           profiles: bootstrap.snapshot.profiles,
           activeProfileKey: bootstrap.snapshot.activeProfileKey,
           enableThinking: bootstrap.snapshot.enableThinking,
+          codexPath: config?.codexPath || '',
           configSets: bootstrap.configSets,
           activeConfigSetId: bootstrap.activeConfigSetId,
           lastCustomProtocol: resolvedLastCustomProtocol,
           savedDraftSignature: buildApiConfigDraftSignature(
             bootstrap.snapshot.activeProfileKey,
             bootstrap.snapshot.profiles,
-            bootstrap.snapshot.enableThinking
+            bootstrap.snapshot.enableThinking,
+            config?.codexPath || ''
           ),
         },
       });
@@ -1181,7 +1204,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
   const changeProtocol = useCallback((newProtocol: CustomProtocolType) => {
     dispatch({ type: 'SET_LAST_CUSTOM_PROTOCOL', payload: newProtocol });
-    dispatch({ type: 'SET_ACTIVE_PROFILE_KEY', payload: profileKeyFromProvider('custom', newProtocol) });
+    dispatch({
+      type: 'SET_ACTIVE_PROFILE_KEY',
+      payload: profileKeyFromProvider('custom', newProtocol),
+    });
   }, []);
 
   const setApiKey = useCallback(
@@ -1225,6 +1251,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     },
     [updateActiveProfile]
   );
+
+  const setCodexPath = useCallback((value: string) => {
+    dispatch({ type: 'SET_CODEX_PATH', payload: value });
+  }, []);
 
   const applyCommonProviderSetup = useCallback(
     (setupId: string) => {
@@ -1354,7 +1384,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           if (!inPreset) {
             return {
               ...current,
-              model: provider === 'ollama' ? '' : (preset.models[0]?.id || ''),
+              model: provider === 'ollama' ? '' : preset.models[0]?.id || '',
             };
           }
         }
@@ -1395,6 +1425,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         baseUrl: resolvedBaseUrl || undefined,
         customProtocol,
         model: finalModel,
+        codexPath: provider === 'codex_chatgpt' ? codexPath.trim() || undefined : undefined,
       });
       dispatch({ type: 'SET_TEST_RESULT', payload: result });
       if (result.ok && hasUnsavedChanges) {
@@ -1417,6 +1448,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     apiKey,
     baseUrl,
     currentPreset.baseUrl,
+    codexPath,
     customModel,
     customProtocol,
     model,
@@ -1430,65 +1462,69 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     showSuccessKey,
   ]);
 
-  const handleDiagnose = useCallback(async (verificationLevel: 'fast' | 'deep' = 'fast') => {
-    if (requiresApiKey && !apiKey.trim()) {
-      showErrorKey('api.testError.missing_key');
-      return;
-    }
+  const handleDiagnose = useCallback(
+    async (verificationLevel: 'fast' | 'deep' = 'fast') => {
+      if (requiresApiKey && !apiKey.trim()) {
+        showErrorKey('api.testError.missing_key');
+        return;
+      }
 
-    clearError();
-    dispatch({ type: 'SET_IS_DIAGNOSING', payload: true });
-    dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: null });
-    dispatch({ type: 'SET_TEST_RESULT', payload: null });
-    try {
-      const resolvedBaseUrl =
-        provider === 'custom' || provider === 'ollama'
-          ? baseUrl.trim()
-          : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
+      clearError();
+      dispatch({ type: 'SET_IS_DIAGNOSING', payload: true });
+      dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: null });
+      dispatch({ type: 'SET_TEST_RESULT', payload: null });
+      try {
+        const resolvedBaseUrl =
+          provider === 'custom' || provider === 'ollama'
+            ? baseUrl.trim()
+            : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
 
-      const finalModel = useCustomModel ? customModel.trim() : model;
+        const finalModel = useCustomModel ? customModel.trim() : model;
 
-      const result = await window.electronAPI.config.diagnose({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: resolvedBaseUrl || undefined,
-        customProtocol,
-        model: finalModel || undefined,
-        verificationLevel,
-      });
-      dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: result });
-    } catch (err) {
-      showErrorText((err as Error).message || 'Diagnosis failed');
-    } finally {
-      dispatch({ type: 'SET_IS_DIAGNOSING', payload: false });
-    }
-  }, [
-    requiresApiKey,
-    apiKey,
-    baseUrl,
-    provider,
-    customProtocol,
-    model,
-    customModel,
-    useCustomModel,
-    currentPreset.baseUrl,
-    clearError,
-    showErrorKey,
-    showErrorText,
-  ]);
+        const result = await window.electronAPI.config.diagnose({
+          provider,
+          apiKey: apiKey.trim(),
+          baseUrl: resolvedBaseUrl || undefined,
+          customProtocol,
+          model: finalModel || undefined,
+          verificationLevel,
+        });
+        dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: result });
+      } catch (err) {
+        showErrorText((err as Error).message || 'Diagnosis failed');
+      } finally {
+        dispatch({ type: 'SET_IS_DIAGNOSING', payload: false });
+      }
+    },
+    [
+      requiresApiKey,
+      apiKey,
+      baseUrl,
+      provider,
+      customProtocol,
+      model,
+      customModel,
+      useCustomModel,
+      currentPreset.baseUrl,
+      clearError,
+      showErrorKey,
+      showErrorText,
+    ]
+  );
 
   const handleDeepDiagnose = useCallback(async () => {
     await handleDiagnose('deep');
   }, [handleDiagnose]);
 
   const refreshModelOptions = useCallback(async () => {
-    if (!isElectron || provider !== 'ollama') {
+    if (!isElectron || (provider !== 'ollama' && provider !== 'codex_chatgpt')) {
       return [];
     }
 
     const requestedProfileKey = activeProfileKey;
     const requestedBaseUrl = baseUrl.trim();
     const requestId = ++ollamaRefreshRequestIdRef.current;
+    const requestedProvider = provider;
 
     dispatch({ type: 'SET_IS_REFRESHING_MODELS', payload: true });
     clearError();
@@ -1497,14 +1533,15 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         provider,
         apiKey: apiKey.trim(),
         baseUrl: requestedBaseUrl || undefined,
+        codexPath: provider === 'codex_chatgpt' ? codexPath.trim() || undefined : undefined,
       });
 
       const latestTarget = latestOllamaTargetRef.current;
       if (
-        requestId !== ollamaRefreshRequestIdRef.current
-        || latestTarget.provider !== 'ollama'
-        || latestTarget.activeProfileKey !== requestedProfileKey
-        || latestTarget.baseUrl !== requestedBaseUrl
+        requestId !== ollamaRefreshRequestIdRef.current ||
+        latestTarget.provider !== requestedProvider ||
+        latestTarget.activeProfileKey !== requestedProfileKey ||
+        latestTarget.baseUrl !== requestedBaseUrl
       ) {
         return models;
       }
@@ -1534,10 +1571,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     } catch (refreshError) {
       const latestTarget = latestOllamaTargetRef.current;
       if (
-        requestId !== ollamaRefreshRequestIdRef.current
-        || latestTarget.provider !== 'ollama'
-        || latestTarget.activeProfileKey !== requestedProfileKey
-        || latestTarget.baseUrl !== requestedBaseUrl
+        requestId !== ollamaRefreshRequestIdRef.current ||
+        latestTarget.provider !== requestedProvider ||
+        latestTarget.activeProfileKey !== requestedProfileKey ||
+        latestTarget.baseUrl !== requestedBaseUrl
       ) {
         return [];
       }
@@ -1557,7 +1594,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     activeProfileKey,
     apiKey,
     baseUrl,
-    presets,
+    codexPath,
     provider,
     clearError,
     showErrorKey,
@@ -1622,10 +1659,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         });
         const latestTarget = latestOllamaTargetRef.current;
         if (
-          requestId !== ollamaDiscoverRequestIdRef.current
-          || latestTarget.provider !== 'ollama'
-          || latestTarget.activeProfileKey !== requestedProfileKey
-          || latestTarget.baseUrl !== requestedBaseUrl
+          requestId !== ollamaDiscoverRequestIdRef.current ||
+          latestTarget.provider !== 'ollama' ||
+          latestTarget.activeProfileKey !== requestedProfileKey ||
+          latestTarget.baseUrl !== requestedBaseUrl
         ) {
           return result;
         }
@@ -1656,10 +1693,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       } catch (discoveryError) {
         const latestTarget = latestOllamaTargetRef.current;
         if (
-          requestId !== ollamaDiscoverRequestIdRef.current
-          || latestTarget.provider !== 'ollama'
-          || latestTarget.activeProfileKey !== requestedProfileKey
-          || latestTarget.baseUrl !== requestedBaseUrl
+          requestId !== ollamaDiscoverRequestIdRef.current ||
+          latestTarget.provider !== 'ollama' ||
+          latestTarget.activeProfileKey !== requestedProfileKey ||
+          latestTarget.baseUrl !== requestedBaseUrl
         ) {
           return null;
         }
@@ -1705,6 +1742,13 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     return () => clearTimeout(timer);
   }, [provider, baseUrl, refreshModelOptions]);
 
+  useEffect(() => {
+    if (provider !== 'codex_chatgpt' || modelPreset.models.length > 0) {
+      return;
+    }
+    void refreshModelOptions();
+  }, [modelPreset.models.length, provider, refreshModelOptions]);
+
   const handleSave = useCallback(
     async (options?: { silentSuccess?: boolean }) => {
       if (requiresApiKey && !apiKey.trim()) {
@@ -1743,6 +1787,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           profiles: persistedProfiles,
           activeConfigSetId,
           enableThinking,
+          codexPath,
         };
 
         if (onSave) {
@@ -1778,6 +1823,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       baseUrl,
       currentDraftSignature,
       currentPreset.baseUrl,
+      codexPath,
       customModel,
       customProtocol,
       enableThinking,
@@ -2058,6 +2104,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     modelInputPlaceholder: modelInputGuidance.placeholder,
     modelInputHint: modelInputGuidance.hint,
     enableThinking,
+    codexPath,
     isSaving,
     isTesting,
     isRefreshingModels,
@@ -2072,6 +2119,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     handleDiagnose,
     handleDeepDiagnose,
     isOllamaMode: provider === 'ollama',
+    isCodexMode: provider === 'codex_chatgpt',
     shouldShowOllamaManualModelToggle,
     requiresApiKey,
     detectedProviderSetup,
@@ -2096,6 +2144,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     setMaxTokens,
     toggleCustomModel,
     setEnableThinking,
+    setCodexPath,
     applyCommonProviderSetup,
     changeProvider,
     changeProtocol,

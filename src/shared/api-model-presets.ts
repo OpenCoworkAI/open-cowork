@@ -1,4 +1,11 @@
-export type SharedProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type SharedProviderType =
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'codex_chatgpt';
 
 export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 
@@ -17,6 +24,7 @@ export interface SharedProviderPresets {
   openai: SharedProviderPreset;
   gemini: SharedProviderPreset;
   ollama: SharedProviderPreset;
+  codex_chatgpt: SharedProviderPreset;
 }
 
 export interface ModelInputGuidance {
@@ -94,6 +102,26 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     keyPlaceholder: '可留空',
     keyHint: '多数 Ollama 部署可留空；如果你的代理层要求鉴权，也可以填写 Key',
   },
+  codex_chatgpt: {
+    name: 'Codex (ChatGPT)',
+    baseUrl: '',
+    models: [
+      { id: 'gpt-5.4', name: 'gpt-5.4' },
+      { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' },
+      { id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' },
+      { id: 'gpt-5.3-codex-spark', name: 'gpt-5.3-codex-spark' },
+      { id: 'gpt-5.2-codex', name: 'gpt-5.2-codex' },
+      { id: 'gpt-5.2', name: 'gpt-5.2' },
+      { id: 'gpt-5.1-codex-max', name: 'gpt-5.1-codex-max' },
+      { id: 'gpt-5.1', name: 'gpt-5.1' },
+      { id: 'gpt-5.1-codex', name: 'gpt-5.1-codex' },
+      { id: 'gpt-5-codex', name: 'gpt-5-codex' },
+      { id: 'gpt-5-codex-mini', name: 'gpt-5-codex-mini' },
+      { id: 'gpt-5', name: 'gpt-5' },
+    ],
+    keyPlaceholder: 'No API key required',
+    keyHint: 'Uses the official Codex CLI login shared with your ChatGPT account.',
+  },
   custom: {
     name: '更多模型',
     baseUrl: '',
@@ -128,7 +156,13 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
   },
   anthropic: {
     piProvider: 'anthropic',
-    pick: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-3-7-sonnet-latest'],
+    pick: [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5',
+      'claude-sonnet-4-5',
+      'claude-3-7-sonnet-latest',
+    ],
   },
   openai: {
     piProvider: 'openai',
@@ -136,7 +170,14 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
   },
   gemini: {
     piProvider: 'google',
-    pick: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    pick: [
+      'gemini-3.1-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+    ],
   },
 };
 
@@ -183,6 +224,13 @@ export function getModelInputGuidance(
     return {
       placeholder: 'qwen3.5:0.8b, llama3.2:latest, deepseek-r1:latest',
       hint: 'Use the exact model ID returned by your Ollama server.',
+    };
+  }
+
+  if (provider === 'codex_chatgpt') {
+    return {
+      placeholder: 'gpt-5.4, gpt-5.4-mini, gpt-5.3-codex',
+      hint: 'Use a Codex CLI model ID supported by your current ChatGPT plan or Codex installation.',
     };
   }
 

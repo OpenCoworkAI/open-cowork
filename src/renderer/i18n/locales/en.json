@@ -155,6 +155,23 @@
     "enableThinking": "Enable Thinking Mode",
     "enableThinkingHint": "Show Claude's thinking process step by step. This provides more transparency but may increase token usage.",
     "enableThinkingOllamaHint": "Most Ollama models do not support thinking mode. Enable only if your model explicitly supports it.",
+    "codex": {
+      "description": "Use the official Codex CLI sign-in flow shared with your ChatGPT account. No API key is stored in Open Cowork.",
+      "cliPath": "Codex CLI Path",
+      "cliPathPlaceholder": "Leave empty to use codex from PATH",
+      "cliPathHint": "Optional. Set this only if the `codex` command is not already available in your PATH.",
+      "statusLabel": "Codex sign-in status",
+      "statusChecking": "Checking Codex CLI status...",
+      "refreshStatus": "Refresh Status",
+      "login": "Browser Login",
+      "deviceLogin": "Device Login",
+      "logout": "Logout",
+      "officialOnly": "This integration only uses the official Codex CLI flow. It does not scrape ChatGPT sessions or private endpoints.",
+      "manualLoginHint": "Manual terminal login command: `codex login`.",
+      "deviceLoginHint": "If browser login stalls or the localhost callback fails, use `codex login --device-auth`.",
+      "logHint": "Codex login diagnostics are written to `codex-login.log`.",
+      "logoutHint": "If Codex was previously configured in API-key mode, run logout first, then sign in again with ChatGPT."
+    },
     "testSuccess": "Connection successful ({{ms}}ms)",
     "testSuccessNeedSave": "Connection test passed. Save settings before starting a session.",
     "testError": {

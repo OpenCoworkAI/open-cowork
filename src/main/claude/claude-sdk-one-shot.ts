@@ -22,8 +22,10 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 
-const NETWORK_ERROR_RE = /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
-const AUTH_ERROR_RE = /authentication[_\s-]?failed|unauthorized|invalid[_\s-]?api[_\s-]?key|forbidden|401|403/i;
+const NETWORK_ERROR_RE =
+  /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
+const AUTH_ERROR_RE =
+  /authentication[_\s-]?failed|unauthorized|invalid[_\s-]?api[_\s-]?key|forbidden|401|403/i;
 const RATE_LIMIT_RE = /rate[_\s-]?limit|too\s+many\s+requests|429/i;
 const SERVER_ERROR_RE = /server[_\s-]?error|internal\s+server\s+error|5\d\d/i;
 const PROBE_ACK = 'sdk_probe_ok';
@@ -44,7 +46,7 @@ function resolveProbeApiKey(
   resolvedCustomProtocol: CustomProtocolType,
   effectiveBaseUrl: string | undefined,
   explicitApiKey: string | undefined,
-  config: AppConfig,
+  config: AppConfig
 ): string {
   const candidateApiKey = explicitApiKey ?? config.apiKey?.trim() ?? '';
   if (candidateApiKey) {
@@ -52,21 +54,29 @@ function resolveProbeApiKey(
   }
 
   if (input.provider === 'ollama') {
-    return resolveOllamaCredentials({
-      provider: input.provider,
-      customProtocol: resolvedCustomProtocol,
-      apiKey: '',
-      baseUrl: effectiveBaseUrl,
-    })?.apiKey || '';
+    return (
+      resolveOllamaCredentials({
+        provider: input.provider,
+        customProtocol: resolvedCustomProtocol,
+        apiKey: '',
+        baseUrl: effectiveBaseUrl,
+      })?.apiKey || ''
+    );
   }
 
-  if (input.provider === 'openai' || input.provider === 'openrouter' || (input.provider === 'custom' && resolvedCustomProtocol === 'openai')) {
-    return resolveOpenAICredentials({
-      provider: input.provider,
-      customProtocol: resolvedCustomProtocol,
-      apiKey: '',
-      baseUrl: effectiveBaseUrl,
-    })?.apiKey || '';
+  if (
+    input.provider === 'openai' ||
+    input.provider === 'openrouter' ||
+    (input.provider === 'custom' && resolvedCustomProtocol === 'openai')
+  ) {
+    return (
+      resolveOpenAICredentials({
+        provider: input.provider,
+        customProtocol: resolvedCustomProtocol,
+        apiKey: '',
+        baseUrl: effectiveBaseUrl,
+      })?.apiKey || ''
+    );
   }
 
   if (
@@ -95,21 +105,23 @@ function resolveProbeApiKey(
 function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
   const resolvedBaseUrl = resolveProbeBaseUrl(input);
   const normalizedInputApiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : undefined;
-  const resolvedCustomProtocol = resolvePiRouteProtocol(input.provider, input.customProtocol) as CustomProtocolType;
+  const resolvedCustomProtocol = resolvePiRouteProtocol(
+    input.provider,
+    input.customProtocol
+  ) as CustomProtocolType;
   const effectiveRawBaseUrl = resolvedBaseUrl || '';
-  const effectiveBaseUrl = input.provider === 'ollama'
-    ? (normalizeOllamaBaseUrl(effectiveRawBaseUrl) || effectiveRawBaseUrl)
-    : (
-      resolvedCustomProtocol === 'openai' || resolvedCustomProtocol === 'gemini'
+  const effectiveBaseUrl =
+    input.provider === 'ollama'
+      ? normalizeOllamaBaseUrl(effectiveRawBaseUrl) || effectiveRawBaseUrl
+      : resolvedCustomProtocol === 'openai' || resolvedCustomProtocol === 'gemini'
         ? effectiveRawBaseUrl
-        : normalizeAnthropicBaseUrl(effectiveRawBaseUrl)
-    );
+        : normalizeAnthropicBaseUrl(effectiveRawBaseUrl);
   const effectiveApiKey = resolveProbeApiKey(
     input,
     resolvedCustomProtocol,
     effectiveBaseUrl,
     normalizedInputApiKey,
-    config,
+    config
   );
   return {
     ...config,
@@ -121,11 +133,7 @@ function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
   };
 }
 
-function mapPiAiError(
-  errorText: string,
-  durationMs: number,
-  provider?: string,
-): ApiTestResult {
+function mapPiAiError(errorText: string, durationMs: number, provider?: string): ApiTestResult {
   const details = errorText.trim();
   const lowered = details.toLowerCase();
 
@@ -153,12 +161,12 @@ function mapPiAiError(
 async function runPiAiOneShot(
   prompt: string,
   systemPrompt: string,
-  config: AppConfig,
+  config: AppConfig
 ): Promise<{ text: string; hasThinking: boolean; durationMs: number }> {
   const modelString = resolvePiModelString(config);
   const keyProvider = config.customProtocol || config.provider || 'anthropic';
   const parts = modelString.split('/');
-  const provider = parts.length >= 2 ? parts[0] : (keyProvider || 'anthropic');
+  const provider = parts.length >= 2 ? parts[0] : keyProvider || 'anthropic';
   let piModel = resolvePiRegistryModel(modelString, {
     configProvider: keyProvider,
     customBaseUrl: config.baseUrl?.trim() || undefined,
@@ -168,7 +176,10 @@ async function runPiAiOneShot(
 
   if (!piModel) {
     // Synthetic fallback for unknown/custom models
-    const effectiveProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol) as CustomProtocolType;
+    const effectiveProtocol = resolvePiRouteProtocol(
+      config.provider,
+      config.customProtocol
+    ) as CustomProtocolType;
     const api = config.baseUrl?.trim() ? inferPiApi(effectiveProtocol) : undefined;
     const synthetic = resolveSyntheticPiModelFallback({
       rawModel: config.model,
@@ -182,7 +193,7 @@ async function runPiAiOneShot(
       synthetic.provider,
       effectiveProtocol,
       config.baseUrl?.trim() || '',
-      api,
+      api
     );
     piModel = applyPiModelRuntimeOverrides(piModel, {
       configProvider: keyProvider,
@@ -213,30 +224,61 @@ async function runPiAiOneShot(
   // Use pi-ai's completeSimple for a one-shot call
   // Pass apiKey directly in options — completeSimple uses options.apiKey || env var
   const userMsg: PiUserMessage = { role: 'user', content: prompt, timestamp: Date.now() };
-  log('[OneShot] Calling completeSimple:', resolvedModel.provider, resolvedModel.id, 'baseUrl:', resolvedModel.baseUrl, 'api:', resolvedModel.api);
-  const response = await completeSimple(resolvedModel, {
-    systemPrompt,
-    messages: [userMsg],
-  }, { apiKey: apiKey || undefined });
+  log(
+    '[OneShot] Calling completeSimple:',
+    resolvedModel.provider,
+    resolvedModel.id,
+    'baseUrl:',
+    resolvedModel.baseUrl,
+    'api:',
+    resolvedModel.api
+  );
+  const response = await completeSimple(
+    resolvedModel,
+    {
+      systemPrompt,
+      messages: [userMsg],
+    },
+    { apiKey: apiKey || undefined }
+  );
 
   // Extract text and thinking content from response
-  const textBlocks = response.content.filter(b => b.type === 'text');
-  const thinkingBlocks = response.content.filter(b => b.type === 'thinking');
-  const text = textBlocks.map(b => (b as { text: string }).text).join('').trim();
+  const textBlocks = response.content.filter((b) => b.type === 'text');
+  const thinkingBlocks = response.content.filter((b) => b.type === 'thinking');
+  const text = textBlocks
+    .map((b) => (b as { text: string }).text)
+    .join('')
+    .trim();
   const hasThinking = thinkingBlocks.some(
-    b => (b as { thinking: string }).thinking?.trim().length > 0
+    (b) => (b as { thinking: string }).thinking?.trim().length > 0
   );
-  log('[OneShot] Response:', text ? text.substring(0, 200) : '(empty)', 'blocks:', response.content.length, 'textBlocks:', textBlocks.length, 'thinkingBlocks:', thinkingBlocks.length);
+  log(
+    '[OneShot] Response:',
+    text ? text.substring(0, 200) : '(empty)',
+    'blocks:',
+    response.content.length,
+    'textBlocks:',
+    textBlocks.length,
+    'thinkingBlocks:',
+    thinkingBlocks.length
+  );
   return { text, hasThinking, durationMs: Date.now() - start };
 }
 
 function normalizeProbeAck(raw: string): string {
   // Strip markdown formatting and quotes around/between words, but preserve
   // underscores inside words (PROBE_ACK = 'sdk_probe_ok' contains underscores).
-  return raw.replace(/(?<!\w)[*_~`"']+|[*_~`"']+(?!\w)/g, '').replace(/[.,!?;:]+$/g, '').trim().toLowerCase();
+  return raw
+    .replace(/(?<!\w)[*_~`"']+|[*_~`"']+(?!\w)/g, '')
+    .replace(/[.,!?;:]+$/g, '')
+    .trim()
+    .toLowerCase();
 }
 
-export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig): Promise<ApiTestResult> {
+export async function probeWithClaudeSdk(
+  input: ApiTestInput,
+  config: AppConfig
+): Promise<ApiTestResult> {
   const probeConfig = buildProbeConfig(input, config);
 
   if (input.provider === 'custom' && !probeConfig.baseUrl?.trim()) {
@@ -255,7 +297,7 @@ export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig)
     const result = await runPiAiOneShot(
       `Please reply with exactly: ${PROBE_ACK}`,
       `You are a connectivity probe. Do not use tools. Reply with exactly: ${PROBE_ACK}`,
-      probeConfig,
+      probeConfig
     );
 
     if (!result.text && !result.hasThinking) {
@@ -269,7 +311,9 @@ export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig)
     // Thinking models may respond only with reasoning content and no text —
     // treat as successful probe since the model is reachable and responding.
     if (!result.text && result.hasThinking) {
-      log('[Probe] Thinking-only response — treating as ok (model reachable, cannot validate ack text)');
+      log(
+        '[Probe] Thinking-only response — treating as ok (model reachable, cannot validate ack text)'
+      );
       return { ok: true, latencyMs: result.durationMs };
     }
     if (!normalizeProbeAck(result.text).includes(PROBE_ACK)) {
@@ -290,13 +334,17 @@ export async function probeWithClaudeSdk(input: ApiTestInput, config: AppConfig)
 export async function generateTitleWithClaudeSdk(
   titlePrompt: string,
   config: AppConfig,
-  _cwdOverride?: string,
+  _cwdOverride?: string
 ): Promise<string | null> {
+  if (config.provider === 'codex_chatgpt') {
+    return null;
+  }
+
   try {
     const result = await runPiAiOneShot(
       titlePrompt,
       'Generate a concise title. Reply with only the title text and no extra markup.',
-      config,
+      config
     );
     const title = normalizeGeneratedTitle(result.text);
     if (!title && result.hasThinking) {

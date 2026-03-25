@@ -30,11 +30,19 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { listOfficialCodexModels } from '../codex/codex-models';
 
 /**
  * Application configuration schema
  */
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType =
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'codex_chatgpt';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
@@ -43,6 +51,7 @@ export type ProviderProfileKey =
   | 'openai'
   | 'gemini'
   | 'ollama'
+  | 'codex_chatgpt'
   | 'custom:anthropic'
   | 'custom:openai'
   | 'custom:gemini';
@@ -100,6 +109,9 @@ export interface AppConfig {
   // Optional: Claude Code CLI path override
   claudeCodePath?: string;
 
+  // Optional: Codex CLI path override
+  codexPath?: string;
+
   // Optional: Default working directory
   defaultWorkdir?: string;
 
@@ -134,6 +146,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'activeProfileKey',
   'activeConfigSetId',
   'claudeCodePath',
+  'codexPath',
   'defaultWorkdir',
   'globalSkillsPath',
   'enableDevLogs',
@@ -163,6 +176,11 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
     apiKey: '',
     baseUrl: 'http://localhost:11434/v1',
     model: '',
+  },
+  codex_chatgpt: {
+    apiKey: '',
+    baseUrl: '',
+    model: 'gpt-5.4',
   },
   gemini: {
     apiKey: '',
@@ -209,6 +227,7 @@ const defaultConfig: AppConfig = {
   activeConfigSetId: DEFAULT_CONFIG_SET_ID,
   configSets: [defaultConfigSet],
   claudeCodePath: '',
+  codexPath: '',
   defaultWorkdir: '',
   globalSkillsPath: '',
   enableDevLogs: true,
@@ -233,9 +252,14 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
   if (cachedDynamicPresets) return cachedDynamicPresets;
 
   try {
-    const { getModels } = await import('@mariozechner/pi-ai') as { getModels: (provider: string) => Array<{ id: string; name: string }> | undefined };
+    const { getModels } = (await import('@mariozechner/pi-ai')) as {
+      getModels: (provider: string) => Array<{ id: string; name: string }> | undefined;
+    };
 
-    const result = { ...PROVIDER_PRESETS } as Record<string, typeof PROVIDER_PRESETS[keyof typeof PROVIDER_PRESETS]>;
+    const result = { ...PROVIDER_PRESETS } as Record<
+      string,
+      (typeof PROVIDER_PRESETS)[keyof typeof PROVIDER_PRESETS]
+    >;
 
     for (const [providerKey, curated] of Object.entries(PI_AI_CURATED)) {
       const preset = PROVIDER_PRESETS[providerKey as keyof typeof PROVIDER_PRESETS];
@@ -244,11 +268,11 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
       const registryModels = getModels(curated.piProvider);
       if (!registryModels || registryModels.length === 0) continue;
 
-      const registryIds = new Set(registryModels.map(m => m.id));
+      const registryIds = new Set(registryModels.map((m) => m.id));
       const picked = curated.pick
-        .filter(id => registryIds.has(id))
-        .map(id => {
-          const reg = registryModels.find(m => m.id === id);
+        .filter((id) => registryIds.has(id))
+        .map((id) => {
+          const reg = registryModels.find((m) => m.id === id);
           return { id, name: reg?.name || id };
         });
 
@@ -256,6 +280,11 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
         result[providerKey] = { ...preset, models: picked };
       }
     }
+
+    result.codex_chatgpt = {
+      ...PROVIDER_PRESETS.codex_chatgpt,
+      models: await listOfficialCodexModels(),
+    };
 
     cachedDynamicPresets = result as unknown as typeof PROVIDER_PRESETS;
     return cachedDynamicPresets;
@@ -271,6 +300,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openai',
   'gemini',
   'ollama',
+  'codex_chatgpt',
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
@@ -278,7 +308,15 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
 function isProviderType(value: unknown): value is ProviderType {
-  return value === 'openrouter' || value === 'anthropic' || value === 'custom' || value === 'openai' || value === 'gemini' || value === 'ollama';
+  return (
+    value === 'openrouter' ||
+    value === 'anthropic' ||
+    value === 'custom' ||
+    value === 'openai' ||
+    value === 'gemini' ||
+    value === 'ollama' ||
+    value === 'codex_chatgpt'
+  );
 }
 
 function isCustomProtocol(value: unknown): value is CustomProtocolType {
@@ -293,7 +331,10 @@ function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
 }
 
-function profileKeyFromProvider(provider: ProviderType, customProtocol: CustomProtocolType = 'anthropic'): ProviderProfileKey {
+function profileKeyFromProvider(
+  provider: ProviderType,
+  customProtocol: CustomProtocolType = 'anthropic'
+): ProviderProfileKey {
   if (provider !== 'custom') {
     return provider;
   }
@@ -306,7 +347,10 @@ function profileKeyFromProvider(provider: ProviderType, customProtocol: CustomPr
   return 'custom:anthropic';
 }
 
-function profileKeyToProvider(profileKey: ProviderProfileKey): { provider: ProviderType; customProtocol: CustomProtocolType } {
+function profileKeyToProvider(profileKey: ProviderProfileKey): {
+  provider: ProviderType;
+  customProtocol: CustomProtocolType;
+} {
   if (profileKey === 'custom:openai') {
     return { provider: 'custom', customProtocol: 'openai' };
   }
@@ -324,6 +368,9 @@ function profileKeyToProvider(profileKey: ProviderProfileKey): { provider: Provi
   }
   if (profileKey === 'ollama') {
     return { provider: 'ollama', customProtocol: 'openai' };
+  }
+  if (profileKey === 'codex_chatgpt') {
+    return { provider: 'codex_chatgpt', customProtocol: 'openai' };
   }
   return { provider: profileKey, customProtocol: 'anthropic' };
 }
@@ -344,7 +391,10 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
-function normalizeCustomProtocol(value: CustomProtocolType | undefined, fallback: CustomProtocolType = 'anthropic'): CustomProtocolType {
+function normalizeCustomProtocol(
+  value: CustomProtocolType | undefined,
+  fallback: CustomProtocolType = 'anthropic'
+): CustomProtocolType {
   if (value === 'openai' || value === 'gemini') {
     return value;
   }
@@ -352,7 +402,7 @@ function normalizeCustomProtocol(value: CustomProtocolType | undefined, fallback
 }
 
 function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType {
-  if (provider === 'openai' || provider === 'ollama') {
+  if (provider === 'openai' || provider === 'ollama' || provider === 'codex_chatgpt') {
     return 'openai';
   }
   if (provider === 'gemini') {
@@ -422,7 +472,7 @@ export class ConfigStore {
     if (orProfile?.model) {
       orProfile.model = orProfile.model.replace(
         /^(anthropic\/claude-(?:sonnet|opus|haiku)-\d+)-(\d+)/,
-        '$1.$2',
+        '$1.$2'
       );
     }
     // Also fix the flat model field (legacy compat)
@@ -444,17 +494,21 @@ export class ConfigStore {
     };
   }
 
-  private normalizeProfile(profileKey: ProviderProfileKey, profile: Partial<ProviderProfile> | undefined): ProviderProfile {
+  private normalizeProfile(
+    profileKey: ProviderProfileKey,
+    profile: Partial<ProviderProfile> | undefined
+  ): ProviderProfile {
     const fallback = this.getDefaultProfile(profileKey);
-    const model = typeof profile?.model === 'string' && profile.model.trim()
-      ? profile.model.trim()
-      : fallback.model;
-    const rawBaseUrl = typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
-      ? profile.baseUrl.trim()
-      : fallback.baseUrl;
-    const baseUrl = profileKey === 'ollama'
-      ? (normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl)
-      : rawBaseUrl;
+    const model =
+      typeof profile?.model === 'string' && profile.model.trim()
+        ? profile.model.trim()
+        : fallback.model;
+    const rawBaseUrl =
+      typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
+        ? profile.baseUrl.trim()
+        : fallback.baseUrl;
+    const baseUrl =
+      profileKey === 'ollama' ? normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl : rawBaseUrl;
     return {
       apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
       baseUrl,
@@ -495,10 +549,18 @@ export class ConfigStore {
       if (typeof rawProfile.apiKey === 'string' && rawProfile.apiKey.trim()) {
         return true;
       }
-      if (typeof rawProfile.baseUrl === 'string' && rawProfile.baseUrl.trim() && rawProfile.baseUrl.trim() !== fallback.baseUrl) {
+      if (
+        typeof rawProfile.baseUrl === 'string' &&
+        rawProfile.baseUrl.trim() &&
+        rawProfile.baseUrl.trim() !== fallback.baseUrl
+      ) {
         return true;
       }
-      if (typeof rawProfile.model === 'string' && rawProfile.model.trim() && rawProfile.model.trim() !== fallback.model) {
+      if (
+        typeof rawProfile.model === 'string' &&
+        rawProfile.model.trim() &&
+        rawProfile.model.trim() !== fallback.model
+      ) {
         return true;
       }
       return false;
@@ -507,7 +569,9 @@ export class ConfigStore {
 
     let activeProfileKey: ProviderProfileKey = shouldUseLegacyProjection
       ? derivedProfileKey
-      : (isProfileKey(raw.activeProfileKey) ? raw.activeProfileKey : derivedProfileKey);
+      : isProfileKey(raw.activeProfileKey)
+        ? raw.activeProfileKey
+        : derivedProfileKey;
 
     const profiles = this.cloneProfiles(raw.profiles);
     const hasLegacyProjection =
@@ -525,8 +589,8 @@ export class ConfigStore {
     }
 
     if (
-      activeProfileKey === 'custom:openai'
-      && isOllamaLegacyCustomOpenAIConfig({
+      activeProfileKey === 'custom:openai' &&
+      isOllamaLegacyCustomOpenAIConfig({
         provider,
         customProtocol,
         baseUrl: profiles['custom:openai']?.baseUrl,
@@ -795,9 +859,15 @@ export class ConfigStore {
       profiles: projected.profiles,
       activeConfigSetId,
       configSets,
-      claudeCodePath: typeof raw.claudeCodePath === 'string' ? raw.claudeCodePath : defaultConfig.claudeCodePath,
-      defaultWorkdir: typeof raw.defaultWorkdir === 'string' ? raw.defaultWorkdir : defaultConfig.defaultWorkdir,
-      globalSkillsPath: typeof raw.globalSkillsPath === 'string' ? raw.globalSkillsPath : defaultConfig.globalSkillsPath,
+      claudeCodePath:
+        typeof raw.claudeCodePath === 'string' ? raw.claudeCodePath : defaultConfig.claudeCodePath,
+      codexPath: typeof raw.codexPath === 'string' ? raw.codexPath : defaultConfig.codexPath,
+      defaultWorkdir:
+        typeof raw.defaultWorkdir === 'string' ? raw.defaultWorkdir : defaultConfig.defaultWorkdir,
+      globalSkillsPath:
+        typeof raw.globalSkillsPath === 'string'
+          ? raw.globalSkillsPath
+          : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
@@ -824,7 +894,8 @@ export class ConfigStore {
     nextConfigSets: ApiConfigSet[],
     requestedActiveConfigSetId: string
   ): AppConfig {
-    const activeConfigSet = nextConfigSets.find((set) => set.id === requestedActiveConfigSetId) || nextConfigSets[0];
+    const activeConfigSet =
+      nextConfigSets.find((set) => set.id === requestedActiveConfigSetId) || nextConfigSets[0];
     const projected = this.projectFromConfigSet(activeConfigSet);
     return {
       ...base,
@@ -841,16 +912,18 @@ export class ConfigStore {
     };
   }
 
-  private buildUniqueConfigSetName(name: string, existingSets: ApiConfigSet[], excludeId?: string): string {
+  private buildUniqueConfigSetName(
+    name: string,
+    existingSets: ApiConfigSet[],
+    excludeId?: string
+  ): string {
     const trimmed = name.trim();
     if (!trimmed) {
       throw new Error('Config set name is required');
     }
 
     const usedNames = new Set(
-      existingSets
-        .filter((set) => set.id !== excludeId)
-        .map((set) => set.name)
+      existingSets.filter((set) => set.id !== excludeId).map((set) => set.name)
     );
 
     if (!usedNames.has(trimmed)) {
@@ -950,7 +1023,9 @@ export class ConfigStore {
     let newSet: ApiConfigSet;
 
     if (mode === 'blank') {
-      const activeSet = current.configSets.find((set) => set.id === current.activeConfigSetId) || current.configSets[0];
+      const activeSet =
+        current.configSets.find((set) => set.id === current.activeConfigSetId) ||
+        current.configSets[0];
       const seedProvider = activeSet?.provider || current.provider;
       const seedProtocol: CustomProtocolType = normalizeCustomProtocol(
         activeSet?.customProtocol,
@@ -963,9 +1038,10 @@ export class ConfigStore {
         customProtocol: seedProtocol,
       });
     } else {
-      const source = current.configSets.find((set) => set.id === payload.fromSetId)
-        || current.configSets.find((set) => set.id === current.activeConfigSetId)
-        || current.configSets[0];
+      const source =
+        current.configSets.find((set) => set.id === payload.fromSetId) ||
+        current.configSets.find((set) => set.id === current.activeConfigSetId) ||
+        current.configSets[0];
 
       if (!source) {
         throw new Error('Config set clone source not found');
@@ -1030,9 +1106,8 @@ export class ConfigStore {
       .map((set) => this.cloneConfigSet(set));
 
     const fallbackActive = nextSets.find((set) => set.isSystem)?.id || nextSets[0]?.id;
-    const nextActiveConfigSetId = current.activeConfigSetId === payload.id
-      ? fallbackActive
-      : current.activeConfigSetId;
+    const nextActiveConfigSetId =
+      current.activeConfigSetId === payload.id ? fallbackActive : current.activeConfigSetId;
 
     this.saveConfig(this.composeProjectedConfig(current, nextSets, nextActiveConfigSetId));
 
@@ -1060,7 +1135,10 @@ export class ConfigStore {
     if (Array.isArray(updates.configSets) && updates.configSets.length > 0) {
       const normalizedSets = this.normalizeConfigSets(updates.configSets, {
         provider: current.provider,
-        customProtocol: normalizeCustomProtocol(current.customProtocol, defaultProtocolForProvider(current.provider)),
+        customProtocol: normalizeCustomProtocol(
+          current.customProtocol,
+          defaultProtocolForProvider(current.provider)
+        ),
         activeProfileKey: current.activeProfileKey,
         profiles: this.cloneProfiles(current.profiles),
         enableThinking: current.enableThinking,
@@ -1068,15 +1146,17 @@ export class ConfigStore {
       nextConfigSets = normalizedSets;
     }
 
-    const requestedActiveConfigSetId = toNonEmptyString(updates.activeConfigSetId) || current.activeConfigSetId;
+    const requestedActiveConfigSetId =
+      toNonEmptyString(updates.activeConfigSetId) || current.activeConfigSetId;
     const activeConfigSetId = nextConfigSets.some((set) => set.id === requestedActiveConfigSetId)
       ? requestedActiveConfigSetId
       : nextConfigSets[0].id;
 
     const targetIndex = nextConfigSets.findIndex((set) => set.id === activeConfigSetId);
-    const targetSet = targetIndex >= 0
-      ? this.cloneConfigSet(nextConfigSets[targetIndex])
-      : this.cloneConfigSet(nextConfigSets[0]);
+    const targetSet =
+      targetIndex >= 0
+        ? this.cloneConfigSet(nextConfigSets[targetIndex])
+        : this.cloneConfigSet(nextConfigSets[0]);
 
     const nextProfiles = this.cloneProfiles(targetSet.profiles);
     let nextActiveProfileKey = targetSet.activeProfileKey;
@@ -1113,10 +1193,15 @@ export class ConfigStore {
       }
 
       if (updates.provider || updates.customProtocol) {
-        const requestedProvider = isProviderType(updates.provider) ? updates.provider : nextProvider;
-        const requestedProtocol = requestedProvider === 'custom'
-          ? (isCustomProtocol(updates.customProtocol) ? updates.customProtocol : nextCustomProtocol)
-          : defaultProtocolForProvider(requestedProvider);
+        const requestedProvider = isProviderType(updates.provider)
+          ? updates.provider
+          : nextProvider;
+        const requestedProtocol =
+          requestedProvider === 'custom'
+            ? isCustomProtocol(updates.customProtocol)
+              ? updates.customProtocol
+              : nextCustomProtocol
+            : defaultProtocolForProvider(requestedProvider);
         nextActiveProfileKey = profileKeyFromProvider(requestedProvider, requestedProtocol);
         const fromProfile = profileKeyToProvider(nextActiveProfileKey);
         nextProvider = fromProfile.provider;
@@ -1137,7 +1222,10 @@ export class ConfigStore {
         const model = updates.model?.trim();
         nextActiveProfile.model = model || this.getDefaultProfile(nextActiveProfileKey).model;
       }
-      nextProfiles[nextActiveProfileKey] = this.normalizeProfile(nextActiveProfileKey, nextActiveProfile);
+      nextProfiles[nextActiveProfileKey] = this.normalizeProfile(
+        nextActiveProfileKey,
+        nextActiveProfile
+      );
 
       const updatedSet: ApiConfigSet = {
         ...targetSet,
@@ -1145,7 +1233,8 @@ export class ConfigStore {
         customProtocol: nextCustomProtocol,
         activeProfileKey: nextActiveProfileKey,
         profiles: nextProfiles,
-        enableThinking: updates.enableThinking !== undefined ? updates.enableThinking : targetSet.enableThinking,
+        enableThinking:
+          updates.enableThinking !== undefined ? updates.enableThinking : targetSet.enableThinking,
         updatedAt: nowISO(),
       };
 
@@ -1157,13 +1246,22 @@ export class ConfigStore {
     const projectedConfig = this.composeProjectedConfig(current, nextConfigSets, activeConfigSetId);
     this.saveConfig({
       ...projectedConfig,
-      claudeCodePath: updates.claudeCodePath !== undefined ? updates.claudeCodePath : current.claudeCodePath,
-      defaultWorkdir: updates.defaultWorkdir !== undefined ? updates.defaultWorkdir : current.defaultWorkdir,
-      globalSkillsPath: updates.globalSkillsPath !== undefined ? updates.globalSkillsPath : current.globalSkillsPath,
-      enableDevLogs: updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
+      claudeCodePath:
+        updates.claudeCodePath !== undefined ? updates.claudeCodePath : current.claudeCodePath,
+      codexPath: updates.codexPath !== undefined ? updates.codexPath : current.codexPath,
+      defaultWorkdir:
+        updates.defaultWorkdir !== undefined ? updates.defaultWorkdir : current.defaultWorkdir,
+      globalSkillsPath:
+        updates.globalSkillsPath !== undefined
+          ? updates.globalSkillsPath
+          : current.globalSkillsPath,
+      enableDevLogs:
+        updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
-      sandboxEnabled: updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
-      isConfigured: updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
+      sandboxEnabled:
+        updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
+      isConfigured:
+        updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });
   }
 
@@ -1181,32 +1279,41 @@ export class ConfigStore {
     baseUrl?: string;
     model?: string;
   }): boolean {
-    if (projection.provider === 'ollama' && !(projection.model?.trim())) {
+    if (projection.provider === 'ollama' && !projection.model?.trim()) {
       return false;
+    }
+    if (projection.provider === 'codex_chatgpt') {
+      return Boolean(projection.model?.trim());
     }
     const apiKey = projection.apiKey?.trim();
     if (apiKey) {
       return true;
     }
-    if (shouldAllowEmptyAnthropicApiKey({
-      provider: projection.provider,
-      customProtocol: projection.customProtocol,
-      baseUrl: projection.baseUrl,
-    })) {
+    if (
+      shouldAllowEmptyAnthropicApiKey({
+        provider: projection.provider,
+        customProtocol: projection.customProtocol,
+        baseUrl: projection.baseUrl,
+      })
+    ) {
       return true;
     }
-    if (shouldAllowEmptyGeminiApiKey({
-      provider: projection.provider,
-      customProtocol: projection.customProtocol,
-      baseUrl: projection.baseUrl,
-    })) {
+    if (
+      shouldAllowEmptyGeminiApiKey({
+        provider: projection.provider,
+        customProtocol: projection.customProtocol,
+        baseUrl: projection.baseUrl,
+      })
+    ) {
       return true;
     }
-    if (shouldAllowEmptyOllamaApiKey({
-      provider: projection.provider,
-      customProtocol: projection.customProtocol,
-      baseUrl: projection.baseUrl,
-    })) {
+    if (
+      shouldAllowEmptyOllamaApiKey({
+        provider: projection.provider,
+        customProtocol: projection.customProtocol,
+        baseUrl: projection.baseUrl,
+      })
+    ) {
       return true;
     }
     const protocol: CustomProtocolType = normalizeCustomProtocol(
@@ -1302,6 +1409,26 @@ export class ConfigStore {
     delete process.env.CLAUDE_CODE_PATH;
     delete process.env.COWORK_WORKDIR;
 
+    if (projectedConfig.provider === 'codex_chatgpt') {
+      if (projectedConfig.defaultWorkdir) {
+        process.env.COWORK_WORKDIR = projectedConfig.defaultWorkdir;
+      }
+
+      log('[Config] Applied env vars for provider:', projectedConfig.provider, {
+        ANTHROPIC_API_KEY: '(unset)',
+        ANTHROPIC_AUTH_TOKEN: '(unset)',
+        ANTHROPIC_BASE_URL: '(unset)',
+        OPENAI_API_KEY: '(unset)',
+        OPENAI_BASE_URL: '(unset)',
+        OPENAI_MODEL: '(unset)',
+        OPENAI_API_MODE: '(unset)',
+        OPENAI_ACCOUNT_ID: '(unset)',
+        GEMINI_API_KEY: '(unset)',
+        GEMINI_BASE_URL: '(unset)',
+      });
+      return;
+    }
+
     const useOpenAI =
       projectedConfig.provider === 'openai' ||
       projectedConfig.provider === 'ollama' ||
@@ -1311,9 +1438,10 @@ export class ConfigStore {
       (projectedConfig.provider === 'custom' && projectedConfig.customProtocol === 'gemini');
 
     if (useOpenAI) {
-      const resolvedOpenAI = projectedConfig.provider === 'ollama'
-        ? resolveOllamaCredentials(projectedConfig)
-        : resolveOpenAICredentials(projectedConfig);
+      const resolvedOpenAI =
+        projectedConfig.provider === 'ollama'
+          ? resolveOllamaCredentials(projectedConfig)
+          : resolveOpenAICredentials(projectedConfig);
       if (resolvedOpenAI?.apiKey) {
         process.env.OPENAI_API_KEY = resolvedOpenAI.apiKey;
       }
@@ -1340,13 +1468,17 @@ export class ConfigStore {
         process.env.CLAUDE_MODEL = projectedConfig.model;
       }
     } else {
-      const effectiveAnthropicApiKey = projectedConfig.apiKey?.trim() || (
-        shouldAllowEmptyAnthropicApiKey(projectedConfig)
-          ? LOCAL_ANTHROPIC_PLACEHOLDER_KEY
-          : ''
-      );
-      if (projectedConfig.provider === 'anthropic' || (projectedConfig.provider === 'custom' && projectedConfig.customProtocol !== 'openai')) {
-        const useAuthToken = shouldUseAnthropicAuthToken({ ...projectedConfig, apiKey: effectiveAnthropicApiKey });
+      const effectiveAnthropicApiKey =
+        projectedConfig.apiKey?.trim() ||
+        (shouldAllowEmptyAnthropicApiKey(projectedConfig) ? LOCAL_ANTHROPIC_PLACEHOLDER_KEY : '');
+      if (
+        projectedConfig.provider === 'anthropic' ||
+        (projectedConfig.provider === 'custom' && projectedConfig.customProtocol !== 'openai')
+      ) {
+        const useAuthToken = shouldUseAnthropicAuthToken({
+          ...projectedConfig,
+          apiKey: effectiveAnthropicApiKey,
+        });
         if (effectiveAnthropicApiKey) {
           if (useAuthToken) {
             process.env.ANTHROPIC_AUTH_TOKEN = effectiveAnthropicApiKey;

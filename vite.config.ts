@@ -5,7 +5,7 @@ import { resolve } from 'path';
 import { builtinModules } from 'module';
 
 // Node built-in modules must be external for Electron main process
-const nodeBuiltins = builtinModules.flatMap(m => [m, `node:${m}`]);
+const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
 const ignoredWatchPaths = [
   '**/release/**',
   '**/dist/**',
@@ -16,6 +16,7 @@ const ignoredWatchPaths = [
 ];
 
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     electron([

@@ -14,17 +14,40 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Session, Message, ServerEvent, PermissionResult, ContentBlock, TextContent, TraceStep, FileAttachmentContent } from '../../renderer/types';
+import type {
+  Session,
+  Message,
+  ServerEvent,
+  PermissionResult,
+  ContentBlock,
+  TextContent,
+  TraceStep,
+  FileAttachmentContent,
+} from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
-import { SandboxAdapter, getSandboxAdapter, initializeSandbox, reinitializeSandbox } from '../sandbox/sandbox-adapter';
+import {
+  SandboxAdapter,
+  getSandboxAdapter,
+  initializeSandbox,
+  reinitializeSandbox,
+} from '../sandbox/sandbox-adapter';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
+import { CodexAgentRunner } from '../codex/codex-agent-runner';
 import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
-import { log, logError, logWarn, logCtx, logCtxError, runWithLogContext, generateTraceId } from '../utils/logger';
+import {
+  log,
+  logError,
+  logWarn,
+  logCtx,
+  logCtxError,
+  runWithLogContext,
+  generateTraceId,
+} from '../utils/logger';
 import { maybeGenerateSessionTitle } from './session-title-flow';
 import {
   buildTitlePrompt,
@@ -49,12 +72,17 @@ export class SessionManager {
   private pathResolver: PathResolver;
   private sandboxAdapter: SandboxAdapter;
   private agentRunner!: AgentRunner;
+  private codexRunner!: AgentRunner;
   private mcpManager: MCPManager;
   private pluginRuntimeService?: PluginRuntimeService;
   private activeSessions: Map<string, AbortController> = new Map();
-  private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> = new Map();
+  private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
+    new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
-  private pendingSudoPasswords: Map<string, { sessionId: string; resolve: (password: string | null) => void }> = new Map();
+  private pendingSudoPasswords: Map<
+    string,
+    { sessionId: string; resolve: (password: string | null) => void }
+  > = new Map();
   private sandboxInitPromises: Map<string, Promise<void>> = new Map();
   private sessionTitleAttempts: Set<string> = new Set();
   private titleGenerationTokens: Map<string, symbol> = new Map();
@@ -96,6 +124,7 @@ export class SessionManager {
    */
   private createAgentRunner(): void {
     this.agentRunner = this.createClaudeAgentRunner();
+    this.codexRunner = this.createCodexAgentRunner();
     log('[SessionManager] Using pi-coding-agent runner');
   }
 
@@ -104,6 +133,8 @@ export class SessionManager {
       {
         sendToRenderer: this.sendToRenderer,
         saveMessage: (message: Message) => this.saveMessage(message),
+        updateSession: (sessionId: string, updates: Partial<Session>) =>
+          this.updateSession(sessionId, updates),
         requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
           this.requestSudoPassword(sessionId, toolUseId, command),
       },
@@ -111,6 +142,19 @@ export class SessionManager {
       this.mcpManager,
       this.pluginRuntimeService
     );
+  }
+
+  private createCodexAgentRunner(): CodexAgentRunner {
+    return new CodexAgentRunner({
+      sendToRenderer: this.sendToRenderer,
+      saveMessage: (message: Message) => this.saveMessage(message),
+      updateSession: (sessionId: string, updates: Partial<Session>) =>
+        this.updateSession(sessionId, updates),
+    });
+  }
+
+  private getActiveRunner(): AgentRunner {
+    return configStore.get('provider') === 'codex_chatgpt' ? this.codexRunner : this.agentRunner;
   }
 
   /**
@@ -183,7 +227,9 @@ export class SessionManager {
       logError('[SessionManager] Failed to initialize MCP servers:', error);
       this.sendToRenderer({
         type: 'error',
-        payload: { message: `Failed to initialize MCP servers: ${error instanceof Error ? error.message : String(error)}` },
+        payload: {
+          message: `Failed to initialize MCP servers: ${error instanceof Error ? error.message : String(error)}`,
+        },
       });
     }
   }
@@ -356,7 +402,11 @@ export class SessionManager {
   }
 
   // Continue an existing session
-  async continueSession(sessionId: string, prompt: string, content?: ContentBlock[]): Promise<void> {
+  async continueSession(
+    sessionId: string,
+    prompt: string,
+    content?: ContentBlock[]
+  ): Promise<void> {
     log('[SessionManager] Continuing session:', sessionId);
 
     const session = this.loadSession(sessionId);
@@ -412,7 +462,9 @@ export class SessionManager {
     const initPromise = initializeSandbox({
       workspacePath: session.cwd,
       mainWindow: null, // Will show dialogs globally
-    }).then(() => { /* void */ });
+    }).then(() => {
+      /* void */
+    });
 
     this.sandboxInitPromises.set(session.cwd, initPromise);
 
@@ -424,7 +476,9 @@ export class SessionManager {
       logError('[SessionManager] Failed to initialize sandbox:', error);
       this.sendToRenderer({
         type: 'error',
-        payload: { message: `Failed to initialize sandbox: ${error instanceof Error ? error.message : String(error)}` },
+        payload: {
+          message: `Failed to initialize sandbox: ${error instanceof Error ? error.message : String(error)}`,
+        },
       });
       // Continue anyway - sandbox adapter will fallback to native
     } finally {
@@ -433,7 +487,10 @@ export class SessionManager {
   }
 
   // Helper: Copy files to session's .tmp directory and sync to sandbox if needed
-  private async processFileAttachments(session: Session, content: ContentBlock[]): Promise<ContentBlock[]> {
+  private async processFileAttachments(
+    session: Session,
+    content: ContentBlock[]
+  ): Promise<ContentBlock[]> {
     const processedContent: ContentBlock[] = [];
 
     for (const block of content) {
@@ -464,14 +521,23 @@ export class SessionManager {
             const stats = fs.statSync(destPath);
             actualSize = stats.size;
 
-            log('[SessionManager] Copied file:', sourcePath, '->', destPath, `(${actualSize} bytes)`);
+            log(
+              '[SessionManager] Copied file:',
+              sourcePath,
+              '->',
+              destPath,
+              `(${actualSize} bytes)`
+            );
           } else if (fileBlock.inlineDataBase64) {
             const buffer = Buffer.from(fileBlock.inlineDataBase64, 'base64');
             fs.writeFileSync(destPath, buffer);
             actualSize = buffer.length;
             log('[SessionManager] Wrote file from inline data:', destPath, `(${actualSize} bytes)`);
           } else {
-            logError('[SessionManager] Source file not found and inline data missing:', sourcePath || '(empty path)');
+            logError(
+              '[SessionManager] Source file not found and inline data missing:',
+              sourcePath || '(empty path)'
+            );
             // Skip this file attachment
             continue;
           }
@@ -482,7 +548,11 @@ export class SessionManager {
           if (sandboxPath) {
             const sandboxRelativePath = `.tmp/${destFilename}`;
             log('[SessionManager] Syncing attached file to sandbox:', sandboxRelativePath);
-            const syncResult = await SandboxSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
+            const syncResult = await SandboxSync.syncFileToSandbox(
+              session.id,
+              destPath,
+              sandboxRelativePath
+            );
             if (syncResult.success) {
               log('[SessionManager] File synced to sandbox:', syncResult.sandboxPath);
             } else {
@@ -496,7 +566,11 @@ export class SessionManager {
             if (limaSandboxPath) {
               const sandboxRelativePath = `.tmp/${destFilename}`;
               log('[SessionManager] Syncing attached file to Lima sandbox:', sandboxRelativePath);
-              const syncResult = await LimaSync.syncFileToSandbox(session.id, destPath, sandboxRelativePath);
+              const syncResult = await LimaSync.syncFileToSandbox(
+                session.id,
+                destPath,
+                sandboxRelativePath
+              );
               if (syncResult.success) {
                 log('[SessionManager] File synced to Lima sandbox:', syncResult.sandboxPath);
               } else {
@@ -519,7 +593,9 @@ export class SessionManager {
           logError('[SessionManager] Error copying file:', error);
           this.sendToRenderer({
             type: 'error',
-            payload: { message: `Failed to process file attachment: ${error instanceof Error ? error.message : String(error)}` },
+            payload: {
+              message: `Failed to process file attachment: ${error instanceof Error ? error.message : String(error)}`,
+            },
           });
           // Skip this file attachment
         }
@@ -533,98 +609,132 @@ export class SessionManager {
   }
 
   // Process a prompt using ClaudeAgentRunner
-  private async processPrompt(session: Session, prompt: string, content?: ContentBlock[]): Promise<void> {
+  private async processPrompt(
+    session: Session,
+    prompt: string,
+    content?: ContentBlock[]
+  ): Promise<void> {
     const traceId = generateTraceId();
     return runWithLogContext({ sessionId: session.id, traceId }, async () => {
-    logCtx('[SessionManager] Processing prompt for session:', session.id, 'traceId:', traceId);
-    logCtx('[SessionManager] Received content:', content ? JSON.stringify(content.map((c) => ({ type: c.type, hasData: !!(c as { source?: { data?: unknown } }).source?.data }))) : 'none');
-
-    // Ensure sandbox is initialized for this workspace
-    await this.ensureSandboxInitialized(session);
-
-    try {
-      // Use provided content blocks or fall back to simple text
-      let messageContent: ContentBlock[] = content && content.length > 0
-        ? content
-        : [{ type: 'text', text: prompt } as TextContent];
-
-      // Process file attachments - copy to .tmp directory
-      messageContent = await this.processFileAttachments(session, messageContent);
-
-      logCtx('[SessionManager] Final message content types:', messageContent.map((c) => c.type));
-
-      // Build enhanced prompt with file information
-      let enhancedPrompt = prompt;
-      const fileAttachments = messageContent.filter(c => c.type === 'file_attachment') as FileAttachmentContent[];
-      if (fileAttachments.length > 0) {
-        const fileInfo = fileAttachments.map(f =>
-          `- ${f.filename} (${(f.size / 1024).toFixed(1)} KB) at path: ${f.relativePath}`
-        ).join('\n');
-        enhancedPrompt = `${prompt}\n\n[Attached files - use Read tool to access them]:\n${fileInfo}`;
-        logCtx('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
-      }
-
-      // Save user message to database for persistence
-      const existingMessages = this.getMessages(session.id);
-      const userMessage: Message = {
-        id: uuidv4(),
-        sessionId: session.id,
-        role: 'user',
-        content: messageContent, // Save full content including images and files
-        timestamp: Date.now(),
-      };
-      this.saveMessage(userMessage);
-      logCtx('[SessionManager] User message saved:', userMessage.id, 'with', messageContent.length, 'content blocks');
-      const messagesForContext = [...existingMessages, userMessage];
-
-      // Update session model to match current config (may have changed since session creation)
-      const currentModel = configStore.get('model');
-      if (currentModel && currentModel !== session.model) {
-        session.model = currentModel;
-        this.db.sessions.update(session.id, { model: currentModel });
-        this.sendToRenderer({
-          type: 'session.update',
-          payload: { sessionId: session.id, updates: { model: currentModel } },
-        });
-      }
-
-      // Run the agent
-      await this.agentRunner.run(session, enhancedPrompt, messagesForContext);
-
-      // 标题生成不再与首轮对话并发，避免与主请求竞争同一上游配额/通道导致体感变慢。
-      this.runSessionTitleGeneration(session, prompt, existingMessages)
-        .catch(err => logCtxError('[SessionManager] Title generation failed:', err));
-    } catch (error) {
-      logCtxError('[SessionManager] Error processing prompt:', error);
-      const errorText = error instanceof Error ? error.message : 'Unknown error';
-      const alreadyReportedToUser = Boolean(
-        error &&
-        typeof error === 'object' &&
-        (error as { alreadyReportedToUser?: boolean }).alreadyReportedToUser
+      logCtx('[SessionManager] Processing prompt for session:', session.id, 'traceId:', traceId);
+      logCtx(
+        '[SessionManager] Received content:',
+        content
+          ? JSON.stringify(
+              content.map((c) => ({
+                type: c.type,
+                hasData: !!(c as { source?: { data?: unknown } }).source?.data,
+              }))
+            )
+          : 'none'
       );
-      if (!alreadyReportedToUser) {
-        const assistantMessage: Message = {
+
+      // Ensure sandbox is initialized for this workspace unless the active
+      // provider manages its own execution sandboxing.
+      if (configStore.get('provider') !== 'codex_chatgpt') {
+        await this.ensureSandboxInitialized(session);
+      }
+
+      try {
+        // Use provided content blocks or fall back to simple text
+        let messageContent: ContentBlock[] =
+          content && content.length > 0 ? content : [{ type: 'text', text: prompt } as TextContent];
+
+        // Process file attachments - copy to .tmp directory
+        messageContent = await this.processFileAttachments(session, messageContent);
+
+        logCtx(
+          '[SessionManager] Final message content types:',
+          messageContent.map((c) => c.type)
+        );
+
+        // Build enhanced prompt with file information
+        let enhancedPrompt = prompt;
+        const fileAttachments = messageContent.filter(
+          (c) => c.type === 'file_attachment'
+        ) as FileAttachmentContent[];
+        if (fileAttachments.length > 0) {
+          const fileInfo = fileAttachments
+            .map(
+              (f) => `- ${f.filename} (${(f.size / 1024).toFixed(1)} KB) at path: ${f.relativePath}`
+            )
+            .join('\n');
+          enhancedPrompt = `${prompt}\n\n[Attached files - use Read tool to access them]:\n${fileInfo}`;
+          logCtx('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
+        }
+
+        // Save user message to database for persistence
+        const existingMessages = this.getMessages(session.id);
+        const userMessage: Message = {
           id: uuidv4(),
           sessionId: session.id,
-          role: 'assistant',
-          content: [{ type: 'text', text: `**Error**: ${errorText}` }],
+          role: 'user',
+          content: messageContent, // Save full content including images and files
           timestamp: Date.now(),
         };
-        this.saveMessage(assistantMessage);
+        this.saveMessage(userMessage);
+        logCtx(
+          '[SessionManager] User message saved:',
+          userMessage.id,
+          'with',
+          messageContent.length,
+          'content blocks'
+        );
+        const messagesForContext = [...existingMessages, userMessage];
+
+        // Update session model to match current config (may have changed since session creation)
+        const currentModel = configStore.get('model');
+        if (currentModel && currentModel !== session.model) {
+          session.model = currentModel;
+          this.db.sessions.update(session.id, { model: currentModel });
+          this.sendToRenderer({
+            type: 'session.update',
+            payload: { sessionId: session.id, updates: { model: currentModel } },
+          });
+        }
+
+        // Run the agent
+        await this.getActiveRunner().run(session, enhancedPrompt, messagesForContext);
+
+        // 标题生成不再与首轮对话并发，避免与主请求竞争同一上游配额/通道导致体感变慢。
+        this.runSessionTitleGeneration(session, prompt, existingMessages).catch((err) =>
+          logCtxError('[SessionManager] Title generation failed:', err)
+        );
+      } catch (error) {
+        logCtxError('[SessionManager] Error processing prompt:', error);
+        const errorText = error instanceof Error ? error.message : 'Unknown error';
+        const alreadyReportedToUser = Boolean(
+          error &&
+          typeof error === 'object' &&
+          (error as { alreadyReportedToUser?: boolean }).alreadyReportedToUser
+        );
+        if (!alreadyReportedToUser) {
+          const assistantMessage: Message = {
+            id: uuidv4(),
+            sessionId: session.id,
+            role: 'assistant',
+            content: [{ type: 'text', text: `**Error**: ${errorText}` }],
+            timestamp: Date.now(),
+          };
+          this.saveMessage(assistantMessage);
+          this.sendToRenderer({
+            type: 'stream.message',
+            payload: { sessionId: session.id, message: assistantMessage },
+          });
+        }
         this.sendToRenderer({
-          type: 'stream.message',
-          payload: { sessionId: session.id, message: assistantMessage },
+          type: 'error',
+          payload: { message: errorText },
         });
       }
-      this.sendToRenderer({
-        type: 'error',
-        payload: { message: errorText },
-      });
-    }
     }); // end runWithLogContext
   }
 
-  private async runSessionTitleGeneration(session: Session, prompt: string, existingMessages: Message[]): Promise<void> {
+  private async runSessionTitleGeneration(
+    session: Session,
+    prompt: string,
+    existingMessages: Message[]
+  ): Promise<void> {
     const token = Symbol(`title:${session.id}`);
     this.titleGenerationTokens.set(session.id, token);
     const shouldAbort = () => {
@@ -676,7 +786,11 @@ export class SessionManager {
     }
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, sessionId: string): Promise<T | null> {
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    sessionId: string
+  ): Promise<T | null> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         logError('[SessionTitle] Generation timed out', { sessionId, timeoutMs });
@@ -697,7 +811,9 @@ export class SessionManager {
 
   private async generateTitleWithConfig(titlePrompt: string, cwd?: string): Promise<string | null> {
     // Always use pi-ai SDK for title generation
-    return normalizeGeneratedTitle(await generateTitleWithClaudeSdk(titlePrompt, configStore.getAll(), cwd));
+    return normalizeGeneratedTitle(
+      await generateTitleWithClaudeSdk(titlePrompt, configStore.getAll(), cwd)
+    );
   }
 
   private enqueuePrompt(session: Session, prompt: string, content?: ContentBlock[]): void {
@@ -706,11 +822,13 @@ export class SessionManager {
     this.promptQueues.set(session.id, queue);
 
     if (!this.activeSessions.has(session.id)) {
-      this.processQueue(session).catch(err => {
+      this.processQueue(session).catch((err) => {
         logError('[SessionManager] Queue processing error:', err);
         this.sendToRenderer({
           type: 'error',
-          payload: { message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}` },
+          payload: {
+            message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}`,
+          },
         });
       });
     } else {
@@ -792,6 +910,7 @@ export class SessionManager {
     log('[SessionManager] Stopping session:', sessionId);
     this.titleGenerationTokens.delete(sessionId);
     this.agentRunner.cancel(sessionId);
+    this.codexRunner.cancel(sessionId);
     // Cancel any pending sudo password requests for this session
     for (const [toolUseId, entry] of this.pendingSudoPasswords) {
       if (entry.sessionId === sessionId) {
@@ -832,7 +951,7 @@ export class SessionManager {
     this.messageCache.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
     this.titleGenerationTokens.delete(sessionId);
-    
+
     log('[SessionManager] Session deleted:', sessionId);
   }
 
@@ -864,34 +983,63 @@ export class SessionManager {
     });
   }
 
+  private updateSession(sessionId: string, updates: Partial<Session>): void {
+    if (!this.db.sessions.get(sessionId)) {
+      return;
+    }
+
+    const dbUpdates: Record<string, unknown> = { updated_at: Date.now() };
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.cwd !== undefined) dbUpdates.cwd = updates.cwd;
+    if (updates.model !== undefined) dbUpdates.model = updates.model;
+    if (updates.claudeSessionId !== undefined)
+      dbUpdates.claude_session_id = updates.claudeSessionId;
+    if (updates.openaiThreadId !== undefined) dbUpdates.openai_thread_id = updates.openaiThreadId;
+    if (updates.mountedPaths !== undefined)
+      dbUpdates.mounted_paths = JSON.stringify(updates.mountedPaths);
+    if (updates.allowedTools !== undefined)
+      dbUpdates.allowed_tools = JSON.stringify(updates.allowedTools);
+    if (updates.memoryEnabled !== undefined)
+      dbUpdates.memory_enabled = updates.memoryEnabled ? 1 : 0;
+
+    this.db.sessions.update(sessionId, dbUpdates);
+    this.sendToRenderer({
+      type: 'session.update',
+      payload: { sessionId, updates },
+    });
+  }
+
   // Update session's working directory
   // Also clears SDK session cache because Claude SDK sessions are bound to cwd
   updateSessionCwd(sessionId: string, cwd: string): void {
     if (this.activeSessions.has(sessionId)) {
-      logWarn('[SessionManager] CWD change requested while session running; stopping active run first', { sessionId, cwd });
+      logWarn(
+        '[SessionManager] CWD change requested while session running; stopping active run first',
+        { sessionId, cwd }
+      );
       this.stopSession(sessionId);
     }
     const mountedPaths = this.buildMountedPaths(cwd);
     // Clear claude_session_id in DB so next query creates a new SDK session
     // (Claude SDK sessions cannot change cwd mid-session)
-    this.db.sessions.update(sessionId, { 
-      cwd, 
+    this.db.sessions.update(sessionId, {
+      cwd,
       mounted_paths: JSON.stringify(mountedPaths),
       claude_session_id: null,
       openai_thread_id: null,
-      updated_at: Date.now() 
+      updated_at: Date.now(),
     });
-    
+
     // Also clear the in-memory SDK session cache
-    if (this.agentRunner?.clearSdkSession) {
-      this.agentRunner.clearSdkSession(sessionId);
-    }
+    this.agentRunner?.clearSdkSession?.(sessionId);
+    this.codexRunner?.clearSdkSession?.(sessionId);
 
     this.sendToRenderer({
       type: 'session.update',
       payload: { sessionId, updates: { cwd, mountedPaths } },
     });
-    
+
     log('[SessionManager] Session cwd updated:', sessionId, '->', cwd, '(SDK session cleared)');
   }
 
@@ -919,7 +1067,7 @@ export class SessionManager {
         if (firstKey) this.messageCache.delete(firstKey);
       }
     }
-    
+
     log('[SessionManager] Message saved:', message.id, 'role:', message.role);
   }
 

@@ -81,31 +81,26 @@ describe('ConfigStore provider profiles', () => {
           apiKey: 'sk-openai',
           baseUrl: 'https://api.openai.com/v1',
           model: 'gpt-5.2',
-
         },
         openrouter: {
           apiKey: 'sk-openrouter',
           baseUrl: 'https://openrouter.ai/api',
           model: 'anthropic/claude-sonnet-4.5',
-
         },
         anthropic: {
           apiKey: 'sk-ant',
           baseUrl: 'https://api.anthropic.com',
           model: 'claude-sonnet-4-5',
-
         },
         'custom:anthropic': {
           apiKey: 'sk-custom-ant',
           baseUrl: 'https://custom.example/anthropic',
           model: 'glm-4.7',
-
         },
         'custom:openai': {
           apiKey: 'sk-custom-openai',
           baseUrl: 'https://custom.example/openai/v1',
           model: 'gpt-5.2',
-
         },
       },
       enableDevLogs: true,
@@ -284,5 +279,19 @@ describe('ConfigStore provider profiles', () => {
     expect(store.hasUsableCredentialsForActiveSet()).toBe(false);
     expect(store.hasAnyUsableCredentials()).toBe(false);
     expect(store.isConfigured()).toBe(false);
+  });
+
+  it('treats codex provider as usable when a model is selected without api key', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'codex_chatgpt',
+      apiKey: '',
+      model: 'gpt-5-codex',
+    });
+
+    expect(store.hasUsableCredentialsForActiveSet()).toBe(true);
+    expect(store.hasAnyUsableCredentials()).toBe(true);
+    expect(store.isConfigured()).toBe(true);
   });
 });

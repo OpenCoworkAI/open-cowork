@@ -446,7 +446,7 @@ export function WelcomeView() {
             <img
               src={welcomeLogoSrc}
               alt={t('welcome.logoAlt')}
-              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-contain p-2 border border-border-subtle bg-background/60 shadow-soft"
             />
             <div className="text-left">
               <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">

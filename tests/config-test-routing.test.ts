@@ -4,10 +4,15 @@ import type { AppConfig } from '../src/main/config/config-store';
 
 const mocks = vi.hoisted(() => ({
   probeWithClaudeSdk: vi.fn(),
+  getCodexAuthStatus: vi.fn(),
 }));
 
 vi.mock('../src/main/claude/claude-sdk-one-shot', () => ({
   probeWithClaudeSdk: mocks.probeWithClaudeSdk,
+}));
+
+vi.mock('../src/main/codex/codex-cli', () => ({
+  getCodexAuthStatus: mocks.getCodexAuthStatus,
 }));
 
 import { runConfigApiTest } from '../src/main/config/config-test-routing';
@@ -36,6 +41,7 @@ function createConfig(): AppConfig {
 describe('runConfigApiTest', () => {
   beforeEach(() => {
     mocks.probeWithClaudeSdk.mockReset();
+    mocks.getCodexAuthStatus.mockReset();
   });
 
   it('routes all providers through probeWithClaudeSdk', async () => {
@@ -168,5 +174,35 @@ describe('runConfigApiTest', () => {
 
     expect(result).toEqual(probeFailure);
     expect(mocks.probeWithClaudeSdk).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes codex_chatgpt through Codex CLI auth status', async () => {
+    mocks.getCodexAuthStatus.mockResolvedValue({
+      ok: true,
+      loggedIn: true,
+      cliFound: true,
+      message: 'signed in',
+    });
+
+    const result = await runConfigApiTest(
+      {
+        provider: 'codex_chatgpt',
+        apiKey: '',
+        model: 'gpt-5-codex',
+        codexPath: 'C:/tools/codex.cmd',
+      },
+      {
+        ...createConfig(),
+        provider: 'codex_chatgpt',
+        activeProfileKey: 'codex_chatgpt',
+        apiKey: '',
+        model: 'gpt-5-codex',
+        codexPath: 'codex',
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.getCodexAuthStatus).toHaveBeenCalledWith('C:/tools/codex.cmd');
+    expect(mocks.probeWithClaudeSdk).not.toHaveBeenCalled();
   });
 });

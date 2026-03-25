@@ -18,6 +18,9 @@ import type {
   ScheduleUpdateInput,
   ProviderModelInfo,
   LocalOllamaDiscoveryResult,
+  CodexAuthStatus,
+  CodexAuthActionResult,
+  ListModelsInput,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -56,7 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log('[Preload] Removing previous listener');
       ipcRenderer.removeListener('server-event', ipcListener);
     }
-    
+
     registeredCallback = callback;
     ipcListener = (_: Electron.IpcRendererEvent, data: ServerEvent) => {
       console.log('[Preload] Received event:', data.type);
@@ -64,10 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         registeredCallback(data);
       }
     };
-    
+
     console.log('[Preload] Registering new listener');
     ipcRenderer.on('server-event', ipcListener);
-    
+
     // Return cleanup function
     return () => {
       console.log('[Preload] Cleanup called');
@@ -96,7 +99,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Open links in default browser
   openExternal: (url: string) => ipcRenderer.invoke('shell.openExternal', url),
-  showItemInFolder: (filePath: string, cwd?: string) => ipcRenderer.invoke('shell.showItemInFolder', filePath, cwd),
+  showItemInFolder: (filePath: string, cwd?: string) =>
+    ipcRenderer.invoke('shell.showItemInFolder', filePath, cwd),
 
   // Select files using native dialog
   selectFiles: (): Promise<string[]> => ipcRenderer.invoke('dialog.selectFiles'),
@@ -114,11 +118,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   config: {
     get: (): Promise<AppConfig> => ipcRenderer.invoke('config.get'),
     getPresets: (): Promise<ProviderPresets> => ipcRenderer.invoke('config.getPresets'),
-    save: (config: Partial<AppConfig>): Promise<{ success: boolean; config: AppConfig }> => 
+    save: (config: Partial<AppConfig>): Promise<{ success: boolean; config: AppConfig }> =>
       ipcRenderer.invoke('config.save', config),
     createSet: (payload: CreateSetPayload): Promise<{ success: boolean; config: AppConfig }> =>
       ipcRenderer.invoke('config.createSet', payload),
-    renameSet: (payload: { id: string; name: string }): Promise<{ success: boolean; config: AppConfig }> =>
+    renameSet: (payload: {
+      id: string;
+      name: string;
+    }): Promise<{ success: boolean; config: AppConfig }> =>
       ipcRenderer.invoke('config.renameSet', payload),
     deleteSet: (payload: { id: string }): Promise<{ success: boolean; config: AppConfig }> =>
       ipcRenderer.invoke('config.deleteSet', payload),
@@ -127,7 +134,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isConfigured: (): Promise<boolean> => ipcRenderer.invoke('config.isConfigured'),
     test: (config: ApiTestInput): Promise<ApiTestResult> =>
       ipcRenderer.invoke('config.test', config),
-    listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }): Promise<ProviderModelInfo[]> =>
+    getCodexAuthStatus: (codexPath?: string): Promise<CodexAuthStatus> =>
+      ipcRenderer.invoke('config.codexAuthStatus', { codexPath }),
+    codexLogin: (codexPath?: string): Promise<CodexAuthActionResult> =>
+      ipcRenderer.invoke('config.codexLogin', { codexPath }),
+    codexDeviceLogin: (codexPath?: string): Promise<CodexAuthActionResult> =>
+      ipcRenderer.invoke('config.codexDeviceLogin', { codexPath }),
+    codexLogout: (codexPath?: string): Promise<CodexAuthActionResult> =>
+      ipcRenderer.invoke('config.codexLogout', { codexPath }),
+    listModels: (payload: ListModelsInput): Promise<ProviderModelInfo[]> =>
       ipcRenderer.invoke('config.listModels', payload),
     diagnose: (input: DiagnosticInput): Promise<DiagnosticResult> =>
       ipcRenderer.invoke('config.diagnose', input),
@@ -145,7 +160,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // MCP methods
   mcp: {
     getServers: (): Promise<McpServerConfig[]> => ipcRenderer.invoke('mcp.getServers'),
-    getServer: (serverId: string): Promise<McpServerConfig | undefined> => ipcRenderer.invoke('mcp.getServer', serverId),
+    getServer: (serverId: string): Promise<McpServerConfig | undefined> =>
+      ipcRenderer.invoke('mcp.getServer', serverId),
     saveServer: (config: McpServerConfig): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('mcp.saveServer', config),
     deleteServer: (serverId: string): Promise<{ success: boolean }> =>
@@ -161,11 +177,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // so the renderer process never has access to plaintext passwords.
   credentials: {
     getAll: (): Promise<CredentialRecord[]> => ipcRenderer.invoke('credentials.getAll'),
-    getById: (id: string): Promise<CredentialRecord | undefined> => ipcRenderer.invoke('credentials.getById', id),
-    getByType: (type: string): Promise<CredentialRecord[]> => ipcRenderer.invoke('credentials.getByType', type),
-    getByService: (service: string): Promise<CredentialRecord[]> => ipcRenderer.invoke('credentials.getByService', service),
-    save: (credential: CredentialSaveInput): Promise<CredentialRecord> => ipcRenderer.invoke('credentials.save', credential),
-    update: (id: string, updates: CredentialUpdateInput): Promise<CredentialRecord | undefined> => ipcRenderer.invoke('credentials.update', id, updates),
+    getById: (id: string): Promise<CredentialRecord | undefined> =>
+      ipcRenderer.invoke('credentials.getById', id),
+    getByType: (type: string): Promise<CredentialRecord[]> =>
+      ipcRenderer.invoke('credentials.getByType', type),
+    getByService: (service: string): Promise<CredentialRecord[]> =>
+      ipcRenderer.invoke('credentials.getByService', service),
+    save: (credential: CredentialSaveInput): Promise<CredentialRecord> =>
+      ipcRenderer.invoke('credentials.save', credential),
+    update: (id: string, updates: CredentialUpdateInput): Promise<CredentialRecord | undefined> =>
+      ipcRenderer.invoke('credentials.update', id, updates),
     delete: (id: string): Promise<boolean> => ipcRenderer.invoke('credentials.delete', id),
   },
 
@@ -180,13 +201,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('skills.setEnabled', skillId, enabled),
     validate: (skillPath: string): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('skills.validate', skillPath),
-    getStoragePath: (): Promise<string> =>
-      ipcRenderer.invoke('skills.getStoragePath'),
+    getStoragePath: (): Promise<string> => ipcRenderer.invoke('skills.getStoragePath'),
     setStoragePath: (
       targetPath: string,
       migrate = true
-    ): Promise<{ success: boolean; path: string; migratedCount: number; skippedCount: number; error?: string }> =>
-      ipcRenderer.invoke('skills.setStoragePath', targetPath, migrate),
+    ): Promise<{
+      success: boolean;
+      path: string;
+      migratedCount: number;
+      skippedCount: number;
+      error?: string;
+    }> => ipcRenderer.invoke('skills.setStoragePath', targetPath, migrate),
     openStoragePath: (): Promise<{ success: boolean; path: string; error?: string }> =>
       ipcRenderer.invoke('skills.openStoragePath'),
   },
@@ -194,8 +219,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   plugins: {
     listCatalog: (options?: { installableOnly?: boolean }): Promise<PluginCatalogItemV2[]> =>
       ipcRenderer.invoke('plugins.listCatalog', options),
-    listInstalled: (): Promise<InstalledPlugin[]> =>
-      ipcRenderer.invoke('plugins.listInstalled'),
+    listInstalled: (): Promise<InstalledPlugin[]> => ipcRenderer.invoke('plugins.listInstalled'),
     install: (pluginName: string): Promise<PluginInstallResultV2> =>
       ipcRenderer.invoke('plugins.install', pluginName),
     setEnabled: (pluginId: string, enabled: boolean): Promise<PluginToggleResult> =>
@@ -204,7 +228,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       pluginId: string,
       component: PluginComponentKind,
       enabled: boolean
-    ): Promise<PluginToggleResult> => ipcRenderer.invoke('plugins.setComponentEnabled', pluginId, component, enabled),
+    ): Promise<PluginToggleResult> =>
+      ipcRenderer.invoke('plugins.setComponentEnabled', pluginId, component, enabled),
     uninstall: (pluginId: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('plugins.uninstall', pluginId),
   },
@@ -215,10 +240,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       platform: string;
       mode: string;
       initialized: boolean;
-      wsl?: { 
-        available: boolean; 
-        distro?: string; 
-        nodeAvailable?: boolean; 
+      wsl?: {
+        available: boolean;
+        distro?: string;
+        nodeAvailable?: boolean;
         version?: string;
         pythonAvailable?: boolean;
         pythonVersion?: string;
@@ -261,18 +286,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       pipAvailable?: boolean;
       claudeCodeAvailable?: boolean;
     }> => ipcRenderer.invoke('sandbox.checkLima'),
-    installNodeInWSL: (distro: string): Promise<boolean> => 
+    installNodeInWSL: (distro: string): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.installNodeInWSL', distro),
     installPythonInWSL: (distro: string): Promise<boolean> =>
       ipcRenderer.invoke('sandbox.installPythonInWSL', distro),
-    installNodeInLima: (): Promise<boolean> =>
-      ipcRenderer.invoke('sandbox.installNodeInLima'),
-    installPythonInLima: (): Promise<boolean> =>
-      ipcRenderer.invoke('sandbox.installPythonInLima'),
-    startLimaInstance: (): Promise<boolean> =>
-      ipcRenderer.invoke('sandbox.startLimaInstance'),
-    stopLimaInstance: (): Promise<boolean> =>
-      ipcRenderer.invoke('sandbox.stopLimaInstance'),
+    installNodeInLima: (): Promise<boolean> => ipcRenderer.invoke('sandbox.installNodeInLima'),
+    installPythonInLima: (): Promise<boolean> => ipcRenderer.invoke('sandbox.installPythonInLima'),
+    startLimaInstance: (): Promise<boolean> => ipcRenderer.invoke('sandbox.startLimaInstance'),
+    stopLimaInstance: (): Promise<boolean> => ipcRenderer.invoke('sandbox.stopLimaInstance'),
     retrySetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
       ipcRenderer.invoke('sandbox.retrySetup'),
     retryLimaSetup: (): Promise<{ success: boolean; error?: string; result?: unknown }> =>
@@ -283,19 +304,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logs: {
     getPath: (): Promise<string | null> => ipcRenderer.invoke('logs.getPath'),
     getDirectory: (): Promise<string> => ipcRenderer.invoke('logs.getDirectory'),
-    getAll: (): Promise<Array<{ name: string; path: string; size: number; mtime: Date }>> => 
+    getAll: (): Promise<Array<{ name: string; path: string; size: number; mtime: Date }>> =>
       ipcRenderer.invoke('logs.getAll'),
-    export: (): Promise<{ success: boolean; path?: string; size?: number; error?: string }> => 
+    export: (): Promise<{ success: boolean; path?: string; size?: number; error?: string }> =>
       ipcRenderer.invoke('logs.export'),
-    open: (): Promise<{ success: boolean; error?: string }> => 
-      ipcRenderer.invoke('logs.open'),
-    clear: (): Promise<{ success: boolean; deletedCount?: number; error?: string }> => 
+    open: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('logs.open'),
+    clear: (): Promise<{ success: boolean; deletedCount?: number; error?: string }> =>
       ipcRenderer.invoke('logs.clear'),
-    setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
+    setEnabled: (
+      enabled: boolean
+    ): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
       ipcRenderer.invoke('logs.setEnabled', enabled),
     isEnabled: (): Promise<{ success: boolean; enabled?: boolean; error?: string }> =>
       ipcRenderer.invoke('logs.isEnabled'),
-    write: (level: 'info' | 'warn' | 'error', ...args: unknown[]): Promise<{ success: boolean; error?: string }> =>
+    write: (
+      level: 'info' | 'warn' | 'error',
+      ...args: unknown[]
+    ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('logs.write', level, args),
   },
 
@@ -312,17 +337,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('remote.getStatus'),
     setEnabled: (enabled: boolean): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.setEnabled', enabled),
-    updateGatewayConfig: (config: Partial<GatewayConfig>): Promise<{ success: boolean; error?: string }> =>
+    updateGatewayConfig: (
+      config: Partial<GatewayConfig>
+    ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.updateGatewayConfig', config),
-    updateFeishuConfig: (config: FeishuChannelConfig): Promise<{ success: boolean; error?: string }> =>
+    updateFeishuConfig: (
+      config: FeishuChannelConfig
+    ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.updateFeishuConfig', config),
     getPairedUsers: (): Promise<PairedUser[]> => ipcRenderer.invoke('remote.getPairedUsers'),
-    getPendingPairings: (): Promise<PairingRequest[]> => ipcRenderer.invoke('remote.getPendingPairings'),
-    approvePairing: (channelType: string, userId: string): Promise<{ success: boolean; error?: string }> =>
+    getPendingPairings: (): Promise<PairingRequest[]> =>
+      ipcRenderer.invoke('remote.getPendingPairings'),
+    approvePairing: (
+      channelType: string,
+      userId: string
+    ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.approvePairing', channelType, userId),
-    revokePairing: (channelType: string, userId: string): Promise<{ success: boolean; error?: string }> =>
+    revokePairing: (
+      channelType: string,
+      userId: string
+    ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.revokePairing', channelType, userId),
-    getRemoteSessions: (): Promise<RemoteSessionMapping[]> => ipcRenderer.invoke('remote.getRemoteSessions'),
+    getRemoteSessions: (): Promise<RemoteSessionMapping[]> =>
+      ipcRenderer.invoke('remote.getRemoteSessions'),
     clearRemoteSession: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.clearRemoteSession', sessionId),
     getTunnelStatus: (): Promise<{
@@ -346,8 +383,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('schedule.delete', id),
     toggle: (id: string, enabled: boolean): Promise<ScheduleTask | null> =>
       ipcRenderer.invoke('schedule.toggle', id, enabled),
-    runNow: (id: string): Promise<ScheduleTask | null> =>
-      ipcRenderer.invoke('schedule.runNow', id),
+    runNow: (id: string): Promise<ScheduleTask | null> => ipcRenderer.invoke('schedule.runNow', id),
   },
 });
 
@@ -376,12 +412,19 @@ declare global {
         getPresets: () => Promise<ProviderPresets>;
         save: (config: Partial<AppConfig>) => Promise<{ success: boolean; config: AppConfig }>;
         createSet: (payload: CreateSetPayload) => Promise<{ success: boolean; config: AppConfig }>;
-        renameSet: (payload: { id: string; name: string }) => Promise<{ success: boolean; config: AppConfig }>;
+        renameSet: (payload: {
+          id: string;
+          name: string;
+        }) => Promise<{ success: boolean; config: AppConfig }>;
         deleteSet: (payload: { id: string }) => Promise<{ success: boolean; config: AppConfig }>;
         switchSet: (payload: { id: string }) => Promise<{ success: boolean; config: AppConfig }>;
         isConfigured: () => Promise<boolean>;
         test: (config: ApiTestInput) => Promise<ApiTestResult>;
-        listModels: (payload: { provider: AppConfig['provider']; apiKey: string; baseUrl?: string }) => Promise<ProviderModelInfo[]>;
+        getCodexAuthStatus: (codexPath?: string) => Promise<CodexAuthStatus>;
+        codexLogin: (codexPath?: string) => Promise<CodexAuthActionResult>;
+        codexDeviceLogin: (codexPath?: string) => Promise<CodexAuthActionResult>;
+        codexLogout: (codexPath?: string) => Promise<CodexAuthActionResult>;
+        listModels: (payload: ListModelsInput) => Promise<ProviderModelInfo[]>;
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
       };
@@ -405,7 +448,10 @@ declare global {
         getByType: (type: string) => Promise<CredentialRecord[]>;
         getByService: (service: string) => Promise<CredentialRecord[]>;
         save: (credential: CredentialSaveInput) => Promise<CredentialRecord>;
-        update: (id: string, updates: CredentialUpdateInput) => Promise<CredentialRecord | undefined>;
+        update: (
+          id: string,
+          updates: CredentialUpdateInput
+        ) => Promise<CredentialRecord | undefined>;
         delete: (id: string) => Promise<boolean>;
       };
       skills: {
@@ -418,7 +464,13 @@ declare global {
         setStoragePath: (
           targetPath: string,
           migrate?: boolean
-        ) => Promise<{ success: boolean; path: string; migratedCount: number; skippedCount: number; error?: string }>;
+        ) => Promise<{
+          success: boolean;
+          path: string;
+          migratedCount: number;
+          skippedCount: number;
+          error?: string;
+        }>;
         openStoragePath: () => Promise<{ success: boolean; path: string; error?: string }>;
       };
       plugins: {
@@ -438,10 +490,10 @@ declare global {
           platform: string;
           mode: string;
           initialized: boolean;
-          wsl?: { 
-            available: boolean; 
-            distro?: string; 
-            nodeAvailable?: boolean; 
+          wsl?: {
+            available: boolean;
+            distro?: string;
+            nodeAvailable?: boolean;
             version?: string;
             pythonAvailable?: boolean;
             pythonVersion?: string;
@@ -500,9 +552,14 @@ declare global {
         export: () => Promise<{ success: boolean; path?: string; size?: number; error?: string }>;
         open: () => Promise<{ success: boolean; error?: string }>;
         clear: () => Promise<{ success: boolean; deletedCount?: number; error?: string }>;
-        setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
+        setEnabled: (
+          enabled: boolean
+        ) => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
         isEnabled: () => Promise<{ success: boolean; enabled?: boolean; error?: string }>;
-        write: (level: 'info' | 'warn' | 'error', ...args: unknown[]) => Promise<{ success: boolean; error?: string }>;
+        write: (
+          level: 'info' | 'warn' | 'error',
+          ...args: unknown[]
+        ) => Promise<{ success: boolean; error?: string }>;
       };
       remote: {
         getConfig: () => Promise<RemoteConfig>;
@@ -515,12 +572,22 @@ declare global {
           pendingPairings: number;
         }>;
         setEnabled: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
-        updateGatewayConfig: (config: Partial<GatewayConfig>) => Promise<{ success: boolean; error?: string }>;
-        updateFeishuConfig: (config: FeishuChannelConfig) => Promise<{ success: boolean; error?: string }>;
+        updateGatewayConfig: (
+          config: Partial<GatewayConfig>
+        ) => Promise<{ success: boolean; error?: string }>;
+        updateFeishuConfig: (
+          config: FeishuChannelConfig
+        ) => Promise<{ success: boolean; error?: string }>;
         getPairedUsers: () => Promise<PairedUser[]>;
         getPendingPairings: () => Promise<PairingRequest[]>;
-        approvePairing: (channelType: string, userId: string) => Promise<{ success: boolean; error?: string }>;
-        revokePairing: (channelType: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+        approvePairing: (
+          channelType: string,
+          userId: string
+        ) => Promise<{ success: boolean; error?: string }>;
+        revokePairing: (
+          channelType: string,
+          userId: string
+        ) => Promise<{ success: boolean; error?: string }>;
         getRemoteSessions: () => Promise<RemoteSessionMapping[]>;
         clearRemoteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
         getTunnelStatus: () => Promise<{
