@@ -14,7 +14,9 @@ describe('windows legacy uninstall remediation', () => {
     );
 
     expect(builderConfig).toContain('afterAllArtifactBuild: ./scripts/compress-dmg.js');
+    expect(builderConfig).toContain('beforeBuild: ./scripts/stage-mcp-resources.js');
     expect(builderConfig).toContain('include: installer.nsh');
+    expect(builderConfig).toContain('from: dist-mcp-stage');
     expect(installerInclude).toContain('!macro customUnInstallCheck');
     expect(installerInclude).toContain('Open-Cowork-Legacy-Cleanup.cmd');
     expect(installerInclude).toContain('$LOCALAPPDATA\\Programs\\Open Cowork');

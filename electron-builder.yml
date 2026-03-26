@@ -7,6 +7,7 @@ directories:
   buildResources: resources
 
 npmRebuild: true
+beforeBuild: ./scripts/stage-mcp-resources.js
 afterPack: ./scripts/after-pack.js
 afterAllArtifactBuild: ./scripts/compress-dmg.js
 
@@ -47,9 +48,9 @@ files:
 
 # MCP servers (compiled JavaScript files, cross-platform)
 # NOTE: Platform-specific extraResources OVERRIDE this global section,
-# so dist-mcp must also be listed in each platform's extraResources.
+# so dist-mcp-stage must also be listed in each platform's extraResources.
 extraResources:
-  - from: dist-mcp
+  - from: dist-mcp-stage
     to: mcp
 
 # Skills are extracted via extraResources (per-platform) to avoid asar symlink issues.
@@ -73,7 +74,7 @@ win:
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
   extraResources:
-    - from: dist-mcp
+    - from: dist-mcp-stage
       to: mcp
     - from: resources/node/win32-x64
       to: node
@@ -99,7 +100,7 @@ mac:
     NSScreenCaptureUsageDescription: 'Open Cowork needs screen recording access for GUI automation.'
     NSAccessibilityUsageDescription: 'Open Cowork needs accessibility access for GUI automation.'
   extraResources:
-    - from: dist-mcp
+    - from: dist-mcp-stage
       to: mcp
     - from: resources/node/darwin-${arch}
       to: node
@@ -122,7 +123,7 @@ linux:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
   extraResources:
-    - from: dist-mcp
+    - from: dist-mcp-stage
       to: mcp
     - from: resources/node/linux-x64
       to: node
