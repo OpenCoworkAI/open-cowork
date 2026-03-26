@@ -12,6 +12,12 @@ function Write-Step {
   Write-Host "[Open Cowork Cleanup] $Message"
 }
 
+function Test-IsAdministrator {
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+  return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 function Add-UniquePath {
   param(
     [System.Collections.Generic.List[string]]$List,
@@ -96,6 +102,101 @@ function Stop-OpenCoworkProcesses {
   }
 }
 
+function Test-RegistryEntryRequiresAdministrator {
+  param($Entry)
+
+  if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace($Entry.PSPath)) {
+    return $false
+  }
+
+  return $Entry.PSPath -like "Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\*"
+}
+
+function Test-PathRequiresAdministrator {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return $false
+  }
+
+  $expanded = [Environment]::ExpandEnvironmentVariables($PathValue.Trim().Trim('"')).TrimEnd('\')
+  if ([string]::IsNullOrWhiteSpace($expanded)) {
+    return $false
+  }
+
+  $protectedRoots = @(
+    $env:ProgramData,
+    $env:ProgramFiles,
+    ${env:ProgramFiles(x86)}
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
+    $_.TrimEnd('\')
+  }
+
+  foreach ($root in $protectedRoots) {
+    if ($expanded.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Test-CleanupRequiresAdministrator {
+  param(
+    [object[]]$RegistryEntries,
+    [System.Collections.Generic.List[string]]$InstallPaths
+  )
+
+  foreach ($entry in $RegistryEntries) {
+    if (Test-RegistryEntryRequiresAdministrator -Entry $entry) {
+      return $true
+    }
+  }
+
+  foreach ($pathValue in $InstallPaths) {
+    if (Test-PathRequiresAdministrator -PathValue $pathValue) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Invoke-SelfElevatedCleanup {
+  param(
+    [switch]$RemoveAppData,
+    [switch]$Silent
+  )
+
+  $argumentList = @(
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    $PSCommandPath
+  )
+
+  if ($RemoveAppData) {
+    $argumentList += "-RemoveAppData"
+  }
+
+  if ($Silent) {
+    $argumentList += "-Silent"
+  }
+
+  try {
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -Verb RunAs -Wait -PassThru
+    if ($null -ne $process) {
+      exit $process.ExitCode
+    }
+
+    exit 0
+  } catch [System.ComponentModel.Win32Exception] {
+    Write-Warning "Elevation request was cancelled. Cleanup did not run."
+    exit 1
+  }
+}
+
 $registryEntries = @(Get-OpenCoworkRegistryEntries)
 $installPaths = [System.Collections.Generic.List[string]]::new()
 
@@ -120,6 +221,13 @@ Add-UniquePath -List $appDataPaths -PathValue (Join-Path $env:APPDATA "Open Cowo
 Add-UniquePath -List $appDataPaths -PathValue (Join-Path $env:APPDATA "open-cowork")
 Add-UniquePath -List $appDataPaths -PathValue (Join-Path $env:LOCALAPPDATA "Open Cowork")
 Add-UniquePath -List $appDataPaths -PathValue (Join-Path $env:LOCALAPPDATA "open-cowork")
+
+$requiresAdministrator = Test-CleanupRequiresAdministrator -RegistryEntries $registryEntries -InstallPaths $installPaths
+if ($requiresAdministrator -and -not (Test-IsAdministrator)) {
+  Write-Host ""
+  Write-Step "Administrative cleanup is required for machine-wide leftovers. Requesting elevation..."
+  Invoke-SelfElevatedCleanup -RemoveAppData:$RemoveAppData -Silent:$Silent
+}
 
 Write-Host ""
 Write-Step "This tool removes broken Open Cowork Windows install leftovers."

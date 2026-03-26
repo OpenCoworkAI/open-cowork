@@ -20,6 +20,20 @@ describe('windows legacy uninstall remediation', () => {
     expect(installerInclude).toContain('$LOCALAPPDATA\\Programs\\Open Cowork');
   });
 
+  it('embeds and launches the cleanup helper from the installer when uninstall recovery is needed', () => {
+    const installerInclude = fs.readFileSync(
+      path.resolve(process.cwd(), 'resources/installer.nsh'),
+      'utf8'
+    );
+
+    expect(installerInclude).toContain('Var OpenCoworkCleanupDir');
+    expect(installerInclude).toContain('$TEMP\\Open-Cowork-Legacy-Cleanup');
+    expect(installerInclude).toContain(
+      '${BUILD_RESOURCES_DIR}\\windows\\Open-Cowork-Legacy-Cleanup.cmd'
+    );
+    expect(installerInclude).toContain('ExecShell "open" "$OpenCoworkCleanupCmd"');
+  });
+
   it('publishes legacy cleanup helpers with Windows build artifacts', () => {
     const ciWorkflow = fs.readFileSync(
       path.resolve(process.cwd(), '.github/workflows/ci.yml'),
@@ -36,6 +50,21 @@ describe('windows legacy uninstall remediation', () => {
     expect(releaseWorkflow).toContain('release/*.exe');
     expect(releaseWorkflow).toContain('release/*.cmd');
     expect(releaseWorkflow).toContain('release/*.ps1');
+  });
+
+  it('self-elevates the cleanup script when machine-wide leftovers are detected', () => {
+    const cleanupScript = fs.readFileSync(
+      path.resolve(process.cwd(), 'resources/windows/Open-Cowork-Legacy-Cleanup.ps1'),
+      'utf8'
+    );
+
+    expect(cleanupScript).toContain('function Test-IsAdministrator');
+    expect(cleanupScript).toContain('function Test-CleanupRequiresAdministrator');
+    expect(cleanupScript).toContain(
+      'Administrative cleanup is required for machine-wide leftovers. Requesting elevation...'
+    );
+    expect(cleanupScript).toContain('Start-Process -FilePath "powershell.exe"');
+    expect(cleanupScript).toContain('-Verb RunAs');
   });
 
   it('closes long-lived resources during quit cleanup', () => {
