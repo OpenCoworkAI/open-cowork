@@ -46,14 +46,9 @@ files:
   - '!**/.eslintrc*'
   - '!**/tsconfig.json'
 
-# MCP servers (compiled JavaScript files, cross-platform)
-# NOTE: Platform-specific extraResources OVERRIDE this global section,
-# so dist-mcp-stage must also be listed in each platform's extraResources.
-extraResources:
-  - from: dist-mcp-stage
-    to: mcp
-
 # Skills are extracted via extraResources (per-platform) to avoid asar symlink issues.
+# MCP servers are copied in afterPack from dist-mcp-stage to avoid Windows EBUSY
+# failures while electron-builder is copying extraResources into win-unpacked.
 # Sharp native modules must also be unpacked for image processing.
 # Note: MCP servers are bundled with esbuild (all deps inlined), so no need to unpack MCP SDK
 asarUnpack:
@@ -74,8 +69,6 @@ win:
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   signAndEditExecutable: false
   extraResources:
-    - from: dist-mcp-stage
-      to: mcp
     - from: resources/node/win32-x64
       to: node
     - from: dist-wsl-agent
@@ -100,8 +93,6 @@ mac:
     NSScreenCaptureUsageDescription: 'Open Cowork needs screen recording access for GUI automation.'
     NSAccessibilityUsageDescription: 'Open Cowork needs accessibility access for GUI automation.'
   extraResources:
-    - from: dist-mcp-stage
-      to: mcp
     - from: resources/node/darwin-${arch}
       to: node
     # Bundled Python runtime + site-packages for GUI automation helpers (Pillow, pyobjc/Quartz)
@@ -123,8 +114,6 @@ linux:
         - x64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
   extraResources:
-    - from: dist-mcp-stage
-      to: mcp
     - from: resources/node/linux-x64
       to: node
     - from: resources/python/linux-${arch}

@@ -12,6 +12,66 @@
 
 const fs = require('fs');
 const path = require('path');
+const { stageMcpResources } = require('./stage-mcp-resources');
+
+const RETRYABLE_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE']);
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function copyDirWithRetry(sourceDir, targetDir, maxAttempts = 6, retryDelayMs = 200) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+      fs.cpSync(sourceDir, targetDir, { recursive: true });
+      return attempt + 1;
+    } catch (error) {
+      const retryable = error && RETRYABLE_ERROR_CODES.has(error.code);
+      if (!retryable || attempt === maxAttempts - 1) {
+        throw error;
+      }
+
+      const delay = retryDelayMs * Math.pow(2, attempt);
+      console.warn(
+        `  [after-pack] MCP copy failed (${error.code}) attempt ${attempt + 1}/${maxAttempts}. Retrying in ${delay}ms...`
+      );
+      await sleep(delay);
+    }
+  }
+
+  return maxAttempts;
+}
+
+function listRelativeFiles(rootDir) {
+  if (!fs.existsSync(rootDir)) {
+    return [];
+  }
+
+  const results = [];
+  const stack = [''];
+
+  while (stack.length > 0) {
+    const relativePath = stack.pop();
+    const absolutePath = path.join(rootDir, relativePath);
+    const entries = fs.readdirSync(absolutePath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        stack.push(childRelativePath);
+      } else {
+        results.push(childRelativePath);
+      }
+    }
+  }
+
+  results.sort();
+  return results;
+}
 
 /**
  * Map electron-builder arch names to koffi directory names.
@@ -94,6 +154,20 @@ module.exports = async function afterPack(context) {
   // For files inside asar, electron-builder may also have app/ or node_modules/
   // We primarily work on the unpacked directory
   const nmUnpacked = path.join(appAsarUnpacked, 'node_modules');
+
+  // Copy bundled MCP servers after packaging so we control retries and avoid
+  // electron-builder's Windows extraResources copy occasionally hitting EBUSY.
+  const projectRoot = context.packager.projectDir;
+  const existingStageDir = path.join(projectRoot, 'dist-mcp-stage');
+  const existingStagedMcpFiles = listRelativeFiles(existingStageDir);
+  const { stageDir, files: stagedMcpFiles } = existingStagedMcpFiles.length > 0
+    ? { stageDir: existingStageDir, files: existingStagedMcpFiles }
+    : await stageMcpResources({ projectRoot });
+  const bundledMcpDir = path.join(resourcesDir, 'mcp');
+  const mcpCopyAttempts = await copyDirWithRetry(stageDir, bundledMcpDir);
+  console.log(
+    `  MCP: copied ${stagedMcpFiles.length} staged bundle(s) into resources/mcp in ${mcpCopyAttempts} attempt(s)`
+  );
 
   // --- 1. koffi: remove non-target platform binaries ---
   const koffiKeep = getKoffiPlatformDir(platform, archName);
