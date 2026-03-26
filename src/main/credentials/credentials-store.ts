@@ -89,7 +89,17 @@ function getMachineBoundKey(): Buffer {
   }
 
   const seed = `${os.hostname()}:${os.userInfo().username}:open-cowork-credentials-stable-v1`;
-  _machineBoundKeyCache = crypto.scryptSync(seed, salt, 32, { N: 65536, r: 8, p: 1 });
+  try {
+    _machineBoundKeyCache = crypto.scryptSync(seed, salt, 32, { N: 65536, r: 8, p: 1 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/memory|scrypt params/i.test(msg)) throw err;
+    // BoringSSL (Electron ≥ 35) caps scrypt memory — fall back to lower N
+    _machineBoundKeyCache = crypto.scryptSync(seed, salt, 32, { N: 16384, r: 8, p: 1 });
+    logWarn(
+      '[CredentialsStore] scrypt N=65536 exceeded BoringSSL memory limit; using N=16384 fallback'
+    );
+  }
   log(
     '[CredentialsStore] Derived machine-bound key from hostname and username (safeStorage unavailable)'
   );
@@ -133,6 +143,35 @@ class CredentialsStore {
 
   private static getFallbackKeys(): Buffer[] {
     const keys: Buffer[] = [];
+
+    // If running on BoringSSL (Electron ≥ 35), the primary key uses N=16384.
+    // Add the N=65536 variant so credentials encrypted before the upgrade can
+    // still be decrypted and migrated transparently.
+    try {
+      const saltStore = new Store<{ fallbackSalt?: string }>({
+        name: 'credentials-fallback-salt',
+        projectName: 'open-cowork',
+        defaults: {},
+      } as StoreOptions<{ fallbackSalt?: string }> & { projectName?: string });
+      const salt = saltStore.get('fallbackSalt');
+      if (salt) {
+        const seed = `${os.hostname()}:${os.userInfo().username}:open-cowork-credentials-stable-v1`;
+        const primaryKey = getMachineBoundKey();
+        // Try both N values; whichever differs from the primary key is a fallback
+        for (const N of [65536, 16384]) {
+          try {
+            const candidate = crypto.scryptSync(seed, salt, 32, { N, r: 8, p: 1 });
+            if (!candidate.equals(primaryKey)) {
+              keys.push(candidate);
+            }
+          } catch {
+            // scrypt with this N not supported on this runtime — skip
+          }
+        }
+      }
+    } catch {
+      // Salt store not available — no scrypt fallback keys to add
+    }
 
     // Old hardcoded stable key (backward compat with data encrypted before
     // machine-bound key was introduced).
