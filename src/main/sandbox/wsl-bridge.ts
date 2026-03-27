@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { log, logError, logWarn } from '../utils/logger';
+import { collectBuiltinSkillDependencySummary } from '../skills/skill-dependencies';
 import type {
   WSLStatus,
   SandboxConfig,
@@ -102,6 +103,8 @@ export class WSLBridge implements SandboxExecutor {
     }
     return distro;
   }
+
+  private static installedSkillPythonPackages: Map<string, Set<string>> = new Map();
 
   private wslProcess: ChildProcess | null = null;
   private pendingRequests: Map<
@@ -553,21 +556,36 @@ export class WSLBridge implements SandboxExecutor {
    */
   static async installSkillDependencies(distro: string): Promise<void> {
     WSLBridge.validateDistroName(distro);
-    log('[WSL] Installing skill dependencies (markitdown, pypdf, etc.)...');
+    const summary = collectBuiltinSkillDependencySummary();
+    await WSLBridge.installPythonPackages(distro, summary.pythonPackages, 'built-in skills');
+  }
 
-    // These packages are required by the built-in PDF and PPTX skills
-    const packages = [
-      'markitdown[pptx]', // PDF/PPTX text extraction
-      'pypdf', // PDF manipulation
-      'pdfplumber', // PDF table extraction
-      'reportlab', // PDF creation
-      'defusedxml', // Secure XML parsing for OOXML
-      'python-pptx', // PPTX manipulation
-    ];
+  static async installPythonPackages(
+    distro: string,
+    packages: string[],
+    sourceLabel = 'skills'
+  ): Promise<void> {
+    WSLBridge.validateDistroName(distro);
+
+    const normalizedPackages = [...new Set(packages.map((pkg) => pkg.trim()).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b)
+    );
+    if (normalizedPackages.length === 0) {
+      return;
+    }
+
+    const installedForDistro =
+      WSLBridge.installedSkillPythonPackages.get(distro) ?? new Set<string>();
+    const missingPackages = normalizedPackages.filter((pkg) => !installedForDistro.has(pkg));
+    if (missingPackages.length === 0) {
+      log(`[WSL] Skill Python packages already installed for ${sourceLabel}: ${distro}`);
+      return;
+    }
+
+    log(`[WSL] Installing Python packages for ${sourceLabel}: ${missingPackages.join(', ')}`);
 
     try {
-      // Install packages with pip (user install to avoid permission issues)
-      const packagesStr = packages.map((p) => `"${p}"`).join(' ');
+      const packagesStr = missingPackages.map((pkg) => `"${pkg}"`).join(' ');
       await execFileAsync(
         'wsl',
         [
@@ -578,13 +596,16 @@ export class WSLBridge implements SandboxExecutor {
           '-c',
           `python3 -m pip install --user ${packagesStr} 2>&1 | tail -5`,
         ],
-        { timeout: 300000, encoding: 'utf-8' } // 5 min timeout for package install
+        { timeout: 300000, encoding: 'utf-8' }
       );
-      log('[WSL] Skill dependencies installed successfully');
+      for (const pkg of missingPackages) {
+        installedForDistro.add(pkg);
+      }
+      WSLBridge.installedSkillPythonPackages.set(distro, installedForDistro);
+      log(`[WSL] Skill Python packages installed successfully for ${sourceLabel}`);
     } catch (error) {
-      // Non-critical - Claude can install packages on demand
       log(
-        '[WSL] Failed to pre-install skill dependencies (will install on demand):',
+        `[WSL] Failed to pre-install Python packages for ${sourceLabel} (will install on demand):`,
         (error as Error).message
       );
     }

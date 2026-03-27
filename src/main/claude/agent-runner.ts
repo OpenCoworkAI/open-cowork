@@ -44,12 +44,14 @@ import { execFileSync, spawn } from 'child_process';
 import { app } from 'electron';
 import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
-import { pathConverter } from '../sandbox/wsl-bridge';
+import { WSLBridge, pathConverter } from '../sandbox/wsl-bridge';
+import { LimaBridge } from '../sandbox/lima-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
+import { collectSkillDependencySummary } from '../skills/skill-dependencies';
 import { configStore } from '../config/config-store';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
 import {
@@ -607,6 +609,68 @@ ${hints.join('\n')}
     return this.getRuntimeSkillsDir();
   }
 
+  private getProjectSkillDirs(projectRoot?: string): string[] {
+    if (!projectRoot) {
+      return [];
+    }
+
+    const candidates = [path.join(projectRoot, '.skills'), path.join(projectRoot, 'skills')];
+    const seen = new Set<string>();
+    const skillDirs: string[] = [];
+
+    for (const candidate of candidates) {
+      const resolved = path.resolve(candidate);
+      if (seen.has(resolved)) {
+        continue;
+      }
+
+      try {
+        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+          continue;
+        }
+        seen.add(resolved);
+        skillDirs.push(resolved);
+      } catch {
+        continue;
+      }
+    }
+
+    return skillDirs;
+  }
+
+  private getSkillDependencyRoots(projectRoot?: string): string[] {
+    const candidates = [
+      this.getBuiltinSkillsPath(),
+      this.getRuntimeSkillsDir(),
+      ...this.getProjectSkillDirs(projectRoot),
+    ];
+    const seen = new Set<string>();
+    const roots: string[] = [];
+
+    for (const candidate of candidates) {
+      if (!candidate) {
+        continue;
+      }
+
+      const resolved = path.resolve(candidate);
+      if (seen.has(resolved)) {
+        continue;
+      }
+
+      try {
+        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+          continue;
+        }
+        seen.add(resolved);
+        roots.push(resolved);
+      } catch {
+        continue;
+      }
+    }
+
+    return roots;
+  }
+
   private getUserClaudeSkillsDir(): string {
     return path.join(app.getPath('home'), '.claude', 'skills');
   }
@@ -1016,6 +1080,29 @@ ${hints.join('\n')}
             this.syncUserSkillsToAppDir(appSkillsDir);
             this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
 
+            const skillDependencySummary = collectSkillDependencySummary(
+              this.getSkillDependencyRoots(workingDir)
+            );
+            if (skillDependencySummary.pythonPackages.length > 0) {
+              await WSLBridge.installPythonPackages(
+                distro,
+                skillDependencySummary.pythonPackages,
+                'active skills'
+              );
+            }
+            if (
+              skillDependencySummary.nodePackages.length > 0 ||
+              skillDependencySummary.systemPackages.length > 0 ||
+              skillDependencySummary.optionalPythonPackages.length > 0 ||
+              skillDependencySummary.optionalNodePackages.length > 0 ||
+              skillDependencySummary.optionalSystemPackages.length > 0
+            ) {
+              log(
+                '[ClaudeAgentRunner] Active skill manifests declare additional manual dependencies:',
+                JSON.stringify(skillDependencySummary)
+              );
+            }
+
             if (fs.existsSync(appSkillsDir)) {
               const wslSourcePath = pathConverter.toWSL(appSkillsDir);
               log(
@@ -1177,6 +1264,28 @@ ${hints.join('\n')}
             }
             this.syncUserSkillsToAppDir(appSkillsDir);
             this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
+
+            const skillDependencySummary = collectSkillDependencySummary(
+              this.getSkillDependencyRoots(workingDir)
+            );
+            if (skillDependencySummary.pythonPackages.length > 0) {
+              await LimaBridge.installPythonPackages(
+                skillDependencySummary.pythonPackages,
+                'active skills'
+              );
+            }
+            if (
+              skillDependencySummary.nodePackages.length > 0 ||
+              skillDependencySummary.systemPackages.length > 0 ||
+              skillDependencySummary.optionalPythonPackages.length > 0 ||
+              skillDependencySummary.optionalNodePackages.length > 0 ||
+              skillDependencySummary.optionalSystemPackages.length > 0
+            ) {
+              log(
+                '[ClaudeAgentRunner] Active skill manifests declare additional manual dependencies:',
+                JSON.stringify(skillDependencySummary)
+              );
+            }
 
             if (fs.existsSync(appSkillsDir)) {
               log(

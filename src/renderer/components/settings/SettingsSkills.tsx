@@ -780,6 +780,11 @@ function SkillCard({
           {skill.description && (
             <p className="text-sm text-text-muted ml-6 line-clamp-2">{skill.description}</p>
           )}
+          {skill.compatibility && (
+            <p className="text-xs text-text-muted ml-6 mt-2">
+              {t('skills.compatibilityLabel', { defaultValue: '兼容性' })}: {skill.compatibility}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

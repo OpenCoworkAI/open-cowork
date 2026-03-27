@@ -393,7 +393,7 @@
     "setupDetailInstallNodeWslRuntime": "正在 {{distro}} 中安装 Node.js 运行时",
     "setupDetailInstallPythonWslRuntime": "正在 {{distro}} 中安装 Python 运行时",
     "setupDetailInstallPipWslRuntime": "正在 {{distro}} 中安装 Python 包管理器",
-    "setupDetailInstallDeps": "正在安装 PDF/PPTX 技能所需的 markitdown、pypdf、pdfplumber",
+    "setupDetailInstallDeps": "正在安装内置 skills 声明的 Python 依赖",
     "setupDetailInstallLima": "安装 Lima 可获得更好的沙盒隔离（brew install lima）",
     "setupDetailCreateLima": "首次运行需要下载镜像，可能需要几分钟",
     "setupDetailStartLima": "虚拟机启动可能需要几分钟",

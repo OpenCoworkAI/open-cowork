@@ -19,6 +19,7 @@ import type { Skill, PluginInstallResult } from '../../renderer/types';
 import type { DatabaseInstance } from '../db/database';
 import { log, logError, logWarn } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
+import { validateSkillDependencyManifestFile } from './skill-dependencies';
 
 /**
  * Validate that a skill name is safe for use as a directory name.
@@ -67,6 +68,54 @@ interface PluginManifest {
   name?: string;
   description?: string;
   version?: string;
+}
+
+interface SkillMetadata {
+  name: string;
+  description: string;
+  compatibility?: string;
+}
+
+function extractFrontMatter(content: string): string {
+  const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return frontMatterMatch ? frontMatterMatch[1] : content;
+}
+
+function stripMatchingQuotes(value: string): string {
+  if (value.length < 2) {
+    return value;
+  }
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first === '"' || first === "'") && first === last) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function parseFrontMatterFields(content: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const frontMatter = extractFrontMatter(content);
+
+  for (const rawLine of frontMatter.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = stripMatchingQuotes(line.slice(separatorIndex + 1).trim());
+    if (key) {
+      fields[key] = value;
+    }
+  }
+
+  return fields;
 }
 
 interface SkillsManagerOptions {
@@ -159,6 +208,7 @@ export class SkillsManager {
             id: `builtin-${dir}`,
             name: metadata.name,
             description: metadata.description,
+            compatibility: metadata.compatibility,
             type: 'builtin',
             enabled: true,
             createdAt: Date.now(),
@@ -604,6 +654,7 @@ export class SkillsManager {
               id: `${source}-${entry}`,
               name: metadata.name,
               description: metadata.description,
+              compatibility: metadata.compatibility,
               type: 'custom',
               enabled: true,
               createdAt: Date.now(),
@@ -844,21 +895,36 @@ export class SkillsManager {
     // Parse SKILL.md frontmatter
     try {
       const content = fs.readFileSync(skillMdPath, 'utf-8');
-      const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-      const frontMatter = frontMatterMatch ? frontMatterMatch[1] : content;
+      const fields = parseFrontMatterFields(content);
+      const name = fields.name?.trim();
+      const description = fields.description?.trim();
+      const hasCompatibilityField = Object.prototype.hasOwnProperty.call(fields, 'compatibility');
+      const compatibility = fields.compatibility?.trim();
 
-      const nameMatch = frontMatter.match(/name:\s*["']?([^"'\r\n]+)["']?/);
-      const descMatch = frontMatter.match(/description:\s*["']?([^"'\r\n]+)["']?/);
-
-      if (!nameMatch) {
+      if (!name) {
         errors.push('SKILL.md missing "name" in frontmatter');
+      } else {
+        try {
+          validateSkillName(name);
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : 'Invalid skill name');
+        }
       }
-      if (!descMatch) {
+      if (!description) {
         errors.push('SKILL.md missing "description" in frontmatter');
+      }
+      if (hasCompatibilityField) {
+        if (!compatibility) {
+          errors.push('SKILL.md "compatibility" must be a non-empty single-line string');
+        } else if (compatibility.length > 500) {
+          errors.push('SKILL.md "compatibility" must be 500 characters or fewer');
+        }
       }
     } catch (err) {
       errors.push('Failed to parse SKILL.md');
     }
+
+    errors.push(...validateSkillDependencyManifestFile(skillPath));
 
     return { valid: errors.length === 0, errors };
   }
@@ -866,7 +932,7 @@ export class SkillsManager {
   /**
    * Get skill metadata from SKILL.md file
    */
-  getSkillMetadata(skillPath: string): { name: string; description: string } | null {
+  getSkillMetadata(skillPath: string): SkillMetadata | null {
     const skillMdPath = path.join(skillPath, 'SKILL.md');
 
     if (!fs.existsSync(skillMdPath)) {
@@ -875,24 +941,21 @@ export class SkillsManager {
 
     try {
       const content = fs.readFileSync(skillMdPath, 'utf-8');
+      const fields = parseFrontMatterFields(content);
+      const name = fields.name?.trim();
+      const description = fields.description?.trim();
+      const compatibility = fields.compatibility?.trim();
 
-      // Limit regex matching to the YAML front-matter block (between --- markers)
-      const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-      const frontMatter = frontMatterMatch ? frontMatterMatch[1] : content;
-
-      const nameMatch = frontMatter.match(/name:\s*["']?([^"'\r\n]+)["']?/);
-      const descMatch = frontMatter.match(/description:\s*["']?([^"'\r\n]+)["']?/);
-
-      if (!nameMatch || !descMatch) {
+      if (!name || !description) {
         return null;
       }
 
-      const name = nameMatch[1].trim();
       validateSkillName(name);
 
       return {
         name,
-        description: descMatch[1].trim(),
+        description,
+        compatibility: compatibility || undefined,
       };
     } catch (error) {
       logError(`Failed to parse SKILL.md from ${skillPath}:`, error);

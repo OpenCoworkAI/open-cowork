@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { log, logError } from '../utils/logger';
+import { collectBuiltinSkillDependencySummary } from '../skills/skill-dependencies';
 import type {
   LimaStatus,
   SandboxConfig,
@@ -118,6 +119,7 @@ export const pathConverter = limaPathConverter;
  * Lima Bridge - Manages communication with Lima VM
  */
 export class LimaBridge implements SandboxExecutor {
+  private static installedSkillPythonPackages = new Set<string>();
   private limaProcess: ChildProcess | null = null;
   private pendingRequests: Map<
     string,
@@ -520,30 +522,41 @@ export class LimaBridge implements SandboxExecutor {
    * Install Python packages commonly needed by skills (PDF, PPTX, etc.)
    */
   static async installSkillDependencies(): Promise<void> {
-    log('[Lima] Installing skill dependencies (markitdown, pypdf, etc.)...');
+    const summary = collectBuiltinSkillDependencySummary();
+    await LimaBridge.installPythonPackages(summary.pythonPackages, 'built-in skills');
+  }
 
-    // These packages are required by the built-in PDF and PPTX skills
-    const packages = [
-      'markitdown[pptx]', // PDF/PPTX text extraction
-      'pypdf', // PDF manipulation
-      'pdfplumber', // PDF table extraction
-      'reportlab', // PDF creation
-      'defusedxml', // Secure XML parsing for OOXML
-      'python-pptx', // PPTX manipulation
-    ];
+  static async installPythonPackages(packages: string[], sourceLabel = 'skills'): Promise<void> {
+    const normalizedPackages = [...new Set(packages.map((pkg) => pkg.trim()).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b)
+    );
+    if (normalizedPackages.length === 0) {
+      return;
+    }
+
+    const missingPackages = normalizedPackages.filter(
+      (pkg) => !LimaBridge.installedSkillPythonPackages.has(pkg)
+    );
+    if (missingPackages.length === 0) {
+      log(`[Lima] Skill Python packages already installed for ${sourceLabel}`);
+      return;
+    }
+
+    log(`[Lima] Installing Python packages for ${sourceLabel}: ${missingPackages.join(', ')}`);
 
     try {
-      // Install packages with pip (user install to avoid permission issues)
-      const packagesStr = packages.map((p) => `"${p}"`).join(' ');
+      const packagesStr = missingPackages.map((pkg) => `"${pkg}"`).join(' ');
       await execLimaShellWithRetry(
         `python3 -m pip install --user ${packagesStr} 2>&1 | tail -5`,
-        300000 // 5 min timeout for package install
+        300000
       );
-      log('[Lima] Skill dependencies installed successfully');
+      for (const pkg of missingPackages) {
+        LimaBridge.installedSkillPythonPackages.add(pkg);
+      }
+      log(`[Lima] Skill Python packages installed successfully for ${sourceLabel}`);
     } catch (error) {
-      // Non-critical - Claude can install packages on demand
       log(
-        '[Lima] Failed to pre-install skill dependencies (will install on demand):',
+        `[Lima] Failed to pre-install Python packages for ${sourceLabel} (will install on demand):`,
         (error as Error).message
       );
     }
