@@ -782,7 +782,7 @@ function SkillCard({
           )}
           {skill.compatibility && (
             <p className="text-xs text-text-muted ml-6 mt-2">
-              {t('skills.compatibilityLabel', { defaultValue: '兼容性' })}: {skill.compatibility}
+              {t('skills.compatibilityLabel')}: {skill.compatibility}
             </p>
           )}
         </div>

@@ -19,6 +19,7 @@ import type { Skill, PluginInstallResult } from '../../renderer/types';
 import type { DatabaseInstance } from '../db/database';
 import { log, logError, logWarn } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
+import { resolveProjectSkillDirs } from './skill-paths';
 import { validateSkillDependencyManifestFile } from './skill-dependencies';
 
 /**
@@ -140,7 +141,7 @@ export interface SetGlobalSkillsPathResult {
  * SkillsManager - Manages skill loading and MCP server lifecycle
  *
  * Skills loading priority:
- * 1. Project-level: <project>/.skills/ or <project>/skills/
+ * 1. Project-level: <project>/.skills/
  * 2. Global: <userData>/claude/skills/ (includes ~/.claude/skills read-only)
  * 3. Built-in skills
  */
@@ -522,12 +523,15 @@ export class SkillsManager {
     const skills: Skill[] = [];
     this.clearSkillsBySource('project');
 
-    // Check for .skills/ or skills/ directory
-    const skillsDirs = [path.join(projectPath, '.skills'), path.join(projectPath, 'skills')];
+    const skillsDirs = resolveProjectSkillDirs(projectPath);
 
     for (const skillsDir of skillsDirs) {
       if (fs.existsSync(skillsDir) && fs.statSync(skillsDir).isDirectory()) {
-        const loadedSkills = await this.loadSkillsFromDirectory(skillsDir, 'project');
+        const loadedSkills = await this.loadSkillsFromDirectory(
+          skillsDir,
+          'project',
+          path.resolve(projectPath)
+        );
         skills.push(...loadedSkills);
       }
     }
@@ -619,7 +623,8 @@ export class SkillsManager {
    */
   private async loadSkillsFromDirectory(
     dir: string,
-    source: 'project' | 'global'
+    source: 'project' | 'global',
+    containmentRoot?: string
   ): Promise<Skill[]> {
     const skills: Skill[] = [];
 
@@ -633,6 +638,32 @@ export class SkillsManager {
         if (isDanglingSymlink(entryPath)) {
           logWarn(`[Skills] Skipping dangling symlink: ${entryPath}`);
           continue;
+        }
+
+        if (containmentRoot) {
+          let lstat: fs.Stats;
+          try {
+            lstat = fs.lstatSync(entryPath);
+          } catch {
+            continue;
+          }
+
+          if (lstat.isSymbolicLink()) {
+            let realPath: string;
+            try {
+              realPath = fs.realpathSync(entryPath);
+            } catch {
+              logWarn(`[Skills] Skipping unresolvable project skill symlink: ${entryPath}`);
+              continue;
+            }
+
+            if (!isPathWithinRoot(realPath, containmentRoot, process.platform === 'win32')) {
+              logWarn(
+                `[Skills] Skipping project skill symlink outside project root: ${entryPath} -> ${realPath}`
+              );
+              continue;
+            }
+          }
         }
 
         let stat: fs.Stats;

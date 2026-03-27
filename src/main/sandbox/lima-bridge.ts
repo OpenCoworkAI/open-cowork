@@ -14,8 +14,9 @@ import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 import { collectBuiltinSkillDependencySummary } from '../skills/skill-dependencies';
+import { installPythonPackagesWithCache } from './python-package-installer';
 import type {
   LimaStatus,
   SandboxConfig,
@@ -527,39 +528,33 @@ export class LimaBridge implements SandboxExecutor {
   }
 
   static async installPythonPackages(packages: string[], sourceLabel = 'skills'): Promise<void> {
-    const normalizedPackages = [...new Set(packages.map((pkg) => pkg.trim()).filter(Boolean))].sort(
-      (a, b) => a.localeCompare(b)
-    );
-    if (normalizedPackages.length === 0) {
-      return;
-    }
-
-    const missingPackages = normalizedPackages.filter(
-      (pkg) => !LimaBridge.installedSkillPythonPackages.has(pkg)
-    );
-    if (missingPackages.length === 0) {
-      log(`[Lima] Skill Python packages already installed for ${sourceLabel}`);
-      return;
-    }
-
-    log(`[Lima] Installing Python packages for ${sourceLabel}: ${missingPackages.join(', ')}`);
-
-    try {
-      const packagesStr = missingPackages.map((pkg) => `"${pkg}"`).join(' ');
-      await execLimaShellWithRetry(
-        `python3 -m pip install --user ${packagesStr} 2>&1 | tail -5`,
-        300000
-      );
-      for (const pkg of missingPackages) {
-        LimaBridge.installedSkillPythonPackages.add(pkg);
-      }
-      log(`[Lima] Skill Python packages installed successfully for ${sourceLabel}`);
-    } catch (error) {
-      log(
-        `[Lima] Failed to pre-install Python packages for ${sourceLabel} (will install on demand):`,
-        (error as Error).message
-      );
-    }
+    await installPythonPackagesWithCache({
+      packages,
+      sourceLabel,
+      installedPackages: LimaBridge.installedSkillPythonPackages,
+      logPrefix: '[Lima]',
+      log,
+      logWarn,
+      installPackage: async (pkg) => {
+        await execFileAsync(
+          'limactl',
+          [
+            'shell',
+            LIMA_INSTANCE_NAME,
+            '--',
+            'python3',
+            '-m',
+            'pip',
+            'install',
+            '--user',
+            '--disable-pip-version-check',
+            '--',
+            pkg,
+          ],
+          { timeout: 300000, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
+        );
+      },
+    });
   }
 
   /**

@@ -51,7 +51,11 @@ import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/arti
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
-import { collectSkillDependencySummary } from '../skills/skill-dependencies';
+import {
+  collectSkillDependencySummary,
+  type SkillDependencyRoot,
+} from '../skills/skill-dependencies';
+import { resolveProjectSkillDirs } from '../skills/skill-paths';
 import { configStore } from '../config/config-store';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
 import {
@@ -610,49 +614,29 @@ ${hints.join('\n')}
   }
 
   private getProjectSkillDirs(projectRoot?: string): string[] {
-    if (!projectRoot) {
-      return [];
-    }
-
-    const candidates = [path.join(projectRoot, '.skills'), path.join(projectRoot, 'skills')];
-    const seen = new Set<string>();
-    const skillDirs: string[] = [];
-
-    for (const candidate of candidates) {
-      const resolved = path.resolve(candidate);
-      if (seen.has(resolved)) {
-        continue;
-      }
-
-      try {
-        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-          continue;
-        }
-        seen.add(resolved);
-        skillDirs.push(resolved);
-      } catch {
-        continue;
-      }
-    }
-
-    return skillDirs;
+    return resolveProjectSkillDirs(projectRoot);
   }
 
-  private getSkillDependencyRoots(projectRoot?: string): string[] {
-    const candidates = [
+  private getSkillDependencyRoots(projectRoot?: string): Array<string | SkillDependencyRoot> {
+    const resolvedProjectRoot = projectRoot ? path.resolve(projectRoot) : undefined;
+    const candidates: Array<string | SkillDependencyRoot> = [
       this.getBuiltinSkillsPath(),
       this.getRuntimeSkillsDir(),
-      ...this.getProjectSkillDirs(projectRoot),
+      ...this.getProjectSkillDirs(projectRoot).map((rootPath) => ({
+        rootPath,
+        containmentRoot: resolvedProjectRoot,
+      })),
     ];
     const seen = new Set<string>();
-    const roots: string[] = [];
+    const roots: Array<string | SkillDependencyRoot> = [];
 
     for (const candidate of candidates) {
-      if (!candidate) {
+      const rootPath = typeof candidate === 'string' ? candidate : candidate.rootPath;
+      if (!rootPath) {
         continue;
       }
 
-      const resolved = path.resolve(candidate);
+      const resolved = path.resolve(rootPath);
       if (seen.has(resolved)) {
         continue;
       }
@@ -662,7 +646,7 @@ ${hints.join('\n')}
           continue;
         }
         seen.add(resolved);
-        roots.push(resolved);
+        roots.push(candidate);
       } catch {
         continue;
       }

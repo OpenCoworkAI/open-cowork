@@ -517,6 +517,7 @@
     "pluginDisable": "停用",
     "pluginUninstall": "确认卸载插件“{{name}}”？",
     "pluginManageUninstall": "卸载",
+    "compatibilityLabel": "兼容性",
     "pluginUninstalled": "插件“{{name}}”已卸载",
     "pluginComponentHooksDisabledByDefault": "该插件包含 hooks，默认关闭，请安装后在管理中手动开启。",
     "pluginComponentMcpDisabledByDefault": "该插件包含 mcp，默认关闭，请安装后在管理中手动开启。",

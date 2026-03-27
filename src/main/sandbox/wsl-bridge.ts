@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import { app } from 'electron';
 import { log, logError, logWarn } from '../utils/logger';
 import { collectBuiltinSkillDependencySummary } from '../skills/skill-dependencies';
+import { installPythonPackagesWithCache } from './python-package-installer';
 import type {
   WSLStatus,
   SandboxConfig,
@@ -567,48 +568,36 @@ export class WSLBridge implements SandboxExecutor {
   ): Promise<void> {
     WSLBridge.validateDistroName(distro);
 
-    const normalizedPackages = [...new Set(packages.map((pkg) => pkg.trim()).filter(Boolean))].sort(
-      (a, b) => a.localeCompare(b)
-    );
-    if (normalizedPackages.length === 0) {
-      return;
-    }
-
     const installedForDistro =
       WSLBridge.installedSkillPythonPackages.get(distro) ?? new Set<string>();
-    const missingPackages = normalizedPackages.filter((pkg) => !installedForDistro.has(pkg));
-    if (missingPackages.length === 0) {
-      log(`[WSL] Skill Python packages already installed for ${sourceLabel}: ${distro}`);
-      return;
-    }
-
-    log(`[WSL] Installing Python packages for ${sourceLabel}: ${missingPackages.join(', ')}`);
-
-    try {
-      const packagesStr = missingPackages.map((pkg) => `"${pkg}"`).join(' ');
-      await execFileAsync(
-        'wsl',
-        [
-          '-d',
-          distro,
-          '-e',
-          'bash',
-          '-c',
-          `python3 -m pip install --user ${packagesStr} 2>&1 | tail -5`,
-        ],
-        { timeout: 300000, encoding: 'utf-8' }
-      );
-      for (const pkg of missingPackages) {
-        installedForDistro.add(pkg);
-      }
-      WSLBridge.installedSkillPythonPackages.set(distro, installedForDistro);
-      log(`[WSL] Skill Python packages installed successfully for ${sourceLabel}`);
-    } catch (error) {
-      log(
-        `[WSL] Failed to pre-install Python packages for ${sourceLabel} (will install on demand):`,
-        (error as Error).message
-      );
-    }
+    await installPythonPackagesWithCache({
+      packages,
+      sourceLabel,
+      installedPackages: installedForDistro,
+      logPrefix: '[WSL]',
+      log,
+      logWarn,
+      installPackage: async (pkg) => {
+        await execFileAsync(
+          'wsl',
+          [
+            '-d',
+            distro,
+            '-e',
+            'python3',
+            '-m',
+            'pip',
+            'install',
+            '--user',
+            '--disable-pip-version-check',
+            '--',
+            pkg,
+          ],
+          { timeout: 300000, encoding: 'utf-8' }
+        );
+      },
+    });
+    WSLBridge.installedSkillPythonPackages.set(distro, installedForDistro);
   }
 
   /**

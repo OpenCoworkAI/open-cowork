@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
 import { logWarn } from '../utils/logger';
+import { isPathWithinRoot } from '../tools/path-containment';
+import { isSafePythonPackageSpec } from '../utils/python-package-specs';
+import { resolveBuiltinSkillsPath } from './skill-paths';
 
 export const SKILL_DEPENDENCIES_FILENAME = 'DEPENDENCIES.json';
 
@@ -24,45 +26,20 @@ export interface SkillDependencySummary {
   optionalSystemPackages: string[];
 }
 
-const EMPTY_SUMMARY: SkillDependencySummary = {
-  pythonPackages: [],
-  nodePackages: [],
-  systemPackages: [],
-  optionalPythonPackages: [],
-  optionalNodePackages: [],
-  optionalSystemPackages: [],
-};
-
-function physicalDirExists(dirPath: string): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const originalFs = require('original-fs') as typeof import('fs');
-    return originalFs.existsSync(dirPath) && originalFs.statSync(dirPath).isDirectory();
-  } catch {
-    return false;
-  }
+export interface SkillDependencyRoot {
+  rootPath: string;
+  containmentRoot?: string;
 }
 
-export function getBuiltinSkillsPath(): string {
-  const appPath = app.getAppPath();
-  const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
-
-  const possiblePaths = [
-    path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
-    ...(physicalDirExists(path.join(unpackedPath, '.claude', 'skills'))
-      ? [path.join(unpackedPath, '.claude', 'skills')]
-      : []),
-    path.join(appPath, '.claude', 'skills'),
-    path.join(process.resourcesPath || '', 'skills'),
-  ];
-
-  for (const candidate of possiblePaths) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return '';
+function createEmptySummary(): SkillDependencySummary {
+  return {
+    pythonPackages: [],
+    nodePackages: [],
+    systemPackages: [],
+    optionalPythonPackages: [],
+    optionalNodePackages: [],
+    optionalSystemPackages: [],
+  };
 }
 
 function normalizeDependencyList(
@@ -91,11 +68,20 @@ function normalizeDependencyList(
       errors.push(`"${key}" must not contain empty strings`);
       continue;
     }
+    if (
+      (key === 'pythonPackages' || key === 'optionalPythonPackages') &&
+      !isSafePythonPackageSpec(trimmed)
+    ) {
+      errors.push(`"${key}" contains unsupported package spec: ${JSON.stringify(trimmed)}`);
+      continue;
+    }
     normalized.add(trimmed);
   }
 
   return [...normalized].sort((a, b) => a.localeCompare(b));
 }
+
+export const getBuiltinSkillsPath = resolveBuiltinSkillsPath;
 
 export function validateSkillDependencyManifest(manifest: unknown): {
   valid: boolean;
@@ -200,7 +186,49 @@ function mergeIntoSet(target: Set<string>, items?: string[]): void {
   }
 }
 
-export function collectSkillDependencySummary(skillRoots: string[]): SkillDependencySummary {
+function shouldUseCaseInsensitiveContainment(rootPath: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(rootPath) || rootPath.startsWith('\\\\');
+}
+
+function normalizeSkillDependencyRoot(
+  root: string | SkillDependencyRoot
+): Required<Pick<SkillDependencyRoot, 'rootPath'>> & Pick<SkillDependencyRoot, 'containmentRoot'> {
+  return typeof root === 'string' ? { rootPath: root } : { ...root };
+}
+
+function isContainedSymlink(skillPath: string, containmentRoot?: string): boolean {
+  if (!containmentRoot) {
+    return true;
+  }
+
+  let lstat: fs.Stats;
+  try {
+    lstat = fs.lstatSync(skillPath);
+  } catch {
+    return false;
+  }
+
+  if (!lstat.isSymbolicLink()) {
+    return true;
+  }
+
+  let realSkillPath: string;
+  try {
+    realSkillPath = fs.realpathSync(skillPath);
+  } catch {
+    return false;
+  }
+
+  return isPathWithinRoot(
+    realSkillPath,
+    containmentRoot,
+    shouldUseCaseInsensitiveContainment(containmentRoot)
+  );
+}
+
+export function collectSkillDependencySummary(
+  skillRoots: Array<string | SkillDependencyRoot>
+): SkillDependencySummary {
   const pythonPackages = new Set<string>();
   const nodePackages = new Set<string>();
   const systemPackages = new Set<string>();
@@ -209,13 +237,22 @@ export function collectSkillDependencySummary(skillRoots: string[]): SkillDepend
   const optionalSystemPackages = new Set<string>();
 
   for (const root of skillRoots) {
-    if (!root || !fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    const { rootPath, containmentRoot } = normalizeSkillDependencyRoot(root);
+
+    if (!rootPath || !fs.existsSync(rootPath) || !fs.statSync(rootPath).isDirectory()) {
       continue;
     }
 
-    const entries = fs.readdirSync(root, { withFileTypes: true });
+    const entries = fs.readdirSync(rootPath, { withFileTypes: true });
     for (const entry of entries) {
-      const skillPath = path.join(root, entry.name);
+      const skillPath = path.join(rootPath, entry.name);
+
+      if (!isContainedSymlink(skillPath, containmentRoot)) {
+        logWarn(
+          `[Skills] Ignoring symlinked skill outside containment root: ${skillPath} -> ${containmentRoot}`
+        );
+        continue;
+      }
 
       let stat: fs.Stats;
       try {
@@ -268,7 +305,7 @@ export function collectSkillDependencySummary(skillRoots: string[]): SkillDepend
 export function collectBuiltinSkillDependencySummary(): SkillDependencySummary {
   const builtinSkillsPath = getBuiltinSkillsPath();
   if (!builtinSkillsPath) {
-    return { ...EMPTY_SUMMARY };
+    return createEmptySummary();
   }
   return collectSkillDependencySummary([builtinSkillsPath]);
 }
