@@ -131,10 +131,10 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     noteKey: 'api.guidance.setups.minimax.note',
     applyProvider: 'custom',
     recommendedProtocol: 'openai',
-    recommendedBaseUrl: 'https://api.minimax.chat/v1',
-    exampleModel: 'MiniMax-M2.5',
+    recommendedBaseUrl: 'https://api.minimax.io/v1',
+    exampleModel: 'MiniMax-M2.7',
     matcher: {
-      hosts: ['api.minimax.chat'],
+      hosts: ['api.minimax.io', 'api.minimax.chat'],
       hostContains: ['minimax'],
       pathPrefixes: ['/v1'],
     },
@@ -186,8 +186,9 @@ function matchesPath(pathname: string, setup: CommonProviderSetup): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
   const { pathPrefixes, pathIncludes } = setup.matcher || {};
 
-  const prefixOk = !pathPrefixes?.length
-    || pathPrefixes.some((prefix) => {
+  const prefixOk =
+    !pathPrefixes?.length ||
+    pathPrefixes.some((prefix) => {
       const value = prefix || '/';
       return normalizedPath === value || normalizedPath.startsWith(`${value}/`);
     });
@@ -195,8 +196,8 @@ function matchesPath(pathname: string, setup: CommonProviderSetup): boolean {
     return false;
   }
 
-  const includesOk = !pathIncludes?.length
-    || pathIncludes.some((fragment) => normalizedPath.includes(fragment));
+  const includesOk =
+    !pathIncludes?.length || pathIncludes.some((fragment) => normalizedPath.includes(fragment));
   return includesOk;
 }
 
@@ -239,7 +240,9 @@ export function detectCommonProviderSetup(baseUrl: string | undefined): CommonPr
   return null;
 }
 
-export function orderCommonProviderSetups(activeId?: CommonProviderSetupId | null): CommonProviderSetup[] {
+export function orderCommonProviderSetups(
+  activeId?: CommonProviderSetupId | null
+): CommonProviderSetup[] {
   if (!activeId) {
     return COMMON_PROVIDER_SETUPS;
   }
@@ -255,7 +258,9 @@ export function getFallbackOpenAISetup(): CommonProviderSetup {
   return COMMON_PROVIDER_SETUPS.find((setup) => setup.id === 'generic-openai')!;
 }
 
-function detectProviderGuidanceHintCode(details: string | undefined): ProviderGuidanceHintCode | null {
+function detectProviderGuidanceHintCode(
+  details: string | undefined
+): ProviderGuidanceHintCode | null {
   const value = details?.trim().toLowerCase();
   if (!value) {
     return null;

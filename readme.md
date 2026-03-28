@@ -37,6 +37,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 ---
 
 <a id="features"></a>
+
 ## ✨ Key Features
 
 |               | MCP & Skills | Remote Control | GUI Operation |
@@ -60,30 +61,34 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 
 <a id="demo"></a>
 
-
-
 ## 🎬 Demo
 
 See Open Cowork in action:
 
 ### 1. Folder Organization & Cleanup 📂
+
 https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7
 
 ### 2. Generate PPT from Files 📊
+
 https://github.com/user-attachments/assets/30299ded-0260-468f-b11d-d282bb9c97f2
 
 ### 3. Generate XLSX Spreadsheets 📉
+
 https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 
 ### 4. GUI Operation🖥
+
 https://github.com/user-attachments/assets/75542c76-210f-414d-8182-1da988c148f2
 
 ### 5. Remote control with Feishu(Lark) 🤖
+
 https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74
 
 ---
 
 <a id="installation"></a>
+
 ## 📦 Installation
 
 ### Option 1: Homebrew (macOS, Recommended)
@@ -99,10 +104,10 @@ brew install --cask --no-quarantine open-cowork
 
 Get the latest version from our [Releases Page](https://github.com/OpenCoworkAI/open-cowork/releases).
 
-| Platform | File Type |
-|----------|-----------|
-| **Windows** | `.exe` |
-| **macOS** (Apple Silicon) | `.dmg` |
+| Platform                  | File Type |
+| ------------------------- | --------- |
+| **Windows**               | `.exe`    |
+| **macOS** (Apple Silicon) | `.dmg`    |
 
 ### Option 3: Build from Source
 
@@ -122,11 +127,11 @@ To build the installer locally: `npm run build`
 
 Open Cowork provides **multi-level sandbox protection** to keep your system safe:
 
-| Level | Platform | Technology | Description |
-|-------|----------|------------|-------------|
-| **Basic** | All | Path Guard | File operations restricted to workspace folder |
-| **Enhanced** | Windows | WSL2 | Commands execute in isolated Linux VM |
-| **Enhanced** | macOS | Lima | Commands execute in isolated Linux VM |
+| Level        | Platform | Technology | Description                                    |
+| ------------ | -------- | ---------- | ---------------------------------------------- |
+| **Basic**    | All      | Path Guard | File operations restricted to workspace folder |
+| **Enhanced** | Windows  | WSL2       | Commands execute in isolated Linux VM          |
+| **Enhanced** | macOS    | Lima       | Commands execute in isolated Linux VM          |
 
 - **Windows (WSL2)**: When WSL2 is detected, all Bash commands are automatically routed to a Linux VM. The workspace is synced bidirectionally.
 - **macOS (Lima)**: When [Lima](https://lima-vm.io/) is installed (`brew install lima`), commands run in an Ubuntu VM with `/Users` mounted.
@@ -137,7 +142,8 @@ Open Cowork provides **multi-level sandbox protection** to keep your system safe
 - **Windows**: WSL2 is auto-detected if installed. [Install WSL2](https://docs.microsoft.com/en-us/windows/wsl/install)
 
 - **macOS**:
-Lima is auto-detected if installed. Install command:
+  Lima is auto-detected if installed. Install command:
+
 ```bash
 brew install lima
 # Open Cowork will automatically create and manage a 'claude-sandbox' VM
@@ -146,26 +152,30 @@ brew install lima
 ---
 
 <a id="quick-start"></a>
+
 ## 🚀 Quick Start Guide
 
 ### 1. Get an API Key
+
 You need an API key to power the agent. We support **OpenRouter**, **Anthropic**, and various cost-effective **Chinese Models**.
 
-| Provider | Get Key / Coding Plan | Base URL (Required) | Recommended Model |
-|----------|-----------------------|---------------------|-------------------|
-| **OpenRouter** | [OpenRouter](https://openrouter.ai/) | `https://openrouter.ai/api` | `claude-4-5-sonnet` |
-| **Anthropic** | [Anthropic Console](https://console.anthropic.com/) | (Default) | `claude-4-5-sonnet` |
+| Provider           | Get Key / Coding Plan                                              | Base URL (Required)                      | Recommended Model    |
+| ------------------ | ------------------------------------------------------------------ | ---------------------------------------- | -------------------- |
+| **OpenRouter**     | [OpenRouter](https://openrouter.ai/)                               | `https://openrouter.ai/api`              | `claude-4-5-sonnet`  |
+| **Anthropic**      | [Anthropic Console](https://console.anthropic.com/)                | (Default)                                | `claude-4-5-sonnet`  |
 | **Zhipu AI (GLM)** | [GLM Coding Plan](https://bigmodel.cn/glm-coding) (⚡️Chinese Deal) | `https://open.bigmodel.cn/api/anthropic` | `glm-4.7`, `glm-4.6` |
-| **MiniMax** | [MiniMax Coding Plan](https://platform.minimaxi.com/subscribe/coding-plan) | `https://api.minimaxi.com/anthropic` | `minimax-m2` |
-| **Kimi** | [Kimi Coding Plan](https://www.kimi.com/membership/pricing) | `https://api.kimi.com/coding/` | `kimi-k2` |
+| **MiniMax**        | [MiniMax Platform](https://platform.minimaxi.com)                  | `https://api.minimax.io/v1`              | `MiniMax-M2.7`       |
+| **Kimi**           | [Kimi Coding Plan](https://www.kimi.com/membership/pricing)        | `https://api.kimi.com/coding/`           | `kimi-k2`            |
 
 ### 2. Configure
+
 1. Open the app and click the ⚙️ **Settings** icon in the bottom left.
 2. Paste your **API Key**.
 3. **Crucial**: Set the **Base URL** according to the table above (especially for Zhipu/MiniMax, etc.).
 4. Enter the **Model** name you want to use.
 
 ### 3. Start Coworking
+
 1. **Select a Workspace**: Choose a folder where Claude is allowed to work.
 2. **Enter a Prompt**:
    > "Read the financial_report.csv in this folder and create a PowerPoint summary with 5 slides."
@@ -177,13 +187,16 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
     brew tap OpenCoworkAI/tap && brew install --cask --no-quarantine open-cowork
     ```
 2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
-3. **Notion Connector**: Besides setting the integration token, you also need to add connections in a root page. See https://www.notion.com/help/add-and-manage-connections-with-the-api for more details.
+3.  **Notion Connector**: Besides setting the integration token, you also need to add connections in a root page. See https://www.notion.com/help/add-and-manage-connections-with-the-api for more details.
+
 ---
 
 <a id="skills"></a>
+
 ## 🧰 Skills Library
 
 Open Cowork ships with built-in skills under `.claude/skills/`, and supports user-added or custom skills, including:
+
 - `pptx` for PowerPoint generation
 - `docx` for Word document processing
 - `pdf` for PDF handling and forms

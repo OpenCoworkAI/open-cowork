@@ -1,4 +1,10 @@
-export type SharedProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type SharedProviderType =
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'gemini'
+  | 'ollama';
 
 export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 
@@ -102,7 +108,8 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'deepseek-reasoner', name: 'deepseek-reasoner' },
       { id: 'kimi-k2-thinking', name: 'kimi-k2-thinking' },
       { id: 'glm-5', name: 'glm-5' },
-      { id: 'MiniMax-M2.5', name: 'MiniMax-M2.5' },
+      { id: 'MiniMax-M2.7', name: 'MiniMax-M2.7' },
+      { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax-M2.7-highspeed' },
       { id: 'qwen-max', name: 'qwen-max' },
       { id: 'grok-code-fast-1', name: 'grok-code-fast-1' },
       { id: 'mistral-large-latest', name: 'mistral-large-latest' },
@@ -128,7 +135,13 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
   },
   anthropic: {
     piProvider: 'anthropic',
-    pick: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-3-7-sonnet-latest'],
+    pick: [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5',
+      'claude-sonnet-4-5',
+      'claude-3-7-sonnet-latest',
+    ],
   },
   openai: {
     piProvider: 'openai',
@@ -136,7 +149,14 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
   },
   gemini: {
     piProvider: 'google',
-    pick: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    pick: [
+      'gemini-3.1-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+    ],
   },
 };
 
