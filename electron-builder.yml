@@ -45,12 +45,8 @@ files:
   - '!**/.eslintrc*'
   - '!**/tsconfig.json'
 
-# MCP servers are staged into .bundle-resources/mcp after build:mcp completes.
-# Packaging from the staged directory is more reliable on Windows than reading
-# directly from freshly emitted dist-mcp files.
-extraResources:
-  - from: .bundle-resources/mcp
-    to: mcp
+# MCP servers and platform-specific resources are declared in each platform's
+# extraResources section below (win/mac/linux).
 
 # Skills are extracted via extraResources (per-platform) to avoid asar symlink issues.
 # Sharp native modules must also be unpacked for image processing.

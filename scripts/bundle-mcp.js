@@ -309,11 +309,23 @@ async function bundleMCPServers() {
   console.log('Building MCP Servers...\n');
   ensureDir(DIST_MCP_DIR);
 
+  let hasEsbuild = false;
   try {
     require.resolve('esbuild');
-    await bundleWithEsbuild();
+    hasEsbuild = true;
   } catch {
-    transpileFallback();
+    // esbuild not available
+  }
+
+  if (hasEsbuild) {
+    await bundleWithEsbuild();
+  } else {
+    console.error(
+      '[bundle:mcp] FATAL: esbuild is not available.\n' +
+        'MCP servers require esbuild to bundle dependencies into self-contained files.\n' +
+        'Run `npm ci` to install all devDependencies including esbuild.'
+    );
+    process.exit(1);
   }
 
   await stageBundledServers();

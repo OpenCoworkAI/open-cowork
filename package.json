@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run download:node && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",
     "dev:with-python": "npm run download:node && npm run prepare:python && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && vite",
-    "build": "npm run download:node && npm run prepare:gui-tools && npm run prepare:python:all && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && tsc && vite build && electron-builder",
+    "build": "npm run download:node && npm run prepare:gui-tools && npm run prepare:python:all && npm run build:wsl-agent && npm run build:lima-agent && npm run build:mcp && tsc && vite build && node scripts/pre-build-check.js && electron-builder",
     "build:win": "node scripts/build-windows.js",
     "build:wsl-agent": "tsc -p src/main/sandbox/wsl-agent/tsconfig.json",
     "build:lima-agent": "tsc -p src/main/sandbox/lima-agent/tsconfig.json",
@@ -27,6 +27,7 @@
     "bench:api": "node scripts/bench-api.mjs",
     "rebuild": "node -e \"const {execSync}=require('node:child_process'); const v=require('electron/package.json').version; execSync('npm rebuild better-sqlite3 --runtime=electron --target='+v+' --disturl=https://electronjs.org/headers',{stdio:'inherit'})\"",
     "typecheck": "tsc --noEmit",
+    "pre-build-check": "node scripts/pre-build-check.js",
     "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent .bundle-resources release",
     "deploy:local": "bash scripts/deploy-local.sh"
   },
