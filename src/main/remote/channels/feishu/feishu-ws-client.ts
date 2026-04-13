@@ -34,6 +34,7 @@ export class FeishuWSClient extends EventEmitter {
   private wsClient: Lark.WSClient | null = null;
   private connected: boolean = false;
   private stopped: boolean = false;
+  private starting: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,31 +48,33 @@ export class FeishuWSClient extends EventEmitter {
    * Start the WebSocket connection
    */
   async start(): Promise<void> {
-    if (this.connected) {
-      logWarn('[FeishuWS] Already connected');
+    if (this.connected || this.starting) {
+      logWarn('[FeishuWS] Already connected or connecting');
       return;
     }
 
-    // Allow re-use after a stop()
+    this.starting = true;
     this.stopped = false;
 
     const { appId, appSecret } = this.config;
 
     if (!appId || !appSecret) {
+      this.starting = false;
       throw new Error('Feishu appId and appSecret are required');
     }
 
     log('[FeishuWS] Starting long connection...');
 
     try {
-      // Create API client for sending messages
+      // Close any lingering previous connection before creating a new one
+      await this.closeWSClient();
+
       this.client = new Lark.Client({
         appId,
         appSecret,
         disableTokenCache: false,
       });
 
-      // Create WebSocket client for receiving messages
       const loggerLevel = this.getLoggerLevel();
 
       this.wsClient = new Lark.WSClient({
@@ -80,10 +83,16 @@ export class FeishuWSClient extends EventEmitter {
         loggerLevel,
       });
 
-      // Start WebSocket connection with event dispatcher
+      // Bail out if stop() was called while we were setting up
+      if (this.stopped) {
+        await this.closeWSClient();
+        this.client = null;
+        this.starting = false;
+        return;
+      }
+
       await this.wsClient.start({
         eventDispatcher: new Lark.EventDispatcher({}).register({
-          // Handle im.message.receive_v1 event (receive message v2.0)
           'im.message.receive_v1': async (data: Record<string, unknown>) => {
             try {
               await this.handleMessageReceive(data);
@@ -94,16 +103,25 @@ export class FeishuWSClient extends EventEmitter {
         }),
       });
 
+      // Double-check: stop() may have been called during the async start above
+      if (this.stopped) {
+        await this.closeWSClient();
+        this.client = null;
+        this.starting = false;
+        return;
+      }
+
       this.connected = true;
+      this.starting = false;
       this.reconnectAttempts = 0;
       log('[FeishuWS] Long connection established successfully');
       this.emit('connected');
     } catch (error) {
+      this.starting = false;
       logError('[FeishuWS] Failed to start:', error);
       this.connected = false;
       this.emit('error', error);
 
-      // Try to reconnect
       this.scheduleReconnect();
     }
   }
@@ -116,20 +134,31 @@ export class FeishuWSClient extends EventEmitter {
 
     this.stopped = true;
 
-    // Cancel any pending reconnect timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
 
-    // Note: The Lark SDK doesn't expose a direct stop method
-    // Setting to null will allow garbage collection
-    this.wsClient = null;
+    await this.closeWSClient();
     this.client = null;
     this.connected = false;
 
     this.emit('disconnected');
     log('[FeishuWS] Long connection stopped');
+  }
+
+  /**
+   * Close the underlying Lark WSClient connection
+   */
+  private async closeWSClient(): Promise<void> {
+    if (this.wsClient) {
+      try {
+        this.wsClient.close({ force: true });
+      } catch (err) {
+        logWarn('[FeishuWS] Error closing WSClient:', err);
+      }
+      this.wsClient = null;
+    }
   }
 
   /**
