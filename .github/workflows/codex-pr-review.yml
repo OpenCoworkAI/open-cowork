@@ -1,0 +1,114 @@
+name: Codex PR Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+concurrency:
+  group: codex-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-review:
+    if: |
+      github.event.pull_request.draft == false &&
+      !endsWith(github.actor, '[bot]') &&
+      !contains(github.event.pull_request.labels.*.name, 'bot-skip')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      review_result: ${{ steps.run_codex.outputs.final-message }}
+
+    steps:
+      - name: Check bot review state
+        id: check_bot
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "*Open Cowork Bot*";
+            const allowedLogins = (process.env.BOT_LOGINS || "github-actions[bot]")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+            const currentHeadSha = context.payload.pull_request.head.sha;
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                per_page: 100
+              }
+            );
+            const botReviews = reviews
+              .filter((review) => {
+                if (!(review?.body || "").includes(marker)) {
+                  return false;
+                }
+                const user = review.user;
+                if (!user || user.type !== "Bot") {
+                  return false;
+                }
+                return allowedLogins.includes(user.login);
+              })
+              .sort((left, right) => {
+                const leftTime = new Date(left.submitted_at || left.created_at || 0).getTime();
+                const rightTime = new Date(right.submitted_at || right.created_at || 0).getTime();
+                if (rightTime !== leftTime) {
+                  return rightTime - leftTime;
+                }
+                return (right.id || 0) - (left.id || 0);
+              });
+            const latestBotReview = botReviews[0];
+            const hasReviewForCurrentHead = botReviews.some(
+              (review) => review.commit_id === currentHeadSha
+            );
+            const isFollowUpReview = Boolean(
+              latestBotReview?.commit_id && latestBotReview.commit_id !== currentHeadSha
+            );
+
+            core.setOutput("current_head_sha", currentHeadSha);
+            core.setOutput("has_review_for_current_head", hasReviewForCurrentHead ? "true" : "false");
+            core.setOutput("latest_bot_review_id", latestBotReview ? String(latestBotReview.id) : "");
+            core.setOutput("latest_bot_review_commit", latestBotReview?.commit_id || "");
+            core.setOutput("is_follow_up_review", isFollowUpReview ? "true" : "false");
+        env:
+          BOT_LOGINS: ${{ vars.BOT_LOGINS }}
+
+      - name: Checkout repository
+        if: steps.check_bot.outputs.has_review_for_current_head != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+
+      - name: Pre-fetch base and head refs
+        if: steps.check_bot.outputs.has_review_for_current_head != 'true'
+        run: |
+          git fetch --no-tags origin \
+            ${{ github.event.pull_request.base.ref }} \
+            +refs/pull/${{ github.event.pull_request.number }}/head
+
+      - name: Run Codex for PR Review
+        id: run_codex
+        if: steps.check_bot.outputs.has_review_for_current_head != 'true'
+        uses: openai/codex-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CURRENT_HEAD_SHA: ${{ steps.check_bot.outputs.current_head_sha }}
+          LATEST_BOT_REVIEW_ID: ${{ steps.check_bot.outputs.latest_bot_review_id }}
+          LATEST_BOT_REVIEW_COMMIT: ${{ steps.check_bot.outputs.latest_bot_review_commit }}
+          IS_FOLLOW_UP_REVIEW: ${{ steps.check_bot.outputs.is_follow_up_review }}
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ secrets.OPENAI_BASE_URL }}
+          model: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          effort: ${{ vars.OPENAI_EFFORT || 'high' }}
+          sandbox: danger-full-access
+          safety-strategy: drop-sudo
+          prompt-file: .github/prompts/codex-pr-review.md
+          allow-bots: true
+          allow-users: '*'
