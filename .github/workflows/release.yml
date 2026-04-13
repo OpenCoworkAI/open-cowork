@@ -82,9 +82,43 @@ jobs:
         run: npx vite build
 
       - name: Electron Builder (unsigned)
-        run: npx electron-builder --mac dmg --publish never
+        run: npx electron-builder --mac dmg dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # Verify critical resources are present in the packaged app
+      - name: Smoke test - verify packaged resources
+        run: |
+          set -euo pipefail
+          APP_DIR="release/mac-arm64"
+          APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::No .app bundle found in $APP_DIR"
+            exit 1
+          fi
+          RESOURCES="$APP_DIR/$APP_NAME/Contents/Resources"
+          echo "Checking resources in: $RESOURCES"
+
+          FAILED=0
+          for check in \
+            "mcp/gui-operate-server.js" \
+            "mcp/software-dev-server-example.js" \
+            "node/bin/node" \
+            "lima-agent/index.js" \
+            "skills"; do
+            if [ -e "$RESOURCES/$check" ]; then
+              echo "  OK: $check"
+            else
+              echo "::error::Missing resource: $check"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::Packaged app is missing critical resources"
+            exit 1
+          fi
+          echo "All packaged resources verified."
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
@@ -133,6 +167,44 @@ jobs:
 
       - name: Electron Builder
         run: npx electron-builder --win nsis --publish never
+
+      # Verify critical resources are present in the packaged app
+      - name: Smoke test - verify packaged resources
+        shell: pwsh
+        run: |
+          $unpackedDir = "release\win-unpacked"
+          if (-not (Test-Path $unpackedDir)) {
+            Write-Host "::warning::win-unpacked directory not found, skipping resource check"
+            exit 0
+          }
+
+          $resourcesDir = Join-Path $unpackedDir "resources"
+          Write-Host "Checking resources in: $resourcesDir"
+
+          $checks = @(
+            "mcp\gui-operate-server.js",
+            "mcp\software-dev-server-example.js",
+            "node\node.exe",
+            "wsl-agent\index.js",
+            "skills"
+          )
+
+          $failed = $false
+          foreach ($check in $checks) {
+            $fullPath = Join-Path $resourcesDir $check
+            if (Test-Path $fullPath) {
+              Write-Host "  OK: $check"
+            } else {
+              Write-Host "::error::Missing resource: $check"
+              $failed = $true
+            }
+          }
+
+          if ($failed) {
+            Write-Host "::error::Packaged app is missing critical resources"
+            exit 1
+          }
+          Write-Host "All packaged resources verified."
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
