@@ -65,9 +65,10 @@ class RemoteConfigStore {
   private migrateAuthMode(): void {
     const gateway = this.store.get('gateway');
     if (gateway?.auth?.mode === 'pairing') {
-      // Carry over already-paired user IDs so they are not locked out
+      // Carry over already-paired user IDs so they are not locked out.
+      // Use channelType:userId format to preserve channel scoping.
       const pairedUsers = this.store.get('pairedUsers', []);
-      const allowlist = pairedUsers.map((u: PairedUser) => u.userId);
+      const allowlist = pairedUsers.map((u: PairedUser) => `${u.channelType}:${u.userId}`);
 
       log(
         '[RemoteConfig] Migrating auth mode from pairing to allowlist, preserving',
@@ -235,6 +236,7 @@ class RemoteConfigStore {
     }
 
     this.store.set('pairedUsers', users);
+    this.syncAllowlist(users);
     log('[RemoteConfig] Paired user added:', user.userId);
   }
 
@@ -247,11 +249,25 @@ class RemoteConfigStore {
 
     if (newUsers.length !== users.length) {
       this.store.set('pairedUsers', newUsers);
+      this.syncAllowlist(newUsers);
       log('[RemoteConfig] Paired user removed:', userId);
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * Sync allowlist from paired users when auth mode is allowlist
+   */
+  private syncAllowlist(users: PairedUser[]): void {
+    const gateway = this.store.get('gateway');
+    if (gateway?.auth?.mode === 'allowlist') {
+      this.store.set(
+        'gateway.auth.allowlist',
+        users.map((u) => `${u.channelType}:${u.userId}`)
+      );
+    }
   }
 
   /**
