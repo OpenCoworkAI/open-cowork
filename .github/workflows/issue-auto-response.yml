@@ -1,0 +1,82 @@
+name: Issue Auto Response
+
+on:
+  issues:
+    types: [opened, labeled]
+
+concurrency:
+  group: issue-auto-response-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  auto-response:
+    if: |
+      !contains(github.event.issue.labels.*.name, 'duplicate') &&
+      !contains(github.event.issue.labels.*.name, 'spam') &&
+      !contains(github.event.issue.labels.*.name, 'bot-skip')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check for existing bot response
+        id: check_bot
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "*Open Cowork Bot*";
+            const allowedLogins = (process.env.BOT_LOGINS || "github-actions[bot]")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
+            );
+            const hasBot = comments.some(
+              (comment) => {
+                if (!(comment?.body || "").includes(marker)) {
+                  return false;
+                }
+                const user = comment.user;
+                if (!user || user.type !== "Bot") {
+                  return false;
+                }
+                return allowedLogins.includes(user.login);
+              }
+            );
+            core.setOutput("has_bot", hasBot ? "true" : "false");
+            if (hasBot) {
+              core.info("Existing bot response found; skipping.");
+            }
+        env:
+          BOT_LOGINS: ${{ vars.BOT_LOGINS }}
+
+      - name: Checkout repository
+        if: steps.check_bot.outputs.has_bot != 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Codex for Issue Auto Response
+        if: steps.check_bot.outputs.has_bot != 'true'
+        uses: openai/codex-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ secrets.OPENAI_BASE_URL }}
+          model: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+          effort: ${{ vars.OPENAI_EFFORT || 'high' }}
+          sandbox: danger-full-access
+          safety-strategy: drop-sudo
+          prompt-file: .github/prompts/issue-auto-response.md
+          allow-bots: true
+          allow-users: '*'
