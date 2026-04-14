@@ -8,9 +8,13 @@ import { Link2, X } from 'lucide-react';
 
 const DISMISS_KEY = 'open-cowork-pairing-guide-dismissed';
 
+const supportsStorage = typeof window !== 'undefined' && window.localStorage;
+
 export function PairingGuideCard() {
   const { t } = useTranslation();
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY) === 'true');
+  const [dismissed, setDismissed] = useState(() =>
+    supportsStorage ? localStorage.getItem(DISMISS_KEY) === 'true' : false
+  );
 
   if (dismissed) return null;
 
@@ -23,7 +27,7 @@ export function PairingGuideCard() {
 
   function handleDismiss() {
     setDismissed(true);
-    localStorage.setItem(DISMISS_KEY, 'true');
+    if (supportsStorage) localStorage.setItem(DISMISS_KEY, 'true');
   }
 
   return (

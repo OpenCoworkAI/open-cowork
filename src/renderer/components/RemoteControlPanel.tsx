@@ -199,7 +199,14 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   async function rejectPairing(request: PairingRequest) {
     if (!isElectron) return;
     try {
-      await window.electronAPI.remote.rejectPairing(request.channelType, request.userId);
+      const result = await window.electronAPI.remote.rejectPairing(
+        request.channelType,
+        request.userId
+      );
+      if (!result.success) {
+        setError(result.error ? { text: result.error } : { key: 'remote.rejectFailed' });
+        return;
+      }
       setSuccess({ key: 'remote.pairingRejected' });
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
