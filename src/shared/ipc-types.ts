@@ -85,7 +85,7 @@ export interface FeishuChannelConfig {
 
 /** Gateway authentication config. */
 export interface GatewayAuthConfig {
-  mode: 'token' | 'allowlist' | 'pairing';
+  mode: 'token' | 'allowlist' | 'pairing' | 'open';
   token?: string;
   allowlist?: string[];
   requirePairing?: boolean;
