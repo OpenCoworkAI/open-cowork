@@ -12,7 +12,6 @@ jobs:
   pr-review:
     if: |
       github.event.pull_request.draft == false &&
-      !endsWith(github.actor, '[bot]') &&
       !contains(github.event.pull_request.labels.*.name, 'bot-skip')
     runs-on: ubuntu-latest
     permissions:
