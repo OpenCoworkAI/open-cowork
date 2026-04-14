@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/平台-Windows%20%7C%20macOS-blue" alt="Platform" />
   <img src="https://img.shields.io/badge/协议-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-18+-brightgreen" alt="Node.js" />
-  <a href="https://discord.gg/open-cowork"><img src="https://img.shields.io/discord/1493588403260883078?logo=discord&label=Discord&color=5865F2" alt="Discord" /></a>
+  <a href="https://discord.gg/pynjtQDf"><img src="https://img.shields.io/discord/1493588403260883078?logo=discord&label=Discord&color=5865F2" alt="Discord" /></a>
   <a href="#加入社群"><img src="https://img.shields.io/badge/WeChat-微信群-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
 </p>
 
@@ -290,7 +290,7 @@ open-cowork/
 
 欢迎加入我们的社区交流：
 
-- **Discord**：[加入 Discord 服务器](https://discord.gg/open-cowork) — 实时聊天、技术支持与开发讨论。
+- **Discord**：[加入 Discord 服务器](https://discord.gg/pynjtQDf) — 实时聊天、技术支持与开发讨论。
 - **微信**：扫描下方二维码加入微信交流群（中文社区）。
 
 <p align="center">
