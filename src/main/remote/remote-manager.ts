@@ -398,6 +398,23 @@ export class RemoteManager extends EventEmitter {
   }
 
   /**
+   * Reject pairing request
+   */
+  rejectPairing(channelType: ChannelType, userId: string): boolean {
+    if (!this.gateway) {
+      return false;
+    }
+
+    const success = this.gateway.rejectPairing(channelType, userId);
+
+    if (success) {
+      this.emitStatusUpdate();
+    }
+
+    return success;
+  }
+
+  /**
    * Revoke user pairing
    */
   revokePairing(channelType: ChannelType, userId: string): boolean {

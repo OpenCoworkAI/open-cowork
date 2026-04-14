@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { GatewayControlCard } from './remote/GatewayControlCard';
 import { PairingRequestsSection } from './remote/PairingRequestsSection';
+import { PairingGuideCard } from './remote/PairingGuideCard';
 import { ConfigStepNav } from './remote/ConfigStepNav';
 import { FeishuConfigStep } from './remote/FeishuConfigStep';
 import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
@@ -195,6 +196,18 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
     }
   }
 
+  async function rejectPairing(request: PairingRequest) {
+    if (!isElectron) return;
+    try {
+      await window.electronAPI.remote.rejectPairing(request.channelType, request.userId);
+      setSuccess({ key: 'remote.pairingRejected' });
+      setTimeout(() => setSuccess(null), 3000);
+      await loadData();
+    } catch (err) {
+      setError({ key: 'remote.rejectFailed' });
+    }
+  }
+
   async function revokePairing(user: PairedUser) {
     if (!isElectron) return;
     try {
@@ -259,9 +272,13 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         onToggle={toggleGateway}
       />
 
+      {status?.running && feishuDmPolicy === 'pairing' && <PairingGuideCard />}
+
       <PairingRequestsSection
         pendingPairings={pendingPairings}
+        showEmpty={status?.running && feishuDmPolicy === 'pairing'}
         onApprove={approvePairing}
+        onReject={rejectPairing}
       />
 
       <ConfigStepNav

@@ -503,6 +503,23 @@ export class RemoteGateway extends EventEmitter {
   }
 
   /**
+   * Reject pairing request (called from UI)
+   */
+  rejectPairing(channelType: ChannelType, userId: string): boolean {
+    const userKey = `${channelType}:${userId}`;
+    const request = this.pairingRequests.get(userKey);
+
+    if (!request) {
+      logWarn('[Gateway] No pairing request found for:', userKey);
+      return false;
+    }
+
+    this.pairingRequests.delete(userKey);
+    log('[Gateway] Pairing rejected:', userKey);
+    return true;
+  }
+
+  /**
    * Revoke user pairing
    */
   revokePairing(channelType: ChannelType, userId: string): boolean {
