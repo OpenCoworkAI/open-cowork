@@ -346,11 +346,19 @@ export class RemoteManager extends EventEmitter {
           const nonFeishuEntries = (currentAuth.allowlist ?? []).filter(
             (entry) => !entry.startsWith('feishu:')
           );
+          // Include paired Feishu users so they retain access when switching from pairing mode
+          // (syncAllowlist() only populates allowlist when already in allowlist mode)
+          const pairedFeishuEntries = remoteConfigStore
+            .getPairedUsers()
+            .filter((u) => u.channelType === 'feishu')
+            .map((u) => `feishu:${u.userId}`);
           remoteConfigStore.setGatewayConfig({
             auth: {
               ...currentAuth,
               mode: 'allowlist',
-              allowlist: [...new Set([...nonFeishuEntries, ...feishuEntries])],
+              allowlist: [
+                ...new Set([...nonFeishuEntries, ...pairedFeishuEntries, ...feishuEntries]),
+              ],
             },
           });
           break;
