@@ -252,12 +252,6 @@ export class RemoteManager extends EventEmitter {
     // Stop tunnel first
     await tunnelManager.stop();
 
-    // Clear all pending send timers
-    for (const timer of this.sendTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.sendTimers.clear();
-
     try {
       await this.gateway.stop();
       this.gateway = undefined;
