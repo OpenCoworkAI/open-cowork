@@ -89,27 +89,27 @@ class RemoteConfigStore {
   /**
    * Migrate: sync gateway auth mode to match Feishu DM policy.
    * Fixes issue #92 for existing installs where channels.feishu.dm.policy was
-   * set to 'open' but gateway.auth.mode remained at default 'allowlist' (empty).
+   * set to 'open' but gateway.auth.mode remained at default 'allowlist'.
+   * Also handles the case where syncAllowlist() already populated the allowlist
+   * with paired users — if all entries are from paired users, the mode was never
+   * explicitly configured and should still be migrated.
    */
   private migrateFeishuDmPolicySync(): void {
     const feishu = this.store.get('channels.feishu') as FeishuChannelConfig | undefined;
     if (!feishu?.dm?.policy) return;
+    if (feishu.dm.policy !== 'open' && feishu.dm.policy !== 'pairing') return;
 
     const gateway = this.store.get('gateway');
-    // Only auto-sync if gateway is still at the default deny-all state
-    // (allowlist mode with empty allowlist), indicating it was never explicitly configured
-    if (
-      gateway?.auth?.mode === 'allowlist' &&
-      (!gateway.auth.allowlist || gateway.auth.allowlist.length === 0)
-    ) {
-      if (feishu.dm.policy === 'open' || feishu.dm.policy === 'pairing') {
-        log(
-          '[RemoteConfig] Syncing gateway auth mode to match Feishu DM policy:',
-          feishu.dm.policy
-        );
-        this.store.set('gateway.auth.mode', feishu.dm.policy);
-      }
-      // 'allowlist' with empty allowFrom doesn't need migration — both sides already deny all
+    if (gateway?.auth?.mode !== 'allowlist') return;
+
+    const allowlist = gateway.auth.allowlist ?? [];
+    const pairedEntries = new Set(this.getPairedUsers().map((u) => `${u.channelType}:${u.userId}`));
+    const onlyPairedEntries =
+      allowlist.length === 0 || allowlist.every((e) => pairedEntries.has(e));
+
+    if (onlyPairedEntries) {
+      log('[RemoteConfig] Syncing gateway auth mode to match Feishu DM policy:', feishu.dm.policy);
+      this.store.set('gateway.auth.mode', feishu.dm.policy);
     }
   }
 

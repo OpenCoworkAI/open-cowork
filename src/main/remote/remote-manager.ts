@@ -340,11 +340,21 @@ export class RemoteManager extends EventEmitter {
             auth: { ...currentAuth, mode: 'pairing' },
           });
           break;
-        case 'allowlist':
+        case 'allowlist': {
+          // Scope Feishu IDs and merge with existing entries (preserving other channels)
+          const feishuEntries = (config.dm.allowFrom ?? []).map((id) => `feishu:${id}`);
+          const nonFeishuEntries = (currentAuth.allowlist ?? []).filter(
+            (entry) => !entry.startsWith('feishu:')
+          );
           remoteConfigStore.setGatewayConfig({
-            auth: { ...currentAuth, mode: 'allowlist', allowlist: config.dm.allowFrom ?? [] },
+            auth: {
+              ...currentAuth,
+              mode: 'allowlist',
+              allowlist: [...new Set([...nonFeishuEntries, ...feishuEntries])],
+            },
           });
           break;
+        }
       }
     }
 
