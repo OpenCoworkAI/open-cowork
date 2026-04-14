@@ -347,7 +347,11 @@ export class RemoteGateway extends EventEmitter {
         if (!allowlist || allowlist.length === 0) {
           return false; // Empty allowlist means deny all
         }
-        return allowlist.includes(message.sender.id);
+        // Support both scoped (channelType:userId) and legacy (userId) formats
+        return (
+          allowlist.includes(`${message.channelType}:${message.sender.id}`) ||
+          allowlist.includes(message.sender.id)
+        );
 
       case 'pairing': {
         // Check if user is paired
