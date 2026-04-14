@@ -57,6 +57,9 @@ class RemoteConfigStore {
 
     // Migrate: change pairing mode to allowlist (allow everyone by default)
     this.migrateAuthMode();
+
+    // Migrate: sync gateway auth mode to match Feishu DM policy for existing installs
+    this.migrateFeishuDmPolicySync();
   }
 
   /**
@@ -80,6 +83,33 @@ class RemoteConfigStore {
         allowlist,
         requirePairing: false,
       });
+    }
+  }
+
+  /**
+   * Migrate: sync gateway auth mode to match Feishu DM policy.
+   * Fixes issue #92 for existing installs where channels.feishu.dm.policy was
+   * set to 'open' but gateway.auth.mode remained at default 'allowlist' (empty).
+   */
+  private migrateFeishuDmPolicySync(): void {
+    const feishu = this.store.get('channels.feishu') as FeishuChannelConfig | undefined;
+    if (!feishu?.dm?.policy) return;
+
+    const gateway = this.store.get('gateway');
+    // Only auto-sync if gateway is still at the default deny-all state
+    // (allowlist mode with empty allowlist), indicating it was never explicitly configured
+    if (
+      gateway?.auth?.mode === 'allowlist' &&
+      (!gateway.auth.allowlist || gateway.auth.allowlist.length === 0)
+    ) {
+      if (feishu.dm.policy === 'open' || feishu.dm.policy === 'pairing') {
+        log(
+          '[RemoteConfig] Syncing gateway auth mode to match Feishu DM policy:',
+          feishu.dm.policy
+        );
+        this.store.set('gateway.auth.mode', feishu.dm.policy);
+      }
+      // 'allowlist' with empty allowFrom doesn't need migration — both sides already deny all
     }
   }
 

@@ -322,7 +322,9 @@ export class RemoteManager extends EventEmitter {
   async updateFeishuConfig(config: FeishuChannelConfig): Promise<void> {
     remoteConfigStore.setFeishuConfig(config);
 
-    // Sync Feishu DM policy to gateway auth mode so checkAuthorization() matches
+    // Sync Feishu DM policy to gateway auth mode so checkAuthorization() matches.
+    // Note: gateway auth mode is a cross-channel setting — changing it here affects
+    // authorization for all channel types (feishu, telegram, etc.), not just Feishu.
     if (config.dm) {
       const currentGateway = remoteConfigStore.getGatewayConfig();
       const currentAuth = currentGateway.auth;
