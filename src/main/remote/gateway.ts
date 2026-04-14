@@ -359,6 +359,9 @@ export class RemoteGateway extends EventEmitter {
         return this.pairedUsers.has(pairedKey);
       }
 
+      case 'open':
+        return true;
+
       default:
         return false;
     }

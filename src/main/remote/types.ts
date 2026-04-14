@@ -12,36 +12,36 @@
 export interface GatewayConfig {
   /** Whether remote gateway is enabled */
   enabled: boolean;
-  
+
   /** WebSocket server port */
   port: number;
-  
+
   /** Bind address ('127.0.0.1' for local only, '0.0.0.0' for all interfaces) */
   bind: '127.0.0.1' | '0.0.0.0';
-  
+
   /** Authentication configuration */
   auth: GatewayAuthConfig;
-  
+
   /** Tunnel configuration for public access */
   tunnel?: TunnelConfig;
-  
+
   /** Default working directory for remote sessions */
   defaultWorkingDirectory?: string;
-  
+
   /** Auto-approve safe tools without user confirmation */
   autoApproveSafeTools?: boolean;
 }
 
 export interface GatewayAuthConfig {
   /** Authentication mode */
-  mode: 'token' | 'allowlist' | 'pairing';
-  
+  mode: 'token' | 'allowlist' | 'pairing' | 'open';
+
   /** API token (required when mode is 'token') */
   token?: string;
-  
+
   /** Allowed user IDs (required when mode is 'allowlist') */
   allowlist?: string[];
-  
+
   /** Whether to require pairing for new users */
   requirePairing?: boolean;
 }
@@ -49,10 +49,10 @@ export interface GatewayAuthConfig {
 export interface TunnelConfig {
   /** Whether tunnel is enabled */
   enabled: boolean;
-  
+
   /** Tunnel type */
   type: 'frp' | 'ngrok' | 'cloudflare';
-  
+
   /** FRP configuration */
   frp?: {
     serverAddr: string;
@@ -60,13 +60,13 @@ export interface TunnelConfig {
     token?: string;
     subdomain?: string;
   };
-  
+
   /** Ngrok configuration */
   ngrok?: {
     authToken: string;
     region?: string;
   };
-  
+
   /** Cloudflare Tunnel configuration */
   cloudflare?: {
     tunnelToken: string;
@@ -82,53 +82,58 @@ export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'webso
 export interface ChannelConfig {
   /** Channel type */
   type: ChannelType;
-  
+
   /** Whether this channel is enabled */
   enabled: boolean;
-  
+
   /** Channel-specific configuration */
-  config: FeishuChannelConfig | WechatChannelConfig | TelegramChannelConfig | DingtalkChannelConfig | WebSocketChannelConfig;
+  config:
+    | FeishuChannelConfig
+    | WechatChannelConfig
+    | TelegramChannelConfig
+    | DingtalkChannelConfig
+    | WebSocketChannelConfig;
 }
 
 // Feishu (飞书) Channel
 export interface FeishuChannelConfig {
   type: 'feishu';
-  
+
   /** App ID from Feishu Open Platform */
   appId: string;
-  
+
   /** App Secret from Feishu Open Platform */
   appSecret: string;
-  
+
   /** Verification token for webhook validation */
   verificationToken?: string;
-  
+
   /** Encrypt key for message encryption */
   encryptKey?: string;
-  
+
   /** Use WebSocket mode instead of webhook (recommended for local dev) */
   useWebSocket?: boolean;
-  
+
   /** Direct message policy */
   dm: {
     /** Policy for handling DMs from unknown users */
     policy: 'open' | 'pairing' | 'allowlist';
-    
+
     /** Allowed user open_ids (when policy is 'allowlist') */
     allowFrom?: string[];
   };
-  
+
   /** Group configuration */
   groups?: {
     [chatId: string]: {
       /** Whether to require @mention to activate */
       requireMention: boolean;
-      
+
       /** Allowed users in this group */
       allowFrom?: string[];
     };
   };
-  
+
   /** Default group settings (when not specified per-group) */
   defaultGroupSettings?: {
     requireMention: boolean;
@@ -138,19 +143,19 @@ export interface FeishuChannelConfig {
 // WeChat Channel (via wechaty)
 export interface WechatChannelConfig {
   type: 'wechat';
-  
+
   /** Wechaty puppet type */
   puppet?: 'wechaty-puppet-wechat' | 'wechaty-puppet-padlocal';
-  
+
   /** Puppet token (for paid puppets) */
   puppetToken?: string;
-  
+
   /** DM policy */
   dm: {
     policy: 'open' | 'pairing' | 'allowlist';
     allowFrom?: string[];
   };
-  
+
   /** Group configuration */
   groups?: {
     [roomId: string]: {
@@ -163,19 +168,19 @@ export interface WechatChannelConfig {
 // Telegram Channel
 export interface TelegramChannelConfig {
   type: 'telegram';
-  
+
   /** Bot token from @BotFather */
   botToken: string;
-  
+
   /** Webhook URL (optional, uses polling if not set) */
   webhookUrl?: string;
-  
+
   /** DM policy */
   dm: {
     policy: 'open' | 'pairing' | 'allowlist';
-    allowFrom?: string[];  // Telegram user IDs
+    allowFrom?: string[]; // Telegram user IDs
   };
-  
+
   /** Group configuration */
   groups?: {
     [chatId: string]: {
@@ -188,22 +193,22 @@ export interface TelegramChannelConfig {
 // DingTalk (钉钉) Channel
 export interface DingtalkChannelConfig {
   type: 'dingtalk';
-  
+
   /** App Key */
   appKey: string;
-  
+
   /** App Secret */
   appSecret: string;
-  
+
   /** Robot code */
   robotCode?: string;
-  
+
   /** DM policy */
   dm: {
     policy: 'open' | 'pairing' | 'allowlist';
     allowFrom?: string[];
   };
-  
+
   /** Group configuration */
   groups?: {
     [conversationId: string]: {
@@ -216,10 +221,10 @@ export interface DingtalkChannelConfig {
 // WebSocket Client Channel
 export interface WebSocketChannelConfig {
   type: 'websocket';
-  
+
   /** Allowed client IDs */
   allowedClients?: string[];
-  
+
   /** Whether to allow anonymous connections */
   allowAnonymous?: boolean;
 }
@@ -234,31 +239,31 @@ export interface WebSocketChannelConfig {
 export interface RemoteMessage {
   /** Unique message ID */
   id: string;
-  
+
   /** Channel type */
   channelType: ChannelType;
-  
+
   /** Channel-specific chat/room ID */
   channelId: string;
-  
+
   /** Sender information */
   sender: RemoteSender;
-  
+
   /** Message content */
   content: RemoteContent;
-  
+
   /** Reply to message ID (if this is a reply) */
   replyTo?: string;
-  
+
   /** Message timestamp */
   timestamp: number;
-  
+
   /** Whether this is a group message */
   isGroup: boolean;
-  
+
   /** Whether the bot was mentioned (@) */
   isMentioned: boolean;
-  
+
   /** Raw platform-specific data */
   raw?: unknown;
 }
@@ -266,16 +271,16 @@ export interface RemoteMessage {
 export interface RemoteSender {
   /** Platform-specific user ID */
   id: string;
-  
+
   /** Display name */
   name?: string;
-  
+
   /** Avatar URL */
   avatar?: string;
-  
+
   /** Whether this is a bot */
   isBot: boolean;
-  
+
   /** Platform-specific extra info */
   extra?: Record<string, unknown>;
 }
@@ -283,14 +288,14 @@ export interface RemoteSender {
 export interface RemoteContent {
   /** Content type */
   type: 'text' | 'image' | 'file' | 'voice' | 'video' | 'rich_text' | 'interactive';
-  
+
   /** Text content (for text type) */
   text?: string;
-  
+
   /** Image URL or key (for image type) */
   imageUrl?: string;
   imageKey?: string;
-  
+
   /** File information (for file type) */
   file?: {
     name: string;
@@ -299,17 +304,17 @@ export interface RemoteContent {
     size?: number;
     mimeType?: string;
   };
-  
+
   /** Voice/audio information */
   voice?: {
     url?: string;
     key?: string;
     duration?: number;
   };
-  
+
   /** Rich text content (platform-specific) */
   richText?: unknown;
-  
+
   /** Interactive card content (platform-specific) */
   interactive?: unknown;
 }
@@ -320,13 +325,13 @@ export interface RemoteContent {
 export interface RemoteResponse {
   /** Target channel type */
   channelType: ChannelType;
-  
+
   /** Target chat/room ID */
   channelId: string;
-  
+
   /** Content to send */
   content: RemoteResponseContent;
-  
+
   /** Reply to specific message */
   replyTo?: string;
 }
@@ -334,27 +339,27 @@ export interface RemoteResponse {
 export interface RemoteResponseContent {
   /** Content type */
   type: 'text' | 'markdown' | 'image' | 'file' | 'card';
-  
+
   /** Text content */
   text?: string;
-  
+
   /** Markdown content */
   markdown?: string;
-  
+
   /** Image to send */
   image?: {
     url?: string;
     base64?: string;
     key?: string;
   };
-  
+
   /** File to send */
   file?: {
     url?: string;
     path?: string;
     name: string;
   };
-  
+
   /** Interactive card (platform-specific) */
   card?: unknown;
 }
@@ -369,22 +374,22 @@ export interface RemoteResponseContent {
 export interface RemoteSessionMapping {
   /** Remote channel type */
   channelType: ChannelType;
-  
+
   /** Remote chat/room ID */
   channelId: string;
-  
+
   /** Remote user ID (for DM sessions) */
   userId?: string;
-  
+
   /** Local session ID */
   sessionId: string;
-  
+
   /** Working directory for this session */
   workingDirectory?: string;
-  
+
   /** Session creation timestamp */
   createdAt: number;
-  
+
   /** Last activity timestamp */
   lastActiveAt: number;
 }
@@ -393,7 +398,7 @@ export interface RemoteSessionMapping {
 // Gateway Events
 // ============================================================================
 
-export type GatewayEventType = 
+export type GatewayEventType =
   | 'gateway.started'
   | 'gateway.stopped'
   | 'gateway.error'
@@ -418,22 +423,22 @@ export interface GatewayEvent {
 export interface IChannel {
   /** Channel type */
   readonly type: ChannelType;
-  
+
   /** Whether the channel is connected */
   readonly connected: boolean;
-  
+
   /** Start the channel */
   start(): Promise<void>;
-  
+
   /** Stop the channel */
   stop(): Promise<void>;
-  
+
   /** Send a response to the channel */
   send(response: RemoteResponse): Promise<void>;
-  
+
   /** Set message handler */
   onMessage(handler: (message: RemoteMessage) => void): void;
-  
+
   /** Set error handler */
   onError(handler: (error: Error) => void): void;
 }
@@ -445,19 +450,19 @@ export interface IChannel {
 export interface PairingRequest {
   /** Pairing code (6 digits) */
   code: string;
-  
+
   /** Channel type */
   channelType: ChannelType;
-  
+
   /** User ID */
   userId: string;
-  
+
   /** User name */
   userName?: string;
-  
+
   /** Request timestamp */
   createdAt: number;
-  
+
   /** Expiry timestamp */
   expiresAt: number;
 }
@@ -465,16 +470,16 @@ export interface PairingRequest {
 export interface PairedUser {
   /** User ID */
   userId: string;
-  
+
   /** User name */
   userName?: string;
-  
+
   /** Channel type */
   channelType: ChannelType;
-  
+
   /** Paired timestamp */
   pairedAt: number;
-  
+
   /** Last active timestamp */
   lastActiveAt: number;
 }
@@ -486,23 +491,23 @@ export interface PairedUser {
 export interface GatewayStatus {
   /** Whether gateway is running */
   running: boolean;
-  
+
   /** Gateway port */
   port?: number;
-  
+
   /** Public URL (if tunnel is active) */
   publicUrl?: string;
-  
+
   /** Connected channels */
   channels: {
     type: ChannelType;
     connected: boolean;
     error?: string;
   }[];
-  
+
   /** Active remote sessions count */
   activeSessions: number;
-  
+
   /** Pending pairing requests */
   pendingPairings: number;
 }
@@ -528,7 +533,7 @@ export const DEFAULT_REMOTE_CONFIG: RemoteConfig = {
     port: 18789,
     bind: '127.0.0.1',
     auth: {
-      mode: 'allowlist',  // Empty allowlist = deny all (configure specific user IDs to allow access)
+      mode: 'allowlist', // Empty allowlist = deny all (configure specific user IDs to allow access)
       allowlist: [],
       requirePairing: false,
     },

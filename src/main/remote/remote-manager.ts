@@ -322,6 +322,30 @@ export class RemoteManager extends EventEmitter {
   async updateFeishuConfig(config: FeishuChannelConfig): Promise<void> {
     remoteConfigStore.setFeishuConfig(config);
 
+    // Sync Feishu DM policy to gateway auth mode so checkAuthorization() matches
+    if (config.dm) {
+      const currentGateway = remoteConfigStore.getGatewayConfig();
+      const currentAuth = currentGateway.auth;
+
+      switch (config.dm.policy) {
+        case 'open':
+          remoteConfigStore.setGatewayConfig({
+            auth: { ...currentAuth, mode: 'open' },
+          });
+          break;
+        case 'pairing':
+          remoteConfigStore.setGatewayConfig({
+            auth: { ...currentAuth, mode: 'pairing' },
+          });
+          break;
+        case 'allowlist':
+          remoteConfigStore.setGatewayConfig({
+            auth: { ...currentAuth, mode: 'allowlist', allowlist: config.dm.allowFrom ?? [] },
+          });
+          break;
+      }
+    }
+
     // Restart to apply changes
     if (this.gateway?.running) {
       await this.restart();
