@@ -56,6 +56,10 @@ function normalizeWindowsPathForComparison(candidate: string): string {
   return path.win32.normalize(candidate).replace(/\//g, '\\').toLowerCase();
 }
 
+function normalizeWindowsDirectoryForComparison(candidate: string): string {
+  return normalizeWindowsPathForComparison(candidate).replace(/[\\/]+$/, '');
+}
+
 function getTrustedWindowsNpxDirectories(
   env: Record<string, string | undefined> = process.env
 ): string[] {
@@ -66,7 +70,7 @@ function getTrustedWindowsNpxDirectories(
   return Array.from(
     new Set(
       candidates.map((directory) =>
-        normalizeWindowsPathForComparison(path.win32.join(directory, 'nodejs'))
+        normalizeWindowsDirectoryForComparison(path.win32.join(directory, 'nodejs'))
       )
     )
   );
@@ -85,7 +89,9 @@ export function findPreferredWindowsNpxPath(
   const bundledNormalized = bundledNpxPath
     ? normalizeWindowsPathForComparison(bundledNpxPath)
     : null;
-  const normalizedTrustedDirectories = trustedDirectories?.map(normalizeWindowsPathForComparison);
+  const normalizedTrustedDirectories = trustedDirectories?.map(
+    normalizeWindowsDirectoryForComparison
+  );
 
   for (const rawEntry of (pathEnv || '').split(';')) {
     const entry = rawEntry.trim().replace(/^"(.*)"$/, '$1');
@@ -104,7 +110,7 @@ export function findPreferredWindowsNpxPath(
 
     if (
       normalizedTrustedDirectories &&
-      !normalizedTrustedDirectories.includes(normalizeWindowsPathForComparison(entry))
+      !normalizedTrustedDirectories.includes(normalizeWindowsDirectoryForComparison(entry))
     ) {
       continue;
     }

@@ -61,4 +61,20 @@ describe('findPreferredWindowsNpxPath', () => {
 
     expect(resolved).toBe('C:\\Program Files\\nodejs\\npx.cmd');
   });
+
+  it('treats trusted PATH entries with a trailing slash as trusted', () => {
+    const bundled = 'C:\\open-cowork\\resources\\node\\npx.cmd';
+    const pathEnv = 'C:\\Program Files\\nodejs\\';
+
+    const resolved = findPreferredWindowsNpxPath(
+      pathEnv,
+      bundled,
+      (candidate) => {
+        return candidate === bundled || candidate === 'C:\\Program Files\\nodejs\\npx.cmd';
+      },
+      ['C:\\Program Files\\nodejs']
+    );
+
+    expect(resolved).toBe('C:\\Program Files\\nodejs\\npx.cmd');
+  });
 });
