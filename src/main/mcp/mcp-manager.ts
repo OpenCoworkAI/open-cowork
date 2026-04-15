@@ -52,6 +52,44 @@ export interface MCPTool {
   serverName: string;
 }
 
+function normalizeWindowsPathForComparison(candidate: string): string {
+  return path.win32.normalize(candidate).replace(/\//g, '\\').toLowerCase();
+}
+
+export function findPreferredWindowsNpxPath(
+  pathEnv: string | undefined,
+  bundledNpxPath: string | null,
+  pathExists: (candidate: string) => boolean = (candidate) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs');
+    return fs.existsSync(candidate);
+  }
+): string | null {
+  const bundledNormalized = bundledNpxPath
+    ? normalizeWindowsPathForComparison(bundledNpxPath)
+    : null;
+
+  for (const rawEntry of (pathEnv || '').split(';')) {
+    const entry = rawEntry.trim().replace(/^"(.*)"$/, '$1');
+    if (!entry) {
+      continue;
+    }
+
+    const candidate = path.win32.join(entry, 'npx.cmd');
+    if (!pathExists(candidate)) {
+      continue;
+    }
+
+    if (bundledNormalized && normalizeWindowsPathForComparison(candidate) === bundledNormalized) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return bundledNpxPath;
+}
+
 /**
  * MCP Manager - Manages connections to MCP servers and exposes their tools
  */
@@ -153,6 +191,38 @@ export class MCPManager {
 
     this.npxPath = bundledNode.npx;
     log(`[MCPManager] Using bundled npx: ${this.npxPath}`);
+  }
+
+  private async resolvePreferredNpxPath(pathEnv: string | undefined): Promise<string> {
+    const bundledNpxPath = this.getBundledNodePath()?.npx ?? null;
+
+    if (process.platform === 'win32') {
+      const preferredNpxPath = findPreferredWindowsNpxPath(pathEnv, bundledNpxPath);
+      if (!preferredNpxPath) {
+        throw new Error(
+          'npx is not available. Install Node.js so Open Cowork can use your system npx.cmd, or reinstall the app to restore the bundled runtime.'
+        );
+      }
+
+      this.npxPath = preferredNpxPath;
+      if (
+        bundledNpxPath &&
+        normalizeWindowsPathForComparison(preferredNpxPath) !==
+          normalizeWindowsPathForComparison(bundledNpxPath)
+      ) {
+        log(`[MCPManager] Using system npx on Windows: ${this.npxPath}`);
+      } else {
+        log(`[MCPManager] Using bundled npx: ${this.npxPath}`);
+      }
+
+      return preferredNpxPath;
+    }
+
+    await this.checkNpxInPath();
+    if (!this.npxPath) {
+      throw new Error('Bundled npx is unavailable.');
+    }
+    return this.npxPath;
   }
 
   /**
@@ -615,16 +685,13 @@ export class MCPManager {
         }
       }
 
-      // If command is 'npx', check if it's in PATH
-      if (command === 'npx' || command.endsWith('/npx')) {
-        // Check if npx is in PATH, throw error if not found
-        await this.checkNpxInPath();
+      // Get environment variables before resolving npx so Windows can prefer a
+      // real system npx.cmd later in PATH over the prepended bundled runtime.
+      const env = await this.getEnhancedEnv(config.env || {});
 
-        // Use the resolved npx path
-        if (this.npxPath) {
-          command = this.npxPath;
-          log(`[MCPManager] Using npx from PATH: ${command}`);
-        }
+      // If command is 'npx', resolve the concrete executable path now.
+      if (command === 'npx' || command.endsWith('/npx')) {
+        command = await this.resolvePreferredNpxPath(env.PATH);
       }
 
       // Windows: resolve bare commands (e.g. 'npx', 'node') to their .cmd/.exe equivalents.
@@ -652,8 +719,6 @@ export class MCPManager {
       commandForLogging = command;
       argsForLogging = args;
 
-      // Get environment variables
-      const env = await this.getEnhancedEnv(config.env || {});
       log('[MCPManager] Server auth env summary', {
         server: config.name,
         OPENAI_API_KEY: env.OPENAI_API_KEY?.trim() ? 'set' : 'unset',
