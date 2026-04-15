@@ -56,6 +56,22 @@ function normalizeWindowsPathForComparison(candidate: string): string {
   return path.win32.normalize(candidate).replace(/\//g, '\\').toLowerCase();
 }
 
+function getTrustedWindowsNpxDirectories(
+  env: Record<string, string | undefined> = process.env
+): string[] {
+  const candidates = [env.ProgramW6432, env.ProgramFiles, env['ProgramFiles(x86)']].filter(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0
+  );
+
+  return Array.from(
+    new Set(
+      candidates.map((directory) =>
+        normalizeWindowsPathForComparison(path.win32.join(directory, 'nodejs'))
+      )
+    )
+  );
+}
+
 export function findPreferredWindowsNpxPath(
   pathEnv: string | undefined,
   bundledNpxPath: string | null,
@@ -63,11 +79,13 @@ export function findPreferredWindowsNpxPath(
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const fs = require('fs');
     return fs.existsSync(candidate);
-  }
+  },
+  trustedDirectories?: string[]
 ): string | null {
   const bundledNormalized = bundledNpxPath
     ? normalizeWindowsPathForComparison(bundledNpxPath)
     : null;
+  const normalizedTrustedDirectories = trustedDirectories?.map(normalizeWindowsPathForComparison);
 
   for (const rawEntry of (pathEnv || '').split(';')) {
     const entry = rawEntry.trim().replace(/^"(.*)"$/, '$1');
@@ -81,6 +99,13 @@ export function findPreferredWindowsNpxPath(
     }
 
     if (bundledNormalized && normalizeWindowsPathForComparison(candidate) === bundledNormalized) {
+      continue;
+    }
+
+    if (
+      normalizedTrustedDirectories &&
+      !normalizedTrustedDirectories.includes(normalizeWindowsPathForComparison(entry))
+    ) {
       continue;
     }
 
@@ -197,7 +222,12 @@ export class MCPManager {
     const bundledNpxPath = this.getBundledNodePath()?.npx ?? null;
 
     if (process.platform === 'win32') {
-      const preferredNpxPath = findPreferredWindowsNpxPath(pathEnv, bundledNpxPath);
+      const preferredNpxPath = findPreferredWindowsNpxPath(
+        pathEnv,
+        bundledNpxPath,
+        undefined,
+        getTrustedWindowsNpxDirectories(process.env)
+      );
       if (!preferredNpxPath) {
         throw new Error(
           'npx is not available. Install Node.js so Open Cowork can use your system npx.cmd, or reinstall the app to restore the bundled runtime.'
