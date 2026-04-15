@@ -325,43 +325,51 @@ export class RemoteManager extends EventEmitter {
     // Sync Feishu DM policy to gateway auth mode so checkAuthorization() matches.
     // Note: gateway auth mode is a cross-channel setting — changing it here affects
     // authorization for all channel types (feishu, telegram, etc.), not just Feishu.
+    // Skip sync if gateway is using token auth, as that would disable token protection
+    // for non-Feishu channels (e.g. WebSocket).
     if (config.dm) {
       const currentGateway = remoteConfigStore.getGatewayConfig();
       const currentAuth = currentGateway.auth;
 
-      switch (config.dm.policy) {
-        case 'open':
-          remoteConfigStore.setGatewayConfig({
-            auth: { ...currentAuth, mode: 'open' },
-          });
-          break;
-        case 'pairing':
-          remoteConfigStore.setGatewayConfig({
-            auth: { ...currentAuth, mode: 'pairing' },
-          });
-          break;
-        case 'allowlist': {
-          // Scope Feishu IDs and merge with existing entries (preserving other channels)
-          const feishuEntries = (config.dm.allowFrom ?? []).map((id) => `feishu:${id}`);
-          const nonFeishuEntries = (currentAuth.allowlist ?? []).filter(
-            (entry) => !entry.startsWith('feishu:')
-          );
-          // Include paired Feishu users so they retain access when switching from pairing mode
-          // (syncAllowlist() only populates allowlist when already in allowlist mode)
-          const pairedFeishuEntries = remoteConfigStore
-            .getPairedUsers()
-            .filter((u) => u.channelType === 'feishu')
-            .map((u) => `feishu:${u.userId}`);
-          remoteConfigStore.setGatewayConfig({
-            auth: {
-              ...currentAuth,
-              mode: 'allowlist',
-              allowlist: [
-                ...new Set([...nonFeishuEntries, ...pairedFeishuEntries, ...feishuEntries]),
-              ],
-            },
-          });
-          break;
+      if (currentAuth.mode === 'token' || currentAuth.token) {
+        log(
+          '[RemoteManager] Skipping DM policy sync: gateway uses token auth, preserving for other channels'
+        );
+      } else {
+        switch (config.dm.policy) {
+          case 'open':
+            remoteConfigStore.setGatewayConfig({
+              auth: { ...currentAuth, mode: 'open' },
+            });
+            break;
+          case 'pairing':
+            remoteConfigStore.setGatewayConfig({
+              auth: { ...currentAuth, mode: 'pairing' },
+            });
+            break;
+          case 'allowlist': {
+            // Scope Feishu IDs and merge with existing entries (preserving other channels)
+            const feishuEntries = (config.dm.allowFrom ?? []).map((id) => `feishu:${id}`);
+            const nonFeishuEntries = (currentAuth.allowlist ?? []).filter(
+              (entry) => !entry.startsWith('feishu:')
+            );
+            // Include paired Feishu users so they retain access when switching from pairing mode
+            // (syncAllowlist() only populates allowlist when already in allowlist mode)
+            const pairedFeishuEntries = remoteConfigStore
+              .getPairedUsers()
+              .filter((u) => u.channelType === 'feishu')
+              .map((u) => `feishu:${u.userId}`);
+            remoteConfigStore.setGatewayConfig({
+              auth: {
+                ...currentAuth,
+                mode: 'allowlist',
+                allowlist: [
+                  ...new Set([...nonFeishuEntries, ...pairedFeishuEntries, ...feishuEntries]),
+                ],
+              },
+            });
+            break;
+          }
         }
       }
     }
