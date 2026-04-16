@@ -1,13 +1,15 @@
 import { defineConfig } from 'vitepress';
 
-const SITE_URL = 'https://opencoworkai.github.io/open-cowork';
+const SITE_ORIGIN = 'https://opencoworkai.github.io';
+const SITE_BASE = '/open-cowork/';
+const SITE_URL = `${SITE_ORIGIN}${SITE_BASE}`;
 
 export default defineConfig({
   title: 'Open Cowork',
   description:
     'Open-source AI agent desktop app for Windows & macOS — one-click install Claude Code, MCP tools, and Skills with sandbox isolation and multi-model support.',
 
-  base: '/open-cowork/',
+  base: SITE_BASE,
 
   head: [
     ['link', { rel: 'icon', href: '/open-cowork/logo.png' }],
