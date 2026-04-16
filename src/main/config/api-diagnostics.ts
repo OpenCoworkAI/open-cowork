@@ -138,6 +138,26 @@ function getApiErrorInfo(err: unknown): { status?: number; message: string } {
   return { message: String(err) };
 }
 
+function getModelDiagnosticFix(
+  errorType: Awaited<ReturnType<typeof probeWithClaudeSdk>>['errorType'],
+  model: string
+): string {
+  switch (errorType) {
+    case 'unauthorized':
+      return 'auth_invalid_key';
+    case 'network_error':
+      return `model_network_error:${model}`;
+    case 'rate_limited':
+      return `model_rate_limited:${model}`;
+    case 'server_error':
+      return `model_request_failed:${model}`;
+    case 'ollama_loading':
+      return `ollama_model_loading:${model}`;
+    default:
+      return `model_unavailable:${model}`;
+  }
+}
+
 /**
  * Build an Anthropic client with credentials passed explicitly.
  * baseURL and apiKey/authToken are always provided directly so the SDK
@@ -492,10 +512,7 @@ async function stepModel(input: DiagnosticInput, step: DiagnosticStep): Promise<
     } else {
       step.status = 'fail';
       step.error = result.details;
-      step.fix =
-        result.errorType === 'ollama_loading'
-          ? `ollama_model_loading:${input.model}`
-          : `model_unavailable:${input.model}`;
+      step.fix = getModelDiagnosticFix(result.errorType, input.model);
     }
   } catch (err) {
     step.status = 'fail';

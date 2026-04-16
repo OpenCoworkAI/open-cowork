@@ -260,19 +260,52 @@ describe('runDiagnostics TLS step', () => {
 
     expect(result.overallOk).toBe(false);
     expect(result.failedAt).toBe('model');
-    const modelStep = result.steps.find(s => s.name === 'model');
+    const modelStep = result.steps.find((s) => s.name === 'model');
     expect(modelStep?.status).toBe('fail');
     expect(modelStep?.error).toBe('401 Unauthorized');
   });
 
+  it.each([
+    ['network_error', 'connection reset by peer', 'model_network_error:gpt-4.1'],
+    ['rate_limited', '429 Too Many Requests', 'model_rate_limited:gpt-4.1'],
+    ['server_error', '502 Bad Gateway', 'model_request_failed:gpt-4.1'],
+    ['unauthorized', '403 Forbidden', 'auth_invalid_key'],
+  ] as const)(
+    'maps %s probe failures to a specific diagnostic fix instead of model_unavailable',
+    async (errorType, details, expectedFix) => {
+      mocks.probeWithClaudeSdk.mockResolvedValue({
+        ok: false,
+        errorType,
+        details,
+      });
+
+      const result = await runDiagnostics({
+        provider: 'openai',
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4.1',
+      });
+
+      expect(result.overallOk).toBe(false);
+      expect(result.failedAt).toBe('model');
+      const modelStep = result.steps.find((s) => s.name === 'model');
+      expect(modelStep?.status).toBe('fail');
+      expect(modelStep?.error).toBe(details);
+      expect(modelStep?.fix).toBe(expectedFix);
+    }
+  );
+
   it('discovers local Ollama using the caller-provided loopback endpoint', async () => {
     mocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        data: [{ id: 'qwen3.5:0.8b' }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'qwen3.5:0.8b' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     );
 
     const result = await discoverLocalOllama({
@@ -296,12 +329,15 @@ describe('runDiagnostics TLS step', () => {
 
   it('falls back to the default local endpoint when a remote base url is passed to local discovery', async () => {
     mocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        data: [{ id: 'qwen3.5:0.8b' }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'qwen3.5:0.8b' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     );
 
     const result = await discoverLocalOllama({
@@ -325,12 +361,15 @@ describe('runDiagnostics TLS step', () => {
 
   it('distinguishes a reachable service with no models from a usable local model runtime', async () => {
     mocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        data: [],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      new Response(
+        JSON.stringify({
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     );
 
     const result = await discoverLocalOllama({
@@ -347,12 +386,15 @@ describe('runDiagnostics TLS step', () => {
 
   it('treats listed models as discoverable without performing a live inference probe', async () => {
     mocks.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        data: [{ id: 'qwen3.5:0.8b' }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'qwen3.5:0.8b' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
     );
 
     const result = await discoverLocalOllama({
