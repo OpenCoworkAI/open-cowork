@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress';
 const SITE_ORIGIN = 'https://opencoworkai.github.io';
 const SITE_BASE = '/open-cowork/';
 const SITE_URL = `${SITE_ORIGIN}${SITE_BASE}`;
+const OG_IMAGE = `${SITE_URL}og-image.png`;
 
 export default defineConfig({
   title: 'Open Cowork',
@@ -24,7 +25,7 @@ export default defineConfig({
           'Free, open-source AI agent desktop app for Windows & macOS. One-click install with sandbox isolation, multi-model support, and built-in Skills.',
       },
     ],
-    ['meta', { property: 'og:image', content: `${SITE_URL}/og-image.png` }],
+    ['meta', { property: 'og:image', content: OG_IMAGE }],
     ['meta', { property: 'og:url', content: SITE_URL }],
     // Twitter Card
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
@@ -37,7 +38,7 @@ export default defineConfig({
           'Free AI agent desktop app for Windows & macOS. One-click install, multi-model, sandbox isolation.',
       },
     ],
-    ['meta', { name: 'twitter:image', content: `${SITE_URL}/og-image.png` }],
+    ['meta', { name: 'twitter:image', content: OG_IMAGE }],
     // SEO
     [
       'meta',
