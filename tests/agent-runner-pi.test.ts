@@ -97,6 +97,20 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     expect(agentRunnerContent).toContain('most recent two relevant publication days');
   });
 
+  it('routes MCP image results through structured helpers instead of stringifying base64 into text', () => {
+    expect(agentRunnerContent).toContain(
+      "import {\n  normalizeMcpToolResultForModel,\n  normalizeToolExecutionResultForUi,\n} from './tool-result-utils'"
+    );
+    expect(agentRunnerContent).toContain(
+      'const normalizedResult = normalizeMcpToolResultForModel(result);'
+    );
+    expect(agentRunnerContent).toContain(
+      'const normalizedToolResult = normalizeToolExecutionResultForUi(event.result);'
+    );
+    expect(agentRunnerContent).not.toContain('else textParts.push(JSON.stringify(part));');
+    expect(agentRunnerContent).not.toContain(": JSON.stringify(event.result || '');");
+  });
+
   it('does not reference removed AskUserQuestion or TodoWrite tools', () => {
     expect(agentRunnerContent).not.toContain('AskUserQuestion');
     expect(agentRunnerContent).not.toContain('TodoWrite');
