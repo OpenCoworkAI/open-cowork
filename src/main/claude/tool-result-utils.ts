@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 type ToolResultImage = {
   data: string;
   mimeType: string;
@@ -127,7 +129,8 @@ function extractTextAndImagesFromContent(content: unknown): {
 function dedupeImages(images: ToolResultImage[]): ToolResultImage[] {
   const seen = new Set<string>();
   return images.filter((image) => {
-    const key = `${image.mimeType}:${image.data.length}:${image.data.slice(0, 48)}`;
+    const hash = createHash('sha256').update(image.data).digest('hex');
+    const key = `${image.mimeType}:${hash}`;
     if (seen.has(key)) {
       return false;
     }

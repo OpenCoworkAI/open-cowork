@@ -49,6 +49,28 @@ describe('tool result utils', () => {
     expect(normalized.images).toEqual([{ data: base64Image, mimeType: 'image/png' }]);
   });
 
+  it('keeps different images that share the same prefix and length', () => {
+    const sharedPrefix = 'PREFIX'.repeat(20);
+    const firstImage = `${sharedPrefix}${'X'.repeat(64)}`;
+    const secondImage = `${sharedPrefix}${'Y'.repeat(64)}`;
+    const result = {
+      content: [{ type: 'text', text: 'Captured two screenshots' }],
+      details: {
+        openCoworkImages: [
+          { data: firstImage, mimeType: 'image/png' },
+          { data: secondImage, mimeType: 'image/png' },
+        ],
+      },
+    };
+
+    const normalized = normalizeToolExecutionResultForUi(result);
+
+    expect(normalized.images).toEqual([
+      { data: firstImage, mimeType: 'image/png' },
+      { data: secondImage, mimeType: 'image/png' },
+    ]);
+  });
+
   it('redacts data urls and image payloads when stringifying fallback tool results', () => {
     const dataUrl = `data:image/png;base64,${'C'.repeat(512)}`;
     const result = {
