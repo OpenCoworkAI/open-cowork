@@ -2,7 +2,11 @@
 import { useState, memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { shouldUseScreenshotSummary } from '../../utils/tool-result-summary';
+import {
+  shouldPreferToolResultImages,
+  shouldRenderToolResultText,
+  shouldUseScreenshotSummary,
+} from '../../utils/tool-result-summary';
 import type { ToolResultContent, ContentBlock, ToolUseContent, Message } from '../../types';
 
 // Only allow safe image MIME types for data: URI rendering
@@ -72,7 +76,23 @@ export const ToolResultBlock = memo(function ToolResultBlock({
     return `${lines.length} lines`;
   };
 
-  const hasImages = block.images && block.images.length > 0;
+  const validImages =
+    block.images?.filter(
+      (image) => image?.mimeType && image?.data && ALLOWED_IMAGE_TYPES.has(image.mimeType)
+    ) ?? [];
+  const hasImages = validImages.length > 0;
+  const preferImageOutput = shouldPreferToolResultImages(
+    toolName,
+    typeof block.content === 'string' ? block.content : '',
+    hasImages,
+    block.isError === true
+  );
+  const shouldShowOutputText = shouldRenderToolResultText(
+    toolName,
+    typeof block.content === 'string' ? block.content : '',
+    hasImages,
+    block.isError === true
+  );
 
   return (
     <div
@@ -109,27 +129,41 @@ export const ToolResultBlock = memo(function ToolResultBlock({
 
       {expanded && (
         <div className="border-t border-border/50 px-3 py-2 animate-fade-in">
-          <pre
-            className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
-              block.isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
-            }`}
-          >
-            {block.content}
-          </pre>
-          {block.images && block.images.length > 0 && (
+          {preferImageOutput && hasImages && (
+            <div className="space-y-2">
+              {validImages.map((image, index) => (
+                <div key={index} className="border border-border rounded-lg overflow-hidden">
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={`Screenshot ${index + 1}`}
+                    className="w-full h-auto"
+                    style={{ maxHeight: '400px', objectFit: 'contain' }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {shouldShowOutputText && (
+            <pre
+              className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
+                block.isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
+              } ${preferImageOutput ? 'mt-2' : ''}`}
+            >
+              {block.content}
+            </pre>
+          )}
+          {!preferImageOutput && hasImages && (
             <div className="mt-2 space-y-2">
-              {block.images.map((image, index) =>
-                ALLOWED_IMAGE_TYPES.has(image.mimeType) ? (
-                  <div key={index} className="border border-border rounded-lg overflow-hidden">
-                    <img
-                      src={`data:${image.mimeType};base64,${image.data}`}
-                      alt={`Screenshot ${index + 1}`}
-                      className="w-full h-auto"
-                      style={{ maxHeight: '400px', objectFit: 'contain' }}
-                    />
-                  </div>
-                ) : null
-              )}
+              {validImages.map((image, index) => (
+                <div key={index} className="border border-border rounded-lg overflow-hidden">
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={`Screenshot ${index + 1}`}
+                    className="w-full h-auto"
+                    style={{ maxHeight: '400px', objectFit: 'contain' }}
+                  />
+                </div>
+              ))}
             </div>
           )}
         </div>

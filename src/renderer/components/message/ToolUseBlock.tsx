@@ -2,7 +2,11 @@
 import { useState, memo } from 'react';
 import { ChevronDown, ChevronRight, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { shouldUseScreenshotSummary } from '../../utils/tool-result-summary';
+import {
+  shouldPreferToolResultImages,
+  shouldRenderToolResultText,
+  shouldUseScreenshotSummary,
+} from '../../utils/tool-result-summary';
 import type { ToolUseContent, ToolResultContent, ContentBlock, Message } from '../../types';
 import { AskUserQuestionBlock } from './AskUserQuestionBlock';
 import { TodoWriteBlock } from './TodoWriteBlock';
@@ -84,6 +88,26 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   };
 
   const summary = getSummary();
+  const validImages =
+    toolResult?.images?.filter(
+      (image) => image?.mimeType && image?.data && ALLOWED_IMAGE_TYPES.has(image.mimeType)
+    ) ?? [];
+  const preferImageOutput = toolResult
+    ? shouldPreferToolResultImages(
+        block.name,
+        typeof toolResult.content === 'string' ? toolResult.content : '',
+        validImages.length > 0,
+        isError
+      )
+    : false;
+  const shouldShowOutputText = toolResult
+    ? shouldRenderToolResultText(
+        block.name,
+        typeof toolResult.content === 'string' ? toolResult.content : '',
+        validImages.length > 0,
+        isError
+      )
+    : false;
 
   // Duration from trace steps
   let duration: number | undefined;
@@ -143,6 +167,11 @@ export const ToolUseBlock = memo(function ToolUseBlock({
             {summary}
           </span>
         )}
+        {validImages.length > 0 && (
+          <span className="text-[11px] text-text-muted flex-shrink-0">
+            +{validImages.length} img
+          </span>
+        )}
         {duration !== undefined && (
           <span className="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
             {duration < 1000 ? `${duration}ms` : `${(duration / 1000).toFixed(1)}s`}
@@ -176,31 +205,37 @@ export const ToolUseBlock = memo(function ToolUseBlock({
               <div className="text-[10px] uppercase tracking-wider text-text-muted font-medium mb-1">
                 Output
               </div>
-              <pre
-                className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
-                  isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
-                }`}
-              >
-                {toolResult.content}
-              </pre>
-
-              {/* Images */}
-              {Array.isArray(toolResult.images) &&
-                toolResult.images.map((image, index) =>
-                  image?.mimeType && image?.data && ALLOWED_IMAGE_TYPES.has(image.mimeType) ? (
-                    <div
-                      key={index}
-                      className="mt-2 border border-border rounded-lg overflow-hidden"
-                    >
-                      <img
-                        src={`data:${image.mimeType};base64,${image.data}`}
-                        alt={`Output ${index + 1}`}
-                        className="w-full h-auto"
-                        style={{ maxHeight: '400px', objectFit: 'contain' }}
-                      />
-                    </div>
-                  ) : null
-                )}
+              {preferImageOutput &&
+                validImages.map((image, index) => (
+                  <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
+                    <img
+                      src={`data:${image.mimeType};base64,${image.data}`}
+                      alt={`Output ${index + 1}`}
+                      className="w-full h-auto"
+                      style={{ maxHeight: '400px', objectFit: 'contain' }}
+                    />
+                  </div>
+                ))}
+              {shouldShowOutputText && (
+                <pre
+                  className={`text-xs font-mono whitespace-pre-wrap break-all rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto ${
+                    isError ? 'text-error bg-error/5' : 'text-text-secondary bg-surface-muted'
+                  } ${preferImageOutput ? 'mt-2' : ''}`}
+                >
+                  {toolResult.content}
+                </pre>
+              )}
+              {!preferImageOutput &&
+                validImages.map((image, index) => (
+                  <div key={index} className="mt-2 border border-border rounded-lg overflow-hidden">
+                    <img
+                      src={`data:${image.mimeType};base64,${image.data}`}
+                      alt={`Output ${index + 1}`}
+                      className="w-full h-auto"
+                      style={{ maxHeight: '400px', objectFit: 'contain' }}
+                    />
+                  </div>
+                ))}
             </div>
           )}
         </div>
