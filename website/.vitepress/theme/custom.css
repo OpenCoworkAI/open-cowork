@@ -1,0 +1,181 @@
+/**
+ * Open Cowork — custom VitePress theme
+ *
+ * Mirrors the app's warm palette (rust/terracotta accent, dark-first,
+ * Plus Jakarta Sans + Source Serif 4 typography).
+ */
+
+/* ── Google Fonts ─────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── Typography ──────────────────────────────────────── */
+:root {
+  --vp-font-family-base: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+}
+
+/* ── Brand colors (warm rust/terracotta) ─────────────── */
+:root {
+  --vp-c-brand-1: #d67a52;
+  --vp-c-brand-2: #c56c46;
+  --vp-c-brand-3: #b45e3a;
+  --vp-c-brand-soft: rgba(214, 122, 82, 0.14);
+}
+
+/* ── Dark theme (default) ────────────────────────────── */
+.dark {
+  --vp-c-bg: #171614;
+  --vp-c-bg-alt: #1d1b18;
+  --vp-c-bg-elv: #22201d;
+  --vp-c-bg-soft: #22201d;
+
+  --vp-c-text-1: #f1ece4;
+  --vp-c-text-2: #b6ada2;
+  --vp-c-text-3: #8c8378;
+
+  --vp-c-divider: #34302a;
+  --vp-c-border: #34302a;
+  --vp-c-gutter: #1d1b18;
+
+  --vp-c-brand-1: #d67a52;
+  --vp-c-brand-2: #c56c46;
+  --vp-c-brand-3: #b45e3a;
+  --vp-c-brand-soft: rgba(214, 122, 82, 0.14);
+
+  --vp-c-tip-1: #9d8abc;
+  --vp-c-tip-soft: rgba(157, 138, 188, 0.14);
+
+  --vp-code-bg: #1d1b18;
+
+  --vp-button-brand-bg: #d67a52;
+  --vp-button-brand-hover-bg: #c56c46;
+  --vp-button-brand-active-bg: #b45e3a;
+  --vp-button-brand-text: #fff;
+
+  --vp-button-alt-bg: #22201d;
+  --vp-button-alt-hover-bg: #2a2723;
+  --vp-button-alt-text: #f1ece4;
+  --vp-button-alt-border: #34302a;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #f1ece4 0%, #d67a52 100%);
+  --vp-home-hero-image-background-image: radial-gradient(
+    circle,
+    rgba(214, 122, 82, 0.25) 0%,
+    transparent 70%
+  );
+  --vp-home-hero-image-filter: drop-shadow(0 4px 24px rgba(214, 122, 82, 0.25));
+}
+
+/* ── Light theme ─────────────────────────────────────── */
+:root {
+  --vp-c-bg: #f5f3ed;
+  --vp-c-bg-alt: #f0eee8;
+  --vp-c-bg-elv: #faf9f4;
+  --vp-c-bg-soft: #faf9f4;
+
+  --vp-c-text-1: #1a1a1a;
+  --vp-c-text-2: #5c5c5c;
+  --vp-c-text-3: #8c8c8c;
+
+  --vp-c-divider: #e2dfd9;
+  --vp-c-border: #e2dfd9;
+  --vp-c-gutter: #f0eee8;
+
+  --vp-c-tip-1: #8570a6;
+  --vp-c-tip-soft: rgba(133, 112, 166, 0.14);
+
+  --vp-code-bg: #f0eee8;
+
+  --vp-button-brand-bg: #d97757;
+  --vp-button-brand-hover-bg: #c46849;
+  --vp-button-brand-active-bg: #b45e3a;
+  --vp-button-brand-text: #fff;
+
+  --vp-button-alt-bg: #faf9f4;
+  --vp-button-alt-hover-bg: #f0eee8;
+  --vp-button-alt-text: #1a1a1a;
+  --vp-button-alt-border: #e2dfd9;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #1a1a1a 0%, #d97757 100%);
+  --vp-home-hero-image-background-image: radial-gradient(
+    circle,
+    rgba(217, 119, 87, 0.18) 0%,
+    transparent 70%
+  );
+  --vp-home-hero-image-filter: drop-shadow(0 4px 24px rgba(217, 119, 87, 0.18));
+}
+
+/* ── Component overrides ─────────────────────────────── */
+
+/* Nav & sidebar links */
+.VPNavBarTitle .title {
+  font-weight: 700 !important;
+}
+
+/* Feature cards — rounded corners like the app */
+.VPFeature {
+  border-radius: 14px !important;
+}
+
+/* Hero action buttons */
+.VPButton.brand {
+  border-radius: 10px !important;
+}
+.VPButton.alt {
+  border-radius: 10px !important;
+}
+
+/* Hero name gradient */
+.VPHero .name {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+}
+
+.VPHero .text {
+  font-family: 'Source Serif 4', Georgia, serif !important;
+  font-weight: 600;
+}
+
+.VPHero .tagline {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  color: var(--vp-c-text-2) !important;
+}
+
+/* Footer */
+.VPFooter {
+  border-top-color: var(--vp-c-divider) !important;
+}
+
+/* Markdown prose — match app's Source Serif 4 style */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+.vp-doc p,
+.vp-doc li {
+  font-family: 'Source Serif 4', Georgia, serif;
+  line-height: 1.625;
+}
+
+.vp-doc code {
+  border-radius: 6px;
+}
+
+/* Custom section styling — unified card-like appearance */
+.comparison-section table,
+.models-section table {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.faq-item h3 {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  color: var(--vp-c-text-1);
+}
+
+.faq-item p {
+  font-family: 'Source Serif 4', Georgia, serif !important;
+}
