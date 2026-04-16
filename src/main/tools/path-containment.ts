@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 export function normalizePathForContainment(pathValue: string, caseInsensitive = false): string {
   const normalized = pathValue
     .replace(/[\\/]+/g, '/')
@@ -15,13 +17,16 @@ export function isPathWithinRoot(
   rootPath: string,
   caseInsensitive = false
 ): boolean {
-  const normalizedTarget = normalizePathForContainment(targetPath, caseInsensitive);
-  const normalizedRoot = normalizePathForContainment(rootPath, caseInsensitive);
+  const resolvedTarget = path.resolve(targetPath);
+  const resolvedRoot = path.resolve(rootPath);
+
+  const normalizedTarget = normalizePathForContainment(resolvedTarget, caseInsensitive);
+  const normalizedRoot = normalizePathForContainment(resolvedRoot, caseInsensitive);
 
   if (!normalizedTarget || !normalizedRoot) {
     return false;
   }
 
-  const prefix = normalizedRoot === '/' ? '/' : `${normalizedRoot}/`;
-  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(prefix);
+  const relativePath = path.relative(normalizedRoot, normalizedTarget);
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
