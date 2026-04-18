@@ -5,39 +5,45 @@
 ## ✅ Completed
 
 - **Core**: Stable Windows & macOS installers with build verification
-- **Security**: Full filesystem sandboxing
+- **Security**: Full filesystem sandboxing + path traversal / zip-slip hardening
 - **VM Sandbox**: WSL2 (Windows) and Lima (macOS) VM-level isolation
-- **Skills**: PPTX, DOCX, PDF, XLSX support + custom skill management
-- **MCP Connectors**: Custom connector support for external service integration
+- **Skills**: PPTX, DOCX, PDF, XLSX support + custom skill management + hot-reload
+- **MCP Connectors**: Custom connector support (stdio / SSE / Streamable HTTP)
 - **Rich Input**: File upload and image input in chat
-- **Multi-Model**: OpenAI-compatible API support (Claude, GPT, Gemini, DeepSeek, GLM, etc.)
+- **Multi-Model**: Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, Grok, MiniMax, Ollama
 - **UI/UX**: Enhanced interface with English/Chinese localization
-- **Remote Control**: Feishu (Lark) and Slack integration
-- **CI/CD**: Automated builds, smoke tests, Codex-powered issue triage and PR review
+- **Remote Control**: Feishu (Lark) bot integration with pairing mode + approval panel
+- **CI/CD**: Automated builds, smoke tests, Codex-powered PR review bot
+- **Model Presets**: Up-to-date model catalogs for all major providers
+- **Dependency Policy**: Tiered management strategy with Dependabot grouping
 
 ## 🚧 In Progress
 
-- **Memory Optimization**: Improved context management for longer sessions and cross-session memory
-- **Installer Polish**: Continued improvements to Windows NSIS installer and macOS signing
+- **v3.3.0 Stable Release**: Graduate from beta — all blocking issues resolved
+- **Memory System**: Unified storage with core/experience memory (PR #138 under review)
 
 ## 📋 Planned
 
-### Near-term
-- **Linux Support**: First-class Linux builds (currently build-from-source only)
-- **Plugin System**: Extensible architecture for community-built integrations
-- **Stable Release**: Graduate from beta to v3.3.0 stable
+### Near-term (v3.4.0)
 
-### Mid-term
-- **Computer Use**: GUI automation via screen capture and mouse/keyboard control
+- **Sandbox Hardening**: Deep research and improvement of VM sandbox reliability, startup performance, and cross-platform consistency (Lima on macOS, WSL2 on Windows)
+- **Tool Completeness**: Implement native TodoWrite, AskUserQuestion, Glob, Grep, WebFetch, WebSearch tool schemas + handlers for API key users
+- **Memory System**: Unified storage, prompt injection, cross-session retrieval, and source-aware reranking
+- **Linux Support**: First-class Linux builds (currently build-from-source only)
+
+### Mid-term (v3.5.0+)
+
+- **Plugin System**: Extensible architecture for community-built integrations
 - **Multi-Agent**: Orchestrate multiple agents for complex workflows
 - **Workspace Templates**: Pre-configured environments for common use cases (coding, writing, research)
 
 ### Long-term
-- **Local Model Support**: Run open-weight models locally without API keys
+
+- **Computer Use (CUA)**: GUI automation via screen capture and mouse/keyboard control
 - **Collaborative Mode**: Multiple users sharing a workspace
 - **Mobile Companion**: Lightweight mobile app for monitoring and quick interactions
 
 ---
 
-*Last updated: 2026-04-15*
-*Want to contribute? Check our [Contributing Guide](CONTRIBUTING.md) and pick an issue labeled `good first issue`.*
+_Last updated: 2026-04-18_
+_Want to contribute? Check our [Contributing Guide](CONTRIBUTING.md) and pick an issue labeled `good first issue`._
