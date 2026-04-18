@@ -22,14 +22,14 @@ npm install        # also runs postinstall: downloads Node binaries + rebuilds n
 
 **Common commands**
 
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Start dev server (Vite + Electron) |
-| `npm run lint` | ESLint over `src/**/*.{ts,tsx}` |
-| `npm run format` | Prettier write |
-| `npx tsc --noEmit` | Type-check without emitting |
-| `npm run test` | Run Vitest |
-| `npm run build` | Full production build |
+| Command            | Purpose                            |
+| ------------------ | ---------------------------------- |
+| `npm run dev`      | Start dev server (Vite + Electron) |
+| `npm run lint`     | ESLint over `src/**/*.{ts,tsx}`    |
+| `npm run format`   | Prettier write                     |
+| `npx tsc --noEmit` | Type-check without emitting        |
+| `npm run test`     | Run Vitest                         |
+| `npm run build`    | Full production build              |
 
 ---
 
@@ -115,6 +115,48 @@ Scope is optional but encouraged.
 
 ---
 
+## Dependency Management
+
+Open Cowork uses **Dependabot** (`.github/dependabot.yml`) to keep dependencies current. To avoid PR pile-up and reduce risk, we follow a tiered strategy:
+
+### Tiers
+
+| Tier                 | Scope                            | Merge policy                                                                         |
+| -------------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| **Auto-merge**       | GitHub Actions (all versions)    | CI green → merge immediately. CI actions are grouped into a single PR.               |
+| **Auto-merge**       | Dev-dependencies (patch + minor) | CI green → merge immediately. Grouped into a single PR per week.                     |
+| **Quick review**     | Production dependencies (patch)  | Skim changelog, merge if CI green. Grouped into a single PR per week.                |
+| **Manual review**    | Production dependencies (minor)  | Read changelog, check for behavioral changes, then merge. Grouped into a single PR.  |
+| **Dedicated branch** | Any dependency (major)           | Create a migration branch, test thoroughly, update code if needed. Never auto-merge. |
+
+### Critical dependencies (always manual review)
+
+These packages are deeply integrated — any update (including patch) should be tested locally before merge:
+
+- `electron` — major upgrades need a dedicated migration branch; skip Dependabot for major versions
+- `@mariozechner/pi-coding-agent` — core AI SDK; read release notes carefully
+- `better-sqlite3` — native module; rebuild required, test on both platforms
+- `vite` / `@vitejs/plugin-react` — build toolchain; verify `npm run build` succeeds
+
+### Weekly workflow
+
+1. **Monday**: Dependabot opens grouped PRs
+2. **Within the week**: maintainer reviews and merges per tier policy
+3. **Friday**: any remaining patch/minor PRs should be merged or closed with reason
+4. **Major upgrades**: file an issue, plan the migration, merge when ready
+
+### Adding new dependencies
+
+Before adding a dependency:
+
+1. **Check license** — must be MIT, Apache-2.0, BSD, or ISC. No GPL/AGPL/SSPL.
+2. **Check size** — run `npx pkg-size <package>` or check bundlephobia. Avoid bloating the installer.
+3. **Check maintenance** — prefer packages with recent commits, multiple maintainers, and >1K weekly downloads.
+4. **Prefer built-in** — use Node.js built-ins or existing dependencies before adding new ones.
+5. **Document why** — add a comment in the PR description explaining why this dependency is needed and what alternatives were considered.
+
+---
+
 ## Testing
 
 Open Cowork uses **Vitest**.
@@ -163,6 +205,7 @@ Translation files live in `src/renderer/i18n/`. Add keys to both `en` and `zh` l
 ## Reporting Issues
 
 **Bug reports** — use the GitHub issue template and include:
+
 - Open Cowork version
 - Operating system (macOS / Windows + version)
 - Steps to reproduce
@@ -170,6 +213,7 @@ Translation files live in `src/renderer/i18n/`. Add keys to both `en` and `zh` l
 - Relevant logs (from DevTools console or the in-app log viewer)
 
 **Feature requests** — open a GitHub Discussion or issue with:
+
 - The problem you are trying to solve
 - Your proposed solution or behavior
 - Any alternatives you considered

@@ -1,31 +1,52 @@
 version: 2
 
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  # ── npm dependencies ──────────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 10
     labels:
-      - "dependencies"
+      - 'dependencies'
     groups:
+      # Dev dependencies (patch + minor) → single PR, auto-merge candidate
       dev-dependencies:
-        dependency-type: "development"
+        dependency-type: 'development'
         update-types:
-          - "minor"
-          - "patch"
-      production-dependencies:
-        dependency-type: "production"
+          - 'minor'
+          - 'patch'
+      # Production patch updates → single PR, auto-merge candidate
+      production-patch:
+        dependency-type: 'production'
         update-types:
-          - "patch"
+          - 'patch'
+      # Production minor updates → single PR, manual review
+      production-minor:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+    # Major versions are never grouped — each gets its own PR for careful review
+    ignore:
+      # Electron major upgrades need dedicated migration branches
+      - dependency-name: 'electron'
+        update-types: ['version-update:semver-major']
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  # ── GitHub Actions ────────────────────────────────────────────
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 5
     labels:
-      - "ci"
-      - "dependencies"
+      - 'ci'
+      - 'dependencies'
+    groups:
+      # Group all CI action updates into a single PR
+      ci-actions:
+        patterns:
+          - 'actions/*'
+          - 'softprops/*'
+          - 'openai/*'
