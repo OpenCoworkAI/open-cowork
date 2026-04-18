@@ -131,7 +131,22 @@ jobs:
           fi
           EXECUTABLE="$APP_DIR/$APP_NAME/Contents/MacOS/$(echo "$APP_NAME" | sed 's/\.app$//')"
           echo "Launching: $EXECUTABLE --smoke-test"
-          timeout 30 "$EXECUTABLE" --smoke-test 2>&1 || EXIT_CODE=$?
+          # macOS runners may not have coreutils timeout; fall back to no timeout
+          if command -v gtimeout >/dev/null 2>&1; then
+            gtimeout 30 "$EXECUTABLE" --smoke-test 2>&1 || EXIT_CODE=$?
+          elif command -v timeout >/dev/null 2>&1; then
+            timeout 30 "$EXECUTABLE" --smoke-test 2>&1 || EXIT_CODE=$?
+          else
+            "$EXECUTABLE" --smoke-test 2>&1 &
+            APP_PID=$!
+            sleep 30
+            if kill -0 "$APP_PID" 2>/dev/null; then
+              kill "$APP_PID"
+              echo "::error::Launch smoke test timed out after 30s"
+              exit 1
+            fi
+            wait "$APP_PID" || EXIT_CODE=$?
+          fi
           if [ "${EXIT_CODE:-0}" -eq 0 ]; then
             echo "Launch smoke test passed"
           else
@@ -235,7 +250,12 @@ jobs:
             exit 1
           }
           Write-Host "Launching: $($exe.FullName) --smoke-test"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test" -PassThru -Wait -NoNewWindow
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test" -PassThru
+          if (-not $proc.WaitForExit(30000)) {
+            $proc.Kill($true)
+            Write-Host "::error::Launch smoke test timed out after 30s"
+            exit 1
+          }
           if ($proc.ExitCode -eq 0) {
             Write-Host "Launch smoke test passed"
           } else {
