@@ -370,6 +370,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       userId: string
     ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.revokePairing', channelType, userId),
+    rejectPairing: (
+      channelType: string,
+      userId: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('remote.rejectPairing', channelType, userId),
     getRemoteSessions: (): Promise<RemoteSessionMapping[]> =>
       ipcRenderer.invoke('remote.getRemoteSessions'),
     clearRemoteSession: (sessionId: string): Promise<{ success: boolean; error?: string }> =>
@@ -585,6 +590,10 @@ declare global {
           userId: string
         ) => Promise<{ success: boolean; error?: string }>;
         revokePairing: (
+          channelType: string,
+          userId: string
+        ) => Promise<{ success: boolean; error?: string }>;
+        rejectPairing: (
           channelType: string,
           userId: string
         ) => Promise<{ success: boolean; error?: string }>;

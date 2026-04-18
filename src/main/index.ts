@@ -2311,6 +2311,16 @@ ipcMain.handle('remote.revokePairing', (_event, channelType: ChannelType, userId
   }
 });
 
+ipcMain.handle('remote.rejectPairing', (_event, channelType: ChannelType, userId: string) => {
+  try {
+    const success = remoteManager.rejectPairing(channelType, userId);
+    return { success };
+  } catch (error) {
+    logError('[Remote] Error rejecting pairing:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('remote.getRemoteSessions', () => {
   try {
     return remoteManager.getRemoteSessions();
