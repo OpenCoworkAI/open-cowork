@@ -27,9 +27,11 @@
 ### Near-term (v3.4.0)
 
 - **Sandbox Hardening**: Deep research and improvement of VM sandbox reliability, startup performance, and cross-platform consistency (Lima on macOS, WSL2 on Windows)
+- **App Slimming**: Reduce installer from ~156 MB to ~80 MB — on-demand Python/Node.js download, lazy-load Feishu SDK, strip unused files ([details](docs/SLIM-PLAN.md))
+- **Code Cleanup**: Split god files (index.ts 2672 lines, gui-operate-server.ts 6884 lines), lazy imports, dead code removal
 - **Tool Completeness**: Implement native TodoWrite, AskUserQuestion, Glob, Grep, WebFetch, WebSearch tool schemas + handlers for API key users
 - **Memory System**: Unified storage, prompt injection, cross-session retrieval, and source-aware reranking
-- **Code Quality**: Codebase cleanup — remove dead code, reduce bundle size, simplify over-engineered modules
+- **Scheduled Tasks**: Cron-like task scheduling with UI management and persistent execution
 - **Log Management**: Structured logging with rotation, size limits, and user-accessible log viewer improvements
 - **Installation Experience**: Smoother first-run — auto-detect system dependencies, clearer error messages, one-click setup
 - **Linux Support**: First-class Linux builds (currently build-from-source only)
