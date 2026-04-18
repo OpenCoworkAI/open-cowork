@@ -115,11 +115,41 @@ export interface AppConfig {
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
+  // Global memory toggle
+  memoryEnabled: boolean;
+
+  // Dedicated memory runtime config
+  memoryRuntime: MemoryRuntimeConfig;
+
   // Enable thinking mode (show thinking steps)
   enableThinking: boolean;
 
   // First run flag
   isConfigured: boolean;
+}
+
+export interface MemoryModelRuntimeConfig {
+  inheritFromActive: boolean;
+  provider?: ProviderType;
+  customProtocol?: CustomProtocolType;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  timeoutMs: number;
+}
+
+export interface MemoryRuntimeConfig {
+  llm: MemoryModelRuntimeConfig;
+  embedding: MemoryModelRuntimeConfig;
+  useEmbedding: boolean;
+  maxNavSteps: number;
+  ingestionConcurrency: number;
+  storageRoot?: string;
+  evalEnabled?: boolean;
+  evalWorkspaces?: string[];
+  evalMaxRounds?: number;
+  evalArtifactsRoot?: string;
+  promptIterationRounds?: number;
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';
@@ -138,6 +168,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'enableDevLogs',
   'theme',
   'sandboxEnabled',
+  'memoryEnabled',
   'enableThinking',
   'isConfigured',
 ]);
@@ -213,6 +244,36 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'light',
   sandboxEnabled: false,
+  memoryEnabled: true,
+  memoryRuntime: {
+    llm: {
+      inheritFromActive: true,
+      provider: undefined,
+      customProtocol: undefined,
+      apiKey: '',
+      baseUrl: '',
+      model: '',
+      timeoutMs: 180000,
+    },
+    embedding: {
+      inheritFromActive: true,
+      provider: undefined,
+      customProtocol: undefined,
+      apiKey: '',
+      baseUrl: '',
+      model: 'text-embedding-3-small',
+      timeoutMs: 180000,
+    },
+    useEmbedding: false,
+    maxNavSteps: 2,
+    ingestionConcurrency: 4,
+    storageRoot: '',
+    evalEnabled: false,
+    evalWorkspaces: [],
+    evalMaxRounds: 12,
+    evalArtifactsRoot: '',
+    promptIterationRounds: 2,
+  },
   enableThinking: false,
   isConfigured: false,
 };
@@ -302,6 +363,71 @@ function isProfileKey(value: unknown): value is ProviderProfileKey {
 
 function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
+}
+
+function isMemoryModelRuntimeConfig(value: unknown): value is Partial<MemoryModelRuntimeConfig> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizeMemoryModelRuntimeConfig(
+  raw: unknown,
+  fallback: MemoryModelRuntimeConfig
+): MemoryModelRuntimeConfig {
+  const value = isMemoryModelRuntimeConfig(raw) ? raw : {};
+  return {
+    inheritFromActive: toBoolean(value.inheritFromActive, fallback.inheritFromActive),
+    provider: isProviderType(value.provider) ? value.provider : fallback.provider,
+    customProtocol: isCustomProtocol(value.customProtocol)
+      ? value.customProtocol
+      : fallback.customProtocol,
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey : fallback.apiKey,
+    baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : fallback.baseUrl,
+    model: typeof value.model === 'string' ? value.model : fallback.model,
+    timeoutMs:
+      typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs)
+        ? Math.max(5000, Math.round(value.timeoutMs))
+        : fallback.timeoutMs,
+  };
+}
+
+function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
+  const value = typeof raw === 'object' && raw !== null ? (raw as Partial<MemoryRuntimeConfig>) : {};
+  return {
+    llm: normalizeMemoryModelRuntimeConfig(value.llm, defaultConfig.memoryRuntime.llm),
+    embedding: normalizeMemoryModelRuntimeConfig(
+      value.embedding,
+      defaultConfig.memoryRuntime.embedding
+    ),
+    useEmbedding: toBoolean(value.useEmbedding, defaultConfig.memoryRuntime.useEmbedding),
+    maxNavSteps:
+      typeof value.maxNavSteps === 'number' && Number.isFinite(value.maxNavSteps)
+        ? Math.max(0, Math.min(4, Math.round(value.maxNavSteps)))
+        : defaultConfig.memoryRuntime.maxNavSteps,
+    ingestionConcurrency:
+      typeof value.ingestionConcurrency === 'number' && Number.isFinite(value.ingestionConcurrency)
+        ? Math.max(1, Math.min(16, Math.round(value.ingestionConcurrency)))
+        : defaultConfig.memoryRuntime.ingestionConcurrency,
+    storageRoot:
+      typeof value.storageRoot === 'string'
+        ? value.storageRoot
+        : defaultConfig.memoryRuntime.storageRoot,
+    evalEnabled: toBoolean(value.evalEnabled, defaultConfig.memoryRuntime.evalEnabled ?? false),
+    evalWorkspaces: Array.isArray(value.evalWorkspaces)
+      ? value.evalWorkspaces.filter((item): item is string => typeof item === 'string')
+      : defaultConfig.memoryRuntime.evalWorkspaces,
+    evalMaxRounds:
+      typeof value.evalMaxRounds === 'number' && Number.isFinite(value.evalMaxRounds)
+        ? Math.max(1, Math.min(100, Math.round(value.evalMaxRounds)))
+        : defaultConfig.memoryRuntime.evalMaxRounds,
+    evalArtifactsRoot:
+      typeof value.evalArtifactsRoot === 'string'
+        ? value.evalArtifactsRoot
+        : defaultConfig.memoryRuntime.evalArtifactsRoot,
+    promptIterationRounds:
+      typeof value.promptIterationRounds === 'number' && Number.isFinite(value.promptIterationRounds)
+        ? Math.max(0, Math.min(10, Math.round(value.promptIterationRounds)))
+        : defaultConfig.memoryRuntime.promptIterationRounds,
+  };
 }
 
 function profileKeyFromProvider(
@@ -847,6 +973,8 @@ export class ConfigStore {
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
+      memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
+      memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
@@ -986,6 +1114,7 @@ export class ConfigStore {
         if (
           (key === 'enableDevLogs' ||
             key === 'sandboxEnabled' ||
+            key === 'memoryEnabled' ||
             key === 'enableThinking' ||
             key === 'isConfigured') &&
           typeof rawValue !== 'boolean'
@@ -1259,6 +1388,12 @@ export class ConfigStore {
       theme: updates.theme !== undefined ? updates.theme : current.theme,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
+      memoryEnabled:
+        updates.memoryEnabled !== undefined ? updates.memoryEnabled : current.memoryEnabled,
+      memoryRuntime:
+        updates.memoryRuntime !== undefined
+          ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
+          : current.memoryRuntime,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

@@ -38,6 +38,7 @@ import { configStore } from '../config/config-store';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
+import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
 import {
   log,
   logError,
@@ -60,6 +61,7 @@ interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
   cancel(sessionId: string): void;
   clearSdkSession?(sessionId: string): void;
+  clearAllSdkSessions?(): void;
 }
 
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
@@ -73,6 +75,7 @@ export class SessionManager {
   private agentRunner!: AgentRunner;
   private mcpManager: MCPManager;
   private pluginRuntimeService?: PluginRuntimeService;
+  private extensionManager?: AgentRuntimeExtensionManager;
   private activeSessions: Map<string, AbortController> = new Map();
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
     new Map();
@@ -90,7 +93,8 @@ export class SessionManager {
   constructor(
     db: DatabaseInstance,
     sendToRenderer: (event: ServerEvent) => void,
-    pluginRuntimeService?: PluginRuntimeService
+    pluginRuntimeService?: PluginRuntimeService,
+    extensionManager?: AgentRuntimeExtensionManager
   ) {
     this.db = db;
     this.sendToRenderer = (event) => {
@@ -105,6 +109,7 @@ export class SessionManager {
     this.pathResolver = new PathResolver();
     this.sandboxAdapter = getSandboxAdapter();
     this.pluginRuntimeService = pluginRuntimeService;
+    this.extensionManager = extensionManager;
 
     // Initialize MCP Manager
     this.mcpManager = new MCPManager();
@@ -135,7 +140,9 @@ export class SessionManager {
       },
       this.pathResolver,
       this.mcpManager,
-      this.pluginRuntimeService
+      this.pluginRuntimeService,
+      undefined,
+      this.extensionManager
     );
   }
 
@@ -236,11 +243,12 @@ export class SessionManager {
     prompt: string,
     cwd?: string,
     allowedTools?: string[],
-    content?: ContentBlock[]
+    content?: ContentBlock[],
+    memoryEnabled?: boolean
   ): Promise<Session> {
     log('[SessionManager] Starting new session:', title);
 
-    const session = this.createSession(title, cwd, allowedTools);
+    const session = this.createSession(title, cwd, allowedTools, memoryEnabled);
 
     // Save to database
     this.saveSession(session);
@@ -259,11 +267,18 @@ export class SessionManager {
     return [{ virtual: WORKSPACE_MOUNT_VIRTUAL_PATH, real: cwd }];
   }
 
-  private createSession(title: string, cwd?: string, allowedTools?: string[]): Session {
+  private createSession(
+    title: string,
+    cwd?: string,
+    allowedTools?: string[],
+    memoryEnabled?: boolean
+  ): Session {
     const now = Date.now();
     // Prefer frontend-provided cwd; fallback to env vars if provided
     const envCwd = process.env.COWORK_WORKDIR || process.env.WORKDIR || process.env.DEFAULT_CWD;
     const effectiveCwd = cwd || envCwd;
+    const resolvedMemoryEnabled =
+      typeof memoryEnabled === 'boolean' ? memoryEnabled : configStore.get('memoryEnabled') !== false;
     return {
       id: uuidv4(),
       title,
@@ -283,7 +298,7 @@ export class SessionManager {
         'glob',
         'grep',
       ],
-      memoryEnabled: false,
+      memoryEnabled: resolvedMemoryEnabled,
       model: configStore.get('model') || undefined,
       createdAt: now,
       updatedAt: now,
@@ -676,6 +691,19 @@ export class SessionManager {
         // Run the agent
         await this.agentRunner.run(session, enhancedPrompt, messagesForContext);
 
+        if (this.extensionManager) {
+          const stableMessages = this.getMessages(session.id);
+          this.extensionManager
+            .afterSessionRun({
+              session,
+              prompt: enhancedPrompt,
+              messages: stableMessages,
+            })
+            .catch((error) =>
+              logCtxError('[SessionManager] Runtime extension post-run hook failed:', error)
+            );
+        }
+
         // 标题生成不再与首轮对话并发，避免与主请求竞争同一上游配额/通道导致体感变慢。
         this.runSessionTitleGeneration(session, prompt, existingMessages).catch((err) =>
           logCtxError('[SessionManager] Title generation failed:', err)
@@ -914,6 +942,8 @@ export class SessionManager {
 
   // Delete a session
   async deleteSession(sessionId: string): Promise<void> {
+    const existingSession = this.loadSession(sessionId);
+
     // Stop if running
     this.stopSession(sessionId);
 
@@ -934,11 +964,20 @@ export class SessionManager {
     this.messageCache.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
     this.titleGenerationTokens.delete(sessionId);
+    if (this.extensionManager) {
+      await this.extensionManager.onSessionDeleted({
+        sessionId,
+        session: existingSession,
+      });
+    }
 
     log('[SessionManager] Session deleted:', sessionId);
   }
 
   async batchDeleteSessions(sessionIds: string[]): Promise<void> {
+    const sessionsById = new Map(
+      sessionIds.map((sessionId) => [sessionId, this.loadSession(sessionId)] as const)
+    );
     // Stop sessions and clean up sandboxes first (async, cannot run inside SQLite transaction)
     for (const sessionId of sessionIds) {
       this.stopSession(sessionId);
@@ -960,6 +999,15 @@ export class SessionManager {
         this.titleGenerationTokens.delete(sessionId);
       }
     })();
+
+    if (this.extensionManager) {
+      for (const sessionId of sessionIds) {
+        await this.extensionManager.onSessionDeleted({
+          sessionId,
+          session: sessionsById.get(sessionId) || null,
+        });
+      }
+    }
 
     log('[SessionManager] Batch deleted sessions:', sessionIds.length);
   }
@@ -1020,6 +1068,10 @@ export class SessionManager {
     });
 
     log('[SessionManager] Session cwd updated:', sessionId, '->', cwd, '(SDK session cleared)');
+  }
+
+  clearAllCachedAgentSessions(): void {
+    this.agentRunner?.clearAllSdkSessions?.();
   }
 
   // Save message to database

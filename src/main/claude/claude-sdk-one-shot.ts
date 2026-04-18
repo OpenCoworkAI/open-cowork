@@ -161,11 +161,16 @@ function mapPiAiError(errorText: string, durationMs: number, provider?: string):
 /**
  * Run a simple one-shot prompt via pi-ai model directly (no agent session needed).
  */
-async function runPiAiOneShot(
+export async function runPiAiOneShot(
   prompt: string,
   systemPrompt: string,
-  config: AppConfig
+  config: AppConfig,
+  options?: {
+    temperature?: number;
+    maxTokens?: number;
+  }
 ): Promise<{ text: string; hasThinking: boolean; durationMs: number }> {
+  void options;
   const modelString = resolvePiModelString(config);
   const keyProvider = config.customProtocol || config.provider || 'anthropic';
   const parts = modelString.split('/');

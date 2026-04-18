@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Globe,
   ChevronRight,
+  BrainCircuit,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -22,6 +23,7 @@ import { SettingsSkills } from './settings/SettingsSkills';
 import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
+import { SettingsMemory } from './settings/SettingsMemory';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -30,6 +32,7 @@ interface SettingsPanelProps {
     | 'sandbox'
     | 'connectors'
     | 'skills'
+    | 'memory'
     | 'schedule'
     | 'remote'
     | 'logs'
@@ -41,6 +44,7 @@ type TabId =
   | 'sandbox'
   | 'connectors'
   | 'skills'
+  | 'memory'
   | 'schedule'
   | 'remote'
   | 'logs'
@@ -51,6 +55,7 @@ const VALID_TABS = new Set<TabId>([
   'sandbox',
   'connectors',
   'skills',
+  'memory',
   'schedule',
   'remote',
   'logs',
@@ -121,6 +126,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.skills'),
       icon: Package,
       description: t('settings.skillsDesc'),
+    },
+    {
+      id: 'memory' as TabId,
+      label: t('settings.memory'),
+      icon: BrainCircuit,
+      description: t('settings.memoryDesc'),
     },
     {
       id: 'schedule' as TabId,
@@ -252,6 +263,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
                 {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
+              </div>
+              <div className={activeTab === 'memory' ? '' : 'hidden'}>
+                {viewedTabs.has('memory') && <SettingsMemory />}
               </div>
               <div className={activeTab === 'schedule' ? '' : 'hidden'}>
                 {viewedTabs.has('schedule') && (

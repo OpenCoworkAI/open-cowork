@@ -18,6 +18,13 @@ import type {
   ScheduleUpdateInput,
   ProviderModelInfo,
   LocalOllamaDiscoveryResult,
+  MemoryOverview,
+  MemorySearchResult,
+  MemoryReadResult,
+  MemorySearchScope,
+  MemoryDebugFileInfo,
+  MemoryDebugFileContent,
+  MemoryInspectSessionResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -397,6 +404,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('schedule.toggle', id, enabled),
     runNow: (id: string): Promise<ScheduleTask | null> => ipcRenderer.invoke('schedule.runNow', id),
   },
+
+  memory: {
+    getOverview: (cwd?: string): Promise<MemoryOverview> => ipcRenderer.invoke('memory.getOverview', cwd),
+    search: (payload: {
+      query: string;
+      cwd?: string;
+      sourceWorkspace?: string | null;
+      scope?: MemorySearchScope;
+      limit?: number;
+    }): Promise<MemorySearchResult[]> => ipcRenderer.invoke('memory.search', payload),
+    read: (id: string): Promise<MemoryReadResult | null> => ipcRenderer.invoke('memory.read', id),
+    rebuildWorkspace: (cwd: string): Promise<{ success: boolean; workspaceKey: string }> =>
+      ipcRenderer.invoke('memory.rebuildWorkspace', cwd),
+    clearWorkspace: (cwd: string): Promise<{ success: boolean; workspaceKey: string }> =>
+      ipcRenderer.invoke('memory.clearWorkspace', cwd),
+    clearCoreMemory: (): Promise<{ success: boolean }> => ipcRenderer.invoke('memory.clearCoreMemory'),
+    rebuildAll: (): Promise<{ success: boolean; workspaceCount: number; sessionCount: number }> =>
+      ipcRenderer.invoke('memory.rebuildAll'),
+    listFiles: (): Promise<MemoryDebugFileInfo[]> => ipcRenderer.invoke('memory.listFiles'),
+    readFile: (filePath: string): Promise<MemoryDebugFileContent> =>
+      ipcRenderer.invoke('memory.readFile', filePath),
+    inspectSession: (
+      sessionId: string,
+      workspaceKey?: string
+    ): Promise<MemoryInspectSessionResult | null> =>
+      ipcRenderer.invoke('memory.inspectSession', sessionId, workspaceKey),
+    setEnabled: (enabled: boolean): Promise<{ success: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke('memory.setEnabled', enabled),
+  },
 });
 
 // Type declaration for the renderer process
@@ -606,6 +642,28 @@ declare global {
         delete: (id: string) => Promise<{ success: boolean }>;
         toggle: (id: string, enabled: boolean) => Promise<ScheduleTask | null>;
         runNow: (id: string) => Promise<ScheduleTask | null>;
+      };
+      memory: {
+        getOverview: (cwd?: string) => Promise<MemoryOverview>;
+        search: (payload: {
+          query: string;
+          cwd?: string;
+          sourceWorkspace?: string | null;
+          scope?: MemorySearchScope;
+          limit?: number;
+        }) => Promise<MemorySearchResult[]>;
+        read: (id: string) => Promise<MemoryReadResult | null>;
+        rebuildWorkspace: (cwd: string) => Promise<{ success: boolean; workspaceKey: string }>;
+        clearWorkspace: (cwd: string) => Promise<{ success: boolean; workspaceKey: string }>;
+        clearCoreMemory: () => Promise<{ success: boolean }>;
+        rebuildAll: () => Promise<{ success: boolean; workspaceCount: number; sessionCount: number }>;
+        listFiles: () => Promise<MemoryDebugFileInfo[]>;
+        readFile: (filePath: string) => Promise<MemoryDebugFileContent>;
+        inspectSession: (
+          sessionId: string,
+          workspaceKey?: string
+        ) => Promise<MemoryInspectSessionResult | null>;
+        setEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>;
       };
     };
   }

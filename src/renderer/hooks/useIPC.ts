@@ -422,7 +422,7 @@ export function useIPC() {
             'glob',
             'grep',
           ],
-          memoryEnabled: false,
+          memoryEnabled: true,
         };
 
         addSession(session);

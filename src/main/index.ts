@@ -22,6 +22,9 @@ import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
+import { MemoryService } from './memory/memory-service';
+import { MemoryExtension } from './memory/memory-extension';
+import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
 import {
   configStore,
   getPiAiModelPresets,
@@ -109,6 +112,7 @@ let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
+let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
 
 function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
@@ -812,10 +816,14 @@ app
     const db = initDatabase();
 
     pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
+    memoryService = new MemoryService(db);
+    const extensionManager = new AgentRuntimeExtensionManager([
+      new MemoryExtension(memoryService),
+    ]);
 
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
-    sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService);
+    sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService, extensionManager);
     skillsManager = new SkillsManager(db, {
       getConfiguredGlobalSkillsPath: () => configStore.get('globalSkillsPath') || '',
       setConfiguredGlobalSkillsPath: (nextPath: string) => {
@@ -1391,6 +1399,8 @@ const buildAgentRuntimeSignature = (config: AppConfig): string =>
     customProtocol: config.customProtocol,
     model: config.model,
     enableThinking: config.enableThinking,
+    memoryEnabled: config.memoryEnabled,
+    memoryRuntime: config.memoryRuntime,
   });
 
 const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
@@ -1436,7 +1446,24 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
 };
 
 ipcMain.handle('config.save', async (_event, newConfig: Partial<AppConfig>) => {
-  log('[Config] Saving config:', { ...newConfig, apiKey: newConfig.apiKey ? '***' : '' });
+  log('[Config] Saving config:', {
+    ...newConfig,
+    apiKey: newConfig.apiKey ? '***' : '',
+    memoryRuntime: newConfig.memoryRuntime
+      ? {
+          ...newConfig.memoryRuntime,
+          llm: newConfig.memoryRuntime.llm
+            ? { ...newConfig.memoryRuntime.llm, apiKey: newConfig.memoryRuntime.llm.apiKey ? '***' : '' }
+            : undefined,
+          embedding: newConfig.memoryRuntime.embedding
+            ? {
+                ...newConfig.memoryRuntime.embedding,
+                apiKey: newConfig.memoryRuntime.embedding.apiKey ? '***' : '',
+              }
+            : undefined,
+        }
+      : undefined,
+  });
 
   const previousConfig = configStore.getAll();
   // Update config
@@ -2436,6 +2463,104 @@ ipcMain.handle('schedule.runNow', async (_event, id: string) => {
   return scheduledTaskManager.runNow(id);
 });
 
+ipcMain.handle('memory.getOverview', (_event, cwd?: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.getOverview(cwd);
+});
+
+ipcMain.handle(
+  'memory.search',
+  (
+    _event,
+    payload: {
+      query: string;
+      cwd?: string;
+      sourceWorkspace?: string | null;
+      scope?: 'workspace' | 'global' | 'all';
+      limit?: number;
+    }
+  ) => {
+    if (!memoryService) {
+      throw new Error('Memory service not initialized');
+    }
+    return memoryService.search(payload);
+  }
+);
+
+ipcMain.handle('memory.read', (_event, id: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.read(id);
+});
+
+ipcMain.handle('memory.rebuildWorkspace', async (_event, cwd: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.rebuildWorkspace(cwd);
+});
+
+ipcMain.handle('memory.clearWorkspace', (_event, cwd: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.clearWorkspace(cwd);
+});
+
+ipcMain.handle('memory.clearCoreMemory', () => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.clearCoreMemory();
+});
+
+ipcMain.handle('memory.rebuildAll', async () => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.rebuildAll();
+});
+
+ipcMain.handle('memory.listFiles', () => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.listFiles();
+});
+
+ipcMain.handle('memory.readFile', (_event, filePath: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.readFile(filePath);
+});
+
+ipcMain.handle('memory.inspectSession', (_event, sessionId: string, workspaceKey?: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.inspectSession(sessionId, workspaceKey);
+});
+
+ipcMain.handle('memory.setEnabled', (_event, enabled: boolean) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  const result = memoryService.setEnabled(enabled);
+  sessionManager?.clearAllCachedAgentSessions();
+  sendToRenderer({
+    type: 'config.status',
+    payload: {
+      isConfigured: configStore.isConfigured(),
+      config: configStore.getAll(),
+    },
+  });
+  return result;
+});
+
 ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: unknown[]) => {
   try {
     if (level === 'warn') {
@@ -2541,7 +2666,8 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         event.payload.prompt,
         event.payload.cwd,
         event.payload.allowedTools,
-        event.payload.content
+        event.payload.content,
+        event.payload.memoryEnabled
       );
 
     case 'session.continue':
