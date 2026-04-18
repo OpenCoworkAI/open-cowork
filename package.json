@@ -69,7 +69,7 @@
     "@google/genai": "^1.44.0",
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "@mariozechner/pi-ai": "^0.60.0",
-    "@mariozechner/pi-coding-agent": "^0.60.0",
+    "@mariozechner/pi-coding-agent": "^0.67.68",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "archiver": "^7.0.1",
     "better-sqlite3": "^12.8.0",
