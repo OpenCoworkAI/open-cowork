@@ -7,9 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-04-18
+
+First stable release of the 3.3.x series. Graduated from 9 beta releases with 30+ commits since beta.9.
+
+### Added
+
+- Pairing mode UI guidance and approval panel for Feishu remote control (#109)
+- Official project website with VitePress (#122)
+- Codex-powered PR review bot with GPT-5.3-codex (#94)
+- Codex issue auto-response workflow (#95)
+- Platform-based issue auto-assignment (#96)
+- ROADMAP.md with versioned planning (v3.4.0+)
+- SEO optimizations — llms.txt, social preview, FAQ
+- Dependency management policy in CONTRIBUTING.md
+
+### Fixed
+
+- Feishu DM policy now correctly syncs to gateway auth mode (#107)
+- Feishu WebSocket connection failures (#93, #105)
+- Screenshot tool results display as images instead of bloating text context (#135, #124)
+- GUI tool-result image deduplication via content hashing
+- Gemini and other providers: empty probe response handling (#88)
+- Model probe error causes now preserved in diagnostics (#121)
+- MCP: prefer system npx on Windows (#120)
+- Security: zip-slip and path traversal hardening (#139)
+- Dark/light theme switching on website
+- Outdated model fallbacks updated to current versions (claude-sonnet-4-6, gemini-3-flash-preview, gpt-5.4-mini)
+
+### Changed
+
+- OpenAI model presets updated: gpt-5.4-mini, gpt-5.4-nano, o4-mini (replaced retired gpt-4.1)
+- CI: platform builds moved to release-only, smoke tests added
+- Dependabot: grouped CI actions, separated production patch/minor, ignored Electron major
+
 ### Removed
 
 - Unused credentials store module and Keychain integration (eliminated macOS Keychain popup on startup)
+
+### Contributors
+
+- [@hqhq1025](https://github.com/hqhq1025)
+- [@Sun-sunshine06](https://github.com/Sun-sunshine06)
+- [@JackXFan](https://github.com/JackXFan)
+- [@andoan16](https://github.com/andoan16)
 
 ## [3.3.0-beta.8] - 2026-03-29
 
