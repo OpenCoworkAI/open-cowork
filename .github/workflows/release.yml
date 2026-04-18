@@ -120,6 +120,25 @@ jobs:
           fi
           echo "All packaged resources verified."
 
+      - name: Smoke test - launch app
+        run: |
+          set -euo pipefail
+          APP_DIR="release/mac-arm64"
+          APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::No .app bundle found"
+            exit 1
+          fi
+          EXECUTABLE="$APP_DIR/$APP_NAME/Contents/MacOS/$(echo "$APP_NAME" | sed 's/\.app$//')"
+          echo "Launching: $EXECUTABLE --smoke-test"
+          timeout 30 "$EXECUTABLE" --smoke-test 2>&1 || EXIT_CODE=$?
+          if [ "${EXIT_CODE:-0}" -eq 0 ]; then
+            echo "Launch smoke test passed"
+          else
+            echo "::error::Launch smoke test failed with exit code ${EXIT_CODE}"
+            exit 1
+          fi
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
@@ -205,6 +224,24 @@ jobs:
             exit 1
           }
           Write-Host "All packaged resources verified."
+
+      - name: Smoke test - launch app
+        shell: pwsh
+        run: |
+          $unpackedDir = "release\win-unpacked"
+          $exe = Get-ChildItem -Path $unpackedDir -Filter "*.exe" | Where-Object { $_.Name -notmatch 'Uninstall' } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error::No exe found in win-unpacked"
+            exit 1
+          }
+          Write-Host "Launching: $($exe.FullName) --smoke-test"
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test" -PassThru -Wait -NoNewWindow
+          if ($proc.ExitCode -eq 0) {
+            Write-Host "Launch smoke test passed"
+          } else {
+            Write-Host "::error::Launch smoke test failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
