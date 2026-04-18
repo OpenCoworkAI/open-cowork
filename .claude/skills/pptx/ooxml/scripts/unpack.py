@@ -14,7 +14,11 @@ input_file, output_dir = sys.argv[1], sys.argv[2]
 # Extract and format
 output_path = Path(output_dir)
 output_path.mkdir(parents=True, exist_ok=True)
-zipfile.ZipFile(input_file).extractall(output_path)
+with zipfile.ZipFile(input_file) as zf:
+    for member in zf.infolist():
+        if member.filename.startswith('/') or '..' in member.filename.split('/'):
+            continue
+        zf.extract(member, output_path)
 
 # Pretty print all XML files
 xml_files = list(output_path.rglob("*.xml")) + list(output_path.rglob("*.rels"))
