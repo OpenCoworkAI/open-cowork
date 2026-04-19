@@ -41,6 +41,8 @@ describe('memory integration wiring', () => {
     expect(memorySettings).toContain("window.electronAPI.memory.readFile");
     expect(memorySettings).toContain("window.electronAPI.memory.inspectSession");
     expect(memorySettings).toContain("window.electronAPI.memory.rebuildWorkspace");
+    expect(memorySettings).toContain('evalEnabled: source.evalEnabled');
+    expect(memorySettings).toContain('promptIterationRounds');
   });
 
   it('defaults new sessions to the global memory toggle', () => {
@@ -48,5 +50,13 @@ describe('memory integration wiring', () => {
     expect(sessionManager).toContain("configStore.get('memoryEnabled') !== false");
     expect(sessionManager).toContain('memoryEnabled?: boolean');
     expect(sessionManager).toContain('afterSessionRun');
+  });
+
+  it('removes unused SQLite memory tables from schema initialization', () => {
+    const databaseSource = readProjectFile('src/main/db/database.ts');
+    expect(databaseSource).not.toContain('memory_core_entries');
+    expect(databaseSource).not.toContain('memory_experience_sessions');
+    expect(databaseSource).not.toContain('memory_experience_chunks');
+    expect(databaseSource).not.toContain('memory_session_state');
   });
 });

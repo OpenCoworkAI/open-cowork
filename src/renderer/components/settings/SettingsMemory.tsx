@@ -51,6 +51,14 @@ function cloneRuntimeConfig(runtime?: MemoryRuntimeConfig): MemoryRuntimeConfig 
     ingestionConcurrency:
       source.ingestionConcurrency ?? DEFAULT_MEMORY_RUNTIME.ingestionConcurrency,
     storageRoot: source.storageRoot ?? DEFAULT_MEMORY_RUNTIME.storageRoot,
+    evalEnabled: source.evalEnabled ?? DEFAULT_MEMORY_RUNTIME.evalEnabled,
+    evalWorkspaces: Array.isArray(source.evalWorkspaces)
+      ? [...source.evalWorkspaces]
+      : [...(DEFAULT_MEMORY_RUNTIME.evalWorkspaces || [])],
+    evalMaxRounds: source.evalMaxRounds ?? DEFAULT_MEMORY_RUNTIME.evalMaxRounds,
+    evalArtifactsRoot: source.evalArtifactsRoot ?? DEFAULT_MEMORY_RUNTIME.evalArtifactsRoot,
+    promptIterationRounds:
+      source.promptIterationRounds ?? DEFAULT_MEMORY_RUNTIME.promptIterationRounds,
   };
 }
 

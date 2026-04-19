@@ -40,6 +40,6 @@ export class MemoryExtension implements AgentRuntimeExtension {
   async onSessionDeleted({
     sessionId,
   }: Parameters<NonNullable<AgentRuntimeExtension['onSessionDeleted']>>[0]): Promise<void> {
-    this.memoryService.deleteSession(sessionId);
+    await this.memoryService.deleteSession(sessionId);
   }
 }

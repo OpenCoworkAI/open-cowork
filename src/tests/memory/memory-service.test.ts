@@ -52,7 +52,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../src/main/config/config-store', () => {
+vi.mock('../../main/config/config-store', () => {
   const configStore = {
     getAll: () => ({ ...mockConfigState.config }),
     get: (key: string) => mockConfigState.config[key],
@@ -73,16 +73,16 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseInstance } from '../src/main/db/database';
-import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../src/main/memory/memory-llm-client';
-import { MemoryService } from '../src/main/memory/memory-service';
-import { configStore } from '../src/main/config/config-store';
+import type { DatabaseInstance, SessionRow } from '../../main/db/database';
+import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../../main/memory/memory-llm-client';
+import { MemoryService } from '../../main/memory/memory-service';
+import { configStore } from '../../main/config/config-store';
 
 class MockMemoryLLMClient implements MemoryLLMClientLike {
   async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {
-    if (request.systemPrompt.includes('background Memory Profiler')) {
+    if (request.systemPrompt.includes('Memory Profiler')) {
       const actions = [];
-      if (request.userPrompt.includes('我叫 Jack')) {
+      if (request.userPrompt.includes('Jack')) {
         actions.push({
           op: 'upsert',
           category: 'identity',
@@ -90,7 +90,7 @@ class MockMemoryLLMClient implements MemoryLLMClientLike {
           value: 'Jack',
         });
       }
-      if (request.userPrompt.includes('请用中文回答')) {
+      if (request.userPrompt.includes('中文')) {
         actions.push({
           op: 'upsert',
           category: 'preferences',
@@ -101,7 +101,10 @@ class MockMemoryLLMClient implements MemoryLLMClientLike {
       return { text: JSON.stringify({ actions }) };
     }
 
-    if (request.systemPrompt.includes('memory extraction system')) {
+    if (
+      request.systemPrompt.includes('experience memory extraction system') ||
+      request.systemPrompt.includes('memory extraction system')
+    ) {
       const transcript = request.userPrompt;
       if (transcript.includes('gateway token rotation')) {
         return {
@@ -203,8 +206,9 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
     sessions: {
       create: vi.fn(),
       update: vi.fn(),
-      get: vi.fn((id: string) =>
-        db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id)
+      get: vi.fn(
+        (id: string) =>
+          db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id) as SessionRow | undefined
       ),
       getAll: vi.fn(() => db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as any[]),
       delete: vi.fn(),
@@ -468,5 +472,84 @@ describe('MemoryService', () => {
     expect(overview.experienceSessionCount).toBe(1);
     expect(overview.sourceWorkspaceCount).toBe(1);
     expect(overview.experienceFilePath).toContain('experience_memory.json');
+  });
+
+  it('does not resurrect deleted experience memory when deletion happens during queued ingestion', async () => {
+    const sessionId = 'session-race';
+    const session = makeSession(sessionId, 'Gateway fixes', '/repo/a');
+    const messages = makeMessages(sessionId, [
+      { role: 'user', text: '请用中文回答。', timestamp: 1 },
+      { role: 'assistant', text: '好的。', timestamp: 2 },
+      {
+        role: 'user',
+        text: '继续处理 gateway token rotation，并记录 remote gateway 约束。',
+        timestamp: 3,
+      },
+      { role: 'assistant', text: '已经完成 gateway token rotation。', timestamp: 4 },
+    ]);
+
+    insertSession(rawDb, {
+      id: sessionId,
+      title: session.title,
+      cwd: session.cwd,
+      createdAt: session.createdAt,
+    });
+
+    let releaseExtraction!: () => void;
+    const blockedLlm: MemoryLLMClientLike = {
+      ...new MockMemoryLLMClient(),
+      async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {
+        if (request.systemPrompt.includes('memory extraction system')) {
+          await new Promise<void>((resolve) => {
+            releaseExtraction = resolve;
+          });
+        }
+        return new MockMemoryLLMClient().complete(request);
+      },
+      async embed(text: string): Promise<number[]> {
+        return new MockMemoryLLMClient().embed(text);
+      },
+    };
+
+    service = new MemoryService(db, { llmClient: blockedLlm });
+    const ingestionPromise = service.enqueueIngestion({
+      session,
+      prompt: '处理 gateway token rotation',
+      messages,
+    });
+
+    await vi.waitFor(() => expect(typeof releaseExtraction).toBe('function'));
+    rawDb.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    const deletionPromise = service.deleteSession(sessionId);
+
+    releaseExtraction();
+    await ingestionPromise;
+    await deletionPromise;
+
+    expect(service.inspectSession(sessionId, '/repo/a')).toBeNull();
+    expect(service.search({ query: 'gateway token rotation', scope: 'all', limit: 10 })).toHaveLength(0);
+  });
+
+  it('rejects reading files that escape the memory root through symlinks', async () => {
+    await service.enqueueIngestion({
+      session: makeSession('session-a', 'Gateway fixes', '/repo/a'),
+      prompt: '修复 gateway token rotation',
+      messages: makeMessages('session-a', [
+        { role: 'user', text: '请用中文回答。', timestamp: 1 },
+        { role: 'assistant', text: '好的。', timestamp: 2 },
+      ]),
+    });
+
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-outside-'));
+    const outsideFile = path.join(outsideDir, 'secret.json');
+    fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
+
+    const symlinkPath = path.join(service.getOverview().storageRoot, 'escape-link.json');
+    fs.symlinkSync(outsideFile, symlinkPath);
+
+    expect(() => service.readFile(symlinkPath)).toThrow('outside the memory storage root');
+
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+    fs.rmSync(symlinkPath, { force: true });
   });
 });

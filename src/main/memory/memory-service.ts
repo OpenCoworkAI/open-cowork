@@ -80,6 +80,7 @@ interface ExpandedSessionData {
 
 export class MemoryService {
   private readonly queue = new MemoryIngestionQueue();
+  private readonly deletedSessionIds = new Set<string>();
   private readonly llmClient: MemoryLLMClientLike;
   private readonly coreExtractor: CoreMemoryExtractor;
   private readonly experienceExtractor: ExperienceMemoryExtractor;
@@ -226,12 +227,8 @@ export class MemoryService {
   }
 
   readFile(filePath: string): MemoryDebugFileContent {
-    const paths = this.getPaths();
-    if (!isSubPath(filePath, paths.storageRoot) && !isSubPath(filePath, paths.artifactsDir)) {
-      throw new Error('Requested file is outside the memory storage root');
-    }
-    const normalizedPath = path.resolve(filePath);
-    const stat = fs.existsSync(normalizedPath) ? fs.statSync(normalizedPath) : null;
+    const normalizedPath = this.resolveReadablePath(filePath);
+    const stat = fs.statSync(normalizedPath);
     if (stat?.isDirectory()) {
       const entries = fs.readdirSync(normalizedPath).sort();
       const parsed = entries.map((name) => {
@@ -379,13 +376,16 @@ export class MemoryService {
     return { success: true };
   }
 
-  deleteSession(sessionId: string): void {
-    const store = this.getExperienceStore();
-    if (store.getSession(sessionId)) {
-      store.removeSession(sessionId);
-      store.save();
-    }
-    this.getStateStore().delete(sessionId);
+  deleteSession(sessionId: string): Promise<void> {
+    this.deletedSessionIds.add(sessionId);
+    return this.queue.enqueue(sessionId, async () => {
+      const store = this.getExperienceStore();
+      if (store.getSession(sessionId)) {
+        store.removeSession(sessionId);
+        store.save();
+      }
+      this.getStateStore().delete(sessionId);
+    });
   }
 
   private async batchRebuild(sessionRows: SessionRow[]): Promise<void> {
@@ -405,6 +405,11 @@ export class MemoryService {
       return;
     }
 
+    if (this.deletedSessionIds.has(session.id)) {
+      this.getStateStore().delete(session.id);
+      return;
+    }
+
     const sourceWorkspace = normalizeWorkspaceKey(session.cwd);
     const stateStore = this.getStateStore();
     const previousState = stateStore.get(session.id);
@@ -420,12 +425,20 @@ export class MemoryService {
 
     try {
       await this.updateCoreMemory(session.id, sessionDate, deltaTurns);
+      if (this.deletedSessionIds.has(session.id)) {
+        stateStore.delete(session.id);
+        return;
+      }
       if (fullTurns.length) {
         const extracted = await this.experienceExtractor.extractSession({
           sessionId: session.id,
           sessionDate,
           turns: fullTurns,
         });
+        if (this.deletedSessionIds.has(session.id)) {
+          stateStore.delete(session.id);
+          return;
+        }
         await this.storeExperienceSession({
           sourceWorkspace,
           sessionId: session.id,
@@ -907,5 +920,25 @@ export class MemoryService {
       return 'state';
     }
     return 'artifacts';
+  }
+
+  private resolveReadablePath(filePath: string): string {
+    const paths = this.getPaths();
+    const requestedPath = path.resolve(filePath);
+    if (!fs.existsSync(requestedPath)) {
+      throw new Error('Requested file does not exist');
+    }
+
+    const normalizedPath = fs.realpathSync(requestedPath);
+    const allowedRoots = [paths.storageRoot, paths.artifactsDir]
+      .map((root) => path.resolve(root))
+      .filter((root, index, all) => all.indexOf(root) === index)
+      .map((root) => (fs.existsSync(root) ? fs.realpathSync(root) : root));
+
+    if (!allowedRoots.some((root) => isSubPath(normalizedPath, root))) {
+      throw new Error('Requested file is outside the memory storage root');
+    }
+
+    return normalizedPath;
   }
 }

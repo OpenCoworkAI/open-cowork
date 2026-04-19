@@ -57,7 +57,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../src/main/config/config-store', () => {
+vi.mock('../../main/config/config-store', () => {
   const configStore = {
     getAll: () => ({ ...mockConfigState.config }),
     get: (key: string) => mockConfigState.config[key],
@@ -78,16 +78,16 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseInstance } from '../src/main/db/database';
-import { MemoryEvalHarness } from '../src/main/memory/memory-eval-harness';
-import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../src/main/memory/memory-llm-client';
-import { MemoryPromptOptimizer } from '../src/main/memory/memory-prompt-optimizer';
-import { MemoryService } from '../src/main/memory/memory-service';
-import { configStore } from '../src/main/config/config-store';
+import type { DatabaseInstance, SessionRow } from '../../main/db/database';
+import { MemoryEvalHarness } from '../../main/memory/memory-eval-harness';
+import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../../main/memory/memory-llm-client';
+import { MemoryPromptOptimizer } from '../../main/memory/memory-prompt-optimizer';
+import { MemoryService } from '../../main/memory/memory-service';
+import { configStore } from '../../main/config/config-store';
 
 class EvalMockLLM implements MemoryLLMClientLike {
   async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {
-    if (request.systemPrompt.includes('background Memory Profiler')) {
+    if (request.systemPrompt.includes('Memory Profiler')) {
       return {
         text: JSON.stringify({
           actions: request.userPrompt.includes('中文')
@@ -213,7 +213,10 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
     sessions: {
       create: vi.fn(),
       update: vi.fn(),
-      get: vi.fn((id: string) => db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id)),
+      get: vi.fn(
+        (id: string) =>
+          db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id) as SessionRow | undefined
+      ),
       getAll: vi.fn(() => db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as any[]),
       delete: vi.fn(),
     },
@@ -260,10 +263,10 @@ describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
     configStore.update({
       memoryEnabled: true,
       memoryRuntime: {
-        ...mockConfigState.config.memoryRuntime,
+        ...(mockConfigState.config.memoryRuntime as Record<string, unknown>),
         storageRoot: path.join(tempRoot, 'memory-root'),
         evalArtifactsRoot: path.join(tempRoot, 'artifacts'),
-      },
+      } as any,
     });
   });
 
