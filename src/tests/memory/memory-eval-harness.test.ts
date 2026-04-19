@@ -78,11 +78,12 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseInstance, SessionRow } from '../../main/db/database';
+import type { DatabaseInstance, MessageRow, SessionRow } from '../../main/db/database';
 import { MemoryEvalHarness } from '../../main/memory/memory-eval-harness';
 import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../../main/memory/memory-llm-client';
 import { MemoryPromptOptimizer } from '../../main/memory/memory-prompt-optimizer';
 import { MemoryService } from '../../main/memory/memory-service';
+import type { MemoryRuntimeConfig } from '../../main/config/config-store';
 import { configStore } from '../../main/config/config-store';
 
 class EvalMockLLM implements MemoryLLMClientLike {
@@ -217,14 +218,20 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
         (id: string) =>
           db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id) as SessionRow | undefined
       ),
-      getAll: vi.fn(() => db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as any[]),
+      getAll: vi.fn(
+        () =>
+          db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as SessionRow[]
+      ),
       delete: vi.fn(),
     },
     messages: {
       create: vi.fn(),
       update: vi.fn(),
-      getBySessionId: vi.fn((sessionId: string) =>
-        db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(sessionId) as any[]
+      getBySessionId: vi.fn(
+        (sessionId: string) =>
+          db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(
+            sessionId
+          ) as MessageRow[]
       ),
       delete: vi.fn(),
       deleteBySessionId: vi.fn(),
@@ -260,13 +267,14 @@ describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
     rawDb = new Database(':memory:');
     createSchema(rawDb);
     service = new MemoryService(createDatabaseInstance(rawDb), { llmClient: llm });
+    const runtimeConfig = mockConfigState.config.memoryRuntime as unknown as MemoryRuntimeConfig;
     configStore.update({
       memoryEnabled: true,
       memoryRuntime: {
-        ...(mockConfigState.config.memoryRuntime as Record<string, unknown>),
+        ...runtimeConfig,
         storageRoot: path.join(tempRoot, 'memory-root'),
         evalArtifactsRoot: path.join(tempRoot, 'artifacts'),
-      } as any,
+      },
     });
   });
 
