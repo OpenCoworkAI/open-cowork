@@ -930,13 +930,17 @@ export class MemoryService {
     }
 
     const normalizedPath = fs.realpathSync(requestedPath);
-    const allowedRoots = [paths.storageRoot, paths.artifactsDir]
-      .map((root) => path.resolve(root))
-      .filter((root, index, all) => all.indexOf(root) === index)
-      .map((root) => (fs.existsSync(root) ? fs.realpathSync(root) : root));
+    const allowedFiles = new Set(
+      [paths.coreFilePath, paths.experienceFilePath, paths.stateFilePath]
+        .filter((candidate) => fs.existsSync(candidate))
+        .map((candidate) => fs.realpathSync(candidate))
+    );
+    const artifactsRoot = fs.existsSync(paths.artifactsDir)
+      ? fs.realpathSync(paths.artifactsDir)
+      : path.resolve(paths.artifactsDir);
 
-    if (!allowedRoots.some((root) => isSubPath(normalizedPath, root))) {
-      throw new Error('Requested file is outside the memory storage root');
+    if (!allowedFiles.has(normalizedPath) && !isSubPath(normalizedPath, artifactsRoot)) {
+      throw new Error('Requested file is outside allowed memory files');
     }
 
     return normalizedPath;

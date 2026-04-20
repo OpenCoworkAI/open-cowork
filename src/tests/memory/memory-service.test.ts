@@ -536,7 +536,7 @@ describe('MemoryService', () => {
     expect(service.search({ query: 'gateway token rotation', scope: 'all', limit: 10 })).toHaveLength(0);
   });
 
-  it('rejects reading files that escape the memory root through symlinks', async () => {
+  it('rejects reading files that escape the memory allowlist through symlinks', async () => {
     await service.enqueueIngestion({
       session: makeSession('session-a', 'Gateway fixes', '/repo/a'),
       prompt: '修复 gateway token rotation',
@@ -553,9 +553,43 @@ describe('MemoryService', () => {
     const symlinkPath = path.join(service.getOverview().storageRoot, 'escape-link.json');
     fs.symlinkSync(outsideFile, symlinkPath);
 
-    expect(() => service.readFile(symlinkPath)).toThrow('outside the memory storage root');
+    expect(() => service.readFile(symlinkPath)).toThrow('outside allowed memory files');
 
     fs.rmSync(outsideDir, { recursive: true, force: true });
     fs.rmSync(symlinkPath, { force: true });
+  });
+
+  it('rejects arbitrary local files even if storageRoot is configured too broadly', () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-broad-root-'));
+    const outsideFile = path.join(outsideDir, 'arbitrary.json');
+    fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
+
+    configStore.update({
+      memoryRuntime: {
+        llm: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: '',
+          timeoutMs: 180000,
+        },
+        embedding: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: 'text-embedding-3-small',
+          timeoutMs: 180000,
+        },
+        useEmbedding: false,
+        maxNavSteps: 2,
+        ingestionConcurrency: 2,
+        storageRoot: path.parse(outsideDir).root,
+      },
+    });
+
+    service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
+    expect(() => service.readFile(outsideFile)).toThrow('outside allowed memory files');
+
+    fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 });
