@@ -592,4 +592,75 @@ describe('MemoryService', () => {
 
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
+
+  it('rejects evalArtifactsRoot values that escape storageRoot before rebuildAll can delete them', async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-artifacts-escape-'));
+    const markerFile = path.join(outsideDir, 'keep.txt');
+    fs.writeFileSync(markerFile, 'keep-me', 'utf8');
+
+    configStore.update({
+      memoryRuntime: {
+        llm: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: '',
+          timeoutMs: 180000,
+        },
+        embedding: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: 'text-embedding-3-small',
+          timeoutMs: 180000,
+        },
+        useEmbedding: false,
+        maxNavSteps: 2,
+        ingestionConcurrency: 2,
+        storageRoot: path.join(storageRoot, 'memory-root'),
+        evalArtifactsRoot: outsideDir,
+      },
+    });
+
+    service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
+    await expect(service.rebuildAll()).rejects.toThrow('evalArtifactsRoot must stay inside storageRoot');
+    expect(fs.existsSync(markerFile)).toBe(true);
+
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('rejects readFile when evalArtifactsRoot escapes storageRoot', () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-artifacts-read-'));
+    const outsideFile = path.join(outsideDir, 'secret.json');
+    fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
+
+    configStore.update({
+      memoryRuntime: {
+        llm: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: '',
+          timeoutMs: 180000,
+        },
+        embedding: {
+          inheritFromActive: true,
+          apiKey: '',
+          baseUrl: '',
+          model: 'text-embedding-3-small',
+          timeoutMs: 180000,
+        },
+        useEmbedding: false,
+        maxNavSteps: 2,
+        ingestionConcurrency: 2,
+        storageRoot: path.join(storageRoot, 'memory-root'),
+        evalArtifactsRoot: outsideDir,
+      },
+    });
+
+    service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
+    expect(() => service.readFile(outsideFile)).toThrow('evalArtifactsRoot must stay inside storageRoot');
+
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  });
 });

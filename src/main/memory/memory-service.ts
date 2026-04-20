@@ -87,7 +87,7 @@ export class MemoryService {
   private readonly navigator: MemoryNavigator;
   private readonly retriever: MemoryRetriever;
   private readonly tools: MemoryToolDefinition[];
-  private currentStorageRoot: string | null = null;
+  private currentPathsKey: string | null = null;
   private coreStore: CoreMemoryStore | null = null;
   private stateStore: MemorySessionStateStore | null = null;
   private experienceStore: ExperienceMemoryStore | null = null;
@@ -864,30 +864,38 @@ export class MemoryService {
     const configuredRoot = this.getAppConfig().memoryRuntime.storageRoot?.trim();
     const configuredArtifactsRoot = this.getAppConfig().memoryRuntime.evalArtifactsRoot?.trim();
     const storageRoot = path.resolve(configuredRoot || path.join(app.getPath('userData'), 'memory'));
+    const safeArtifactsDir = path.join(storageRoot, 'eval-artifacts');
+    const artifactsDir = path.resolve(configuredArtifactsRoot || safeArtifactsDir);
+
+    if (!isSubPath(artifactsDir, storageRoot)) {
+      throw new Error('evalArtifactsRoot must stay inside storageRoot');
+    }
+
     return {
       storageRoot,
       coreFilePath: path.join(storageRoot, 'core_memory.json'),
       experienceFilePath: path.join(storageRoot, 'experience_memory.json'),
       stateFilePath: path.join(storageRoot, 'session_state.json'),
-      artifactsDir: path.resolve(configuredArtifactsRoot || path.join(storageRoot, 'eval-artifacts')),
+      artifactsDir,
     };
   }
 
   private ensureStores(): void {
     const paths = this.getPaths();
-    if (this.currentStorageRoot === paths.storageRoot && this.coreStore && this.stateStore && this.experienceStore) {
+    const pathsKey = `${paths.storageRoot}::${paths.artifactsDir}`;
+    if (this.currentPathsKey === pathsKey && this.coreStore && this.stateStore && this.experienceStore) {
       return;
     }
     fs.mkdirSync(paths.storageRoot, { recursive: true });
     fs.mkdirSync(paths.artifactsDir, { recursive: true });
-    this.currentStorageRoot = paths.storageRoot;
+    this.currentPathsKey = pathsKey;
     this.coreStore = new CoreMemoryStore(paths.coreFilePath);
     this.stateStore = new MemorySessionStateStore(paths.stateFilePath);
     this.experienceStore = new ExperienceMemoryStore(paths.experienceFilePath);
   }
 
   private resetStores(): void {
-    this.currentStorageRoot = null;
+    this.currentPathsKey = null;
     this.coreStore = null;
     this.stateStore = null;
     this.experienceStore = null;
