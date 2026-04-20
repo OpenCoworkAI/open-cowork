@@ -268,12 +268,13 @@ describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
     createSchema(rawDb);
     service = new MemoryService(createDatabaseInstance(rawDb), { llmClient: llm });
     const runtimeConfig = mockConfigState.config.memoryRuntime as unknown as MemoryRuntimeConfig;
+    const memoryRoot = path.join(tempRoot, 'memory-root');
     configStore.update({
       memoryEnabled: true,
       memoryRuntime: {
         ...runtimeConfig,
-        storageRoot: path.join(tempRoot, 'memory-root'),
-        evalArtifactsRoot: path.join(tempRoot, 'artifacts'),
+        storageRoot: memoryRoot,
+        evalArtifactsRoot: path.join(memoryRoot, 'artifacts'),
       },
     });
   });
@@ -285,7 +286,7 @@ describe('MemoryEvalHarness and MemoryPromptOptimizer', () => {
 
   it('runs a multi-workspace eval harness and writes artifacts', async () => {
     const harness = new MemoryEvalHarness(service, llm);
-    const artifactDir = path.join(tempRoot, 'artifacts', 'run-1');
+    const artifactDir = path.join(tempRoot, 'memory-root', 'artifacts', 'run-1');
     const report = await harness.run({ artifactDir });
 
     expect(report.caseResults.length).toBeGreaterThan(1);
