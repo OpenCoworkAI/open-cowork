@@ -29,9 +29,6 @@ i18n
       caches: ['localStorage'],
       lookupLocalStorage: 'i18nextLng',
       htmlTag: document.documentElement,
-      navigator: {
-        layouts: ['en', 'zh'],
-      },
     },
   });
 

@@ -106,19 +106,6 @@ if (configStore.isConfigured()) {
 // Initialize language detection for error messages
 setGetCurrentLanguageFn(() => currentLanguage);
 
-function detectLanguage(): 'en' | 'zh' {
-  try {
-    const locale =
-      Intl.DateTimeFormat().resolvedOptions().locale ||
-      (typeof navigator !== 'undefined' ? navigator.language : null) ||
-      'en';
-    if (locale.startsWith('zh')) return 'zh';
-  } catch {
-    // Intl not available
-  }
-  return 'en';
-}
-
 // Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
 
