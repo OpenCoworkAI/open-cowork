@@ -20,6 +20,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import { createError, ERROR_CODES } from '../../shared/error-messages';
 
 /**
  * MCP Server Configuration
@@ -210,14 +211,8 @@ export class MCPManager {
   private async checkNpxInPath(): Promise<void> {
     const bundledNode = this.getBundledNodePath();
     if (!bundledNode) {
-      const errorMessage =
-        'Bundled Node.js not found. Please reinstall the application.\n' +
-        '未找到内置的 Node.js。请重新安装应用。\n\n' +
-        'The application requires bundled Node.js to run MCP servers.\n' +
-        '应用需要内置的 Node.js 来运行 MCP 服务器。';
-
       logError('[MCPManager] Bundled Node.js not found');
-      throw new Error(errorMessage);
+      throw createError(ERROR_CODES.MCP_BUNDLED_NODE_NOT_FOUND);
     }
 
     this.npxPath = bundledNode.npx;
@@ -256,7 +251,7 @@ export class MCPManager {
 
     await this.checkNpxInPath();
     if (!this.npxPath) {
-      throw new Error('Bundled npx is unavailable.');
+      throw createError(ERROR_CODES.MCP_BUNDLED_NPX_UNAVAILABLE);
     }
     return this.npxPath;
   }
@@ -661,7 +656,7 @@ export class MCPManager {
 
     if (config.type === 'stdio') {
       if (!config.command) {
-        throw new Error(`STDIO server ${config.name} requires a command`);
+        throw createError(ERROR_CODES.MCP_STDIO_REQUIRES_COMMAND);
       }
 
       let command = config.command;
@@ -840,21 +835,21 @@ export class MCPManager {
       log(`[MCPManager] STDIO transport created successfully`);
     } else if (config.type === 'sse') {
       if (!config.url) {
-        throw new Error(`SSE server ${config.name} requires a URL`);
+        throw createError(ERROR_CODES.MCP_SSE_REQUIRES_URL);
       }
 
       let sseUrl: URL;
       try {
         sseUrl = new URL(config.url);
       } catch {
-        throw new Error(`SSE server ${config.name} has a malformed URL: "${config.url}"`);
+        throw createError(ERROR_CODES.MCP_SSE_MALFORMED_URL);
       }
 
       // Create SSE transport — headers must be passed via requestInit, not as a raw dict
       transport = new SSEClientTransport(sseUrl, { requestInit: { headers: config.headers } });
     } else if (config.type === 'streamable-http') {
       if (!config.url) {
-        throw new Error(`Streamable HTTP server ${config.name} requires a URL`);
+        throw createError(ERROR_CODES.MCP_HTTP_REQUIRES_URL);
       }
 
       log(`[MCPManager] Creating Streamable HTTP transport: ${config.url}`);
@@ -863,9 +858,7 @@ export class MCPManager {
       try {
         httpUrl = new URL(config.url);
       } catch {
-        throw new Error(
-          `Streamable HTTP server ${config.name} has a malformed URL: "${config.url}"`
-        );
+        throw createError(ERROR_CODES.MCP_SSE_MALFORMED_URL);
       }
 
       // Create Streamable HTTP transport
@@ -875,7 +868,7 @@ export class MCPManager {
       }
       transport = new StreamableHTTPClientTransport(httpUrl, { requestInit });
     } else {
-      throw new Error(`Unsupported transport type: ${config.type}`);
+      throw createError(ERROR_CODES.MCP_UNSUPPORTED_TRANSPORT);
     }
 
     // Create MCP client
@@ -1116,7 +1109,9 @@ export class MCPManager {
         logError(`[MCPManager]   1. Chrome failed to start`);
         logError(`[MCPManager]   2. Another process is using port 9222`);
         logError(`[MCPManager]   3. Firewall blocking the port`);
-        throw new Error('Chrome 浏览器未就绪，无法执行此操作: debug port did not become ready');
+        throw new Error(
+          'Chrome is not ready. Cannot perform this operation: debug port did not become ready'
+        );
       }
 
       log(`[MCPManager] ✓ Chrome debug port is now ready`);
@@ -1145,7 +1140,7 @@ export class MCPManager {
             logError(`[MCPManager] Last error code: ${ve.code}, message: ${ve.message}`);
             logError(`[MCPManager] The chrome-devtools-mcp server may not be working correctly`);
             throw new Error(
-              'Chrome 浏览器未就绪，无法执行此操作: MCP connection verification failed after 5 attempts'
+              'Chrome is not ready. Cannot perform this operation: MCP connection verification failed after 5 attempts'
             );
           }
         }
@@ -1154,7 +1149,7 @@ export class MCPManager {
       logError(`[MCPManager] ❌ Failed to start Chrome with debugging`);
       const startErrMsg = startError instanceof Error ? startError.message : String(startError);
       logError(`[MCPManager] Error: ${startErrMsg}`);
-      throw new Error(`Chrome 浏览器未就绪，无法执行此操作: ${startErrMsg}`);
+      throw new Error(`Chrome is not ready. Cannot perform this operation: ${startErrMsg}`);
     }
   }
 
@@ -1423,7 +1418,7 @@ export class MCPManager {
   async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     const tool = this.tools.get(toolName);
     if (!tool) {
-      throw new Error(`MCP tool not found: ${toolName}`);
+      throw createError(ERROR_CODES.MCP_TOOL_NOT_FOUND);
     }
 
     // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
@@ -1449,7 +1444,7 @@ export class MCPManager {
       try {
         const client = this.clients.get(currentTool.serverId);
         if (!client) {
-          throw new Error(`MCP server not connected: ${currentTool.serverId}`);
+          throw createError(ERROR_CODES.MCP_SERVER_NOT_CONNECTED);
         }
 
         // Add timeout for tool call

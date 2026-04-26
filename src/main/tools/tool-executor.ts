@@ -7,6 +7,7 @@ import { PathResolver } from '../sandbox/path-resolver';
 import type { ToolResult, ExecutionContext, MountedPath } from '../../renderer/types';
 import { isUncPath } from '../../shared/local-file-path';
 import { isPathWithinRoot } from './path-containment';
+import { createError, ERROR_CODES } from '../../shared/error-messages';
 
 /**
  * ToolExecutor - Secure tool execution framework
@@ -28,7 +29,7 @@ export class ToolExecutor {
   private resolveWorkspacePath(sessionId: string, inputPath: string): string {
     const mounts = this.pathResolver.getMounts(sessionId);
     if (!mounts.length) {
-      throw new Error('No mounted workspace for this session');
+      throw createError(ERROR_CODES.TOOL_NO_MOUNTED_WORKSPACE);
     }
 
     const primaryMount = mounts[0];
@@ -39,7 +40,7 @@ export class ToolExecutor {
     if (trimmed.startsWith('/')) {
       const resolved = this.pathResolver.resolve(sessionId, trimmed);
       if (!resolved) {
-        throw new Error('Invalid or unauthorized path');
+        throw createError(ERROR_CODES.INVALID_PATH);
       }
       return this.assertInsideMount(resolved, mounts);
     }
@@ -79,7 +80,7 @@ export class ToolExecutor {
     });
 
     if (!allowed) {
-      throw new Error('Path is outside the mounted workspace');
+      throw createError(ERROR_CODES.PATH_OUTSIDE_WORKSPACE);
     }
 
     return realPath;
@@ -93,7 +94,7 @@ export class ToolExecutor {
       const pathToRead = this.resolveWorkspacePath(sessionId, filePath);
 
       if (!fs.existsSync(pathToRead)) {
-        throw new Error(`File not found: ${filePath}`);
+        throw createError(ERROR_CODES.TOOL_FILE_NOT_FOUND);
       }
 
       return fs.readFileSync(pathToRead, 'utf-8');
@@ -161,18 +162,18 @@ export class ToolExecutor {
   async webFetch(url: string): Promise<string> {
     const trimmed = url.trim();
     if (!trimmed) {
-      throw new Error('URL is required');
+      throw createError(ERROR_CODES.TOOL_URL_REQUIRED);
     }
 
     let parsed: URL;
     try {
       parsed = new URL(trimmed);
     } catch (error) {
-      throw new Error('Invalid URL');
+      throw createError(ERROR_CODES.TOOL_INVALID_URL);
     }
 
     if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error('Only http/https URLs are supported');
+      throw createError(ERROR_CODES.TOOL_ONLY_HTTPS);
     }
 
     let response: Response;
@@ -186,7 +187,7 @@ export class ToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw createError(ERROR_CODES.TOOL_REQUEST_TIMEOUT);
       }
       throw error;
     }
@@ -212,7 +213,7 @@ export class ToolExecutor {
   async webSearch(query: string): Promise<string> {
     const trimmed = query.trim();
     if (!trimmed) {
-      throw new Error('Query is required');
+      throw createError(ERROR_CODES.TOOL_QUERY_REQUIRED);
     }
 
     const searchUrl = new URL('https://api.duckduckgo.com/');
@@ -233,7 +234,7 @@ export class ToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw createError(ERROR_CODES.TOOL_REQUEST_TIMEOUT);
       }
       throw error;
     }
@@ -300,7 +301,7 @@ export class ToolExecutor {
   private validateCommandSandbox(sessionId: string, command: string, cwd: string): void {
     const mounts = this.pathResolver.getMounts(sessionId);
     if (!mounts.length) {
-      throw new Error('No mounted workspace for this session');
+      throw createError(ERROR_CODES.TOOL_NO_MOUNTED_WORKSPACE);
     }
 
     // Validate cwd is inside a mount
@@ -310,7 +311,7 @@ export class ToolExecutor {
       return isPathWithinRoot(normalizedCwd, mountRoot);
     });
     if (!cwdAllowed) {
-      throw new Error('Working directory is outside the mounted workspace');
+      throw createError(ERROR_CODES.PATH_OUTSIDE_WORKSPACE);
     }
 
     // Block path traversal attempts
@@ -525,7 +526,7 @@ export class ToolExecutor {
       const resolvedPath = this.resolveWorkspacePath(sessionId, filePath);
 
       if (!fs.existsSync(resolvedPath)) {
-        throw new Error(`File not found: ${filePath}`);
+        throw createError(ERROR_CODES.TOOL_FILE_NOT_FOUND);
       }
 
       const content = fs.readFileSync(resolvedPath, 'utf-8');

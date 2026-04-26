@@ -25,6 +25,7 @@ import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import {
   configStore,
   getPiAiModelPresets,
+  setGetCurrentLanguageFn,
   type AppConfig,
   type AppTheme,
   type CreateConfigSetPayload,
@@ -100,6 +101,22 @@ if (dotenvResult.error) {
 if (configStore.isConfigured()) {
   log('[Config] Applying saved configuration...');
   configStore.applyToEnv();
+}
+
+// Initialize language detection for error messages
+setGetCurrentLanguageFn(() => detectLanguage());
+
+function detectLanguage(): 'en' | 'zh' {
+  try {
+    const locale =
+      Intl.DateTimeFormat().resolvedOptions().locale ||
+      (typeof navigator !== 'undefined' ? navigator.language : null) ||
+      'en';
+    if (locale.startsWith('zh')) return 'zh';
+  } catch {
+    // Intl not available
+  }
+  return 'en';
 }
 
 // Disable hardware acceleration for better compatibility
@@ -999,7 +1016,10 @@ app
   .catch((error) => {
     logError('[App] Startup failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown startup error';
-    dialog.showErrorBox('Open Cowork 启动失败', `${message}\n\n请查看日志获取更多信息。`);
+    dialog.showErrorBox(
+      'Open Cowork Startup Failed',
+      `${message}\n\nPlease check the logs for more information.`
+    );
     app.quit();
   });
 
@@ -1164,6 +1184,36 @@ ipcMain.handle('get-version', () => {
     logError('[IPC] Error getting version:', error);
     return 'unknown';
   }
+});
+
+// Language preference storage (set by renderer)
+// Detect system locale on first launch
+function detectSystemLocale(): 'en' | 'zh' {
+  try {
+    const locale = app.getLocale();
+    if (locale && locale.startsWith('zh')) {
+      return 'zh';
+    }
+  } catch {
+    /* ignore */
+  }
+  return 'en';
+}
+
+let currentLanguage: 'en' | 'zh' = detectSystemLocale();
+
+ipcMain.handle('app.setLanguage', (_event, lang: string) => {
+  if (lang === 'en' || lang === 'zh') {
+    currentLanguage = lang;
+    log(`[IPC] Language set to: ${lang}`);
+    return true;
+  }
+  logWarn(`[IPC] Invalid language: ${lang}`);
+  return false;
+});
+
+ipcMain.handle('app.getLanguage', () => {
+  return currentLanguage;
 });
 
 ipcMain.handle('system.getTheme', () => {
@@ -2537,7 +2587,8 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     sendToRenderer({
       type: 'error',
       payload: {
-        message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
+        message:
+          'The current config set does not have usable credentials. Please complete the configuration in API Settings first.',
         code: 'CONFIG_REQUIRED_ACTIVE_SET',
         action: 'open_api_settings',
       },

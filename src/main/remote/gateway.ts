@@ -20,6 +20,7 @@ import type {
   GatewayEvent,
 } from './types';
 import { MessageRouter } from './message-router';
+import { getAppMessages } from '../config/config-store';
 
 // WebSocket client connection
 interface WSClient {
@@ -269,7 +270,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: '⚠️ 您没有权限使用此机器人。请联系管理员获取访问权限。',
+            text: '⚠️ You do not have permission to use this bot. Contact the administrator for access.',
           },
           replyTo: message.id,
         });
@@ -410,7 +411,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: '✅ 配对成功！您现在可以开始使用机器人了。',
+            text: '✅ Pairing successful! You can now start using the bot.',
           },
           replyTo: message.id,
         });
@@ -429,7 +430,7 @@ export class RemoteGateway extends EventEmitter {
           channelId: message.channelId,
           content: {
             type: 'text',
-            text: `请输入配对码进行验证。\n\n您的配对码是: **${existing.code}**\n\n请将此配对码发送给管理员进行确认，或直接回复配对码完成配对。`,
+            text: `Please enter the pairing code for verification.\n\nYour pairing code: **${existing.code}**\n\nSend this code to the admin for confirmation, or reply with the pairing code to complete pairing.`,
           },
           replyTo: message.id,
         });
@@ -455,7 +456,7 @@ export class RemoteGateway extends EventEmitter {
       channelId: message.channelId,
       content: {
         type: 'text',
-        text: `👋 您好！首次使用需要进行配对验证。\n\n您的配对码是: **${code}**\n\n请将此配对码发送给管理员进行确认。配对码有效期10分钟。`,
+        text: `👋 Hello! First-time use requires pairing verification.\n\nYour pairing code: **${code}**\n\nSend this code to the admin for confirmation. The code expires in 10 minutes.`,
       },
       replyTo: message.id,
     });
@@ -601,7 +602,7 @@ export class RemoteGateway extends EventEmitter {
 
     // 404 for unknown paths
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    res.end(JSON.stringify({ error: getAppMessages().notFound }));
   }
 
   private handleWebhook(req: IncomingMessage, res: ServerResponse, url: string): void {
@@ -613,7 +614,9 @@ export class RemoteGateway extends EventEmitter {
     if (!this.channels.has(channelType)) {
       log(`[Gateway] Channel ${channelType} not found`);
       res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: `Channel ${channelType} not found` }));
+      res.end(
+        JSON.stringify({ error: `Channel ${channelType} ${getAppMessages().channelTypeNotFound}` })
+      );
       return;
     }
 
@@ -627,7 +630,7 @@ export class RemoteGateway extends EventEmitter {
       if (body.length > MAX_BODY_SIZE) {
         bodyTooLarge = true;
         res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Request body too large' }));
+        res.end(JSON.stringify({ error: getAppMessages().requestBodyTooLarge }));
         req.destroy();
       }
     });
@@ -661,7 +664,7 @@ export class RemoteGateway extends EventEmitter {
       } catch (error) {
         logError('[Gateway] Error processing webhook body:', error);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Internal server error' }));
+        res.end(JSON.stringify({ error: getAppMessages().internalServerError }));
       }
     });
   }

@@ -44,8 +44,8 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'google/gemini-3-flash-preview', name: 'google/gemini-3-flash-preview' },
       { id: 'google/gemini-2.5-flash', name: 'google/gemini-2.5-flash' },
     ],
-    keyPlaceholder: 'sk-or-v1-...',
-    keyHint: '从 openrouter.ai/keys 获取',
+    keyPlaceholder: 'sk-or-v2-...',
+    keyHint: 'Get from openrouter.ai/keys',
   },
   anthropic: {
     name: 'Anthropic',
@@ -58,7 +58,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'claude-3-7-sonnet-latest', name: 'claude-3-7-sonnet-latest' },
     ],
     keyPlaceholder: 'sk-ant-...',
-    keyHint: '从 console.anthropic.com 获取',
+    keyHint: 'Get from console.anthropic.com',
   },
   openai: {
     name: 'OpenAI',
@@ -72,8 +72,8 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'o3', name: 'o3' },
       { id: 'o4-mini', name: 'o4-mini' },
     ],
-    keyPlaceholder: 'sk-...',
-    keyHint: '从 platform.openai.com 获取',
+    keyPlaceholder: 'sk-proj-...',
+    keyHint: 'Get from platform.openai.com',
   },
   gemini: {
     name: 'Gemini',
@@ -87,7 +87,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite' },
     ],
     keyPlaceholder: 'AIza...',
-    keyHint: '从 aistudio.google.com 获取',
+    keyHint: 'Get from aistudio.google.com',
   },
   ollama: {
     name: 'Ollama',
@@ -97,11 +97,12 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'llama3.2:latest', name: 'llama3.2:latest' },
       { id: 'deepseek-r1:latest', name: 'deepseek-r1:latest' },
     ],
-    keyPlaceholder: '可留空',
-    keyHint: '多数 Ollama 部署可留空；如果你的代理层要求鉴权，也可以填写 Key',
+    keyPlaceholder: 'Can be empty',
+    keyHint:
+      'Most Ollama deployments can leave this empty; if your proxy requires auth, enter the Key',
   },
   custom: {
-    name: '更多模型',
+    name: 'More Models',
     baseUrl: '',
     models: [
       { id: 'deepseek-chat', name: 'deepseek-chat' },
@@ -114,7 +115,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'mistral-large-latest', name: 'mistral-large-latest' },
     ],
     keyPlaceholder: 'sk-xxx',
-    keyHint: '输入你的 API Key',
+    keyHint: 'Enter your API Key',
   },
 };
 

@@ -49,7 +49,11 @@ import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/arti
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
-import { configStore } from '../config/config-store';
+import {
+  configStore,
+  getAgentRunnerMessages,
+  type AgentRunnerMessageStrings,
+} from '../config/config-store';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { resolveMessageEndPayload, toUserFacingErrorText } from './agent-runner-message-end';
 import {
@@ -439,6 +443,17 @@ export class ClaudeAgentRunner {
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
   private _skillsSetupDone = false;
+  private _cachedMessages: AgentRunnerMessageStrings | null = null;
+
+  private getMessages(): AgentRunnerMessageStrings {
+    if (!this._cachedMessages) {
+      const stored = configStore.get('agentRunnerMessages');
+      if (stored && stored.en && stored.zh) {
+        this._cachedMessages = getAgentRunnerMessages();
+      }
+    }
+    return this._cachedMessages || getAgentRunnerMessages();
+  }
 
   /**
    * Clear SDK session cache for a session
@@ -467,6 +482,12 @@ export class ClaudeAgentRunner {
     this._mcpServersCache = null;
     // Sessions stay alive — MCP tools are rebuilt each query via buildMcpCustomTools()
     log('[ClaudeAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
+  }
+
+  /** Call after the user changes agent runner messages config. */
+  invalidateMessagesCache(): void {
+    this._cachedMessages = null;
+    log('[ClaudeAgentRunner] Messages cache invalidated');
   }
 
   // TODO: Credentials should be served via a secure MCP tool or IPC channel,
@@ -876,6 +897,8 @@ ${hints.join('\n')}
     const runStartTime = Date.now();
     logCtx('[ClaudeAgentRunner] run() started');
 
+    const messages = this.getMessages();
+
     const controller = new AbortController();
     try {
       // SDK 会在同一 AbortSignal 上挂载较多监听器，放开上限避免无意义告警干扰排错。
@@ -916,7 +939,7 @@ ${hints.join('\n')}
         id: thinkingStepId,
         type: 'thinking',
         status: 'running',
-        title: 'Processing request...',
+        title: messages.processingRequest,
         timestamp: Date.now(),
       });
       logTiming('sendTraceStep (thinking)', runStartTime);
@@ -941,7 +964,7 @@ ${hints.join('\n')}
             payload: {
               sessionId: session.id,
               phase: 'syncing_files',
-              message: 'Syncing files to sandbox...',
+              message: messages.sandboxSyncing,
               detail: 'Copying project files to isolated WSL environment',
             },
           });
@@ -968,7 +991,7 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'syncing_skills',
-                message: 'Configuring skills...',
+                message: messages.sandboxConfiguring,
                 detail: 'Copying built-in skills to sandbox',
                 fileCount: syncResult.fileCount,
                 totalSize: syncResult.totalSize,
@@ -1054,7 +1077,7 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'ready',
-                message: 'Sandbox ready',
+                message: messages.sandboxReady,
                 detail: `Synced ${syncResult.fileCount} files`,
                 fileCount: syncResult.fileCount,
                 totalSize: syncResult.totalSize,
@@ -1072,8 +1095,8 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'error',
-                message: 'Sandbox file sync failed, falling back to direct access mode',
-                detail: 'Falling back to direct access mode (less secure)',
+                message: messages.sandboxSyncFailed,
+                detail: messages.sandboxFallback,
               },
             });
           }
@@ -1096,7 +1119,7 @@ ${hints.join('\n')}
             payload: {
               sessionId: session.id,
               phase: 'syncing_files',
-              message: 'Syncing files to sandbox...',
+              message: messages.sandboxSyncing,
               detail: 'Copying project files to isolated Lima environment',
             },
           });
@@ -1119,7 +1142,7 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'syncing_skills',
-                message: 'Configuring skills...',
+                message: messages.sandboxConfiguring,
                 detail: 'Copying built-in skills to sandbox',
                 fileCount: syncResult.fileCount,
                 totalSize: syncResult.totalSize,
@@ -1223,7 +1246,7 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'ready',
-                message: 'Sandbox ready',
+                message: messages.sandboxReady,
                 detail: `Synced ${syncResult.fileCount} files`,
                 fileCount: syncResult.fileCount,
                 totalSize: syncResult.totalSize,
@@ -1241,8 +1264,8 @@ ${hints.join('\n')}
               payload: {
                 sessionId: session.id,
                 phase: 'error',
-                message: 'Sandbox file sync failed, falling back to direct access mode',
-                detail: 'Falling back to direct access mode (less secure)',
+                message: messages.sandboxSyncFailed,
+                detail: messages.sandboxFallback,
               },
             });
           }
@@ -1993,7 +2016,7 @@ Tool routing:
         ollamaColdStartTimerId = setTimeout(() => {
           if (!receivedFirstStreamEvent && !controller.signal.aborted) {
             this.sendTraceUpdate(session.id, thinkingStepId, {
-              title: 'Waiting for model to load into memory...',
+              title: messages.waitingForModel,
             });
           }
         }, 10000);
@@ -2009,7 +2032,7 @@ Tool routing:
           clearTimeout(ollamaColdStartTimerId);
         }
         this.sendTraceUpdate(session.id, thinkingStepId, {
-          title: 'Processing request...',
+          title: messages.processingRequest,
         });
         if (provider === 'ollama') {
           log(
@@ -2197,8 +2220,8 @@ Tool routing:
                         type: 'text',
                         text: `**Error**: ${resolvedPayload.errorText}\n\n${
                           /\b4\d{2}\b/.test(resolvedPayload.errorText)
-                            ? '_请检查配置后重试。_'
-                            : '_Agent 正在自动重试，请稍候..._'
+                            ? '_Please check the configuration and try again._'
+                            : '_The Agent is automatically retrying, please wait..._'
                         }`,
                       },
                     ],
@@ -2364,9 +2387,10 @@ Tool routing:
         } catch (subscribeErr) {
           logError('[ClaudeAgentRunner] Error in subscribe callback:', subscribeErr);
           if (compactionStepId) {
+            const reason = (event as { reason?: string }).reason || 'unknown';
             this.sendTraceUpdate(session.id, compactionStepId, {
               status: 'error',
-              title: 'Error during context compaction',
+              title: messages.contextCompaction.replace('{{reason}}', reason),
             });
             compactionStepId = undefined;
           }
@@ -2425,20 +2449,25 @@ Tool routing:
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          content: [
+            {
+              type: 'text',
+              text: '**Request Timeout**: No response received for a long time. The operation has been cancelled.',
+            },
+          ],
           timestamp: Date.now(),
         };
         this.sendMessage(session.id, errorMsg);
         this.sendTraceUpdate(session.id, thinkingStepId, {
           status: 'error',
-          title: 'Request timed out',
+          title: messages.requestTimedOut,
         });
         return;
       }
       // Complete - update the initial thinking step
       this.sendTraceUpdate(session.id, thinkingStepId, {
         status: terminalErrorText ? 'error' : 'completed',
-        title: terminalErrorText ? 'Request failed' : 'Task completed',
+        title: terminalErrorText ? messages.requestFailed : messages.taskCompleted,
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -2448,19 +2477,24 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            content: [
+              {
+                type: 'text',
+                text: '**Request Timeout**: No response received for a long time. The operation has been cancelled.',
+              },
+            ],
             timestamp: Date.now(),
           };
           this.sendMessage(session.id, errorMsg);
           this.sendTraceUpdate(session.id, thinkingStepId, {
             status: 'error',
-            title: 'Request timed out',
+            title: messages.requestTimedOut,
           });
         } else {
           logCtx('[ClaudeAgentRunner] Aborted by user');
           this.sendTraceUpdate(session.id, thinkingStepId, {
             status: 'completed',
-            title: 'Cancelled',
+            title: messages.cancelled,
           });
         }
       } else {
@@ -2480,7 +2514,7 @@ Tool routing:
           id: uuidv4(),
           type: 'thinking',
           status: 'error',
-          title: 'Error occurred',
+          title: messages.errorOccurred,
           timestamp: Date.now(),
         });
 

@@ -462,7 +462,7 @@ export class FeishuChannel extends ChannelBase {
           log('[Feishu] Unknown message type:', msgType);
           return {
             type: 'text',
-            text: `[不支持的消息类型: ${msgType}]`,
+            text: `[Unsupported message type: ${msgType}]`,
           };
       }
     } catch (error) {
@@ -653,7 +653,7 @@ export class FeishuChannel extends ChannelBase {
 
     // Limit length
     if (sanitized.length > 10000) {
-      sanitized = sanitized.substring(0, 10000) + '\n\n... (内容过长已截断)';
+      sanitized = sanitized.substring(0, 10000) + '\n\n... (Content too long, truncated)';
     }
 
     return sanitized;

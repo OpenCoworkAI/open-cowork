@@ -30,6 +30,11 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import {
+  setGetCurrentLanguageFn as setErrorLanguageFn,
+  createError,
+  ERROR_CODES,
+} from '../../shared/error-messages';
 
 /**
  * Application configuration schema
@@ -120,6 +125,88 @@ export interface AppConfig {
 
   // First run flag
   isConfigured: boolean;
+
+  // Agent runner messages (multilingual support)
+  agentRunnerMessages?: AgentRunnerMessages;
+
+  // App-level messages for UI and system
+  appMessages?: AppMessages;
+}
+
+export interface AgentRunnerMessages {
+  en: AgentRunnerMessageStrings;
+  zh: AgentRunnerMessageStrings;
+}
+
+export interface AgentRunnerMessageStrings {
+  processingRequest: string;
+  waitingForModel: string;
+  contextCompaction: string;
+  requestTimedOut: string;
+  cancelled: string;
+  errorOccurred: string;
+  sandboxSyncing: string;
+  sandboxConfiguring: string;
+  sandboxReady: string;
+  sandboxSyncFailed: string;
+  sandboxFallback: string;
+  taskCompleted: string;
+  requestFailed: string;
+  commandCancelled: string;
+}
+
+export interface AppMessages {
+  en: AppMessageStrings;
+  zh: AppMessageStrings;
+}
+
+export interface AppMessageStrings {
+  defaultSession: string;
+  newSession: string;
+  untitledSession: string;
+  directoryNotFound: string;
+  chromeNotReady: string;
+  channelNotFound: string;
+  channelTypeNotFound: string;
+  requestBodyTooLarge: string;
+  internalServerError: string;
+  notFound: string;
+  sessionBuildTitlePrompt: string;
+  sessionBuildTitlePromptNew: string;
+  sessionBuildTitlePromptRename: string;
+  toolNoMountedWorkspace: string;
+  toolInvalidOrUnauthorizedPath: string;
+  toolPathOutsideWorkspace: string;
+  toolCommandFailed: string;
+  toolFileNotFound: string;
+  toolStringNotFound: string;
+  toolEditFailed: string;
+  toolSearchFailed: string;
+  toolGlobFailed: string;
+  toolGrepFailed: string;
+  toolUrlRequired: string;
+  toolInvalidUrl: string;
+  toolOnlyHttpsSupported: string;
+  toolRequestTimeout: string;
+  toolQueryRequired: string;
+  apiKeyPlaceholder: string;
+  apiKeyHint: string;
+  baseUrlHint: string;
+  taskDefaultTitle: string;
+  // Remote manager messages
+  yourAnswerNeeded: string;
+  yourAuthorizationNeeded: string;
+  toolParameters: string;
+  replyToAuthorize: string;
+  replyToDeny: string;
+  replyToAlways: string;
+  replyDirectly: string;
+  replyWithOptionNumber: string;
+  multipleSelectionAllowed: string;
+  skipToSkip: string;
+  // Session title messages
+  generateTitleRules: string;
+  generateTitleFromPrompt: string;
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';
@@ -187,7 +274,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
 
 const defaultConfigSet: ApiConfigSet = {
   id: DEFAULT_CONFIG_SET_ID,
-  name: '默认方案',
+  name: 'Default Config',
   isSystem: true,
   provider: 'openrouter',
   customProtocol: 'anthropic',
@@ -215,6 +302,138 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
+  agentRunnerMessages: {
+    en: {
+      processingRequest: 'Processing request...',
+      waitingForModel: 'Waiting for model to load into memory...',
+      contextCompaction: 'Compacting context ({{reason}})...',
+      requestTimedOut: 'Request timed out',
+      cancelled: 'Cancelled',
+      errorOccurred: 'Error occurred',
+      sandboxSyncing: 'Syncing files to sandbox...',
+      sandboxConfiguring: 'Configuring skills...',
+      sandboxReady: 'Sandbox ready',
+      sandboxSyncFailed: 'Sandbox sync failed',
+      sandboxFallback: 'Falling back to direct access mode (less secure)',
+      taskCompleted: 'Task completed',
+      requestFailed: 'Request failed',
+      commandCancelled: 'Command cancelled: user denied sudo password.',
+    },
+    zh: {
+      processingRequest: '正在处理请求...',
+      waitingForModel: '正在加载模型到内存...',
+      contextCompaction: '正在压缩上下文 ({{reason}})...',
+      requestTimedOut: '请求超时',
+      cancelled: '已取消',
+      errorOccurred: '发生错误',
+      sandboxSyncing: '正在同步文件到沙盒...',
+      sandboxConfiguring: '正在配置技能...',
+      sandboxReady: '沙盒就绪',
+      sandboxSyncFailed: '沙盒同步失败',
+      sandboxFallback: '正在回退到直接访问模式（安全性较低）',
+      taskCompleted: '任务完成',
+      requestFailed: '请求失败',
+      commandCancelled: '命令已取消：用户拒绝提供 sudo 密码。',
+    },
+  },
+  appMessages: {
+    en: {
+      defaultSession: 'Default Session',
+      newSession: 'New Session',
+      untitledSession: 'Untitled Session',
+      directoryNotFound: 'Directory does not exist',
+      chromeNotReady: 'Chrome is not ready',
+      channelNotFound: 'Channel not found',
+      channelTypeNotFound: 'Channel type not found',
+      requestBodyTooLarge: 'Request body too large',
+      internalServerError: 'Internal server error',
+      notFound: 'Not found',
+      sessionBuildTitlePrompt: 'What would you like to name this session?',
+      sessionBuildTitlePromptNew: 'Name your new session',
+      sessionBuildTitlePromptRename: 'What would you like to rename this session to?',
+      toolNoMountedWorkspace: 'No mounted workspace for this session',
+      toolInvalidOrUnauthorizedPath: 'Invalid or unauthorized path',
+      toolPathOutsideWorkspace: 'Path is outside the mounted workspace',
+      toolCommandFailed: 'Command failed',
+      toolFileNotFound: 'File not found',
+      toolStringNotFound: 'String not found in file',
+      toolEditFailed: 'Edit failed',
+      toolSearchFailed: 'Search failed',
+      toolGlobFailed: 'Glob failed',
+      toolGrepFailed: 'Grep failed',
+      toolUrlRequired: 'URL is required',
+      toolInvalidUrl: 'Invalid URL',
+      toolOnlyHttpsSupported: 'Only http/https URLs are supported',
+      toolRequestTimeout: 'Request timeout',
+      toolQueryRequired: 'Query is required',
+      apiKeyPlaceholder: 'sk-...',
+      apiKeyHint: 'API key for authentication',
+      baseUrlHint: 'API base URL',
+      taskDefaultTitle: 'Untitled Task',
+      yourAnswerNeeded: '🤔 **Your answer is needed**\n\n',
+      yourAuthorizationNeeded: '⚠️ **Your authorization is needed**\n\n',
+      toolParameters: 'Tool:',
+      replyToAuthorize: 'Reply "allow" or "y" to authorize',
+      replyToDeny: 'Reply "deny" or "n" to deny',
+      replyToAlways: 'Reply "always" to always allow this tool',
+      replyDirectly: '*(please reply directly with your answer)*',
+      replyWithOptionNumber: '*(please reply with option number, e.g. 1)*',
+      multipleSelectionAllowed: '*(multiple selection allowed, comma separated, e.g. 1,3)*',
+      skipToSkip: '*Reply to this message to answer, or send "skip" to skip the question*',
+      generateTitleRules:
+        'Generate a short title for the following user request. Rules:\n- Max 15 characters (Chinese) or 6 words (English)\n- Reply in the same language as the user request\n- No quotes, numbering, or punctuation at the end',
+      generateTitleFromPrompt:
+        'Generate a short conversation title based on the user request:\n- No more than 15 characters\n- Same language as the request\n- No quotes or numbering',
+    },
+    zh: {
+      defaultSession: '默认会话',
+      newSession: '新会话',
+      untitledSession: '无标题会话',
+      directoryNotFound: '目录不存在',
+      chromeNotReady: 'Chrome 未就绪',
+      channelNotFound: '未找到通道',
+      channelTypeNotFound: '未找到通道类型',
+      requestBodyTooLarge: '请求体过大',
+      internalServerError: '内部服务器错误',
+      notFound: '未找到',
+      sessionBuildTitlePrompt: '您想将此会话命名为什么？',
+      sessionBuildTitlePromptNew: '为新会话命名',
+      sessionBuildTitlePromptRename: '您想将此会话重命名为什么？',
+      toolNoMountedWorkspace: '此会话没有挂载工作区',
+      toolInvalidOrUnauthorizedPath: '无效或未授权的路径',
+      toolPathOutsideWorkspace: '路径超出挂载的工作区',
+      toolCommandFailed: '命令执行失败',
+      toolFileNotFound: '文件未找到',
+      toolStringNotFound: '文件中未找到字符串',
+      toolEditFailed: '编辑失败',
+      toolSearchFailed: '搜索失败',
+      toolGlobFailed: 'Glob 失败',
+      toolGrepFailed: 'Grep 失败',
+      toolUrlRequired: 'URL 是必需的',
+      toolInvalidUrl: '无效的 URL',
+      toolOnlyHttpsSupported: '只支持 http/https URL',
+      toolRequestTimeout: '请求超时',
+      toolQueryRequired: '查询是必需的',
+      apiKeyPlaceholder: 'sk-...',
+      apiKeyHint: '用于认证的 API 密钥',
+      baseUrlHint: 'API 基础 URL',
+      taskDefaultTitle: '无标题任务',
+      yourAnswerNeeded: '🤔 **需要您的回答**\n\n',
+      yourAuthorizationNeeded: '⚠️ **需要您的授权**\n\n',
+      toolParameters: '工具：',
+      replyToAuthorize: '回复 "allow" 或 "y" 以授权',
+      replyToDeny: '回复 "deny" 或 "n" 以拒绝',
+      replyToAlways: '回复 "always" 以始终允许此工具',
+      replyDirectly: '*(请直接回复您的答案)*',
+      replyWithOptionNumber: '*(请回复选项编号，例如 1)*',
+      multipleSelectionAllowed: '*(支持多选，用逗号分隔，例如 1,3)*',
+      skipToSkip: '*回复此消息以回答，或发送 "skip" 跳过问题*',
+      generateTitleRules:
+        '请根据以下用户请求生成一个简短的标题。规则：\n- 最长15个字符（中文）或6个单词（英文）\n- 使用与用户请求相同的语言回复\n- 不要加引号、编号或结尾标点',
+      generateTitleFromPrompt:
+        '根据用户请求生成一个简短的会话标题：\n- 不超过15个字符\n- 使用与请求相同的语言\n- 不要加引号或编号',
+    },
+  },
 };
 
 export const PROVIDER_PRESETS = API_PROVIDER_PRESETS;
@@ -730,7 +949,7 @@ export class ConfigStore {
 
       const normalizedSet = this.normalizeConfigSet(rawSet, {
         id: nextId,
-        name: toNonEmptyString(rawSet.name) || `方案 ${index + 1}`,
+        name: toNonEmptyString(rawSet.name) || `Config ${index + 1}`,
         provider: legacy.provider,
         customProtocol: legacy.customProtocol,
         activeProfileKey: legacy.activeProfileKey,
@@ -897,7 +1116,7 @@ export class ConfigStore {
   ): string {
     const trimmed = name.trim();
     if (!trimmed) {
-      throw new Error('Config set name is required');
+      throw createError(ERROR_CODES.CONFIG_SET_NAME_REQUIRED);
     }
 
     const usedNames = new Set(
@@ -1014,7 +1233,9 @@ export class ConfigStore {
   createSet(payload: CreateConfigSetPayload): AppConfig {
     const current = this.getAll();
     if (current.configSets.length >= MAX_CONFIG_SET_COUNT) {
-      throw new Error(`Config set limit reached: max ${MAX_CONFIG_SET_COUNT}`);
+      const err = createError(ERROR_CODES.CONFIG_SET_LIMIT_REACHED);
+      err.message = `Config set limit reached: max ${MAX_CONFIG_SET_COUNT}`;
+      throw err;
     }
 
     const id = this.generateConfigSetId(current.configSets);
@@ -1044,7 +1265,7 @@ export class ConfigStore {
         current.configSets[0];
 
       if (!source) {
-        throw new Error('Config set clone source not found');
+        throw createError(ERROR_CODES.CONFIG_SET_CLONE_SOURCE_NOT_FOUND);
       }
 
       const cloned = this.cloneConfigSet(source);
@@ -1068,7 +1289,7 @@ export class ConfigStore {
     const current = this.getAll();
     const target = current.configSets.find((set) => set.id === payload.id);
     if (!target) {
-      throw new Error('Config set not found');
+      throw createError(ERROR_CODES.CONFIG_SET_NOT_FOUND);
     }
 
     const nextName = this.buildUniqueConfigSetName(payload.name, current.configSets, payload.id);
@@ -1092,13 +1313,13 @@ export class ConfigStore {
     const current = this.getAll();
     const target = current.configSets.find((set) => set.id === payload.id);
     if (!target) {
-      throw new Error('Config set not found');
+      throw createError(ERROR_CODES.CONFIG_SET_NOT_FOUND);
     }
     if (target.isSystem) {
-      throw new Error('System config set cannot be deleted');
+      throw createError(ERROR_CODES.SYSTEM_CONFIG_SET_CANNOT_BE_DELETED);
     }
     if (current.configSets.length <= 1) {
-      throw new Error('At least one config set must be kept');
+      throw createError(ERROR_CODES.AT_LEAST_ONE_CONFIG_SET_MUST_BE_KEPT);
     }
 
     const nextSets = current.configSets
@@ -1117,7 +1338,7 @@ export class ConfigStore {
   switchSet(payload: { id: string }): AppConfig {
     const current = this.getAll();
     if (!current.configSets.some((set) => set.id === payload.id)) {
-      throw new Error('Config set not found');
+      throw createError(ERROR_CODES.CONFIG_SET_NOT_FOUND);
     }
 
     this.saveConfig(this.composeProjectedConfig(current, current.configSets, payload.id));
@@ -1528,3 +1749,172 @@ export class ConfigStore {
 
 // Singleton instance
 export const configStore = new ConfigStore();
+
+function detectLanguage(): 'en' | 'zh' {
+  try {
+    const locale =
+      Intl.DateTimeFormat().resolvedOptions().locale ||
+      (typeof navigator !== 'undefined' ? navigator.language : null) ||
+      'en';
+    if (locale.startsWith('zh')) return 'zh';
+  } catch {
+    // Intl not available
+  }
+  return 'en';
+}
+
+export function getAgentRunnerMessages(): AgentRunnerMessageStrings {
+  const stored = configStore.get('agentRunnerMessages');
+  const lang = detectLanguage();
+  if (stored?.en && stored?.zh) {
+    return stored[lang];
+  }
+  return defaultMessages[lang];
+}
+
+export function getAppMessages(): AppMessageStrings {
+  const stored = configStore.get('appMessages');
+  const lang = detectLanguage();
+  if (stored?.en && stored?.zh) {
+    return stored[lang];
+  }
+  return defaultAppMessages[lang];
+}
+
+const defaultAppMessages: AppMessages = {
+  en: {
+    defaultSession: 'Default Session',
+    newSession: 'New Session',
+    untitledSession: 'Untitled Session',
+    directoryNotFound: 'Directory does not exist',
+    chromeNotReady: 'Chrome is not ready',
+    channelNotFound: 'Channel not found',
+    channelTypeNotFound: 'Channel type not found',
+    requestBodyTooLarge: 'Request body too large',
+    internalServerError: 'Internal server error',
+    notFound: 'Not found',
+    sessionBuildTitlePrompt: 'What would you like to name this session?',
+    sessionBuildTitlePromptNew: 'Name your new session',
+    sessionBuildTitlePromptRename: 'What would you like to rename this session to?',
+    toolNoMountedWorkspace: 'No mounted workspace for this session',
+    toolInvalidOrUnauthorizedPath: 'Invalid or unauthorized path',
+    toolPathOutsideWorkspace: 'Path is outside the mounted workspace',
+    toolCommandFailed: 'Command failed',
+    toolFileNotFound: 'File not found',
+    toolStringNotFound: 'String not found in file',
+    toolEditFailed: 'Edit failed',
+    toolSearchFailed: 'Search failed',
+    toolGlobFailed: 'Glob failed',
+    toolGrepFailed: 'Grep failed',
+    toolUrlRequired: 'URL is required',
+    toolInvalidUrl: 'Invalid URL',
+    toolOnlyHttpsSupported: 'Only http/https URLs are supported',
+    toolRequestTimeout: 'Request timeout',
+    toolQueryRequired: 'Query is required',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyHint: 'API key for authentication',
+    baseUrlHint: 'API base URL',
+    taskDefaultTitle: 'Untitled Task',
+    yourAnswerNeeded: '🤔 **Your answer is needed**\n\n',
+    yourAuthorizationNeeded: '⚠️ **Your authorization is needed**\n\n',
+    toolParameters: 'Tool:',
+    replyToAuthorize: 'Reply "allow" or "y" to authorize',
+    replyToDeny: 'Reply "deny" or "n" to deny',
+    replyToAlways: 'Reply "always" to always allow this tool',
+    replyDirectly: '*(please reply directly with your answer)*',
+    replyWithOptionNumber: '*(please reply with option number, e.g. 1)*',
+    multipleSelectionAllowed: '*(multiple selection allowed, comma separated, e.g. 1,3)*',
+    skipToSkip: '*Reply to this message to answer, or send "skip" to skip the question*',
+    generateTitleRules:
+      'Generate a short title for the following user request. Rules:\n- Max 15 characters (Chinese) or 6 words (English)\n- Reply in the same language as the user request\n- No quotes, numbering, or punctuation at the end',
+    generateTitleFromPrompt:
+      'Generate a short conversation title based on the user request:\n- No more than 15 characters\n- Same language as the request\n- No quotes or numbering',
+  },
+  zh: {
+    defaultSession: '默认会话',
+    newSession: '新会话',
+    untitledSession: '无标题会话',
+    directoryNotFound: '目录不存在',
+    chromeNotReady: 'Chrome 未就绪',
+    channelNotFound: '未找到通道',
+    channelTypeNotFound: '未找到通道类型',
+    requestBodyTooLarge: '请求体过大',
+    internalServerError: '内部服务器错误',
+    notFound: '未找到',
+    sessionBuildTitlePrompt: '您想将此会话命名为什么？',
+    sessionBuildTitlePromptNew: '为新会话命名',
+    sessionBuildTitlePromptRename: '您想将此会话重命名为什么？',
+    toolNoMountedWorkspace: '此会话没有挂载工作区',
+    toolInvalidOrUnauthorizedPath: '无效或未授权的路径',
+    toolPathOutsideWorkspace: '路径超出挂载的工作区',
+    toolCommandFailed: '命令执行失败',
+    toolFileNotFound: '文件未找到',
+    toolStringNotFound: '文件中未找到字符串',
+    toolEditFailed: '编辑失败',
+    toolSearchFailed: '搜索失败',
+    toolGlobFailed: 'Glob 失败',
+    toolGrepFailed: 'Grep 失败',
+    toolUrlRequired: 'URL 是必需的',
+    toolInvalidUrl: '无效的 URL',
+    toolOnlyHttpsSupported: '只支持 http/https URL',
+    toolRequestTimeout: '请求超时',
+    toolQueryRequired: '查询是必需的',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyHint: '用于认证的 API 密钥',
+    baseUrlHint: 'API 基础 URL',
+    taskDefaultTitle: '无标题任务',
+    yourAnswerNeeded: '🤔 **需要您的回答**\n\n',
+    yourAuthorizationNeeded: '⚠️ **需要您的授权**\n\n',
+    toolParameters: '工具：',
+    replyToAuthorize: '回复 "allow" 或 "y" 以授权',
+    replyToDeny: '回复 "deny" 或 "n" 以拒绝',
+    replyToAlways: '回复 "always" 以始终允许此工具',
+    replyDirectly: '*(请直接回复您的答案)*',
+    replyWithOptionNumber: '*(请回复选项编号，例如 1)*',
+    multipleSelectionAllowed: '*(支持多选，用逗号分隔，例如 1,3)*',
+    skipToSkip: '*回复此消息以回答，或发送 "skip" 跳过问题*',
+    generateTitleRules:
+      '请根据以下用户请求生成一个简短的标题。规则：\n- 最长15个字符（中文）或6个单词（英文）\n- 使用与用户请求相同的语言回复\n- 不要加引号、编号或结尾标点',
+    generateTitleFromPrompt:
+      '根据用户请求生成一个简短的会话标题：\n- 不超过15个字符\n- 使用与请求相同的语言\n- 不要加引号或编号',
+  },
+};
+
+const defaultMessages: AgentRunnerMessages = {
+  en: {
+    processingRequest: 'Processing request...',
+    waitingForModel: 'Waiting for model to load into memory...',
+    contextCompaction: 'Compacting context ({{reason}})...',
+    requestTimedOut: 'Request timed out',
+    cancelled: 'Cancelled',
+    errorOccurred: 'Error occurred',
+    sandboxSyncing: 'Syncing files to sandbox...',
+    sandboxConfiguring: 'Configuring skills...',
+    sandboxReady: 'Sandbox ready',
+    sandboxSyncFailed: 'Sandbox sync failed',
+    sandboxFallback: 'Falling back to direct access mode (less secure)',
+    taskCompleted: 'Task completed',
+    requestFailed: 'Request failed',
+    commandCancelled: 'Command cancelled: user denied sudo password.',
+  },
+  zh: {
+    processingRequest: '正在处理请求...',
+    waitingForModel: '正在加载模型到内存...',
+    contextCompaction: '正在压缩上下文 ({{reason}})...',
+    requestTimedOut: '请求超时',
+    cancelled: '已取消',
+    errorOccurred: '发生错误',
+    sandboxSyncing: '正在同步文件到沙盒...',
+    sandboxConfiguring: '正在配置技能...',
+    sandboxReady: '沙盒就绪',
+    sandboxSyncFailed: '沙盒同步失败',
+    sandboxFallback: '正在回退到直接访问模式（安全性较低）',
+    taskCompleted: '任务完成',
+    requestFailed: '请求失败',
+    commandCancelled: '命令已取消：用户拒绝提供 sudo 密码。',
+  },
+};
+
+export function setGetCurrentLanguageFn(fn: () => 'en' | 'zh'): void {
+  setErrorLanguageFn(fn);
+}

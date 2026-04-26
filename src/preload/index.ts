@@ -112,6 +112,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Platform info
   platform: process.platform,
 
+  // App language
+  setLanguage: (lang: string) => ipcRenderer.invoke('app.setLanguage', lang),
+  getLanguage: () => ipcRenderer.invoke('app.getLanguage'),
+
   // System theme
   getSystemTheme: () => ipcRenderer.invoke('system.getTheme'),
 
@@ -412,6 +416,8 @@ declare global {
       on: (callback: (event: ServerEvent) => void) => () => void;
       invoke: <T>(event: ClientEvent) => Promise<T>;
       platform: NodeJS.Platform;
+      setLanguage: (lang: string) => Promise<boolean>;
+      getLanguage: () => Promise<string>;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;
       getVersion: () => Promise<string>;
       openExternal: (url: string) => Promise<boolean>;

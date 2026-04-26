@@ -6,8 +6,26 @@ export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const [, setTick] = useState(0);
   const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
   const [appVer, setAppVer] = useState('');
+
+  useEffect(() => {
+    const handleLanguageChange = () => {
+      setTick((t) => t + 1);
+      // Notify main process of language change
+      window.electronAPI?.setLanguage?.(i18n.language);
+    };
+    i18n.on('languageChanged', handleLanguageChange);
+
+    // Set initial language
+    window.electronAPI?.setLanguage?.(i18n.language);
+
+    return () => {
+      i18n.off('languageChanged', handleLanguageChange);
+    };
+  }, [i18n]);
+
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -19,8 +37,8 @@ export function SettingsGeneral() {
   }, []);
 
   const languages = [
-    { code: 'en', nativeName: 'English' },
-    { code: 'zh', nativeName: '中文' },
+    { code: 'en', nativeName: t('language.english') },
+    { code: 'zh', nativeName: t('language.chinese') },
   ];
 
   const themeOptions = [

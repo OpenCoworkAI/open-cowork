@@ -14,6 +14,7 @@ import { PathResolver } from '../sandbox/path-resolver';
 import type { ToolResult, ExecutionContext, MountedPath } from '../../renderer/types';
 import { isUncPath } from '../../shared/local-file-path';
 import { isPathWithinRoot } from './path-containment';
+import { getAppMessages } from '../config/config-store';
 
 /**
  * SandboxToolExecutor - Executes tools through the sandbox
@@ -31,9 +32,10 @@ export class SandboxToolExecutor {
    * Resolve a user-provided path to a real path within the mounted workspace.
    */
   private resolveWorkspacePath(sessionId: string, inputPath: string): string {
+    const msgs = getAppMessages();
     const mounts = this.pathResolver.getMounts(sessionId);
     if (!mounts.length) {
-      throw new Error('No mounted workspace for this session');
+      throw new Error(msgs.toolNoMountedWorkspace);
     }
 
     const primaryMount = mounts[0];
@@ -44,7 +46,7 @@ export class SandboxToolExecutor {
     if (trimmed.startsWith('/')) {
       const resolved = this.pathResolver.resolve(sessionId, trimmed);
       if (!resolved) {
-        throw new Error('Invalid or unauthorized path');
+        throw new Error(msgs.toolInvalidOrUnauthorizedPath);
       }
       return this.assertInsideMount(resolved, mounts);
     }
@@ -86,7 +88,7 @@ export class SandboxToolExecutor {
     });
 
     if (!allowed) {
-      throw new Error('Path is outside the mounted workspace');
+      throw new Error(getAppMessages().toolPathOutsideWorkspace);
     }
 
     return realPath;
@@ -316,7 +318,7 @@ export class SandboxToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw new Error('Request timeout. Please check your network connection and try again.');
       }
       throw error;
     }
@@ -363,7 +365,7 @@ export class SandboxToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw new Error('Request timeout. Please check your network connection and try again.');
       }
       throw error;
     }
