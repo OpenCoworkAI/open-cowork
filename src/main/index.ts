@@ -104,7 +104,7 @@ if (configStore.isConfigured()) {
 }
 
 // Initialize language detection for error messages
-setGetCurrentLanguageFn(() => detectLanguage());
+setGetCurrentLanguageFn(() => currentLanguage);
 
 function detectLanguage(): 'en' | 'zh' {
   try {

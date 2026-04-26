@@ -1,7 +1,7 @@
 const SCHEDULE_TITLE_PREFIX = '[Scheduled Task]';
 const EMPTY_TITLE_FALLBACK = 'Untitled Task';
 const DEFAULT_SUMMARY_MAX_LENGTH = 48;
-const PREFIX_PATTERN = /^\s*\[Scheduled Task\]\s*/;
+const PREFIX_PATTERN = /^\s*\[(?:Scheduled Task|定时任务)\]\s*/;
 
 function normalizeTitlePart(value: string): string {
   return value

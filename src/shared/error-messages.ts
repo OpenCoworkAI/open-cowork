@@ -156,7 +156,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, ErrorMessage> = {
   REQUEST_TIMEOUT: {
     code: ERROR_CODES.REQUEST_TIMEOUT,
     messageEn: 'Request timeout. Please check your network connection and try again.',
-    messageZh: '请��超时。请检查网络连接后重试。',
+    messageZh: '请求超时。请检查网络连接后重试。',
   },
   NETWORK_ERROR: {
     code: ERROR_CODES.NETWORK_ERROR,
