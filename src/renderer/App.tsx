@@ -100,11 +100,8 @@ function App() {
     const effectiveTheme =
       settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
 
-    if (effectiveTheme === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
+    document.documentElement.classList.toggle('dark', effectiveTheme === 'dark');
+    document.documentElement.classList.toggle('light', effectiveTheme === 'light');
   }, [settings.theme, systemDarkMode]);
 
   // Auto-collapse panels based on window width
