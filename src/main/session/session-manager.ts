@@ -39,6 +39,7 @@ import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
+import { forgetSessionPermissions } from '../config/permission-rules-store';
 import {
   log,
   logError,
@@ -137,6 +138,12 @@ export class SessionManager {
         saveMessage: (message: Message) => this.saveMessage(message),
         requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
           this.requestSudoPassword(sessionId, toolUseId, command),
+        requestPermission: (
+          sessionId: string,
+          toolUseId: string,
+          toolName: string,
+          input: Record<string, unknown>
+        ) => this.requestPermission(sessionId, toolUseId, toolName, input),
       },
       this.pathResolver,
       this.mcpManager,
@@ -972,6 +979,7 @@ export class SessionManager {
         session: existingSession,
       });
     }
+    forgetSessionPermissions(sessionId);
 
     log('[SessionManager] Session deleted:', sessionId);
   }
@@ -999,6 +1007,7 @@ export class SessionManager {
         this.messageCache.delete(sessionId);
         this.sessionTitleAttempts.delete(sessionId);
         this.titleGenerationTokens.delete(sessionId);
+        forgetSessionPermissions(sessionId);
       }
     })();
 
