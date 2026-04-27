@@ -75,7 +75,7 @@ Key docs: `CLAUDE.md`, `README.md`
 
 ---
 
-_Open Cowork Bot_
+*Open Cowork Bot*
 ```
 
 ## Post to GitHub (MANDATORY)
