@@ -83,6 +83,8 @@ progress.md
 task_plan.md
 findings.md
 mcp_server.log
+adaptations/
+.index/
 
 # Development log
 DEV_LOG.md

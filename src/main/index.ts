@@ -31,6 +31,7 @@ import {
 } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
+import { setPermissionRules } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
@@ -45,6 +46,7 @@ import type {
   ApiTestResult,
   DiagnosticInput,
   ProviderModelInfo,
+  PermissionRule,
 } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
@@ -2662,6 +2664,12 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
             config: configStore.getAll(),
           },
         });
+      }
+
+      if (Array.isArray((event.payload as { permissionRules?: unknown }).permissionRules)) {
+        setPermissionRules(
+          (event.payload as { permissionRules: PermissionRule[] }).permissionRules
+        );
       }
       return null;
 

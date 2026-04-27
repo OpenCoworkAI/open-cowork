@@ -15,13 +15,30 @@ import i18n from '../i18n/config';
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
+// Module-level singleton guard so only the FIRST useIPC() caller installs the
+// server-event listener. Other callers (PermissionDialog, Sidebar, ChatView,
+// etc.) still get the callback API but must NOT re-register the listener —
+// the preload's `on()` is a "single-slot" bridge and re-registering (or
+// unmounting a subsequent useIPC caller) tears down the single shared
+// listener, silently dropping subsequent events from main.
+let ipcListenerInstalled = false;
+
 export function useIPC() {
-  // Handle incoming server events - only setup once
+  // Handle incoming server events - only setup once across all useIPC() callers.
+  // See module-level `ipcListenerInstalled` guard above for the full reason.
   useEffect(() => {
     if (!isElectron) {
       console.log('[useIPC] Not in Electron, skipping IPC setup');
       return;
     }
+
+    if (ipcListenerInstalled) {
+      // A previous useIPC() caller already installed the shared listener.
+      // Do nothing here — and crucially return no cleanup, so unmounting
+      // this component does NOT tear down the shared listener.
+      return;
+    }
+    ipcListenerInstalled = true;
 
     console.log('[useIPC] Setting up IPC listener (once)');
 
@@ -326,6 +343,23 @@ export function useIPC() {
         const store = useAppStore.getState();
         store.setSystemDarkMode(Boolean(systemTheme?.shouldUseDarkColors));
         applyConfigSnapshot(config, Boolean(isConfigured));
+
+        // Hydrate main-process permission rules from the renderer's (possibly
+        // persisted) settings so the agent has them before the first tool call.
+        // Re-read the store after applyConfigSnapshot so we send the latest
+        // persisted rules, not a stale pre-hydration snapshot.
+        try {
+          const latest = useAppStore.getState();
+          window.electronAPI.send({
+            type: 'settings.update',
+            payload: { permissionRules: latest.settings.permissionRules } as Record<
+              string,
+              unknown
+            >,
+          });
+        } catch (syncErr) {
+          console.warn('[useIPC] Failed to sync permissionRules to main:', syncErr);
+        }
       } catch (error) {
         console.error('[useIPC] Failed to bootstrap config/theme state:', error);
       }
@@ -349,6 +383,10 @@ export function useIPC() {
         flushTraces();
       }
       cleanup?.();
+      // Reset guard so a subsequent mount (e.g., React Strict Mode double-
+      // invoke in dev) re-installs the listener instead of silently running
+      // with a torn-down bridge.
+      ipcListenerInstalled = false;
     };
   }, []); // Empty deps - setup listener only once!
 
