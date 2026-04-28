@@ -6,7 +6,7 @@ export type SharedProviderType =
   | 'gemini'
   | 'ollama';
 
-export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
+export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'openai-responses' | 'gemini';
 
 export interface SharedProviderPreset {
   name: string;

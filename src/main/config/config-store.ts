@@ -35,7 +35,7 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
  * Application configuration schema
  */
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
-export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
+export type CustomProtocolType = 'anthropic' | 'openai' | 'openai-responses' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
   | 'openrouter'
@@ -293,7 +293,12 @@ function isProviderType(value: unknown): value is ProviderType {
 }
 
 function isCustomProtocol(value: unknown): value is CustomProtocolType {
-  return value === 'anthropic' || value === 'openai' || value === 'gemini';
+  return (
+    value === 'anthropic' ||
+    value === 'openai' ||
+    value === 'openai-responses' ||
+    value === 'gemini'
+  );
 }
 
 function isProfileKey(value: unknown): value is ProviderProfileKey {
@@ -311,7 +316,10 @@ function profileKeyFromProvider(
   if (provider !== 'custom') {
     return provider;
   }
-  if (customProtocol === 'openai') {
+  if (customProtocol === 'openai' || customProtocol === 'openai-responses') {
+    // openai-responses shares the profile slot with openai (same baseUrl/key,
+    // different request shape). Avoids forcing the user to re-enter creds when
+    // toggling between the two protocols on the same relay.
     return 'custom:openai';
   }
   if (customProtocol === 'gemini') {
