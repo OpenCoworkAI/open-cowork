@@ -381,6 +381,15 @@ function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined 
     output_tokens?: unknown;
     inputTokens?: unknown;
     outputTokens?: unknown;
+    // Cache fields — provider-dependent names:
+    //   Anthropic: cache_read_input_tokens / cache_creation_input_tokens
+    //   OpenAI Responses: prompt_tokens_details.cached_tokens
+    //   pi-ai-core normalized: cacheRead / cacheWrite
+    cacheRead?: unknown;
+    cacheWrite?: unknown;
+    cache_read_input_tokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown };
   };
 
   const input = raw.input ?? raw.input_tokens ?? raw.inputTokens;
@@ -390,7 +399,23 @@ function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined 
     return undefined;
   }
 
-  return { input, output };
+  const cacheReadCandidate =
+    raw.cacheRead ??
+    raw.cache_read_input_tokens ??
+    (typeof raw.prompt_tokens_details === 'object' && raw.prompt_tokens_details
+      ? raw.prompt_tokens_details.cached_tokens
+      : undefined);
+  const cacheWriteCandidate = raw.cacheWrite ?? raw.cache_creation_input_tokens;
+
+  const cacheRead = typeof cacheReadCandidate === 'number' ? cacheReadCandidate : undefined;
+  const cacheWrite = typeof cacheWriteCandidate === 'number' ? cacheWriteCandidate : undefined;
+
+  return {
+    input,
+    output,
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+  };
 }
 
 interface AgentRunnerOptions {
