@@ -1257,8 +1257,39 @@ ${hints.join('\n')}
 
       const hasImages =
         lastUserMessage?.content.some((c) => (c as { type?: string }).type === 'image') || false;
+      // Extract image blocks from current user message and convert frontend shape
+      // ({type:'image', source:{type:'base64', media_type, data}}) → pi-coding-agent shape
+      // ({type:'image', mimeType, data}). Stored separately and passed to prompt() so
+      // pi can route them as vision input alongside the text.
+      const currentTurnImages: Array<{ type: 'image'; mimeType: string; data: string }> = [];
+      if (lastUserMessage) {
+        for (const block of lastUserMessage.content) {
+          const b = block as {
+            type?: string;
+            source?: { type?: string; media_type?: string; data?: string };
+            mimeType?: string;
+            data?: string;
+          };
+          if (b.type !== 'image') continue;
+          let mimeType: string | undefined;
+          let data: string | undefined;
+          if (b.source && typeof b.source === 'object') {
+            mimeType = b.source.media_type;
+            data = b.source.data;
+          }
+          if (!mimeType && typeof b.mimeType === 'string') mimeType = b.mimeType;
+          if (!data && typeof b.data === 'string') data = b.data;
+          if (mimeType && data) {
+            currentTurnImages.push({ type: 'image', mimeType, data });
+          }
+        }
+      }
       if (hasImages) {
-        log('[ClaudeAgentRunner] User message contains images');
+        log(
+          '[ClaudeAgentRunner] User message contains images:',
+          currentTurnImages.length,
+          'extracted'
+        );
       }
 
       logTiming('before pi-ai model resolution', runStartTime);
@@ -2401,7 +2432,10 @@ Tool routing:
             })
           );
         }
-        const promptResult = await piSession.prompt(contextualPrompt);
+        const promptResult =
+          currentTurnImages.length > 0
+            ? await piSession.prompt(contextualPrompt, { images: currentTurnImages })
+            : await piSession.prompt(contextualPrompt);
         log(
           '[ClaudeAgentRunner] prompt() returned:',
           JSON.stringify(promptResult ?? 'void').substring(0, 1000)
