@@ -66,6 +66,11 @@ import {
   normalizeToolExecutionResultForUi,
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
+import {
+  scanSkillFrontmatter,
+  buildSkillListing,
+  buildSkillTool,
+} from '../skills/skill-progressive-loader';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -409,6 +414,8 @@ interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   ollamaNumCtx?: { value: number };
+  /** Names of skills whose SKILL.md body was loaded into chat history this session. */
+  loadedSkills?: Set<string>;
 }
 
 /**
@@ -1745,6 +1752,27 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
             ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
             : '';
 
+      // Skill loading — progressive disclosure (Claude Code-style):
+      //   - Scan SKILL.md frontmatter only (name + description, ≤250 chars each)
+      //   - Append a compact <available_skills> listing to the system prompt
+      //   - Expose a "Skill" function tool that loads SKILL.md body on demand
+      //   - Pass [] to DefaultResourceLoader's additionalSkillPaths so it does NOT
+      //     embed full SKILL.md bodies in the system prompt (≈9k input tokens/turn
+      //     for 5 bundled skills, repeated every turn).
+      const skillPaths = this._skillsAdapter
+        ? this._skillsAdapter.getSkillPaths()
+        : this.legacySkillPaths();
+      log('[ClaudeAgentRunner] Skill paths (scanning frontmatter only):', skillPaths);
+      // Tag bundled vs user — bundled skills get budget priority in buildSkillListing.
+      const builtinPath = this.getBuiltinSkillsPath();
+      const skillEntries = scanSkillFrontmatter(
+        skillPaths.map((p) => ({ rootDir: p, bundled: !builtinPath || p === builtinPath }))
+      );
+      const skillListing = buildSkillListing(skillEntries, piModel.contextWindow || 128_000);
+      log(
+        `[ClaudeAgentRunner] Discovered ${skillEntries.length} skills, listing ${skillListing.length} chars`
+      );
+
       const coworkAppendPrompt = [
         'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
         `CRITICAL BEHAVIORAL RULES:
@@ -1752,7 +1780,11 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
 2. When a request is actionable, proceed immediately with reasonable assumptions. If you need clarification, ask briefly in plain text.
 3. For relative time windows like "within two days" in browsing or research tasks, assume the most recent two relevant publication days unless the user explicitly defines another date range.
 4. For bracketed placeholders like [Agent], [Topic], etc., treat the word inside brackets as the literal search keyword unless the user says otherwise.
-5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.`,
+5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.
+6. SKILLS — eager load policy:
+   a. When the user asks "do you have skill X / can you use X / is X available", consult the <available_skills> block below and answer based on its contents. Never list a hardcoded subset or hallucinate skills.
+   b. If skill X is in the listing AND the user has shown ANY intent (asked about it, mentioned its name, or implied a task in its domain), IMMEDIATELY call the Skill tool to load X's full instructions in the same turn — do NOT say "I can load it if you want" and stop. Loading is cheap and the user shouldn't have to confirm twice.
+   c. After loading, give a brief confirmation in the SAME reply (e.g. "Loaded the xlsx skill — what would you like to do?") then act on the user's request.`,
         workspaceInfoPrompt,
         `<citation_requirements>
 If your answer uses linkable content from MCP tools, include a "Sources:" section and otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL).
@@ -1763,6 +1795,7 @@ Tool routing:
 - Use WebSearch/WebFetch only when Chrome MCP is unavailable or the user explicitly asks for generic web search.
 </tool_behavior>`,
         this.getBundledPathHints(),
+        skillListing,
       ]
         .filter((section): section is string => Boolean(section && section.trim()))
         .join('\n\n');
@@ -1771,14 +1804,6 @@ Tool routing:
 
       // Create or reuse pi-coding-agent session
 
-      // Collect skill directories for pi's native skill discovery.
-      // SkillsAdapter handles path resolution, disabled skill filtering,
-      // and compatibility with Claude Code / OpenClaw ecosystems.
-      const skillPaths = this._skillsAdapter
-        ? this._skillsAdapter.getSkillPaths()
-        : this.legacySkillPaths();
-      log('[ClaudeAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
-
       // Bridge MCP tools as customTools for pi-coding-agent.
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
@@ -1786,6 +1811,20 @@ Tool routing:
         log(
           `[ClaudeAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`,
           mcpCustomTools.map((t) => t.name).join(', ')
+        );
+      }
+
+      // Skill tool — progressive disclosure (load SKILL.md body on demand).
+      // Re-use the loadedSkills Set across cached session reuse so we keep track of
+      // what was already loaded into chat history (the SDK retains the messages,
+      // we just remember which names we've returned bodies for).
+      const cachedForSkills = this.piSessions.get(session.id);
+      const sessionLoadedSkills =
+        cachedForSkills?.loadedSkills ?? new Set<string>();
+      if (skillEntries.length > 0) {
+        mcpCustomTools.push(buildSkillTool(skillEntries, sessionLoadedSkills));
+        log(
+          `[ClaudeAgentRunner] Skill tool injected (progressive disclosure, ${skillEntries.length} skills available)`
         );
       }
 
@@ -1857,9 +1896,13 @@ Tool routing:
         // First query in this session — create new pi-coding-agent session
         // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
         const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
+        // additionalSkillPaths: [] — we handle skills via progressive disclosure
+        // (frontmatter listing + on-demand Skill tool). Passing skillPaths here would
+        // make DefaultResourceLoader inject every SKILL.md body into the system
+        // prompt every turn, which is the cost-bug we are fixing.
         const resourceLoader = new DefaultResourceLoader({
           cwd: effectiveCwd,
-          additionalSkillPaths: skillPaths,
+          additionalSkillPaths: [],
           appendSystemPrompt: coworkAppendPrompt,
         });
         await resourceLoader.reload();
@@ -1934,6 +1977,7 @@ Tool routing:
           modelId: piModel.id,
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
+          loadedSkills: sessionLoadedSkills,
         });
 
         // Ollama: wrap _onPayload to inject num_ctx into every request
