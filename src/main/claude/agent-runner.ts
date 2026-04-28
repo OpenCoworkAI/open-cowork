@@ -515,6 +515,13 @@ ${hints.join('\n')}
     if (builtin && fs.existsSync(builtin)) paths.push(builtin);
     const global = this.getConfiguredGlobalSkillsDir();
     if (global && fs.existsSync(global)) paths.push(global);
+    // Claude Code convention: auto-discover user-level skills under ~/.claude/skills
+    // so skills installed via `claude plugin` / `~/.claude/plugins/*` are picked up
+    // without requiring the user to set globalSkillsDir explicitly.
+    const homeClaudeSkills = path.join(os.homedir(), '.claude', 'skills');
+    if (fs.existsSync(homeClaudeSkills) && !paths.includes(homeClaudeSkills)) {
+      paths.push(homeClaudeSkills);
+    }
     return paths;
   }
 
