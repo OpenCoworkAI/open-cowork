@@ -1407,68 +1407,96 @@ ${hints.join('\n')}
         // Set flag at start to prevent re-entrant calls from concurrent queries
         this._skillsSetupDone = true;
 
-        // Ensure app Claude config directory exists
-        if (!fs.existsSync(userClaudeDir)) {
-          fs.mkdirSync(userClaudeDir, { recursive: true });
-        }
+        // Skills setup is best-effort: a fresh-install machine (Windows especially) can
+        // hit ENOENT/EPERM during mkdir/symlink races, and a single broken skill should
+        // never block the chat from starting. Wrap the whole block plus per-skill ops.
+        try {
+          // Ensure app Claude config directory exists
+          if (!fs.existsSync(userClaudeDir)) {
+            fs.mkdirSync(userClaudeDir, { recursive: true });
+          }
 
-        // Ensure app Claude skills directory exists
-        const appSkillsDir = this.getRuntimeSkillsDir();
-        if (!fs.existsSync(appSkillsDir)) {
-          fs.mkdirSync(appSkillsDir, { recursive: true });
-        }
+          // Ensure app Claude skills directory exists
+          const appSkillsDir = this.getRuntimeSkillsDir();
+          if (!fs.existsSync(appSkillsDir)) {
+            fs.mkdirSync(appSkillsDir, { recursive: true });
+          }
 
-        // Copy built-in skills to app Claude skills directory if they don't exist
-        const builtinSkillsPath = this.getBuiltinSkillsPath();
-        if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
-          // Symlinks into .asar archives don't work at the OS level (ENOTDIR),
-          // so always copy when the source is inside an asar archive.
-          // Use regex to match .asar/ but NOT .asar.unpacked/ (which is a real directory).
-          const sourceInsideAsar = /\.asar[/\\]/.test(builtinSkillsPath);
-          const builtinSkills = fs.readdirSync(builtinSkillsPath);
-          for (const skillName of builtinSkills) {
-            const builtinSkillPath = path.join(builtinSkillsPath, skillName);
-            const userSkillPath = path.join(appSkillsDir, skillName);
+          // Copy built-in skills to app Claude skills directory if they don't exist
+          const builtinSkillsPath = this.getBuiltinSkillsPath();
+          if (builtinSkillsPath && fs.existsSync(builtinSkillsPath)) {
+            // Symlinks into .asar archives don't work at the OS level (ENOTDIR),
+            // so always copy when the source is inside an asar archive.
+            // Use regex to match .asar/ but NOT .asar.unpacked/ (which is a real directory).
+            const sourceInsideAsar = /\.asar[/\\]/.test(builtinSkillsPath);
+            const builtinSkills = fs.readdirSync(builtinSkillsPath);
+            for (const skillName of builtinSkills) {
+              try {
+                const builtinSkillPath = path.join(builtinSkillsPath, skillName);
+                const userSkillPath = path.join(appSkillsDir, skillName);
 
-            // Clean up broken symlinks pointing into .asar from previous versions
-            try {
-              const lstat = fs.lstatSync(userSkillPath);
-              if (lstat.isSymbolicLink()) {
-                const linkTarget = fs.readlinkSync(userSkillPath);
-                if (/\.asar[/\\]/.test(linkTarget)) {
-                  fs.unlinkSync(userSkillPath);
-                  log(`[ClaudeAgentRunner] Removed broken asar symlink: ${userSkillPath}`);
-                }
-              }
-            } catch {
-              // Path doesn't exist — fine, we'll create it below
-            }
-
-            // Only set up if it's a directory and doesn't exist in app directory
-            if (fs.statSync(builtinSkillPath).isDirectory() && !fs.existsSync(userSkillPath)) {
-              if (sourceInsideAsar) {
-                // Source is inside .asar — must copy (symlinks to asar paths fail at OS level)
-                this.copyDirectorySync(builtinSkillPath, userSkillPath);
-                log(`[ClaudeAgentRunner] Copied built-in skill from asar: ${skillName}`);
-              } else {
-                // Source is a real directory — symlink for space efficiency
+                // Clean up broken symlinks pointing into .asar from previous versions
                 try {
-                  fs.symlinkSync(builtinSkillPath, userSkillPath, 'dir');
-                  log(`[ClaudeAgentRunner] Linked built-in skill: ${skillName}`);
-                } catch (err) {
-                  logWarn(
-                    `[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`,
-                    err
-                  );
-                  this.copyDirectorySync(builtinSkillPath, userSkillPath);
+                  const lstat = fs.lstatSync(userSkillPath);
+                  if (lstat.isSymbolicLink()) {
+                    const linkTarget = fs.readlinkSync(userSkillPath);
+                    if (/\.asar[/\\]/.test(linkTarget)) {
+                      fs.unlinkSync(userSkillPath);
+                      log(`[ClaudeAgentRunner] Removed broken asar symlink: ${userSkillPath}`);
+                    }
+                  }
+                } catch {
+                  // Path doesn't exist — fine, we'll create it below
                 }
+
+                // Only set up if it's a directory and doesn't exist in app directory
+                if (
+                  fs.statSync(builtinSkillPath).isDirectory() &&
+                  !fs.existsSync(userSkillPath)
+                ) {
+                  // Defensive parent ensure — Windows fresh-install races on mkdir
+                  const parent = path.dirname(userSkillPath);
+                  if (!fs.existsSync(parent)) {
+                    fs.mkdirSync(parent, { recursive: true });
+                  }
+                  if (sourceInsideAsar) {
+                    // Source is inside .asar — must copy (symlinks to asar paths fail at OS level)
+                    this.copyDirectorySync(builtinSkillPath, userSkillPath);
+                    log(`[ClaudeAgentRunner] Copied built-in skill from asar: ${skillName}`);
+                  } else {
+                    // Source is a real directory — symlink for space efficiency
+                    try {
+                      fs.symlinkSync(builtinSkillPath, userSkillPath, 'dir');
+                      log(`[ClaudeAgentRunner] Linked built-in skill: ${skillName}`);
+                    } catch (err) {
+                      logWarn(
+                        `[ClaudeAgentRunner] Failed to symlink ${skillName}, copying instead:`,
+                        err
+                      );
+                      this.copyDirectorySync(builtinSkillPath, userSkillPath);
+                    }
+                  }
+                }
+              } catch (skillErr) {
+                logWarn(`[ClaudeAgentRunner] Failed to set up skill "${skillName}":`, skillErr);
               }
             }
           }
-        }
 
-        this.syncUserSkillsToAppDir(appSkillsDir);
-        this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
+          try {
+            this.syncUserSkillsToAppDir(appSkillsDir);
+          } catch (e) {
+            logWarn('[ClaudeAgentRunner] syncUserSkillsToAppDir failed:', e);
+          }
+          try {
+            this.syncConfiguredSkillsToRuntimeDir(appSkillsDir);
+          } catch (e) {
+            logWarn('[ClaudeAgentRunner] syncConfiguredSkillsToRuntimeDir failed:', e);
+          }
+        } catch (setupErr) {
+          // Skills setup global failure — log and continue. Chat still works without skills.
+          logWarn('[ClaudeAgentRunner] Skills setup failed (non-fatal):', setupErr);
+        }
       }
 
       // Build available skills section dynamically — now handled by pi's DefaultResourceLoader
