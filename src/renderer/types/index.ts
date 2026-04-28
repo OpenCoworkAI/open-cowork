@@ -92,6 +92,10 @@ export interface ThinkingContent {
 export interface TokenUsage {
   input: number;
   output: number;
+  /** Tokens served from prompt cache on this turn (subset of effective input). */
+  cacheRead?: number;
+  /** Tokens written to prompt cache on this turn (charged at cache-write rate). */
+  cacheWrite?: number;
 }
 
 // Trace types for visualization
