@@ -41,7 +41,11 @@ export interface SyntheticPiModelFallback {
 
 export function resolvePiRouteProtocol(provider?: string, customProtocol?: string): string {
   if (provider === 'custom') {
-    if (customProtocol === 'openai' || customProtocol === 'gemini') {
+    if (
+      customProtocol === 'openai' ||
+      customProtocol === 'openai-responses' ||
+      customProtocol === 'gemini'
+    ) {
       return customProtocol;
     }
     return 'anthropic';
@@ -76,6 +80,8 @@ export function inferPiApi(protocol: string): string {
     case 'gemini':
     case 'google':
       return 'google-generative-ai';
+    case 'openai-responses':
+      return 'openai-responses';
     case 'openai':
     default:
       return 'openai-completions';
@@ -267,9 +273,25 @@ export function applyPiModelRuntimeOverrides(
   }
 
   const effectiveProvider = options.rawProvider || options.configProvider;
-  if (options.customBaseUrl && isCustomProvider && nextModel.api === 'openai-responses') {
-    // Most custom OpenAI-compatible relays only implement chat/completions.
+  if (
+    options.customBaseUrl &&
+    isCustomProvider &&
+    nextModel.api === 'openai-responses' &&
+    options.customProtocol !== 'openai-responses'
+  ) {
+    // Most custom OpenAI-compatible relays only implement chat/completions, so
+    // downgrade by default. Skip the downgrade when the user has explicitly
+    // chosen 'openai-responses' as the customProtocol — that's an opt-in signal
+    // that their relay implements the Responses API.
     nextModel = { ...nextModel, api: 'openai-completions' } as typeof nextModel;
+  }
+  if (
+    isCustomProvider &&
+    options.customProtocol === 'openai-responses' &&
+    nextModel.api !== 'openai-responses'
+  ) {
+    // User explicitly opted in to Responses API for this custom relay.
+    nextModel = { ...nextModel, api: 'openai-responses' } as typeof nextModel;
   }
   if (effectiveProvider === 'openrouter' && nextModel.api !== 'openai-completions') {
     nextModel = { ...nextModel, api: 'openai-completions' } as typeof nextModel;
