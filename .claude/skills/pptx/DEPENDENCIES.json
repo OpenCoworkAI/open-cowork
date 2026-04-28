@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "pythonPackages": ["defusedxml", "markitdown[pptx]", "pillow", "python-pptx"],
+  "optionalNodePackages": ["playwright", "pptxgenjs", "react", "react-dom", "react-icons"],
+  "optionalSystemPackages": ["libreoffice", "poppler-utils"]
+}

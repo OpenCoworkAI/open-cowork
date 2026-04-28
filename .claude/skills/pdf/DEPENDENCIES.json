@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "pythonPackages": ["pdf2image", "pdfplumber", "pillow", "pypdf", "reportlab"],
+  "optionalSystemPackages": ["poppler-utils", "qpdf", "tesseract-ocr"]
+}

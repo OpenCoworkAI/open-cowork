@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "pythonPackages": ["defusedxml", "lxml"],
+  "optionalNodePackages": ["docx"],
+  "optionalSystemPackages": ["pandoc", "libreoffice", "poppler-utils"]
+}
