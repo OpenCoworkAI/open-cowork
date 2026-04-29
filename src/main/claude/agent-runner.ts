@@ -62,6 +62,14 @@ import {
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { ThinkTagStreamParser } from './think-tag-parser';
 import {
+  LoopGuard,
+  buildAbortUserMessage,
+  buildHaltSteerMessage,
+  buildWarnSteerMessage,
+  type LoopGuardDecision,
+  type ToolCallDescriptor,
+} from './agent-runner-loop-guard';
+import {
   normalizeMcpToolResultForModel,
   normalizeToolExecutionResultForUi,
 } from './tool-result-utils';
@@ -1984,6 +1992,61 @@ Tool routing:
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
 
+      // ── Loop guard: protect against runaway tool-call loops ──
+      // (e.g. gemini-3.1-pro with thinking=off has been observed producing hundreds
+      //  of empty-text + single-tool-call responses in a single turn)
+      // Two layers: hash of whole tool-call group (window=20, warn=3/halt=5/abort=8)
+      //             + per-tool frequency (warn=30/halt=50/abort=80).
+      const loopGuard = new LoopGuard();
+      const handleLoopGuardDecision = (decision: LoopGuardDecision, context: string): void => {
+        if (decision.action === 'none' || controller.signal.aborted) return;
+        logWarn(`[LoopGuard] ${context}: action=${decision.action} reason=${decision.reason}`);
+
+        if (decision.action === 'hash_abort' || decision.action === 'freq_abort') {
+          if (!hasEmittedError) {
+            hasEmittedError = true;
+            this.sendMessage(session.id, {
+              id: uuidv4(),
+              sessionId: session.id,
+              role: 'assistant',
+              content: [{ type: 'text', text: buildAbortUserMessage(decision) }],
+              timestamp: Date.now(),
+            });
+          }
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            status: 'error',
+            title: 'Stopped: tool-call loop detected',
+          });
+          try {
+            controller.abort();
+          } catch (abortErr) {
+            logWarn('[LoopGuard] abort error:', abortErr);
+          }
+          return;
+        }
+
+        const steerText =
+          decision.action === 'hash_halt' || decision.action === 'freq_halt'
+            ? buildHaltSteerMessage(decision)
+            : buildWarnSteerMessage(decision);
+        // fire-and-forget: SDK queues the steering message for the next turn
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sessionAny = piSession as any;
+          if (typeof sessionAny.sendUserMessage === 'function') {
+            Promise.resolve(sessionAny.sendUserMessage(steerText, { deliverAs: 'steer' })).catch(
+              (err: unknown) => {
+                logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
+              }
+            );
+          } else {
+            logWarn('[LoopGuard] piSession.sendUserMessage is not available; skipping steer');
+          }
+        } catch (steerErr) {
+          logWarn('[LoopGuard] sendUserMessage(steer) threw:', steerErr);
+        }
+      };
+
       // Ollama cold-start feedback: if provider is 'ollama' and no stream event arrives
       // within 10 seconds, show a "model loading" trace update so users know what's happening.
       let ollamaColdStartTimerId: ReturnType<typeof setTimeout> | undefined;
@@ -2246,6 +2309,25 @@ Tool routing:
                   type: 'stream.partial',
                   payload: { sessionId: session.id, delta: '' },
                 });
+
+                // ── Loop guard layer 1: hash of this message's tool-call group ──
+                const toolUseDescriptors: ToolCallDescriptor[] = [];
+                for (const block of resolvedPayload.effectiveContent) {
+                  if (block.type === 'toolCall') {
+                    toolUseDescriptors.push({
+                      name: block.name || '',
+                      input: (block.arguments as Record<string, unknown>) || undefined,
+                    });
+                  }
+                }
+                if (toolUseDescriptors.length > 0) {
+                  handleLoopGuardDecision(
+                    loopGuard.recordAssistantMessage(toolUseDescriptors),
+                    'message_end'
+                  );
+                  if (controller.signal.aborted) break;
+                }
+
                 if (contentBlocks.length > 0) {
                   const msgWithUsage = msg as { usage?: unknown };
                   const tokenUsage = normalizeTokenUsage(msgWithUsage.usage);
@@ -2277,6 +2359,11 @@ Tool routing:
 
             case 'tool_execution_start': {
               logCtx(`[ClaudeAgentRunner] Tool execution start: ${event.toolName}`);
+              // ── Loop guard layer 2: per-tool cumulative frequency ──
+              handleLoopGuardDecision(
+                loopGuard.recordToolInvocation(event.toolName),
+                'tool_execution_start'
+              );
               break;
             }
 
