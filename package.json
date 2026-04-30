@@ -81,7 +81,7 @@
     "electron-updater": "^6.3.0",
     "glob": "^10.3.10",
     "highlight.js": "^11.11.1",
-    "i18next": "^25.10.1",
+    "i18next": "^26.0.5",
     "i18next-browser-languagedetector": "^8.2.1",
     "katex": "^0.16.45",
     "lucide-react": "^0.468.0",
