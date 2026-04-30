@@ -42,6 +42,7 @@ export interface MCPServerConfig {
  */
 export interface MCPTool {
   name: string;
+  originalName?: string;
   description: string;
   inputSchema: {
     type: string;
@@ -58,6 +59,33 @@ function normalizeWindowsPathForComparison(candidate: string): string {
 
 function normalizeWindowsDirectoryForComparison(candidate: string): string {
   return normalizeWindowsPathForComparison(candidate).replace(/[\\/]+$/, '');
+}
+
+function sanitizeMcpToolSegment(segment: string, fallback: string): string {
+  const sanitized = segment
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return sanitized || fallback;
+}
+
+function createUniqueMcpToolName(baseName: string, usedNames: Set<string>): string {
+  if (!usedNames.has(baseName)) {
+    usedNames.add(baseName);
+    return baseName;
+  }
+
+  let suffix = 2;
+  let candidate = `${baseName}_${suffix}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${baseName}_${suffix}`;
+  }
+
+  usedNames.add(candidate);
+  return candidate;
 }
 
 function getTrustedWindowsNpxDirectories(
@@ -1323,6 +1351,7 @@ export class MCPManager {
   async refreshTools(): Promise<void> {
     log('[MCPManager] Refreshing tools from all servers');
     const newTools = new Map<string, MCPTool>();
+    const usedToolNames = new Set<string>();
 
     for (const [serverId, client] of this.clients.entries()) {
       try {
@@ -1351,14 +1380,21 @@ export class MCPManager {
         log(`[MCPManager] Raw tools from ${config.name}:`, listToolsResult);
 
         for (const tool of listToolsResult.tools) {
-          // Prefix tool name with server name to avoid conflicts
-          // Format: mcp__<ServerName>__<toolName> (double underscores, preserve case)
-          // Sanitize: collapse whitespace and collapse any accidental __ sequences
-          const serverKey = config.name.replace(/\s+/g, '_').replace(/__/g, '_');
-          const prefixedName = `mcp__${serverKey}__${tool.name}`;
+          // OpenAI-compatible providers reject tool names that contain punctuation
+          // like dots or colons, so we expose a sanitized model-facing name while
+          // preserving the original MCP tool name for the actual call.
+          const serverKey = sanitizeMcpToolSegment(config.name, 'server');
+          const originalToolName =
+            typeof tool.name === 'string' && tool.name.trim().length > 0 ? tool.name : 'tool';
+          const sanitizedToolName = sanitizeMcpToolSegment(originalToolName, 'tool');
+          const prefixedName = createUniqueMcpToolName(
+            `mcp__${serverKey}__${sanitizedToolName}`,
+            usedToolNames
+          );
 
           newTools.set(prefixedName, {
             name: prefixedName,
+            originalName: originalToolName,
             description: tool.description || '',
             inputSchema: {
               type: 'object',
@@ -1426,9 +1462,10 @@ export class MCPManager {
       throw new Error(`MCP tool not found: ${toolName}`);
     }
 
-    // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
-    let actualToolName = toolName;
-    if (toolName.startsWith('mcp__')) {
+    // Prefer the original MCP tool name when present so sanitized model-facing
+    // names can still map back to the true server tool.
+    let actualToolName = tool.originalName || toolName;
+    if (!tool.originalName && toolName.startsWith('mcp__')) {
       const remainder = toolName.slice('mcp__'.length);
       const separatorIndex = remainder.indexOf('__');
       if (separatorIndex !== -1) {

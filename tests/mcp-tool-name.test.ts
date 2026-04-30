@@ -6,18 +6,33 @@ vi.mock('electron', () => ({
     getPath: () => '/tmp',
     getVersion: () => '0.0.0',
   },
+  BrowserWindow: {
+    getAllWindows: () => [],
+  },
 }));
 
 import { MCPManager } from '../src/main/mcp/mcp-manager';
+
+type TestManagerInternals = {
+  clients: Map<string, unknown>;
+  tools: Map<string, unknown>;
+  serverConfigs: Map<string, unknown>;
+  reconnectServer: ReturnType<typeof vi.fn>;
+};
+
+function asTestManager(manager: MCPManager): MCPManager & TestManagerInternals {
+  return manager as MCPManager & TestManagerInternals;
+}
 
 function createManagerWithTool(toolName: string) {
   const manager = new MCPManager();
   const mockClient = {
     callTool: vi.fn().mockResolvedValue({ ok: true }),
-  } as any;
+  };
+  const testManager = asTestManager(manager);
 
-  (manager as any).clients = new Map([['server-1', mockClient]]);
-  (manager as any).tools = new Map([
+  testManager.clients = new Map([['server-1', mockClient]]);
+  testManager.tools = new Map([
     [
       toolName,
       {
@@ -61,6 +76,7 @@ describe('MCP tool name parsing', () => {
   it('reconnects and retries when tool returns structured Not connected error', async () => {
     const toolName = 'mcp__GUI_Operate__screenshot_for_display';
     const manager = new MCPManager();
+    const testManager = asTestManager(manager);
     const mockClient = {
       callTool: vi
         .fn()
@@ -73,10 +89,10 @@ describe('MCP tool name parsing', () => {
           ],
         })
         .mockResolvedValueOnce({ ok: true }),
-    } as any;
+    };
 
-    (manager as any).clients = new Map([['server-1', mockClient]]);
-    (manager as any).tools = new Map([
+    testManager.clients = new Map([['server-1', mockClient]]);
+    testManager.tools = new Map([
       [
         toolName,
         {
@@ -88,11 +104,11 @@ describe('MCP tool name parsing', () => {
         },
       ],
     ]);
-    (manager as any).reconnectServer = vi.fn().mockResolvedValue(true);
+    testManager.reconnectServer = vi.fn().mockResolvedValue(true);
 
     const result = await manager.callTool(toolName, { display_index: 0 });
 
-    expect((manager as any).reconnectServer).toHaveBeenCalledWith('server-1');
+    expect(testManager.reconnectServer).toHaveBeenCalledWith('server-1');
     expect(mockClient.callTool).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ ok: true });
   });
@@ -100,6 +116,7 @@ describe('MCP tool name parsing', () => {
   it('does not reconnect when tool returns plain text content without structured error envelope', async () => {
     const toolName = 'mcp__GUI_Operate__screenshot_for_display';
     const manager = new MCPManager();
+    const testManager = asTestManager(manager);
     const mockClient = {
       callTool: vi.fn().mockResolvedValue({
         content: [
@@ -109,10 +126,10 @@ describe('MCP tool name parsing', () => {
           },
         ],
       }),
-    } as any;
+    };
 
-    (manager as any).clients = new Map([['server-1', mockClient]]);
-    (manager as any).tools = new Map([
+    testManager.clients = new Map([['server-1', mockClient]]);
+    testManager.tools = new Map([
       [
         toolName,
         {
@@ -124,11 +141,11 @@ describe('MCP tool name parsing', () => {
         },
       ],
     ]);
-    (manager as any).reconnectServer = vi.fn().mockResolvedValue(true);
+    testManager.reconnectServer = vi.fn().mockResolvedValue(true);
 
     const result = await manager.callTool(toolName, { display_index: 0 });
 
-    expect((manager as any).reconnectServer).not.toHaveBeenCalled();
+    expect(testManager.reconnectServer).not.toHaveBeenCalled();
     expect(mockClient.callTool).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       content: [
@@ -138,5 +155,91 @@ describe('MCP tool name parsing', () => {
         },
       ],
     });
+  });
+
+  it('sanitizes model-facing MCP tool names while calling the original tool name', async () => {
+    const manager = new MCPManager();
+    const testManager = asTestManager(manager);
+    const mockClient = {
+      listTools: vi.fn().mockResolvedValue({
+        tools: [
+          {
+            name: 'browser.context',
+            description: 'Inspect browser context',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      }),
+      callTool: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    testManager.clients = new Map([['server-1', mockClient]]);
+    testManager.serverConfigs = new Map([
+      [
+        'server-1',
+        {
+          id: 'server-1',
+          name: 'Browser Context',
+          type: 'stdio',
+          enabled: true,
+        },
+      ],
+    ]);
+
+    await manager.refreshTools();
+
+    const [tool] = manager.getTools();
+    expect(tool.name).toBe('mcp__Browser_Context__browser_context');
+    expect(tool.originalName).toBe('browser.context');
+
+    await manager.callTool(tool.name, { url: 'https://example.com' });
+
+    expect(mockClient.callTool).toHaveBeenCalledWith({
+      name: 'browser.context',
+      arguments: { url: 'https://example.com' },
+    });
+  });
+
+  it('deduplicates sanitized MCP tool names that would otherwise collide', async () => {
+    const manager = new MCPManager();
+    const testManager = asTestManager(manager);
+    const mockClient = {
+      listTools: vi.fn().mockResolvedValue({
+        tools: [
+          {
+            name: 'browser.context',
+            description: '',
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'browser:context',
+            description: '',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      }),
+      callTool: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    testManager.clients = new Map([['server-1', mockClient]]);
+    testManager.serverConfigs = new Map([
+      [
+        'server-1',
+        {
+          id: 'server-1',
+          name: 'Browser Context',
+          type: 'stdio',
+          enabled: true,
+        },
+      ],
+    ]);
+
+    await manager.refreshTools();
+
+    const toolNames = manager.getTools().map((tool) => tool.name);
+    expect(toolNames).toEqual([
+      'mcp__Browser_Context__browser_context',
+      'mcp__Browser_Context__browser_context_2',
+    ]);
   });
 });

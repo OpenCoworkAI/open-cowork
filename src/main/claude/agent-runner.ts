@@ -282,7 +282,7 @@ function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
 
     const toolDef: ToolDefinition<TSchema, unknown> = {
       name: mcpTool.name,
-      label: mcpTool.name.replace(/^mcp__/, '').replace(/__/g, ' → '),
+      label: `${mcpTool.serverName} → ${mcpTool.originalName || mcpTool.name}`,
       description: mcpTool.description || `MCP tool from ${mcpTool.serverName}`,
       parameters,
       async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
