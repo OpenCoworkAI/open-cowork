@@ -21,6 +21,9 @@ import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
 
+const MCP_LIST_TOOLS_TIMEOUT_MS = 5 * 60 * 1000;
+const MCP_TOOL_CALL_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * MCP Server Configuration
  */
@@ -1329,12 +1332,15 @@ export class MCPManager {
         const config = this.serverConfigs.get(serverId);
         if (!config) continue;
 
-        // Add timeout for listTools call to prevent hanging
-        const timeoutMs = 10000; // 10 second timeout
+        // Complex MCP servers can take minutes to enumerate their tools.
+        const timeoutMs = MCP_LIST_TOOLS_TIMEOUT_MS;
         const listToolsPromise = client.listTools();
         let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
+          timeoutId = setTimeout(
+            () => reject(new Error(`listTools timeout after ${timeoutMs}ms`)),
+            timeoutMs
+          );
         });
 
         log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
@@ -1452,8 +1458,8 @@ export class MCPManager {
           throw new Error(`MCP server not connected: ${currentTool.serverId}`);
         }
 
-        // Add timeout for tool call
-        const timeoutMs = 30000; // 30 second timeout
+        // Complex MCP tools may legitimately need minutes to run.
+        const timeoutMs = MCP_TOOL_CALL_TIMEOUT_MS;
         const callPromise = client.callTool({
           name: actualToolName,
           arguments: args,
