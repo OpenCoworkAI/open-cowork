@@ -135,6 +135,10 @@ function assertSafeMemoryPaths(storageRoot: string, artifactsDir: string): void 
   }
 }
 
+function escapeMemoryContextText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export class MemoryService {
   private readonly queue = new MemoryIngestionQueue();
   private readonly deletedSessionIds = new Set<string>();
@@ -351,7 +355,7 @@ export class MemoryService {
     const sections: string[] = [];
     const corePromptBlock = this.getCoreStore().toPromptBlock();
     if (corePromptBlock !== 'None') {
-      sections.push(`<core_memory>\n${corePromptBlock}\n</core_memory>`);
+      sections.push(`<core_memory>\n${escapeMemoryContextText(corePromptBlock)}\n</core_memory>`);
     }
 
     const experienceContext = await this.buildExperienceContext(
@@ -359,7 +363,9 @@ export class MemoryService {
       normalizeWorkspaceKey(session.cwd)
     );
     if (experienceContext.trim()) {
-      sections.push(`<experience_memory>\n${experienceContext}\n</experience_memory>`);
+      sections.push(
+        `<experience_memory>\n${escapeMemoryContextText(experienceContext)}\n</experience_memory>`
+      );
     }
 
     if (!sections.length) {

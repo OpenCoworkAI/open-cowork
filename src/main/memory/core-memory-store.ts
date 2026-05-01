@@ -1,4 +1,8 @@
-import type { AppliedCoreMemoryAction, CoreMemoryActionInput, CoreMemoryEntry } from './memory-types';
+import type {
+  AppliedCoreMemoryAction,
+  CoreMemoryActionInput,
+  CoreMemoryEntry,
+} from './memory-types';
 import {
   applyCoreMemoryActions,
   coreMemoryToPromptBlock,
@@ -44,12 +48,21 @@ export class CoreMemoryStore {
 
   applyActions(actions: CoreMemoryActionInput[]): AppliedCoreMemoryAction[] {
     const { nextMemory, applied } = applyCoreMemoryActions(this.memory, actions);
-    const orderedEntries = Object.entries(nextMemory).slice(0, this.maxItems);
+    const appliedKeys = new Set(
+      applied
+        .filter((action) => action.op !== 'delete')
+        .map((action) => action.combinedKey)
+        .filter((key) => Object.prototype.hasOwnProperty.call(nextMemory, key))
+    );
+    const orderedKeys = [
+      ...appliedKeys,
+      ...Object.keys(nextMemory).filter((key) => !appliedKeys.has(key)),
+    ].slice(0, this.maxItems);
     for (const key of Object.keys(this.memory)) {
       delete this.memory[key];
     }
-    for (const [key, value] of orderedEntries) {
-      this.memory[key] = value;
+    for (const key of orderedKeys) {
+      this.memory[key] = nextMemory[key];
     }
     this.save();
     return applied;
