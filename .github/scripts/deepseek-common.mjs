@@ -72,6 +72,10 @@ function formatCommandError(command, args, error) {
   return `${command} ${args.join(' ')} failed: ${details}`.trim();
 }
 
+function isMissingExecutable(error) {
+  return error?.code === 'ENOENT' || String(error?.message || '').includes('ENOENT');
+}
+
 export function runGh(args, options = {}) {
   try {
     return execFileSync('gh', args, {
@@ -86,6 +90,77 @@ export function runGh(args, options = {}) {
   }
 }
 
+function buildGitGrepArgsFromRgArgs(args) {
+  const gitArgs = ['grep'];
+  const pathspecs = [];
+  let hasPattern = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    switch (arg) {
+      case '-n':
+      case '--line-number':
+      case '-F':
+      case '--fixed-strings':
+        gitArgs.push(arg);
+        break;
+      case '--max-count':
+        if (args[index + 1]) {
+          gitArgs.push(arg, args[index + 1]);
+          index += 1;
+        }
+        break;
+      case '-e':
+        if (args[index + 1] !== undefined) {
+          gitArgs.push(arg, args[index + 1]);
+          hasPattern = true;
+          index += 1;
+        }
+        break;
+      case '--glob': {
+        const glob = args[index + 1];
+        if (glob) {
+          pathspecs.push(glob.startsWith('!') ? `:!${glob.slice(1)}` : glob);
+          index += 1;
+        }
+        break;
+      }
+      default:
+        if (arg && !arg.startsWith('-')) {
+          pathspecs.push(arg);
+        }
+        break;
+    }
+  }
+
+  if (!hasPattern) {
+    return null;
+  }
+
+  return [...gitArgs, '--', ...(pathspecs.length > 0 ? pathspecs : ['.'])];
+}
+
+function runGitGrepFallback(rgArgs) {
+  const gitArgs = buildGitGrepArgsFromRgArgs(rgArgs);
+  if (!gitArgs) {
+    return '';
+  }
+
+  try {
+    return execFileSync('git', gitArgs, {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    if (error.status === 1 || isMissingExecutable(error)) {
+      return '';
+    }
+    throw new Error(formatCommandError('git', gitArgs, error));
+  }
+}
+
 export function runRg(args) {
   try {
     return execFileSync('rg', args, {
@@ -97,6 +172,9 @@ export function runRg(args) {
   } catch (error) {
     if (error.status === 1) {
       return '';
+    }
+    if (isMissingExecutable(error)) {
+      return runGitGrepFallback(args);
     }
     throw new Error(formatCommandError('rg', args, error));
   }
@@ -391,6 +469,8 @@ export function searchRepoSnippets(seedText, maxLines = 30) {
     '!dist-mcp/**',
     '--glob',
     '!website/**',
+    '--glob',
+    '!.claude/**',
     '.'
   );
 
