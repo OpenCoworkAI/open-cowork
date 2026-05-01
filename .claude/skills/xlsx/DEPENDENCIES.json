@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "pythonPackages": ["openpyxl"],
+  "optionalSystemPackages": ["libreoffice", "xvfb"]
+}

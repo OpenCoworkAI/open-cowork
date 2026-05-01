@@ -6,6 +6,7 @@ Quick validation script for skills - minimal version
 import sys
 import os
 import re
+import json
 import yaml
 from pathlib import Path
 
@@ -75,21 +76,70 @@ def validate_skill(skill_path):
     if not isinstance(description, str):
         return False, f"Description must be a string, got {type(description).__name__}"
     description = description.strip()
-    if description:
-        # Check for angle brackets
-        if '<' in description or '>' in description:
-            return False, "Description cannot contain angle brackets (< or >)"
-        # Check description length (max 1024 characters per spec)
-        if len(description) > 1024:
-            return False, f"Description is too long ({len(description)} characters). Maximum is 1024 characters."
+    if not description:
+        return False, "Description cannot be empty"
+    # Check for angle brackets
+    if '<' in description or '>' in description:
+        return False, "Description cannot contain angle brackets (< or >)"
+    # Check description length (max 1024 characters per spec)
+    if len(description) > 1024:
+        return False, f"Description is too long ({len(description)} characters). Maximum is 1024 characters."
 
     # Validate compatibility field if present (optional)
-    compatibility = frontmatter.get('compatibility', '')
-    if compatibility:
+    if 'compatibility' in frontmatter:
+        compatibility = frontmatter.get('compatibility')
         if not isinstance(compatibility, str):
             return False, f"Compatibility must be a string, got {type(compatibility).__name__}"
+        compatibility = compatibility.strip()
+        if not compatibility:
+            return False, "Compatibility cannot be empty when present"
         if len(compatibility) > 500:
             return False, f"Compatibility is too long ({len(compatibility)} characters). Maximum is 500 characters."
+
+    dependencies_file = skill_path / 'DEPENDENCIES.json'
+    if dependencies_file.exists():
+        try:
+            dependencies = json.loads(dependencies_file.read_text())
+        except json.JSONDecodeError as e:
+            return False, f"DEPENDENCIES.json is not valid JSON: {e}"
+
+        if not isinstance(dependencies, dict):
+            return False, "DEPENDENCIES.json must contain a JSON object"
+
+        allowed_dependency_keys = {
+            'schemaVersion',
+            'pythonPackages',
+            'nodePackages',
+            'systemPackages',
+            'optionalPythonPackages',
+            'optionalNodePackages',
+            'optionalSystemPackages',
+        }
+        unexpected_dependency_keys = set(dependencies.keys()) - allowed_dependency_keys
+        if unexpected_dependency_keys:
+            return False, (
+                "Unexpected key(s) in DEPENDENCIES.json: "
+                f"{', '.join(sorted(unexpected_dependency_keys))}"
+            )
+
+        schema_version = dependencies.get('schemaVersion')
+        if schema_version is not None and schema_version != 1:
+            return False, "DEPENDENCIES.json schemaVersion must be 1 when present"
+
+        dependency_lists = 0
+        for key in sorted(allowed_dependency_keys - {'schemaVersion'}):
+            value = dependencies.get(key)
+            if value is None:
+                continue
+            dependency_lists += 1
+            if not isinstance(value, list):
+                return False, f'DEPENDENCIES.json field "{key}" must be a list of strings'
+            for item in value:
+                if not isinstance(item, str) or not item.strip():
+                    return False, f'DEPENDENCIES.json field "{key}" must contain non-empty strings only'
+
+        if dependency_lists == 0:
+            return False, "DEPENDENCIES.json must declare at least one dependency list"
 
     return True, "Skill is valid!"
 

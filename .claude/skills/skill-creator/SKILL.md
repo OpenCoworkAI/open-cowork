@@ -1,6 +1,7 @@
 ---
 name: skill-creator
 description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
+compatibility: 'Portable on any machine with Python 3. The bundled init, validate, and package scripts expect single-folder skills with relative resources only; when a skill depends on external runtimes or system tools, declare that clearly in frontmatter compatibility metadata.'
 license: Complete terms in LICENSE.txt
 ---
 
@@ -44,12 +45,23 @@ Match the level of specificity to the task's fragility and variability:
 
 Think of Claude as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
 
+### Portability First
+
+Default to skills that travel well across machines and runtimes:
+
+- Prefer relative paths inside the skill bundle over absolute local paths
+- Never hardcode a developer username, desktop path, or repo-specific workspace path
+- Bundle reusable scripts/assets when possible instead of assuming global machine state
+- Declare required external runtimes or system tools in `compatibility` when the skill depends on them
+- Separate required dependencies from optional enhancements so another Claude instance can degrade gracefully
+
 ### Anatomy of a Skill
 
 Every skill consists of a required SKILL.md file and optional bundled resources:
 
 ```
 skill-name/
+├── DEPENDENCIES.json (optional)
 ├── SKILL.md (required)
 │   ├── YAML frontmatter metadata (required)
 │   │   ├── name: (required)
@@ -66,10 +78,19 @@ skill-name/
 
 Every SKILL.md consists of:
 
-- **Frontmatter** (YAML): Contains `name` and `description` fields (required), plus optional fields like `license`, `metadata`, and `compatibility`. Only `name` and `description` are read by Claude to determine when the skill triggers, so be clear and comprehensive about what the skill is and when it should be used. The `compatibility` field is for noting environment requirements (target product, system packages, etc.) but most skills don't need it.
+- **Frontmatter** (YAML): Contains `name` and `description` fields (required), plus optional fields like `license`, `metadata`, and `compatibility`. Only `name` and `description` are read by Claude to determine when the skill triggers, so be clear and comprehensive about what the skill is and when it should be used. The `compatibility` field is for noting environment requirements (target product, system packages, optional system tools, etc.) and should be added whenever portability depends on external runtime assumptions.
 - **Body** (Markdown): Instructions and guidance for using the skill. Only loaded AFTER the skill triggers (if at all).
 
 #### Bundled Resources (optional)
+
+##### Dependency manifest (`DEPENDENCIES.json`)
+
+Machine-readable runtime requirements for the skill.
+
+- **When to include**: When the skill depends on external Python packages, Node packages, or system tools
+- **Why it matters**: Lets the host product validate and pre-install dependencies instead of relying on a specific developer machine
+- **Best practice**: Keep required dependencies separate from optional ones; human-readable setup nuance still belongs in `compatibility`
+- **Format**: JSON object with lists such as `pythonPackages`, `nodePackages`, `systemPackages`, and optional counterparts like `optionalPythonPackages`
 
 ##### Scripts (`scripts/`)
 
@@ -294,6 +315,8 @@ These files contain established best practices for effective skill design.
 
 To begin implementation, start with the reusable resources identified above: `scripts/`, `references/`, and `assets/` files. Note that this step may require user input. For example, when implementing a `brand-guidelines` skill, the user may need to provide brand assets or templates to store in `assets/`, or documentation to store in `references/`.
 
+If the skill needs external runtimes or packages, add a `DEPENDENCIES.json` file at the skill root so another Claude instance can discover those requirements mechanically.
+
 Added scripts must be tested by actually running them to ensure there are no bugs and that the output matches what is expected. If there are many similar scripts, only a representative sample needs to be tested to ensure confidence that they all work while balancing time to completion.
 
 Any example files and directories not needed for the skill should be deleted. The initialization script creates example files in `scripts/`, `references/`, and `assets/` to demonstrate structure, but most skills won't need all of them.
@@ -304,15 +327,16 @@ Any example files and directories not needed for the skill should be deleted. Th
 
 ##### Frontmatter
 
-Write the YAML frontmatter with `name` and `description`:
+Write the YAML frontmatter with `name` and `description`, and add `compatibility` when the skill depends on external runtimes or system tools:
 
 - `name`: The skill name
 - `description`: This is the primary triggering mechanism for your skill, and helps Claude understand when to use the skill.
   - Include both what the Skill does and specific triggers/contexts for when to use it.
   - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to Claude.
   - Example description for a `docx` skill: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when Claude needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
+- `compatibility`: Optional single-line summary of runtime expectations. Use it to declare required interpreters, system packages, or platform assumptions. Example: "Portable across macOS/Linux with Python 3. Requires qpdf and poppler-utils when rasterizing or splitting PDFs."
 
-Do not include any other fields in YAML frontmatter.
+Avoid arbitrary frontmatter fields beyond `name`, `description`, and a focused `compatibility` note unless the target platform explicitly supports them.
 
 ##### Body
 
@@ -335,7 +359,6 @@ scripts/package_skill.py <path/to/skill-folder> ./dist
 The packaging script will:
 
 1. **Validate** the skill automatically, checking:
-
    - YAML frontmatter format and required fields
    - Skill naming conventions and directory structure
    - Description completeness and quality

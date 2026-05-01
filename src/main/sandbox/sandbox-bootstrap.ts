@@ -19,7 +19,7 @@ export type SandboxSetupPhase =
   | 'installing_node' // Installing Node.js
   | 'installing_python' // Installing Python
   | 'installing_pip' // Installing pip
-  | 'installing_deps' // Installing skill dependencies (markitdown, pypdf, etc.)
+  | 'installing_deps' // Installing built-in skill dependencies
   | 'ready' // Ready to use
   | 'skipped' // No sandbox needed (native mode)
   | 'error'; // Setup failed
@@ -248,7 +248,7 @@ export class SandboxBootstrap {
         this.reportProgress({
           phase: 'installing_deps',
           message: 'Installing skill dependencies...',
-          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          detail: 'Installing Python packages declared by built-in skills',
           progress: 80,
         });
       } else {
@@ -271,7 +271,7 @@ export class SandboxBootstrap {
         this.reportProgress({
           phase: 'installing_deps',
           message: 'Installing skill dependencies...',
-          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          detail: 'Installing Python packages declared by built-in skills',
           progress: 80,
         });
         await WSLBridge.installSkillDependencies(wslStatus.distro!);
@@ -408,7 +408,7 @@ export class SandboxBootstrap {
         this.reportProgress({
           phase: 'installing_deps',
           message: 'Installing skill dependencies...',
-          detail: 'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills',
+          detail: 'Installing Python packages declared by built-in skills',
           progress: 90,
         });
       }

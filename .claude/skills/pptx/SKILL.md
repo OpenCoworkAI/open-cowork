@@ -1,6 +1,7 @@
 ---
 name: pptx
-description: "Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks"
+description: 'Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks'
+compatibility: 'Cross-platform with bundled relative resources. Requires Python 3 plus markitdown[pptx], python-pptx, and defusedxml; full visual validation also needs LibreOffice and Poppler, and html2pptx creation expects Node.js packages such as pptxgenjs, playwright, react, react-dom, and react-icons.'
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -84,7 +85,6 @@ When creating a new PowerPoint presentation from scratch, use the **html2pptx** 
    - Supported elements and styling
 
 6. Create and run a JavaScript file using the [`html2pptx`](./html2pptx) library to convert HTML slides to PowerPoint and save the presentation
-
    - Run with: `NODE_PATH="$(npm root -g)" node your-script.js 2>&1`
    - Use the `html2pptx` function to process each HTML file
    - Add charts and tables to placeholder areas using PptxGenJS API
@@ -93,22 +93,22 @@ When creating a new PowerPoint presentation from scratch, use the **html2pptx** 
    - **⚠️ CRITICAL:** Your script MUST follow this example structure. Think aloud before writing the script to make sure that you correctly use the APIs. Do NOT call `pptx.addSlide`.
 
    ```javascript
-   const pptxgen = require("pptxgenjs");
-   const { html2pptx } = require("./html2pptx");
+   const pptxgen = require('pptxgenjs');
+   const { html2pptx } = require('./html2pptx');
 
    // Create a new pptx presentation
    const pptx = new pptxgen();
-   pptx.layout = "LAYOUT_16x9"; // Must match HTML body dimensions
+   pptx.layout = 'LAYOUT_16x9'; // Must match HTML body dimensions
 
    // Add an HTML-only slide
-   await html2pptx("slide1.html", pptx);
+   await html2pptx('slide1.html', pptx);
 
    // Add a HTML slide with chart placeholders
-   const { slide: slide2, placeholders } = await html2pptx("slide2.html", pptx);
+   const { slide: slide2, placeholders } = await html2pptx('slide2.html', pptx);
    slide.addChart(pptx.charts.LINE, chartData, placeholders[0]);
 
    // Save the presentation
-   await pptx.writeFile("output.pptx");
+   await pptx.writeFile('output.pptx');
    ```
 
 7. **Visual validation**: Convert to images and inspect for layout issues
@@ -149,14 +149,12 @@ To create a presentation that follows an existing template's design, duplicate a
 ### Workflow
 
 1. **Extract template text AND create visual thumbnail grid**:
-
    - Extract text: `python3 -m markitdown template.pptx > template-content.md`
    - Read `template-content.md` completely to understand the template contents
    - Create thumbnail grids: `python3 scripts/thumbnail.py template.pptx`
    - See [Creating Thumbnail Grids](#creating-thumbnail-grids) section for more details
 
 2. **Analyze template and save inventory to a file**:
-
    - **Visual Analysis**: Review thumbnail grid(s) to understand slide layouts, design patterns, and visual structure
    - Create and save a template inventory file at `template-inventory.md` containing:
 
@@ -182,7 +180,6 @@ To create a presentation that follows an existing template's design, duplicate a
    - This inventory file is REQUIRED for selecting appropriate templates in the next step
 
 3. **Create presentation outline based on template inventory**:
-
    - Review available templates from step 2.
    - Choose an intro or title template for the first slide. This should be one of the first templates.
    - Choose safe, text-based layouts for the other slides.
@@ -214,7 +211,6 @@ To create a presentation that follows an existing template's design, duplicate a
      ```
 
 4. **Duplicate, reorder, and delete slides using `rearrange.py`**:
-
    - Use the `scripts/rearrange.py` script to create a new presentation with slides in the desired order:
      ```bash
      python3 scripts/rearrange.py template.pptx working.pptx 0,34,34,50,52
@@ -224,7 +220,6 @@ To create a presentation that follows an existing template's design, duplicate a
    - The same slide index can appear multiple times to duplicate that slide
 
 5. **Extract ALL text using the `inventory.py` script**:
-
    - **Run inventory extraction**:
      ```bash
      python3 scripts/inventory.py working.pptx text-inventory.json
@@ -278,7 +273,6 @@ To create a presentation that follows an existing template's design, duplicate a
 
 6. **Generate replacement text and save the data to a JSON file**
    Based on the text inventory from the previous step:
-
    - **CRITICAL**: First verify which shapes exist in the inventory - only reference shapes that are actually present
    - **VALIDATION**: The replace.py script validates that all shapes in the replacement JSON exist in the inventory
      - Referencing a non-existent shape produces an error showing available shapes
@@ -350,7 +344,6 @@ To create a presentation that follows an existing template's design, duplicate a
    ```
 
    **Common formatting patterns for presentations**:
-
    - Title slides: Bold text, sometimes centered
    - Section headers within slides: Bold text
    - Bullet lists: Each item needs `"bullet": true, "level": 0`
@@ -364,7 +357,6 @@ To create a presentation that follows an existing template's design, duplicate a
    ```
 
    The script will:
-
    - First extract the inventory of ALL text shapes using functions from inventory.py
    - Validate that all shapes in the replacement JSON exist in the inventory
    - Clear text from ALL shapes identified in the inventory

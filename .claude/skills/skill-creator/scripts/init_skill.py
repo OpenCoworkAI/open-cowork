@@ -18,6 +18,7 @@ from pathlib import Path
 SKILL_TEMPLATE = """---
 name: {skill_name}
 description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+compatibility: [TODO: Summarize runtime expectations in one line. Prefer portable relative resources; mention Python/Node/system tools only when the skill truly depends on them.]
 ---
 
 # {skill_title}
@@ -185,6 +186,13 @@ Example asset files from other skills:
 Note: This is a text placeholder. Actual assets can be any file type.
 """
 
+EXAMPLE_DEPENDENCIES = """{
+  "schemaVersion": 1,
+  "pythonPackages": ["requests"],
+  "optionalSystemPackages": ["jq"]
+}
+"""
+
 
 def title_case_skill_name(skill_name):
     """Convert hyphenated skill name to Title Case for display."""
@@ -233,6 +241,14 @@ def init_skill(skill_name, path):
         print(f"❌ Error creating SKILL.md: {e}")
         return None
 
+    dependencies_path = skill_dir / 'DEPENDENCIES.json'
+    try:
+        dependencies_path.write_text(EXAMPLE_DEPENDENCIES)
+        print("Created DEPENDENCIES.json")
+    except Exception as e:
+        print(f"Error creating DEPENDENCIES.json: {e}")
+        return None
+
     # Create resource directories with example files
     try:
         # Create scripts/ directory with example script
@@ -263,9 +279,10 @@ def init_skill(skill_name, path):
     # Print next steps
     print(f"\n✅ Skill '{skill_name}' initialized successfully at {skill_dir}")
     print("\nNext steps:")
-    print("1. Edit SKILL.md to complete the TODO items and update the description")
-    print("2. Customize or delete the example files in scripts/, references/, and assets/")
-    print("3. Run the validator when ready to check the skill structure")
+    print("1. Edit SKILL.md to complete the TODO items, including description and compatibility")
+    print("2. Update or delete DEPENDENCIES.json so it matches the skill's real runtime needs")
+    print("3. Customize or delete the example files in scripts/, references/, and assets/")
+    print("4. Run the validator when ready to check the skill structure")
 
     return skill_dir
 

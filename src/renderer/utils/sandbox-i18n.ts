@@ -46,8 +46,7 @@ function translateSetupDetail(t: TFunction, detail?: string): string | undefined
     'Linux runs commands directly': 'sandbox.setupDetailLinuxNative',
     'Install WSL2 for better sandbox isolation': 'sandbox.setupDetailInstallWsl',
     'Please install Node.js manually in WSL': 'sandbox.setupDetailInstallNodeWsl',
-    'Installing markitdown, pypdf, pdfplumber for PDF/PPTX skills':
-      'sandbox.setupDetailInstallDeps',
+    'Installing Python packages declared by built-in skills': 'sandbox.setupDetailInstallDeps',
     'Install Lima for better sandbox isolation (brew install lima)':
       'sandbox.setupDetailInstallLima',
     'First run requires image download, may take a few minutes': 'sandbox.setupDetailCreateLima',
