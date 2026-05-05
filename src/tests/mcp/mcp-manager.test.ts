@@ -1,7 +1,7 @@
 /**
  * Tests for MCPManager connection timeout and status tracking.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -31,6 +31,7 @@ vi.mock('../../main/utils/shell-resolver', () => ({
 
 import { MCPManager } from '../../main/mcp/mcp-manager';
 import type { MCPServerConfig } from '../../main/mcp/mcp-manager';
+import { logError } from '../../main/utils/logger';
 
 describe('MCPManager', () => {
   let manager: MCPManager;
@@ -167,5 +168,159 @@ describe('MCPManager', () => {
       statuses = manager.getServerStatus();
       expect(statuses[0].status).toBe('connecting');
     });
+  });
+});
+
+describe('refreshTools() timeout', () => {
+  let manager: MCPManager;
+
+  beforeEach(() => {
+    manager = new MCPManager();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function injectHangingServer(serverId: string, config: MCPServerConfig): void {
+    const mockClient = { listTools: (): Promise<never> => new Promise<never>(() => {}) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).clients.set(serverId, mockClient);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).serverConfigs.set(serverId, config);
+  }
+
+  it('times out listTools at 60 s by default', async () => {
+    vi.useFakeTimers();
+    injectHangingServer('slow-1', {
+      id: 'slow-1',
+      name: 'Slow Server',
+      type: 'stdio',
+      command: 'cat',
+      enabled: true,
+    });
+
+    const p = manager.refreshTools();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(vi.mocked(logError)).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await p;
+
+    expect(vi.mocked(logError)).toHaveBeenCalledWith(
+      expect.stringContaining('[MCPManager]'),
+      expect.stringContaining('listTools timeout after 60000ms')
+    );
+  });
+
+  it('respects per-server listToolsTimeoutMs override', async () => {
+    vi.useFakeTimers();
+    injectHangingServer('slow-2', {
+      id: 'slow-2',
+      name: 'Slow Override',
+      type: 'stdio',
+      command: 'cat',
+      enabled: true,
+      listToolsTimeoutMs: 5_000,
+    });
+
+    const p = manager.refreshTools();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(vi.mocked(logError)).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await p;
+
+    expect(vi.mocked(logError)).toHaveBeenCalledWith(
+      expect.stringContaining('[MCPManager]'),
+      expect.stringContaining('listTools timeout after 5000ms')
+    );
+  });
+});
+
+describe('callTool() timeout', () => {
+  let manager: MCPManager;
+
+  beforeEach(() => {
+    manager = new MCPManager();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function injectHangingTool(
+    serverId: string,
+    serverName: string,
+    config: MCPServerConfig
+  ): string {
+    const mockClient = { callTool: (): Promise<never> => new Promise<never>(() => {}) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).clients.set(serverId, mockClient);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).serverConfigs.set(serverId, config);
+    const toolName = `mcp__${serverName.replace(/\s+/g, '_')}__test`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).tools.set(toolName, {
+      name: toolName,
+      description: 'test tool',
+      inputSchema: { type: 'object', properties: {} },
+      serverId,
+      serverName,
+    });
+    return toolName;
+  }
+
+  it('uses 120 s default timeout for callTool', () => {
+    // Spy on setTimeout so it never fires — we only need to verify the value passed.
+    // Driving callTool through all retries with fake timers triggers a Vitest/Node.js
+    // edge case where intermediate timeout-promise rejections appear briefly unhandled
+    // between the setImmediate callback and the microtask flush.
+    const spy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockReturnValue(0 as unknown as ReturnType<typeof setTimeout>);
+
+    const toolName = injectHangingTool('ct-1', 'CT Server', {
+      id: 'ct-1',
+      name: 'CT Server',
+      type: 'stdio',
+      command: 'cat',
+      enabled: true,
+    });
+
+    // callTool runs synchronously up to the first `await Promise.race(...)`.
+    // setTimeout is called before that first yield, so no ticks needed.
+    void manager.callTool(toolName, {});
+
+    // Search all setTimeout calls for the expected timeout value rather than
+    // relying on call index — guards against future additions before this line.
+    const observedMs = spy.mock.calls.map(([, ms]) => ms as number);
+    expect(observedMs).toContain(120_000);
+
+    spy.mockRestore();
+  });
+
+  it('respects per-server callToolTimeoutMs override', () => {
+    const spy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockReturnValue(0 as unknown as ReturnType<typeof setTimeout>);
+
+    const toolName = injectHangingTool('ct-2', 'CT Override', {
+      id: 'ct-2',
+      name: 'CT Override',
+      type: 'stdio',
+      command: 'cat',
+      enabled: true,
+      callToolTimeoutMs: 5_000,
+    });
+
+    void manager.callTool(toolName, {});
+
+    const observedMs = spy.mock.calls.map(([, ms]) => ms as number);
+    expect(observedMs).toContain(5_000);
+
+    spy.mockRestore();
   });
 });

@@ -21,6 +21,9 @@ import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
 
+const DEFAULT_LIST_TOOLS_TIMEOUT_MS = 60_000;
+const DEFAULT_CALL_TOOL_TIMEOUT_MS = 120_000;
+
 /**
  * MCP Server Configuration
  */
@@ -35,6 +38,8 @@ export interface MCPServerConfig {
   url?: string; // For SSE / Streamable HTTP: server URL
   headers?: Record<string, string>; // For SSE / Streamable HTTP: HTTP headers
   enabled: boolean;
+  listToolsTimeoutMs?: number;
+  callToolTimeoutMs?: number;
 }
 
 /**
@@ -1329,13 +1334,16 @@ export class MCPManager {
         const config = this.serverConfigs.get(serverId);
         if (!config) continue;
 
-        // Add timeout for listTools call to prevent hanging
-        const timeoutMs = 10000; // 10 second timeout
+        const timeoutMs = config.listToolsTimeoutMs ?? DEFAULT_LIST_TOOLS_TIMEOUT_MS;
         const listToolsPromise = client.listTools();
         let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
+          timeoutId = setTimeout(
+            () => reject(new Error(`listTools timeout after ${timeoutMs}ms`)),
+            timeoutMs
+          );
         });
+        timeoutPromise.catch(() => {}); // suppress unhandled-rejection if listToolsPromise settles first
 
         log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
 
@@ -1345,6 +1353,7 @@ export class MCPManager {
           clearTimeout(timeoutId!);
         } catch (error) {
           clearTimeout(timeoutId!);
+          listToolsPromise.catch(() => {}); // prevent unhandled rejection on orphan
           throw error;
         }
 
@@ -1452,8 +1461,8 @@ export class MCPManager {
           throw new Error(`MCP server not connected: ${currentTool.serverId}`);
         }
 
-        // Add timeout for tool call
-        const timeoutMs = 30000; // 30 second timeout
+        const serverConfig = this.serverConfigs.get(currentTool.serverId);
+        const timeoutMs = serverConfig?.callToolTimeoutMs ?? DEFAULT_CALL_TOOL_TIMEOUT_MS;
         const callPromise = client.callTool({
           name: actualToolName,
           arguments: args,
@@ -1465,12 +1474,14 @@ export class MCPManager {
             timeoutMs
           );
         });
+        timeoutPromise.catch(() => {}); // suppress unhandled-rejection if callPromise settles first
 
         let result;
         try {
           result = await Promise.race([callPromise, timeoutPromise]);
         } finally {
           clearTimeout(callTimeoutId!);
+          callPromise.catch(() => {}); // prevent unhandled rejection on orphan
         }
 
         const toolErrorMessage = extractStructuredToolErrorMessage(result);

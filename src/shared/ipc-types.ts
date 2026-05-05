@@ -24,6 +24,8 @@ export interface McpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   enabled: boolean;
+  listToolsTimeoutMs?: number;
+  callToolTimeoutMs?: number;
 }
 
 /** Tool exposed by an MCP server (mirrors MCPTool in mcp-manager.ts). */

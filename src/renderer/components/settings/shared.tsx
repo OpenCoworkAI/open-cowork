@@ -15,6 +15,8 @@ export interface MCPServerConfig {
   url?: string;
   headers?: Record<string, string>;
   enabled: boolean;
+  listToolsTimeoutMs?: number;
+  callToolTimeoutMs?: number;
 }
 
 export interface MCPServerStatus {
