@@ -145,11 +145,19 @@ export function isLikelyAuthFailure(error: { status?: number; message: string })
 
   const message = error.message.toLowerCase();
   return (
-    /api\s*key.*not\s*valid|invalid.*api\s*key|api\s*key.*invalid|unauthorized|forbidden|permission\s*denied/.test(
+    /api\s*key.*(?:not\s*valid|invalid)|invalid.*api\s*key|unauthorized|forbidden|permission\s*denied/.test(
       message
     ) ||
     (error.status === 400 && /api\s*key|auth|credential|permission/.test(message))
   );
+}
+
+function isGeminiModelsGetProbeUnavailable(error: { status?: number; message: string }): boolean {
+  if (error.status !== undefined) {
+    return false;
+  }
+
+  return /models\.get|reading ['"]get['"]|reading get/i.test(error.message);
 }
 
 export function shouldContinueAfterGeminiAuthProbeError(error: {
@@ -164,7 +172,7 @@ export function shouldContinueAfterGeminiAuthProbeError(error: {
     return false;
   }
 
-  return error.status === undefined;
+  return isGeminiModelsGetProbeUnavailable(error);
 }
 
 function getModelDiagnosticFix(

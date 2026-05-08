@@ -20,6 +20,14 @@ describe('Gemini diagnostics auth probe handling', () => {
     ).toBe(true);
   });
 
+  it('does not continue when the auth probe fails with a network error', () => {
+    expect(
+      shouldContinueAfterGeminiAuthProbeError({
+        message: 'fetch failed',
+      })
+    ).toBe(false);
+  });
+
   it('does not continue past likely credential failures', () => {
     const invalidKey = {
       status: 400,
