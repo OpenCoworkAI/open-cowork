@@ -17,6 +17,7 @@ import {
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   createCodingTools,
+  type BashToolOptions,
   type AgentSession as PiAgentSession,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
@@ -67,6 +68,7 @@ import {
   normalizeToolExecutionResultForUi,
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
+import { createWindowsBashOperations } from './windows-bash-operations';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -527,7 +529,9 @@ ${hints.join('\n')}
   }
 
   private async resolveSkillPaths(sessionId?: string): Promise<string[]> {
-    const basePaths = this._skillsAdapter ? this._skillsAdapter.getSkillPaths() : this.legacySkillPaths();
+    const basePaths = this._skillsAdapter
+      ? this._skillsAdapter.getSkillPaths()
+      : this.legacySkillPaths();
     const mergedPaths = new Set(
       basePaths.filter((item): item is string => Boolean(item && fs.existsSync(item)))
     );
@@ -1566,7 +1570,10 @@ ${hints.join('\n')}
         try {
           cachedSession.session.dispose();
         } catch (disposeError) {
-          logWarn('[ClaudeAgentRunner] dispose error while recreating pi session for skills:', disposeError);
+          logWarn(
+            '[ClaudeAgentRunner] dispose error while recreating pi session for skills:',
+            disposeError
+          );
         }
         this.piSessions.delete(session.id);
         cachedSession = undefined;
@@ -1863,7 +1870,12 @@ Tool routing:
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
       await enrichProcessPathForBuild();
 
-      const codingTools = createCodingTools(effectiveCwd);
+      const bashOptions: BashToolOptions | undefined =
+        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
+      const codingTools = createCodingTools(
+        effectiveCwd,
+        bashOptions ? { bash: bashOptions } : undefined
+      );
 
       // Inject a default 120s timeout for bash commands when the model omits one
       const withTimeout = ClaudeAgentRunner.wrapBashToolWithDefaultTimeout(
