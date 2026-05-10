@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('electron', () => ({
@@ -10,7 +11,16 @@ vi.mock('electron', () => ({
 
 import { MCPManager } from '../src/main/mcp/mcp-manager';
 
-function createManagerWithTool(toolName: string) {
+function stripMcpPrefix(toolName: string): string {
+  if (toolName.startsWith('mcp__')) {
+    const remainder = toolName.slice('mcp__'.length);
+    const sep = remainder.indexOf('__');
+    if (sep !== -1) return remainder.slice(sep + 2);
+  }
+  return toolName;
+}
+
+function createManagerWithTool(toolName: string, originalToolName = stripMcpPrefix(toolName)) {
   const manager = new MCPManager();
   const mockClient = {
     callTool: vi.fn().mockResolvedValue({ ok: true }),
@@ -22,6 +32,7 @@ function createManagerWithTool(toolName: string) {
       toolName,
       {
         name: toolName,
+        originalToolName,
         description: '',
         inputSchema: { type: 'object', properties: {} },
         serverId: 'server-1',
@@ -81,6 +92,7 @@ describe('MCP tool name parsing', () => {
         toolName,
         {
           name: toolName,
+          originalToolName: stripMcpPrefix(toolName),
           description: '',
           inputSchema: { type: 'object', properties: {} },
           serverId: 'server-1',
@@ -117,6 +129,7 @@ describe('MCP tool name parsing', () => {
         toolName,
         {
           name: toolName,
+          originalToolName: stripMcpPrefix(toolName),
           description: '',
           inputSchema: { type: 'object', properties: {} },
           serverId: 'server-1',
