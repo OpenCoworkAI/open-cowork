@@ -1330,11 +1330,14 @@ export class MCPManager {
         if (!config) continue;
 
         // Add timeout for listTools call to prevent hanging
-        const timeoutMs = 10000; // 10 second timeout
+        const timeoutMs = 300_000; // 5 minute timeout — complex MCP servers can take time to enumerate
         const listToolsPromise = client.listTools();
         let timeoutId: ReturnType<typeof setTimeout>;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('listTools timeout after 10s')), timeoutMs);
+          timeoutId = setTimeout(
+            () => reject(new Error(`listTools timeout after ${timeoutMs}ms`)),
+            timeoutMs
+          );
         });
 
         log(`[MCPManager] Fetching tools from ${config.name} (timeout: ${timeoutMs}ms)...`);
