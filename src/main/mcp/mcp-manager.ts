@@ -42,6 +42,7 @@ export interface MCPServerConfig {
  */
 export interface MCPTool {
   name: string;
+  originalToolName: string; // raw name from the MCP server — used when calling the server
   description: string;
   inputSchema: {
     type: string;
@@ -1355,10 +1356,13 @@ export class MCPManager {
           // Format: mcp__<ServerName>__<toolName> (double underscores, preserve case)
           // Sanitize: collapse whitespace and collapse any accidental __ sequences
           const serverKey = config.name.replace(/\s+/g, '_').replace(/__/g, '_');
-          const prefixedName = `mcp__${serverKey}__${tool.name}`;
+          // Sanitize tool.name for strict providers (e.g. DeepSeek) that require ^[a-zA-Z0-9_-]+$
+          const sanitizedToolName = tool.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+          const prefixedName = `mcp__${serverKey}__${sanitizedToolName}`;
 
           newTools.set(prefixedName, {
             name: prefixedName,
+            originalToolName: tool.name, // preserved for the actual MCP server call
             description: tool.description || '',
             inputSchema: {
               type: 'object',
@@ -1426,15 +1430,8 @@ export class MCPManager {
       throw new Error(`MCP tool not found: ${toolName}`);
     }
 
-    // 提取实际工具名（格式：mcp__<ServerName>__<toolName>）
-    let actualToolName = toolName;
-    if (toolName.startsWith('mcp__')) {
-      const remainder = toolName.slice('mcp__'.length);
-      const separatorIndex = remainder.indexOf('__');
-      if (separatorIndex !== -1) {
-        actualToolName = remainder.slice(separatorIndex + 2);
-      }
-    }
+    // Use the stored original name so dots/colons in tool names survive the sanitization pass
+    const actualToolName = tool.originalToolName;
 
     logCtx(`[MCPManager] Calling tool ${actualToolName} on server ${tool.serverName}`);
 
