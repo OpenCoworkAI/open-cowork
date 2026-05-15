@@ -109,6 +109,67 @@ describe('MCP tool name parsing', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it('sanitizes tool name with dots and colons, preserving original for the call', async () => {
+    const prefixedName = 'mcp__Server__my_resource_read';
+    const { manager, mockClient } = createManagerWithTool(prefixedName, 'my.resource.read');
+
+    await manager.callTool(prefixedName, {});
+
+    expect(mockClient.callTool).toHaveBeenCalledWith({
+      name: 'my.resource.read',
+      arguments: {},
+    });
+  });
+
+  it('disambiguates colliding sanitized names with a numeric suffix', async () => {
+    const manager = new MCPManager();
+    const mockClient = { callTool: vi.fn().mockResolvedValue({ ok: true }) } as any;
+
+    (manager as any).clients = new Map([['server-1', mockClient]]);
+    (manager as any).tools = new Map([
+      [
+        'mcp__Server__my_tool',
+        {
+          name: 'mcp__Server__my_tool',
+          originalToolName: 'my.tool',
+          description: '',
+          inputSchema: { type: 'object', properties: {} },
+          serverId: 'server-1',
+          serverName: 'Server',
+        },
+      ],
+      [
+        'mcp__Server__my_tool_1',
+        {
+          name: 'mcp__Server__my_tool_1',
+          originalToolName: 'my-tool',
+          description: '',
+          inputSchema: { type: 'object', properties: {} },
+          serverId: 'server-1',
+          serverName: 'Server',
+        },
+      ],
+    ]);
+
+    await manager.callTool('mcp__Server__my_tool', {});
+    expect(mockClient.callTool).toHaveBeenCalledWith({ name: 'my.tool', arguments: {} });
+
+    await manager.callTool('mcp__Server__my_tool_1', {});
+    expect(mockClient.callTool).toHaveBeenCalledWith({ name: 'my-tool', arguments: {} });
+  });
+
+  it('falls back to _unnamed_ for tool names that sanitize to empty string', async () => {
+    const prefixedName = 'mcp__Server___unnamed_';
+    const { manager, mockClient } = createManagerWithTool(prefixedName, '..');
+
+    await manager.callTool(prefixedName, {});
+
+    expect(mockClient.callTool).toHaveBeenCalledWith({
+      name: '..',
+      arguments: {},
+    });
+  });
+
   it('does not reconnect when tool returns plain text content without structured error envelope', async () => {
     const toolName = 'mcp__GUI_Operate__screenshot_for_display';
     const manager = new MCPManager();

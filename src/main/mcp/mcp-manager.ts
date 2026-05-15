@@ -1357,8 +1357,19 @@ export class MCPManager {
           // Sanitize: collapse whitespace and collapse any accidental __ sequences
           const serverKey = config.name.replace(/\s+/g, '_').replace(/__/g, '_');
           // Sanitize tool.name for strict providers (e.g. DeepSeek) that require ^[a-zA-Z0-9_-]+$
-          const sanitizedToolName = tool.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-          const prefixedName = `mcp__${serverKey}__${sanitizedToolName}`;
+          // Collapse consecutive underscores so spaces don't erode the __ separator convention.
+          const sanitizedToolName =
+            tool.name
+              .replace(/[^a-zA-Z0-9_-]/g, '_')
+              .replace(/_+/g, '_')
+              .replace(/^_|_$/g, '') || '_unnamed_';
+          // Disambiguate collisions: two names that sanitize identically get a numeric suffix.
+          let finalName = sanitizedToolName;
+          let counter = 1;
+          while (newTools.has(`mcp__${serverKey}__${finalName}`)) {
+            finalName = `${sanitizedToolName}_${counter++}`;
+          }
+          const prefixedName = `mcp__${serverKey}__${finalName}`;
 
           newTools.set(prefixedName, {
             name: prefixedName,
