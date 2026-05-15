@@ -88,35 +88,66 @@ export function ContextPanel() {
   const toolCallCount = steps.filter((s) => s.type === 'tool_call').length;
   const modelName = activeSession?.model || appConfig?.model || '—';
 
-  // Token usage aggregation
+  // Token usage: show LAST turn (current prompt size + last response) — not cumulative.
+  // Cumulative numbers across many turns scare users into thinking each turn is full-billed,
+  // when in reality the cached prefix is reused at deep discount. Also surface total output
+  // sum and overall cache hit % so the cost picture stays honest.
   const tokenUsage = useMemo(() => {
-    let input = 0;
-    let output = 0;
+    let totalOutput = 0;
+    let totalInputUncached = 0;
+    let totalCacheRead = 0;
+    let lastInput = 0;
+    let lastCacheRead = 0;
+    let lastOutput = 0;
     for (const msg of messages) {
-      if (msg.tokenUsage) {
-        input += msg.tokenUsage.input || 0;
-        output += msg.tokenUsage.output || 0;
+      const u = msg.tokenUsage;
+      if (!u) continue;
+      const inp = u.input || 0;
+      const out = u.output || 0;
+      const cr = u.cacheRead || 0;
+      totalOutput += out;
+      totalInputUncached += inp;
+      totalCacheRead += cr;
+      if (inp || cr || out) {
+        lastInput = inp;
+        lastCacheRead = cr;
+        lastOutput = out;
       }
     }
-    return { input, output, total: input + output };
+    const lastPrompt = lastInput + lastCacheRead;
+    const totalPromptCum = totalInputUncached + totalCacheRead;
+    const cacheHitRate = totalPromptCum > 0 ? totalCacheRead / totalPromptCum : 0;
+    return {
+      // Current-turn (what header reads as input/output)
+      input: lastPrompt,
+      output: lastOutput,
+      // Aggregates kept for tooltip/debug if needed
+      totalOutput,
+      totalInputUncached,
+      totalCacheRead,
+      cacheHitRate,
+      total: lastPrompt + lastOutput,
+    };
   }, [messages]);
 
-  // Context usage: last message's input tokens ≈ current context occupation
+  // Context usage: last message's TRUE prompt size (input + cacheRead) = current context.
+  // Without cacheRead the bar shrinks when cache hits — counterintuitive.
   const contextUsage = useMemo(() => {
     const contextWindow = activeSessionId ? sessionStates[activeSessionId]?.contextWindow : undefined;
     if (!contextWindow) return null;
 
-    let lastInput = 0;
+    let lastTotalPrompt = 0;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].tokenUsage?.input) {
-        lastInput = messages[i].tokenUsage!.input;
+      const u = messages[i].tokenUsage;
+      if (u && (u.input || u.cacheRead)) {
+        lastTotalPrompt = (u.input || 0) + (u.cacheRead || 0);
         break;
       }
     }
-    if (lastInput === 0) return null;
+    if (lastTotalPrompt === 0) return null;
 
-    const percentage = Math.min((lastInput / contextWindow) * 100, 100);
-    return { used: lastInput, total: contextWindow, percentage };
+    const percentage = Math.min((lastTotalPrompt / contextWindow) * 100, 100);
+    return { used: lastTotalPrompt, total: contextWindow, percentage };
   }, [activeSessionId, sessionStates, messages]);
 
   const completedStepCount = useMemo(
@@ -276,7 +307,11 @@ export function ContextPanel() {
             </span>
             {tokenUsage.total > 0 && (
               <span className="ml-auto text-text-muted/70">
-                {t('context.inputTokens')} {formatTokenCount(tokenUsage.input)} · {t('context.outputTokens')} {formatTokenCount(tokenUsage.output)}
+                {t('context.inputTokens')} {formatTokenCount(tokenUsage.input)}
+                {tokenUsage.totalCacheRead > 0 && (
+                  <> (cache {Math.round(tokenUsage.cacheHitRate * 100)}%)</>
+                )}
+                {' '}· {t('context.outputTokens')} {formatTokenCount(tokenUsage.output)}
               </span>
             )}
           </div>
