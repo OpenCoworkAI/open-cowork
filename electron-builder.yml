@@ -17,6 +17,15 @@ files:
   - node_modules/@img/**/*
   - node_modules/better-sqlite3/**/*
   - node_modules/@anthropic-ai/sdk/**/*
+  # @google/genai is external in the Electron main bundle (see vite.config.ts).
+  - node_modules/@google/genai/**/*
+  - node_modules/google-auth-library/**/*
+  - node_modules/gaxios/**/*
+  - node_modules/gcp-metadata/**/*
+  - node_modules/google-logging-utils/**/*
+  - node_modules/protobufjs/**/*
+  - node_modules/p-retry/**/*
+  - node_modules/retry/**/*
   - node_modules/@larksuiteoapi/**/*
   - node_modules/openai/**/*
   - node_modules/@modelcontextprotocol/**/*

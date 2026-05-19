@@ -33,6 +33,12 @@ import type {
 import { log, logWarn } from '../utils/logger';
 import { probeWithClaudeSdk } from '../claude/claude-sdk-one-shot';
 import { fetchOllamaModelIndex } from './ollama-api';
+import {
+  fetchGeminiRelayModelMetadata,
+  isGeminiSdkProbeUnavailableError,
+  probeGeminiRelayGenerateContent,
+} from './gemini-relay-probe';
+import { createGoogleGenAIClient } from './google-genai-loader';
 
 const STEP_NAMES: DiagnosticStepName[] = ['dns', 'tcp', 'tls', 'auth', 'model'];
 const TCP_TIMEOUT_MS = 5000;
@@ -373,16 +379,34 @@ async function stepAuth(input: DiagnosticInput, step: DiagnosticStep): Promise<v
       return;
     }
 
+    const clientBaseUrl = resolveClientBaseUrl(input);
     try {
-      const { GoogleGenAI } = (await import('@google/genai')) as typeof import('@google/genai');
-      const clientBaseUrl = resolveClientBaseUrl(input);
       const httpOptions = { ...(clientBaseUrl ? { baseUrl: clientBaseUrl } : {}), timeout: 15000 };
-      const client = new GoogleGenAI({ apiKey, httpOptions });
+      const client = createGoogleGenAIClient({ apiKey, httpOptions });
       const modelToCheck = input.model?.trim() || 'gemini-3-flash-preview';
       await client.models.get({ model: modelToCheck });
       step.status = 'ok';
     } catch (err) {
       const e = getApiErrorInfo(err);
+      if (clientBaseUrl && isGeminiSdkProbeUnavailableError(e.message)) {
+        try {
+          await fetchGeminiRelayModelMetadata({
+            baseUrl: clientBaseUrl,
+            apiKey,
+            model: input.model?.trim() || 'gemini-3-flash-preview',
+          });
+          step.status = 'ok';
+          step.fix = 'gemini_auth_probe_http_fallback';
+          step.latencyMs = Date.now() - start;
+          return;
+        } catch (httpErr) {
+          const httpInfo = getApiErrorInfo(httpErr);
+          if (!isLikelyAuthFailure(httpInfo)) {
+            e.message = httpInfo.message;
+            e.status = httpInfo.status;
+          }
+        }
+      }
       if (shouldContinueAfterGeminiAuthProbeError(e)) {
         // Some SDK/proxy combinations do not support the lightweight models.get
         // endpoint. Continue to the live model probe, which exercises inference.

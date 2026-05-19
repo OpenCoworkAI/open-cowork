@@ -5,7 +5,10 @@ import { resolve } from 'path';
 import { builtinModules } from 'module';
 
 // Node built-in modules must be external for Electron main process
-const nodeBuiltins = builtinModules.flatMap(m => [m, `node:${m}`]);
+const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
+
+// Keep @google/genai out of the pi-ai bundle — bundled copy breaks models.get in Electron.
+const googleGenaiExternals = ['@google/genai', /^@google\/genai\//];
 const ignoredWatchPaths = [
   '**/release/**',
   '**/dist/**',
@@ -37,6 +40,7 @@ export default defineConfig({
                 // Externalize large CJS-compatible main-process dependencies
                 // NOTE: ESM-only packages (pi-coding-agent, pi-ai, electron-store, uuid)
                 // must stay bundled — CJS require() can't load them
+                ...googleGenaiExternals,
                 '@anthropic-ai/sdk',
                 '@larksuiteoapi/node-sdk',
                 'openai',
@@ -78,6 +82,8 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@main': resolve(__dirname, 'src/main'),
       '@renderer': resolve(__dirname, 'src/renderer'),
+      // Prefer Node build when tooling still resolves @google/genai during dev compile.
+      '@google/genai': resolve(__dirname, 'node_modules/@google/genai/dist/node/index.mjs'),
     },
   },
   server: {
