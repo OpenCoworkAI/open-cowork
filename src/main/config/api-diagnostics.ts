@@ -36,7 +36,6 @@ import { fetchOllamaModelIndex } from './ollama-api';
 import {
   fetchGeminiRelayModelMetadata,
   isGeminiSdkProbeUnavailableError,
-  probeGeminiRelayGenerateContent,
 } from './gemini-relay-probe';
 import { createGoogleGenAIClient } from './google-genai-loader';
 
