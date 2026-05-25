@@ -123,7 +123,7 @@
     "lint-staged": "16.4.0",
     "postcss": "^8.5.14",
     "prettier": "^3.8.3",
-    "tailwindcss": "^3.4.16",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.29.1",
