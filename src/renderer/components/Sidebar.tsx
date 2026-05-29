@@ -30,7 +30,6 @@ export function Sidebar() {
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const settings = useAppStore((s) => s.settings);
-  const sessionStates = useAppStore((s) => s.sessionStates);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setMessages = useAppStore((s) => s.setMessages);
   const setTraceSteps = useAppStore((s) => s.setTraceSteps);
@@ -155,7 +154,15 @@ export function Sidebar() {
 
       setActiveSession(sessionId);
 
-      const existingMessages = sessionStates[sessionId]?.messages;
+      // Read sessionStates at call-time from the store rather than closing over
+      // the selector value. The selector returns a new object reference every
+      // time any session's state changes (patchSession spreads the whole map),
+      // so including it in deps would rebuild this callback on every streaming
+      // tick and cause a React #185 "Maximum update depth exceeded" loop when
+      // rapidly switching sessions on slow renderers (e.g. Windows).
+      const currentSessionStates = useAppStore.getState().sessionStates;
+
+      const existingMessages = currentSessionStates[sessionId]?.messages;
       if ((!existingMessages || existingMessages.length === 0) && isElectron) {
         try {
           const messages = await getSessionMessages(sessionId);
@@ -167,7 +174,7 @@ export function Sidebar() {
         }
       }
 
-      const existingSteps = sessionStates[sessionId]?.traceSteps;
+      const existingSteps = currentSessionStates[sessionId]?.traceSteps;
       if ((!existingSteps || existingSteps.length === 0) && isElectron) {
         try {
           const steps = await getSessionTraceSteps(sessionId);
@@ -182,7 +189,6 @@ export function Sidebar() {
       getSessionMessages,
       getSessionTraceSteps,
       isElectron,
-      sessionStates,
       setActiveSession,
       setMessages,
       setShowSettings,

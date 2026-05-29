@@ -471,6 +471,30 @@ describe('pi model resolution helpers', () => {
     expect(model.compat?.requiresThinkingInContent).toBe(true);
   });
 
+  it('sets requiresThinkingInContent for provider-prefixed DeepSeek V4 model ids', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'deepseek/deepseek-v4-flash',
+        name: 'deepseek/deepseek-v4-flash',
+        api: 'openai-completions',
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+      {
+        configProvider: 'openrouter',
+        rawProvider: 'openrouter',
+        customBaseUrl: 'https://openrouter.ai/api/v1',
+      }
+    );
+
+    expect(model.compat?.requiresThinkingInContent).toBe(true);
+  });
+
   it('does not set requiresThinkingInContent for non-V4 DeepSeek models on custom endpoints', () => {
     const model = applyPiModelRuntimeOverrides(
       {

@@ -17,11 +17,22 @@ function shortenPath(p: string): string {
 }
 
 /** getToolLabel — mirrors MessageCard.tsx */
-function getToolLabel(name: string, input: unknown): string {
-  const inp = (input as Record<string, unknown>) || {};
+function getMcpToolDisplayName(name: string, displayName?: string): string {
+  if (typeof displayName === 'string' && displayName.trim().length > 0) {
+    return displayName;
+  }
   if (name.startsWith('mcp__')) {
     const match = name.match(/^mcp__(.+?)__(.+)$/);
     return match?.[2] || name;
+  }
+  return name;
+}
+
+/** getToolLabel — mirrors MessageCard.tsx */
+function getToolLabel(name: string, input: unknown, displayName?: string): string {
+  const inp = (input as Record<string, unknown>) || {};
+  if (name.startsWith('mcp__')) {
+    return getMcpToolDisplayName(name, displayName);
   }
   const nameLower = name.toLowerCase();
   if (nameLower === 'read' || nameLower === 'read_file') {
@@ -115,6 +126,12 @@ describe('getToolLabel', () => {
 
   it('handles MCP tool names', () => {
     expect(getToolLabel('mcp__server__doSomething', {})).toBe('doSomething');
+  });
+
+  it('prefers original MCP display names when provided', () => {
+    expect(getToolLabel('mcp__server__browser_context', {}, 'browser.context')).toBe(
+      'browser.context'
+    );
   });
 
   it('handles bash with command', () => {

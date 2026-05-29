@@ -101,6 +101,47 @@ describe('DeepSeek thinking block serialization', () => {
     expect((assistantMsg as Record<string, unknown>).reasoning_content).toBeUndefined();
   });
 
+  it('prefers content[] thinking blocks when text fallback compat is also enabled', () => {
+    const context = {
+      systemPrompt: undefined,
+      messages: [
+        { role: 'user' as const, content: [{ type: 'text' as const, text: 'Hello' }] },
+        {
+          role: 'assistant' as const,
+          ...sameModelMeta,
+          content: [
+            {
+              type: 'thinking' as const,
+              thinking: 'Preserve this exact thinking block',
+              thinkingSignature: 'reasoning_content',
+            },
+            { type: 'text' as const, text: 'Final answer' },
+          ],
+        },
+        { role: 'user' as const, content: [{ type: 'text' as const, text: 'Follow up' }] },
+      ],
+    };
+
+    const result = convertMessages(baseModel, context, {
+      ...baseCompat,
+      requiresThinkingAsText: true,
+    });
+
+    const assistantMsg = result.find((m: { role: string }) => m.role === 'assistant');
+    const content = assistantMsg!.content as Array<{
+      type: string;
+      thinking?: string;
+      text?: string;
+    }>;
+
+    expect(Array.isArray(assistantMsg!.content)).toBe(true);
+    expect(content[0]).toEqual({
+      type: 'thinking',
+      thinking: 'Preserve this exact thinking block',
+    });
+    expect(content[1]).toEqual({ type: 'text', text: 'Final answer' });
+  });
+
   it('puts thinking as top-level field when requiresThinkingInContent is false', () => {
     const context = {
       systemPrompt: undefined,
@@ -135,6 +176,40 @@ describe('DeepSeek thinking block serialization', () => {
     expect((assistantMsg as Record<string, unknown>).reasoning_content).toBe(
       'Let me think about this...'
     );
+  });
+
+  it('preserves array content shape for requiresThinkingAsText compatibility', () => {
+    const context = {
+      systemPrompt: undefined,
+      messages: [
+        { role: 'user' as const, content: [{ type: 'text' as const, text: 'Hello' }] },
+        {
+          role: 'assistant' as const,
+          ...sameModelMeta,
+          content: [
+            {
+              type: 'thinking' as const,
+              thinking: 'Zai style reasoning',
+              thinkingSignature: 'reasoning_content',
+            },
+            { type: 'text' as const, text: 'Visible answer' },
+          ],
+        },
+      ],
+    };
+
+    const result = convertMessages(baseModel, context, {
+      ...baseCompat,
+      requiresThinkingAsText: true,
+      requiresThinkingInContent: false,
+    });
+
+    const assistantMsg = result.find((m: { role: string }) => m.role === 'assistant');
+    expect(Array.isArray(assistantMsg!.content)).toBe(true);
+    expect(assistantMsg!.content).toEqual([
+      { type: 'text', text: 'Zai style reasoning' },
+      { type: 'text', text: 'Visible answer' },
+    ]);
   });
 
   it('handles assistant message with only thinking blocks (no text)', () => {

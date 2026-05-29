@@ -70,7 +70,7 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const isError = toolResult?.isError === true;
   const isSuccess = toolResult && !isError;
 
-  const label = getToolLabel(block.name, block.input);
+  const label = getToolLabel(block.name, block.input, block.displayName);
   const isMCPTool = block.name.startsWith('mcp__');
   const mcpServerName = isMCPTool ? block.name.match(/^mcp__(.+?)__/)?.[1] : null;
 

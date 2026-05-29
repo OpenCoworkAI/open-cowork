@@ -8,6 +8,7 @@ import {
   shouldUseScreenshotSummary,
 } from '../../utils/tool-result-summary';
 import type { ToolResultContent, ContentBlock, ToolUseContent, Message } from '../../types';
+import { getMcpToolDisplayName } from './toolHelpers';
 
 // Only allow safe image MIME types for data: URI rendering
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -48,21 +49,25 @@ export const ToolResultBlock = memo(function ToolResultBlock({
 
   // Try to find the tool name from trace steps
   let toolName: string | undefined;
+  let toolDisplayName: string | undefined;
   if (message?.sessionId) {
     const toolCallStep = traceSteps.find((s) => s.id === block.toolUseId && s.type === 'tool_call');
-    if (toolCallStep) toolName = toolCallStep.toolName;
+    if (toolCallStep) {
+      toolName = toolCallStep.toolName;
+      toolDisplayName = toolCallStep.title;
+    }
   }
+  const toolUseBlock = allBlocks?.find(
+    (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
+  ) as ToolUseContent | undefined;
   if (!toolName) {
-    const toolUseBlock = allBlocks?.find(
-      (b) => b.type === 'tool_use' && (b as ToolUseContent).id === block.toolUseId
-    ) as ToolUseContent | undefined;
     toolName = toolUseBlock?.name;
   }
+  if (!toolDisplayName) {
+    toolDisplayName = toolUseBlock?.displayName;
+  }
 
-  const isMCPTool = toolName?.startsWith('mcp__') || false;
-  const displayName = isMCPTool
-    ? (toolName || '').match(/^mcp__(.+?)__(.+)$/)?.[2] || toolName || 'tool'
-    : toolName || 'tool';
+  const displayName = toolName ? getMcpToolDisplayName(toolName, toolDisplayName) : 'tool';
 
   const getSummary = (): string => {
     const content = typeof block.content === 'string' ? block.content : '';

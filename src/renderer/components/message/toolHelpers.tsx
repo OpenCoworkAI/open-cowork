@@ -23,13 +23,29 @@ export function shortenPath(p: string): string {
   return segments.slice(-2).join('/');
 }
 
-/** Get compact label: tool action + key argument */
-export function getToolLabel(name: string, input: Record<string, unknown>): string {
-  const inp = input || {};
-  // MCP tools
+export function getMcpToolDisplayName(name: string, displayName?: string): string {
+  if (typeof displayName === 'string' && displayName.trim().length > 0) {
+    return displayName;
+  }
+
   if (name.startsWith('mcp__')) {
     const match = name.match(/^mcp__(.+?)__(.+)$/);
     return match?.[2] || name;
+  }
+
+  return name;
+}
+
+/** Get compact label: tool action + key argument */
+export function getToolLabel(
+  name: string,
+  input: Record<string, unknown>,
+  displayName?: string
+): string {
+  const inp = input || {};
+  // MCP tools
+  if (name.startsWith('mcp__')) {
+    return getMcpToolDisplayName(name, displayName);
   }
 
   const nameLower = name.toLowerCase();

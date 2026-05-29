@@ -144,7 +144,7 @@ Open Cowork 提供**多级沙盒保护**，确保系统安全：
 
 ```bash
 brew install lima
-# Open Cowork 会自动创建和管理 'claude-sandbox' 虚拟机
+# Open Cowork 会自动创建和管理 Lima 虚拟机（内部 Lima 实例名：'claude-sandbox'）
 ```
 
 ---

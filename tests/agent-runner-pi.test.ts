@@ -5,7 +5,7 @@ import path from 'node:path';
 const agentRunnerPath = path.resolve(process.cwd(), 'src/main/claude/agent-runner.ts');
 const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
 
-describe('ClaudeAgentRunner pi-coding-agent integration', () => {
+describe('ClaudeAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
     expect(agentRunnerContent).toContain(
       "import { mcpConfigStore } from '../mcp/mcp-config-store'"
@@ -109,6 +109,12 @@ describe('ClaudeAgentRunner pi-coding-agent integration', () => {
     );
     expect(agentRunnerContent).not.toContain('else textParts.push(JSON.stringify(part));');
     expect(agentRunnerContent).not.toContain(": JSON.stringify(event.result || '');");
+  });
+
+  it('persists assistant model metadata for pi-ai thinking replay', () => {
+    expect(agentRunnerContent).toContain('api: piModel.api');
+    expect(agentRunnerContent).toContain('provider: piModel.provider');
+    expect(agentRunnerContent).toContain('model: piModel.id');
   });
 
   it('does not reference removed AskUserQuestion or TodoWrite tools', () => {

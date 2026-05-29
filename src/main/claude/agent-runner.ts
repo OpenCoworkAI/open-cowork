@@ -4,7 +4,7 @@
  * AI query execution engine (1514 lines).
  *
  * Responsibilities:
- * - Runs AI conversations via the pi-coding-agent SDK (createAgentSession)
+ * - Runs AI conversations via the Open Cowork agent SDK (createAgentSession)
  * - Routes providers via pi-ai SDK for model resolution
  * - Bridges MCP tools into SDK ToolDefinition format
  * - Streams responses back as ServerEvents (stream.message, stream.partial, trace.step)
@@ -25,6 +25,7 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
+import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
@@ -64,6 +65,14 @@ import {
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import { ThinkTagStreamParser } from './think-tag-parser';
 import {
+  LoopGuard,
+  buildAbortUserMessage,
+  buildHaltSteerMessage,
+  buildWarnSteerMessage,
+  type LoopGuardDecision,
+  type ToolCallDescriptor,
+} from './agent-runner-loop-guard';
+import {
   normalizeMcpToolResultForModel,
   normalizeToolExecutionResultForUi,
 } from './tool-result-utils';
@@ -84,6 +93,111 @@ function estimateCharsPerToken(sampleText: string): number {
     .length;
   const cjkRatio = cjkCount / sample.length;
   return 4 - cjkRatio * 2.5; // Range: 1.5 (pure CJK) ~ 4 (pure English)
+}
+
+// Escape characters that would break the cold-start `<conversation_history>`
+// envelope when interpolated into XML tag bodies or attribute values. Raw user
+// text blocks are intentionally not escaped (preserves legacy compatibility);
+// only the new wrapper tags (`<thinking>`, `<tool_use>`, `<tool_result>`) and
+// their attributes pass through these.
+//
+// Attribute values additionally need `"` escaped because attributes are
+// double-quoted. Tag bodies do not (keeping `"` keeps JSON input legible to
+// the model).
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Serialize a message's content blocks into the XML representation used inside the
+ * cold-start `<conversation_history>` preamble.
+ *
+ * Why this exists: when the cached pi-coding-agent SDK session is disposed (cwd
+ * change or runtime-signature change), agent-runner rebuilds history from
+ * DB-persisted messages. The previous implementation only kept `text` blocks,
+ * which silently dropped `thinking`, `tool_use`, and `tool_result` blocks.
+ * Providers that require previous reasoning/tool-call replay (e.g. DeepSeek V4
+ * Flash) then fail with 400 on the next turn, and every other thinking-capable
+ * model loses its reasoning trace across cwd switches (issue #162 \u2014 Bug B).
+ *
+ * Blocks handled:
+ *   - text          \u2192 raw text (matches the legacy serializer's output)
+ *   - thinking      \u2192 `<thinking>\u2026</thinking>`
+ *   - tool_use      \u2192 `<tool_use name="\u2026" id="\u2026">{json input}</tool_use>`
+ *   - tool_result   \u2192 `<tool_result tool_use_id="\u2026"[ is_error="true"]>\u2026</tool_result>`
+ *   - image         \u2192 skipped (binary, cannot live inside an XML text preamble)
+ *   - file_attachment \u2192 skipped (large, would bloat the prompt)
+ */
+export function serializeMessageContentForHistory(content: ContentBlock[]): string {
+  const parts: string[] = [];
+  for (const block of content) {
+    switch (block.type) {
+      case 'text': {
+        const text = block.text ?? '';
+        if (text.length > 0) parts.push(text);
+        break;
+      }
+      case 'thinking': {
+        const thinking = block.thinking ?? '';
+        if (thinking.length > 0) parts.push(`<thinking>${escapeXmlText(thinking)}</thinking>`);
+        break;
+      }
+      case 'tool_use': {
+        const name = block.name ?? 'unknown';
+        const id = block.id ?? '';
+        let inputStr: string;
+        try {
+          inputStr = JSON.stringify(block.input ?? {});
+        } catch {
+          inputStr = '{}';
+        }
+        parts.push(
+          `<tool_use name="${escapeXmlAttr(name)}" id="${escapeXmlAttr(id)}">${escapeXmlText(inputStr)}</tool_use>`
+        );
+        break;
+      }
+      case 'tool_result': {
+        const id = block.toolUseId ?? '';
+        const errAttr = block.isError ? ' is_error="true"' : '';
+        // Local type says `content: string`, but Anthropic-style payloads
+        // from older message rows or third-party providers may store an
+        // array of content blocks. Flatten defensively so we never serialize
+        // "[object Object]".
+        const rawContent = (block as { content: unknown }).content;
+        let text: string;
+        if (typeof rawContent === 'string') {
+          text = rawContent;
+        } else if (Array.isArray(rawContent)) {
+          text = rawContent
+            .map((c) =>
+              c && typeof c === 'object' && 'text' in c
+                ? String((c as { text: unknown }).text ?? '')
+                : ''
+            )
+            .join('\n');
+        } else {
+          text = '';
+        }
+        parts.push(
+          `<tool_result tool_use_id="${escapeXmlAttr(id)}"${errAttr}>${escapeXmlText(text)}</tool_result>`
+        );
+        break;
+      }
+      case 'image':
+      case 'file_attachment':
+        // Skip \u2014 not representable as XML text in a history preamble.
+        break;
+    }
+  }
+  return parts.join('\n');
 }
 
 // Bundled node/npx paths never change at runtime — resolve once.
@@ -272,7 +386,7 @@ async function enrichProcessPathForBuild(): Promise<void> {
 // Shared pi-ai auth storage — created once, reused across sessions.
 
 /**
- * Bridge MCP tools from MCPManager into pi-coding-agent ToolDefinition[] format.
+ * Bridge MCP tools from MCPManager into ToolDefinition[] format for the agent SDK.
  * Each MCP tool becomes a customTool whose execute() delegates to mcpManager.callTool().
  */
 function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
@@ -285,7 +399,7 @@ function buildMcpCustomTools(mcpManager: MCPManager): ToolDefinition[] {
 
     const toolDef: ToolDefinition<TSchema, unknown> = {
       name: mcpTool.name,
-      label: mcpTool.name.replace(/^mcp__/, '').replace(/__/g, ' → '),
+      label: `${mcpTool.serverName} → ${mcpTool.originalName || mcpTool.name}`,
       description: mcpTool.description || `MCP tool from ${mcpTool.serverName}`,
       parameters,
       async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -404,6 +518,12 @@ interface AgentRunnerOptions {
     toolUseId: string,
     command: string
   ) => Promise<string | null>;
+  requestPermission?: (
+    sessionId: string,
+    toolUseId: string,
+    toolName: string,
+    input: Record<string, unknown>
+  ) => Promise<'allow' | 'deny' | 'allow_always'>;
 }
 
 interface CachedPiSession {
@@ -431,6 +551,12 @@ export class ClaudeAgentRunner {
     toolUseId: string,
     command: string
   ) => Promise<string | null>;
+  private requestPermission?: (
+    sessionId: string,
+    toolUseId: string,
+    toolName: string,
+    input: Record<string, unknown>
+  ) => Promise<'allow' | 'deny' | 'allow_always'>;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
   private _pluginRuntimeService?: PluginRuntimeService;
@@ -438,6 +564,7 @@ export class ClaudeAgentRunner {
   private extensionManager?: AgentRuntimeExtensionManager;
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
+  private toolDisplayNameCache: Map<string, string> = new Map();
   private static readonly MAX_CACHED_SESSIONS = 50;
 
   // Per-instance caches — invalidated when the underlying config changes.
@@ -756,13 +883,14 @@ ${hints.join('\n')}
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
     this.requestSudoPassword = options.requestSudoPassword;
+    this.requestPermission = options.requestPermission;
     this.pathResolver = pathResolver;
     this.mcpManager = mcpManager;
     this._pluginRuntimeService = pluginRuntimeService;
     this._skillsAdapter = skillsAdapter;
     this.extensionManager = extensionManager;
 
-    log('[ClaudeAgentRunner] Initialized with pi-coding-agent SDK');
+    log('[ClaudeAgentRunner] Initialized with Open Cowork agent SDK');
     log('[ClaudeAgentRunner] Skills enabled: settingSources=[user, project], Skill tool enabled');
     if (mcpManager) {
       log('[ClaudeAgentRunner] MCP support enabled');
@@ -770,10 +898,140 @@ ${hints.join('\n')}
   }
 
   /**
+   * Install a permission-gating hook on the pi-coding-agent session via
+   * `agent.setBeforeToolCall`. This is the only interception point that
+   * fires for built-in tools (read, bash, edit, write) — the SDK ignores
+   * wrapped `execute` functions on built-in tools passed via `options.tools`.
+   *
+   * The hook consults `decidePermission` from the main-process rules cache:
+   *  - 'allow' → delegate to SDK's original hook (proceeds normally)
+   *  - 'deny'  → return { block: true, reason } (SDK treats as tool error)
+   *  - 'ask'   → await requestPermission() IPC round-trip to PermissionDialog
+   *
+   * Known limitation: the async requestPermission wait (user dialog) causes
+   * the renderer to miss UI update events. The tool executes correctly on
+   * the backend, but the renderer's loading spinner may not clear. This is
+   * a renderer-side issue tracked as a follow-up.
+   */
+  private installPermissionHook(piSession: PiAgentSession, sessionId: string): void {
+    if (!this.requestPermission) {
+      log('[ClaudeAgentRunner] No requestPermission callback — skipping permission hook');
+      return;
+    }
+
+    // Access the Agent instance (public readonly property on AgentSession)
+    // and wrap its beforeToolCall hook with our permission gate.
+    //
+    // We must chain to the SDK's original beforeToolCall hook because it
+    // fires extension tool_call events and manages the _agentEventQueue.
+    // Without chaining, the renderer misses completion events.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const agent = (piSession as any).agent;
+    if (!agent || typeof agent.setBeforeToolCall !== 'function') {
+      logWarn(
+        '[ClaudeAgentRunner] Cannot access agent.setBeforeToolCall — skipping permission hook'
+      );
+      return;
+    }
+
+    // Capture the SDK's hook before we overwrite it
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sdkBeforeToolCall: ((ctx: any, signal?: AbortSignal) => Promise<any>) | undefined =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (agent as any)._beforeToolCall;
+
+    const requestPermission = this.requestPermission;
+    const getDisplayName = (name: string): string => this.getToolDisplayName(name);
+
+    agent.setBeforeToolCall(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (ctx: any, signal?: AbortSignal): Promise<any> => {
+        const toolName: string = ctx.toolCall?.name ?? '';
+        const input: Record<string, unknown> = ctx.args ?? {};
+
+        const decision = decidePermission(sessionId, toolName, input);
+        // Human-readable name for prompts/messages (e.g. MCP sanitized
+        // 'mcp__chrome__chrome_screenshot__ab12' → 'chrome_screenshot').
+        // Rule matching and rememberAlwaysAllow still use the canonical
+        // `toolName` so allow-once decisions stay stable across calls.
+        const displayName = getDisplayName(toolName);
+
+        if (decision === 'deny') {
+          log(`[ClaudeAgentRunner] Tool '${toolName}' denied by rule`);
+          return {
+            block: true,
+            reason: `Tool '${displayName}' is denied by your permission rules.`,
+          };
+        }
+
+        if (decision === 'ask') {
+          const toolUseId = `${ctx.toolCall?.id ?? 'unknown'}-perm-${uuidv4().slice(0, 8)}`;
+          let result: 'allow' | 'deny' | 'allow_always';
+          try {
+            // Send the display name to the renderer so the dialog shows a
+            // human-readable tool name; canonical `toolName` is still used
+            // for rule matching above and "always allow" memory below.
+            result = await requestPermission(sessionId, toolUseId, displayName, input);
+          } catch (permErr) {
+            logError(
+              `[ClaudeAgentRunner] Permission request failed for '${toolName}' — failing closed`,
+              permErr
+            );
+            return {
+              block: true,
+              reason: `Permission request failed for '${displayName}'; tool not executed.`,
+            };
+          }
+
+          if (result === 'deny') {
+            log(`[ClaudeAgentRunner] Tool '${toolName}' denied by user`);
+            return { block: true, reason: `User denied permission for '${displayName}'.` };
+          }
+
+          if (result === 'allow_always') {
+            rememberAlwaysAllow(sessionId, toolName);
+          }
+        }
+
+        // Allowed — delegate to SDK's original hook for event pipeline
+        return sdkBeforeToolCall ? sdkBeforeToolCall(ctx, signal) : undefined;
+      }
+    );
+
+    log(
+      `[ClaudeAgentRunner] Permission hook installed on session ${sessionId} via agent.setBeforeToolCall`
+    );
+  }
+
+  /**
    * Check if a command contains sudo
    */
   private static isSudoCommand(command: string): boolean {
     return /\bsudo\b/.test(command);
+  }
+
+  private getToolDisplayName(toolName: string): string {
+    const cached = this.toolDisplayNameCache.get(toolName);
+    if (cached) {
+      return cached;
+    }
+
+    let displayName = toolName;
+    if (!toolName.startsWith('mcp__')) {
+      this.toolDisplayNameCache.set(toolName, displayName);
+      return displayName;
+    }
+
+    const mcpTool = this.mcpManager?.getTool(toolName);
+    if (mcpTool?.originalName) {
+      displayName = mcpTool.originalName;
+    } else {
+      const match = toolName.match(/^mcp__(.+?)__(.+)$/);
+      displayName = match?.[2] || toolName;
+    }
+
+    this.toolDisplayNameCache.set(toolName, displayName);
+    return displayName;
   }
 
   /**
@@ -879,7 +1137,7 @@ ${hints.join('\n')}
 
   /**
    * Wrap the bash tool to inject a default timeout when the model omits one.
-   * The pi-coding-agent SDK's bash tool has no default timeout, which means
+   * The agent SDK's bash tool has no default timeout, which means
    * commands can run indefinitely if the model doesn't specify a timeout.
    */
   private static wrapBashToolWithDefaultTimeout(tools: ToolDefinition[]): ToolDefinition[] {
@@ -953,6 +1211,10 @@ ${hints.join('\n')}
 
     const thinkingStepId = uuidv4();
     let abortedByTimeout = false;
+    // Set to true when the loop-guard unilaterally aborts (hash_abort / freq_abort).
+    // The catch block consults this flag to avoid overwriting the 'error' trace
+    // status that handleLoopGuardDecision has already published.
+    let abortedByLoopGuard = false;
 
     try {
       this.pathResolver.registerSession(session.id, session.mountedPaths);
@@ -1440,7 +1702,7 @@ ${hints.join('\n')}
 
       logTiming('after pi-ai model resolution', runStartTime);
 
-      // pi-coding-agent handles path sandboxing via its own tools
+      // the agent SDK handles path sandboxing via its own tools
       const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
       const effectiveCwd =
         useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
@@ -1610,27 +1872,28 @@ ${hints.join('\n')}
           const historyBudgetRatio = provider === 'ollama' && contextWindow < 16384 ? 0.15 : 0.3;
           const historyTokenBudget = Math.floor(contextWindow * historyBudgetRatio);
 
-          // Sample recent messages to estimate chars-per-token ratio
+          // Sample recent messages to estimate chars-per-token ratio. Sampling the
+          // full serialized form (text + thinking + tool blocks) gives a better CJK
+          // ratio estimate than sampling text only.
           const sampleText = historyMessages
             .slice(-3)
-            .flatMap((m) =>
-              m.content.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text)
-            )
+            .map((m) => serializeMessageContentForHistory(m.content))
             .join('');
           const charsPerToken = estimateCharsPerToken(sampleText);
           const historyCharBudget = Math.floor(historyTokenBudget * charsPerToken);
 
           const historyItems: string[] = [];
           let charCount = 0;
-          // Build from newest to oldest, then reverse
+          // Build from newest to oldest, then reverse. We preserve thinking and
+          // tool blocks (not just text) so providers requiring reasoning/tool-call
+          // replay (DeepSeek V4 Flash, and any thinking-capable model after a
+          // cwd switch) continue to function after a cold start. See #162 Bug B.
           for (let i = historyMessages.length - 1; i >= 0; i--) {
             const msg = historyMessages[i];
-            const textContent = msg.content
-              .filter((c) => c.type === 'text')
-              .map((c) => (c as { text: string }).text)
-              .join('\n');
+            const serialized = serializeMessageContentForHistory(msg.content);
+            if (serialized.length === 0) continue;
             const roleTag = msg.role === 'user' ? 'user' : 'assistant';
-            const entry = `<turn role="${roleTag}">${textContent}</turn>`;
+            const entry = `<turn role="${roleTag}">${serialized}</turn>`;
             if (charCount + entry.length > historyCharBudget) break;
             charCount += entry.length;
             historyItems.unshift(entry);
@@ -1845,10 +2108,10 @@ Tool routing:
         .filter((section): section is string => Boolean(section && section.trim()))
         .join('\n\n');
 
-      logTiming('before pi-coding-agent session creation', runStartTime);
+      logTiming('before agent session creation', runStartTime);
 
-      // Create or reuse pi-coding-agent session
-      // Bridge MCP tools as customTools for pi-coding-agent.
+      // Create or reuse agent session
+      // Bridge MCP tools as customTools for the agent SDK.
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
@@ -1934,9 +2197,9 @@ Tool routing:
         }
 
         logCtx('[ClaudeAgentRunner] Reusing cached pi session for:', session.id);
-        logTiming('pi-coding-agent session reused', runStartTime);
+        logTiming('agent session reused', runStartTime);
       } else {
-        // First query in this session — create new pi-coding-agent session
+        // First query in this session — create new agent session
         // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
         const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
         const resourceLoader = new DefaultResourceLoader({
@@ -1994,6 +2257,10 @@ Tool routing:
           cwd: effectiveCwd,
         });
         piSession = newPiSession;
+
+        // Install permission-gating hook via the SDK's tool_call extension event.
+        // This must happen once per new session — the hook persists across reuses.
+        this.installPermissionHook(piSession, session.id);
 
         // Store session for reuse — evict oldest if cache is full
         if (this.piSessions.size >= ClaudeAgentRunner.MAX_CACHED_SESSIONS) {
@@ -2053,10 +2320,10 @@ Tool routing:
           } // end else (_onPayload exists)
         }
 
-        logTiming('pi-coding-agent session created', runStartTime);
+        logTiming('agent session created', runStartTime);
       }
 
-      // Set up event handler to bridge pi-coding-agent events → our ServerEvent protocol
+      // Set up event handler to bridge agent SDK events → our ServerEvent protocol
 
       // Accumulate streamed text deltas in case message_end.content is empty (pi SDK streaming behaviour)
       let streamedText = '';
@@ -2066,6 +2333,67 @@ Tool routing:
       const thinkParser = new ThinkTagStreamParser();
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
+
+      // ── Loop guard: protect against runaway tool-call loops ──
+      // (e.g. gemini-3.1-pro with thinking=off has been observed producing hundreds
+      //  of empty-text + single-tool-call responses in a single turn)
+      // Two layers: hash of whole tool-call group (window=20, warn=3/halt=5/abort=8)
+      //             + per-tool frequency (warn=30/halt=50/abort=80).
+      const loopGuard = new LoopGuard();
+      const handleLoopGuardDecision = (decision: LoopGuardDecision, context: string): void => {
+        if (decision.action === 'none' || controller.signal.aborted) return;
+        logWarn(`[LoopGuard] ${context}: action=${decision.action} reason=${decision.reason}`);
+
+        if (decision.action === 'hash_abort' || decision.action === 'freq_abort') {
+          // Always surface the loop-guard explanation, even if an earlier
+          // error already set hasEmittedError — the user must see why the
+          // session stopped. Mark the flag afterward to suppress duplicate
+          // generic-error chatter from later paths in this turn.
+          this.sendMessage(session.id, {
+            id: uuidv4(),
+            sessionId: session.id,
+            role: 'assistant',
+            content: [{ type: 'text', text: buildAbortUserMessage(decision) }],
+            timestamp: Date.now(),
+          });
+          hasEmittedError = true;
+          this.sendTraceUpdate(session.id, thinkingStepId, {
+            status: 'error',
+            title: 'Stopped: tool-call loop detected',
+          });
+          try {
+            // Mark BEFORE calling abort() so the AbortError handler in the
+            // outer catch can distinguish a loop-guard abort from a user
+            // cancel and skip the "Cancelled" trace overwrite.
+            abortedByLoopGuard = true;
+            controller.abort();
+          } catch (abortErr) {
+            logWarn('[LoopGuard] abort error:', abortErr);
+          }
+          return;
+        }
+
+        const steerText =
+          decision.action === 'hash_halt' || decision.action === 'freq_halt'
+            ? buildHaltSteerMessage(decision)
+            : buildWarnSteerMessage(decision);
+        // fire-and-forget: SDK queues the steering message for the next turn
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sessionAny = piSession as any;
+          if (typeof sessionAny.sendUserMessage === 'function') {
+            Promise.resolve(sessionAny.sendUserMessage(steerText, { deliverAs: 'steer' })).catch(
+              (err: unknown) => {
+                logWarn('[LoopGuard] sendUserMessage(steer) failed:', err);
+              }
+            );
+          } else {
+            logWarn('[LoopGuard] piSession.sendUserMessage is not available; skipping steer');
+          }
+        } catch (steerErr) {
+          logWarn('[LoopGuard] sendUserMessage(steer) threw:', steerErr);
+        }
+      };
 
       // Ollama cold-start feedback: if provider is 'ollama' and no stream event arrives
       // within 10 seconds, show a "model loading" trace update so users know what's happening.
@@ -2197,11 +2525,12 @@ Tool routing:
                 const toolContent = partial?.content?.[ame.contentIndex];
                 const toolName = toolContent?.type === 'toolCall' ? toolContent.name : 'unknown';
                 const toolCallId = toolContent?.type === 'toolCall' ? toolContent.id : uuidv4();
+                const toolDisplayName = this.getToolDisplayName(toolName);
                 this.sendTraceStep(session.id, {
                   id: toolCallId,
                   type: 'tool_call',
                   status: 'running',
-                  title: toolName,
+                  title: toolDisplayName,
                   toolName,
                   toolInput:
                     toolContent?.type === 'toolCall'
@@ -2304,10 +2633,12 @@ Tool routing:
                       }
                     }
                   } else if (block.type === 'toolCall') {
+                    const displayName = this.getToolDisplayName(block.name);
                     contentBlocks.push({
                       type: 'tool_use',
                       id: block.id,
                       name: block.name,
+                      displayName,
                       input: block.arguments,
                     });
                   } else if (block.type === 'thinking') {
@@ -2329,6 +2660,25 @@ Tool routing:
                   type: 'stream.partial',
                   payload: { sessionId: session.id, delta: '' },
                 });
+
+                // ── Loop guard layer 1: hash of this message's tool-call group ──
+                const toolUseDescriptors: ToolCallDescriptor[] = [];
+                for (const block of resolvedPayload.effectiveContent) {
+                  if (block.type === 'toolCall') {
+                    toolUseDescriptors.push({
+                      name: block.name || '',
+                      input: (block.arguments as Record<string, unknown>) || undefined,
+                    });
+                  }
+                }
+                if (toolUseDescriptors.length > 0) {
+                  handleLoopGuardDecision(
+                    loopGuard.recordAssistantMessage(toolUseDescriptors),
+                    'message_end'
+                  );
+                  if (controller.signal.aborted) break;
+                }
+
                 if (contentBlocks.length > 0) {
                   const msgWithUsage = msg as { usage?: unknown };
                   const tokenUsage = normalizeTokenUsage(msgWithUsage.usage);
@@ -2350,6 +2700,9 @@ Tool routing:
                     role: 'assistant',
                     content: contentBlocks,
                     timestamp: Date.now(),
+                    api: piModel.api,
+                    provider: piModel.provider,
+                    model: piModel.id,
                     tokenUsage,
                   };
                   this.sendMessage(session.id, assistantMsg);
@@ -2360,6 +2713,11 @@ Tool routing:
 
             case 'tool_execution_start': {
               logCtx(`[ClaudeAgentRunner] Tool execution start: ${event.toolName}`);
+              // ── Loop guard layer 2: per-tool cumulative frequency ──
+              handleLoopGuardDecision(
+                loopGuard.recordToolInvocation(event.toolName),
+                'tool_execution_start'
+              );
               break;
             }
 
@@ -2369,8 +2727,10 @@ Tool routing:
               const isError = event.isError;
               const normalizedToolResult = normalizeToolExecutionResultForUi(event.result);
               const outputText = normalizedToolResult.content;
+              const toolDisplayName = this.getToolDisplayName(event.toolName);
               this.sendTraceUpdate(session.id, toolCallId, {
                 status: isError ? 'error' : 'completed',
+                title: toolDisplayName,
                 toolName: event.toolName,
                 toolOutput: sanitizeOutputPaths(outputText).slice(0, 800),
               });
@@ -2499,7 +2859,7 @@ Tool routing:
         if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
       }
 
-      logTiming('pi-coding-agent prompt completed', runStartTime);
+      logTiming('agent prompt completed', runStartTime);
 
       // If the SDK swallowed the AbortError and returned void, detect timeout here
       if (controller.signal.aborted && abortedByTimeout) {
@@ -2516,6 +2876,14 @@ Tool routing:
           status: 'error',
           title: 'Request timed out',
         });
+        return;
+      }
+      // If the SDK swallowed the AbortError after a loop-guard abort, preserve
+      // the 'error' trace status that handleLoopGuardDecision already published.
+      // The user-facing message and trace step are already set; do not overwrite
+      // them with the default "Task completed" below.
+      if (controller.signal.aborted && abortedByLoopGuard) {
+        logCtx('[ClaudeAgentRunner] Aborted by loop guard (detected after prompt returned)');
         return;
       }
       // Complete - update the initial thinking step
@@ -2539,6 +2907,11 @@ Tool routing:
             status: 'error',
             title: 'Request timed out',
           });
+        } else if (abortedByLoopGuard) {
+          // Loop guard already published the user-facing assistant message and
+          // an 'error' trace step with the loop-detected title. Do NOT overwrite
+          // them here with a 'completed/Cancelled' state.
+          logCtx('[ClaudeAgentRunner] Aborted by loop guard');
         } else {
           logCtx('[ClaudeAgentRunner] Aborted by user');
           this.sendTraceUpdate(session.id, thinkingStepId, {

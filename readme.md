@@ -152,7 +152,7 @@ Open Cowork provides **multi-level sandbox protection** to keep your system safe
 
 ```bash
 brew install lima
-# Open Cowork will automatically create and manage a 'claude-sandbox' VM
+# Open Cowork will automatically create and manage a Lima VM (internal Lima name: 'claude-sandbox')
 ```
 
 ---

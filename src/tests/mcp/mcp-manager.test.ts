@@ -32,6 +32,23 @@ vi.mock('../../main/utils/shell-resolver', () => ({
 import { MCPManager } from '../../main/mcp/mcp-manager';
 import type { MCPServerConfig } from '../../main/mcp/mcp-manager';
 
+type TestMCPClient = {
+  listTools?: () => Promise<{
+    tools: Array<{ name: string; description?: string; inputSchema?: unknown }>;
+  }>;
+  callTool?: (input: { name: string; arguments: Record<string, unknown> }) => Promise<unknown>;
+};
+
+type TestManagerInternals = {
+  clients: Map<string, TestMCPClient>;
+  tools: Map<string, unknown>;
+  serverConfigs: Map<string, MCPServerConfig>;
+};
+
+function asTestManager(manager: MCPManager): TestManagerInternals {
+  return manager as unknown as TestManagerInternals;
+}
+
 describe('MCPManager', () => {
   let manager: MCPManager;
 
@@ -140,6 +157,163 @@ describe('MCPManager', () => {
       expect(serverStatus).toBeDefined();
       expect(serverStatus!.status).toBe('failed');
       expect(serverStatus!.connected).toBe(false);
+    });
+
+    it('waits five minutes before timing out listTools for slow MCP servers', async () => {
+      vi.useFakeTimers();
+      const testManager = asTestManager(manager);
+      const mockClient: TestMCPClient = {
+        listTools: vi.fn(
+          () =>
+            new Promise<{
+              tools: Array<{
+                name: string;
+                inputSchema: { type: string; properties: Record<string, never> };
+              }>;
+            }>(() => {})
+        ),
+      };
+      testManager.clients = new Map([['slow-server', mockClient]]);
+      testManager.serverConfigs = new Map([
+        [
+          'slow-server',
+          {
+            id: 'slow-server',
+            name: 'Slow Server',
+            type: 'stdio',
+            command: 'slow-server',
+            enabled: true,
+          },
+        ],
+      ]);
+
+      let settled = false;
+      const refreshPromise = manager.refreshTools().then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(299999);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await refreshPromise;
+
+      expect(settled).toBe(true);
+      expect(mockClient.listTools).toHaveBeenCalledTimes(1);
+      expect(manager.getTools()).toEqual([]);
+      vi.useRealTimers();
+    });
+
+    it('does not let a slow server block fast server tool discovery', async () => {
+      vi.useFakeTimers();
+      const testManager = asTestManager(manager);
+      const slowClient: TestMCPClient = {
+        listTools: vi.fn(
+          () =>
+            new Promise<{
+              tools: Array<{
+                name: string;
+                inputSchema: { type: string; properties: Record<string, never> };
+              }>;
+            }>(() => {})
+        ),
+      };
+      const fastClient: TestMCPClient = {
+        listTools: vi.fn().mockResolvedValue({
+          tools: [
+            {
+              name: 'inspect',
+              description: 'Fast tool',
+              inputSchema: { type: 'object', properties: {} },
+            },
+          ],
+        }),
+      };
+
+      testManager.clients = new Map([
+        ['slow-server', slowClient],
+        ['fast-server', fastClient],
+      ]);
+      testManager.serverConfigs = new Map([
+        [
+          'slow-server',
+          {
+            id: 'slow-server',
+            name: 'Slow Server',
+            type: 'stdio',
+            command: 'slow-server',
+            enabled: true,
+          },
+        ],
+        [
+          'fast-server',
+          {
+            id: 'fast-server',
+            name: 'Fast Server',
+            type: 'stdio',
+            command: 'fast-server',
+            enabled: true,
+          },
+        ],
+      ]);
+
+      const refreshPromise = manager.refreshTools();
+      await Promise.resolve();
+
+      expect(manager.getTools()).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(300000);
+      await refreshPromise;
+
+      expect(fastClient.listTools).toHaveBeenCalledTimes(1);
+      expect(slowClient.listTools).toHaveBeenCalledTimes(1);
+      expect(manager.getTools()).toEqual([
+        {
+          name: 'mcp__Fast_Server__inspect',
+          originalName: 'inspect',
+          description: 'Fast tool',
+          inputSchema: { type: 'object', properties: {}, required: undefined },
+          serverId: 'fast-server',
+          serverName: 'Fast Server',
+        },
+      ]);
+      vi.useRealTimers();
+    });
+
+    it('applies a shared five-minute deadline across tool-call retries', async () => {
+      vi.useFakeTimers();
+      const testManager = asTestManager(manager);
+      const mockClient: TestMCPClient = {
+        callTool: vi.fn(() => new Promise<unknown>(() => {})),
+      };
+      testManager.clients = new Map([['server-1', mockClient]]);
+      testManager.tools = new Map([
+        [
+          'mcp__Slow_Server__inspect',
+          {
+            name: 'mcp__Slow_Server__inspect',
+            description: '',
+            inputSchema: { type: 'object', properties: {} },
+            serverId: 'server-1',
+            serverName: 'Slow Server',
+          },
+        ],
+      ]);
+
+      const callPromise = manager.callTool('mcp__Slow_Server__inspect', { pid: 1234 });
+
+      await vi.advanceTimersByTimeAsync(299999);
+      let settled = false;
+      callPromise.catch(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(callPromise).rejects.toThrow('Tool call timeout after 300000ms');
+      expect(mockClient.callTool).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
     });
   });
 

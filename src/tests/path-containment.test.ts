@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  normalizePathForContainment,
-  isPathWithinRoot,
-} from '../main/tools/path-containment';
+import { normalizePathForContainment, isPathWithinRoot } from '../main/tools/path-containment';
 
 describe('normalizePathForContainment', () => {
   it('normalizes backslashes to forward slashes', () => {
@@ -69,5 +66,49 @@ describe('isPathWithinRoot', () => {
 
   it('case insensitive mode works for Windows paths', () => {
     expect(isPathWithinRoot('C:\\Users\\FOO\\file.txt', 'c:\\users\\foo', true)).toBe(true);
+  });
+
+  it('allows descendants with dot segments that stay inside the root', () => {
+    expect(isPathWithinRoot('/tmp/project/src/../index.ts', '/tmp/project')).toBe(true);
+  });
+
+  it('rejects paths that traverse outside the root with dot segments', () => {
+    expect(isPathWithinRoot('/tmp/project/../secret.txt', '/tmp/project')).toBe(false);
+  });
+
+  it('rejects relative target inputs', () => {
+    expect(isPathWithinRoot('src/index.ts', '/tmp/project')).toBe(false);
+  });
+
+  it('rejects relative root inputs', () => {
+    expect(isPathWithinRoot('/tmp/project/src/index.ts', 'tmp/project')).toBe(false);
+  });
+
+  it('supports rooted backslash paths produced by Windows normalization', () => {
+    expect(isPathWithinRoot('\\tmp\\project\\notes..final.md', '\\tmp\\project')).toBe(true);
+  });
+
+  it('rejects Windows paths that traverse outside the root', () => {
+    expect(
+      isPathWithinRoot('C:/Workspace/Reports/../../Secrets/out.txt', 'c:/workspace/reports', true)
+    ).toBe(false);
+  });
+
+  it('rejects UNC siblings that share the same prefix', () => {
+    expect(isPathWithinRoot('//server/share-evil/out.txt', '//server/share', true)).toBe(false);
+  });
+
+  it('rejects UNC paths that traverse outside the root', () => {
+    expect(
+      isPathWithinRoot('//server/share/workspace/../secret.txt', '//server/share/workspace', true)
+    ).toBe(false);
+  });
+
+  it('rejects target paths containing null bytes', () => {
+    expect(isPathWithinRoot('/workspace/file\x00.txt', '/workspace')).toBe(false);
+  });
+
+  it('rejects root paths containing null bytes', () => {
+    expect(isPathWithinRoot('/workspace/file.txt', '/workspace\x00')).toBe(false);
   });
 });

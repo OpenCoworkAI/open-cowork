@@ -391,7 +391,8 @@ function normalizeMemoryModelRuntimeConfig(
 }
 
 function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
-  const value = typeof raw === 'object' && raw !== null ? (raw as Partial<MemoryRuntimeConfig>) : {};
+  const value =
+    typeof raw === 'object' && raw !== null ? (raw as Partial<MemoryRuntimeConfig>) : {};
   return {
     llm: normalizeMemoryModelRuntimeConfig(value.llm, defaultConfig.memoryRuntime.llm),
     embedding: normalizeMemoryModelRuntimeConfig(
@@ -424,7 +425,8 @@ function normalizeMemoryRuntimeConfig(raw: unknown): MemoryRuntimeConfig {
         ? value.evalArtifactsRoot
         : defaultConfig.memoryRuntime.evalArtifactsRoot,
     promptIterationRounds:
-      typeof value.promptIterationRounds === 'number' && Number.isFinite(value.promptIterationRounds)
+      typeof value.promptIterationRounds === 'number' &&
+      Number.isFinite(value.promptIterationRounds)
         ? Math.max(0, Math.min(10, Math.round(value.promptIterationRounds)))
         : defaultConfig.memoryRuntime.promptIterationRounds,
   };
@@ -1625,7 +1627,7 @@ export class ConfigStore {
       }
     }
 
-    // claudeCodePath is no longer used (pi-coding-agent handles model routing natively)
+    // claudeCodePath is no longer used (the agent SDK handles model routing natively)
 
     if (projectedConfig.defaultWorkdir) {
       process.env.COWORK_WORKDIR = projectedConfig.defaultWorkdir;

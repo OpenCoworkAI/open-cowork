@@ -1,12 +1,13 @@
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-index 29ae8cf..c5f7df4 100644
+index 29ae8cf..6d9ea61 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-@@ -485,6 +485,19 @@ export function convertMessages(model, context, compat) {
-                         assistantMsg.content = [{ type: "text", text: thinkingText }];
-                     }
-                 }
-+                else if (compat.requiresThinkingInContent) {
+@@ -474,13 +474,32 @@ export function convertMessages(model, context, compat) {
+             // Filter out empty thinking blocks to avoid API validation errors
+             const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
+             if (nonEmptyThinkingBlocks.length > 0) {
+-                if (compat.requiresThinkingAsText) {
++                if (compat.requiresThinkingInContent) {
 +                    // DeepSeek V4 Pro requires thinking blocks in content[] array, not as top-level field
 +                    const thinkingContent = nonEmptyThinkingBlocks.map((b) => ({
 +                        type: "thinking",
@@ -19,18 +20,32 @@ index 29ae8cf..c5f7df4 100644
 +                            : [];
 +                    assistantMsg.content = [...thinkingContent, ...existingContent];
 +                }
-                 else {
-                     // Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
-                     const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
-@@ -658,6 +671,7 @@ function mapStopReason(reason) {
++                else if (compat.requiresThinkingAsText) {
+                     // Convert thinking blocks to plain text (no tags to avoid model mimicking them)
+                     const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n\n");
+                     const textContent = assistantMsg.content;
+-                    if (textContent) {
++                    if (Array.isArray(textContent)) {
+                         textContent.unshift({ type: "text", text: thinkingText });
+                     }
++                    else if (textContent) {
++                        assistantMsg.content = [
++                            { type: "text", text: thinkingText },
++                            { type: "text", text: textContent },
++                        ];
++                    }
+                     else {
+                         assistantMsg.content = [{ type: "text", text: thinkingText }];
+                     }
+@@ -658,6 +677,7 @@ function mapStopReason(reason) {
  function detectCompat(model) {
      const provider = model.provider;
      const baseUrl = model.baseUrl;
-+    const isDeepSeekV4 = /^deepseek-v4(?:$|[-:])/i.test(model.id);
++    const isDeepSeekV4 = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i.test(model.id);
      const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
      const isNonStandard = provider === "cerebras" ||
          baseUrl.includes("cerebras.ai") ||
-@@ -690,6 +704,7 @@ function detectCompat(model) {
+@@ -690,6 +710,7 @@ function detectCompat(model) {
          requiresToolResultName: false,
          requiresAssistantAfterToolResult: false,
          requiresThinkingAsText: false,
@@ -38,7 +53,7 @@ index 29ae8cf..c5f7df4 100644
          thinkingFormat: isZai ? "zai" : "openai",
          openRouterRouting: {},
          vercelGatewayRouting: {},
-@@ -714,6 +729,7 @@ function getCompat(model) {
+@@ -714,6 +735,7 @@ function getCompat(model) {
          requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
          requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
          requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
