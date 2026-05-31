@@ -22,6 +22,10 @@ import {
   resolvePiRouteProtocol,
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
+import {
+  isGeminiSdkProbeUnavailableError,
+  probeGeminiRelayGenerateContent,
+} from '../config/gemini-relay-probe';
 
 const NETWORK_ERROR_RE =
   /enotfound|econnrefused|etimedout|eai_again|enetunreach|timed?\s*out|timeout|abort|network\s*error/i;
@@ -354,6 +358,25 @@ export async function probeWithClaudeSdk(
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
     const elapsed = Date.now() - probeStart;
+    const route = resolvePiRouteProtocol(input.provider, probeConfig.customProtocol);
+    const relayBaseUrl = probeConfig.baseUrl?.trim();
+    if (
+      route === 'gemini' &&
+      relayBaseUrl &&
+      probeConfig.apiKey &&
+      probeConfig.model &&
+      isGeminiSdkProbeUnavailableError(details)
+    ) {
+      logWarn('[Probe] Gemini SDK probe failed, trying HTTP generateContent:', details);
+      const httpResult = await probeGeminiRelayGenerateContent({
+        baseUrl: relayBaseUrl,
+        apiKey: probeConfig.apiKey,
+        model: probeConfig.model,
+      });
+      if (httpResult.ok) {
+        return httpResult;
+      }
+    }
     return mapPiAiError(details, elapsed, input.provider);
   }
 }
