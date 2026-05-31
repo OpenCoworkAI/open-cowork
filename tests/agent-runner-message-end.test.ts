@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
+  resolveAbortDisposition,
   resolveAssistantStreamErrorText,
   resolveMessageEndPayload,
+  shouldPreserveExistingTrace,
   toUserFacingErrorText,
 } from '../src/main/claude/agent-runner-message-end';
 
@@ -204,6 +207,16 @@ describe('resolveAssistantStreamErrorText', () => {
 
     expect(result).toBe('aborted');
   });
+
+  it('defensively falls back when the provider omits the error payload entirely', () => {
+    const result = resolveAssistantStreamErrorText({
+      type: 'error',
+      reason: 'error',
+      error: undefined as never,
+    });
+
+    expect(result).toBe('error');
+  });
 });
 
 describe('buildTerminalErrorMessage', () => {
@@ -221,5 +234,65 @@ describe('buildTerminalErrorMessage', () => {
   it('uses the retry hint for non-4xx terminal errors', () => {
     const result = buildTerminalErrorMessage('connection reset');
     expect(result).toContain('Agent 正在自动重试');
+  });
+});
+
+describe('buildTerminalErrorEmissionDetails', () => {
+  it('preserves flushed thinking/text deltas and appends them to partial text', () => {
+    const result = buildTerminalErrorEmissionDetails({
+      errorText: 'HTTP 400: invalid request',
+      streamedText: 'Partial body',
+      flushedThinking: 'inner reasoning',
+      flushedText: ' plus tail',
+    });
+
+    expect(result.thinkingDelta).toBe('inner reasoning');
+    expect(result.textDelta).toBe(' plus tail');
+    expect(result.partialText).toBe('Partial body plus tail');
+    expect(result.messageText).toContain('Partial body plus tail');
+    expect(result.messageText).toContain('**Error**: HTTP 400: invalid request');
+  });
+
+  it('omits empty flush fragments cleanly', () => {
+    const result = buildTerminalErrorEmissionDetails({
+      errorText: 'connection reset',
+      streamedText: '',
+    });
+
+    expect(result.thinkingDelta).toBeUndefined();
+    expect(result.textDelta).toBeUndefined();
+    expect(result.partialText).toBe('');
+    expect(result.messageText).toContain('Agent 正在自动重试');
+  });
+});
+
+describe('resolveAbortDisposition', () => {
+  it('prioritizes timeout over other abort reasons', () => {
+    expect(
+      resolveAbortDisposition({
+        abortedByTimeout: true,
+        abortedByLoopGuard: true,
+        abortedByStreamError: true,
+      })
+    ).toBe('timeout');
+  });
+
+  it('returns stream_error when only stream-error preservation should apply', () => {
+    expect(
+      resolveAbortDisposition({
+        abortedByTimeout: false,
+        abortedByLoopGuard: false,
+        abortedByStreamError: true,
+      })
+    ).toBe('stream_error');
+  });
+});
+
+describe('shouldPreserveExistingTrace', () => {
+  it('preserves the published error trace for loop guard and stream errors only', () => {
+    expect(shouldPreserveExistingTrace('loop_guard')).toBe(true);
+    expect(shouldPreserveExistingTrace('stream_error')).toBe(true);
+    expect(shouldPreserveExistingTrace('timeout')).toBe(false);
+    expect(shouldPreserveExistingTrace('user')).toBe(false);
   });
 });

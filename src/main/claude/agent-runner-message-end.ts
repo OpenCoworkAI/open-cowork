@@ -25,6 +25,21 @@ interface ResolvedMessageEndPayload {
 
 const FOUR_XX_ERROR_RE = /\b4\d{2}\b/;
 
+export interface TerminalErrorEmissionDetails {
+  thinkingDelta?: string;
+  textDelta?: string;
+  partialText: string;
+  messageText: string;
+}
+
+export interface AbortDispositionFlags {
+  abortedByTimeout: boolean;
+  abortedByLoopGuard: boolean;
+  abortedByStreamError: boolean;
+}
+
+export type AbortDisposition = 'timeout' | 'loop_guard' | 'stream_error' | 'user';
+
 export function toUserFacingErrorText(errorText: string): string {
   const lower = errorText.toLowerCase();
   if (lower.includes('first_response_timeout')) {
@@ -83,7 +98,7 @@ export function toUserFacingErrorText(errorText: string): string {
 export function resolveAssistantStreamErrorText(
   event: Extract<AssistantMessageEvent, { type: 'error' }>
 ): string {
-  const rawError = event.error.errorMessage?.trim() || event.reason || 'stream_error';
+  const rawError = event.error?.errorMessage?.trim() || event.reason || 'stream_error';
   return toUserFacingErrorText(rawError);
 }
 
@@ -94,6 +109,41 @@ export function buildTerminalErrorMessage(errorText: string, partialText = ''): 
     : '_Agent 正在自动重试，请稍候..._';
   const errorBlock = `**Error**: ${errorText}\n\n${hint}`;
   return normalizedPartial ? `${normalizedPartial}\n\n${errorBlock}` : errorBlock;
+}
+
+export function buildTerminalErrorEmissionDetails(options: {
+  errorText: string;
+  streamedText: string;
+  flushedThinking?: string;
+  flushedText?: string;
+}): TerminalErrorEmissionDetails {
+  const thinkingDelta = options.flushedThinking || undefined;
+  const textDelta = options.flushedText || undefined;
+  const partialText = `${options.streamedText}${options.flushedText || ''}`;
+
+  return {
+    thinkingDelta,
+    textDelta,
+    partialText,
+    messageText: buildTerminalErrorMessage(options.errorText, partialText),
+  };
+}
+
+export function resolveAbortDisposition(flags: AbortDispositionFlags): AbortDisposition {
+  if (flags.abortedByTimeout) {
+    return 'timeout';
+  }
+  if (flags.abortedByLoopGuard) {
+    return 'loop_guard';
+  }
+  if (flags.abortedByStreamError) {
+    return 'stream_error';
+  }
+  return 'user';
+}
+
+export function shouldPreserveExistingTrace(disposition: AbortDisposition): boolean {
+  return disposition === 'loop_guard' || disposition === 'stream_error';
 }
 
 export function resolveMessageEndPayload(

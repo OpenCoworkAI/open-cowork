@@ -46,7 +46,7 @@ describe('agent-runner loop-guard abort preserves error trace status', () => {
 
     // The branch for loop-guard must exist and must be reached BEFORE the
     // generic "Aborted by user" path that emits 'Cancelled'.
-    const loopGuardBranchIdx = block.indexOf('abortedByLoopGuard');
+    const loopGuardBranchIdx = block.indexOf("abortDisposition === 'loop_guard'");
     const userCancelIdx = block.indexOf("title: 'Cancelled'");
     expect(loopGuardBranchIdx).toBeGreaterThan(-1);
     expect(userCancelIdx).toBeGreaterThan(loopGuardBranchIdx);
@@ -56,7 +56,9 @@ describe('agent-runner loop-guard abort preserves error trace status', () => {
     // Capture the loop-guard branch body and assert the executable code
     // contains neither sendTraceUpdate nor a 'Cancelled' literal — the guard
     // already published the error trace.
-    const branchStart = agentRunnerContent.indexOf('} else if (abortedByLoopGuard) {');
+    const branchStart = agentRunnerContent.indexOf(
+      "} else if (abortDisposition === 'loop_guard') {"
+    );
     expect(branchStart).toBeGreaterThan(-1);
     const branchEnd = agentRunnerContent.indexOf('} else {', branchStart);
     expect(branchEnd).toBeGreaterThan(branchStart);
@@ -77,8 +79,10 @@ describe('agent-runner loop-guard abort preserves error trace status', () => {
   it('the post-prompt short-circuit also returns early on a swallowed loop-guard abort', () => {
     // Some SDK builds swallow AbortError and return void instead of throwing.
     // For that path we still need to skip the "Task completed" trace update.
-    expect(agentRunnerContent).toContain('if (controller.signal.aborted && abortedByLoopGuard)');
-    expect(agentRunnerContent).toContain('Aborted by loop guard (detected after prompt returned)');
+    expect(agentRunnerContent).toContain('shouldPreserveExistingTrace(abortDisposition)');
+    expect(agentRunnerContent).toContain(
+      "abortDisposition === 'loop_guard' ? 'loop guard' : 'stream error'"
+    );
   });
 
   it('the loop-guard decision handler still publishes the error trace step before aborting', () => {

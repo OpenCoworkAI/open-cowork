@@ -55,9 +55,12 @@ import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extens
 import { configStore } from '../config/config-store';
 import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import {
+  buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
+  resolveAbortDisposition,
   resolveAssistantStreamErrorText,
   resolveMessageEndPayload,
+  shouldPreserveExistingTrace,
   toUserFacingErrorText,
 } from './agent-runner-message-end';
 import {
@@ -2475,21 +2478,34 @@ Tool routing:
       ): void => {
         terminalErrorText = errorText;
 
+        let flushedThinking = '';
+        let flushedText = '';
+
         if (options.includePartialText) {
           const flushed = thinkParser.flush();
-          if (flushed.thinking) {
-            this.sendToRenderer({
-              type: 'stream.thinking',
-              payload: { sessionId: session.id, delta: flushed.thinking },
-            });
-          }
-          if (flushed.text) {
-            streamedText += flushed.text;
-            this.sendPartial(session.id, flushed.text);
-          }
+          flushedThinking = flushed.thinking;
+          flushedText = flushed.text;
         }
 
-        const partialText = streamedText ? sanitizeOutputPaths(streamedText) : '';
+        const emission = buildTerminalErrorEmissionDetails({
+          errorText,
+          streamedText,
+          flushedThinking,
+          flushedText,
+        });
+
+        if (emission.thinkingDelta) {
+          this.sendToRenderer({
+            type: 'stream.thinking',
+            payload: { sessionId: session.id, delta: emission.thinkingDelta },
+          });
+        }
+        if (emission.textDelta) {
+          this.sendPartial(session.id, emission.textDelta);
+        }
+
+        const partialText = emission.partialText ? sanitizeOutputPaths(emission.partialText) : '';
+        const messageText = buildTerminalErrorMessage(errorText, partialText);
         streamedText = '';
         this.sendToRenderer({
           type: 'stream.partial',
@@ -2502,7 +2518,7 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: buildTerminalErrorMessage(errorText, partialText) }],
+            content: [{ type: 'text', text: messageText }],
             timestamp: Date.now(),
           });
         }
@@ -2932,12 +2948,15 @@ Tool routing:
       // the 'error' trace status that handleLoopGuardDecision already published.
       // The user-facing message and trace step are already set; do not overwrite
       // them with the default "Task completed" below.
-      if (controller.signal.aborted && abortedByLoopGuard) {
-        logCtx('[ClaudeAgentRunner] Aborted by loop guard (detected after prompt returned)');
-        return;
-      }
-      if (controller.signal.aborted && abortedByStreamError) {
-        logCtx('[ClaudeAgentRunner] Aborted by stream error (detected after prompt returned)');
+      const abortDisposition = resolveAbortDisposition({
+        abortedByTimeout,
+        abortedByLoopGuard,
+        abortedByStreamError,
+      });
+      if (controller.signal.aborted && shouldPreserveExistingTrace(abortDisposition)) {
+        logCtx(
+          `[ClaudeAgentRunner] Aborted by ${abortDisposition === 'loop_guard' ? 'loop guard' : 'stream error'} (detected after prompt returned)`
+        );
         return;
       }
       // Complete - update the initial thinking step
@@ -2947,7 +2966,12 @@ Tool routing:
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        if (abortedByTimeout) {
+        const abortDisposition = resolveAbortDisposition({
+          abortedByTimeout,
+          abortedByLoopGuard,
+          abortedByStreamError,
+        });
+        if (abortDisposition === 'timeout') {
           logCtx('[ClaudeAgentRunner] Aborted due to timeout');
           const errorMsg: Message = {
             id: uuidv4(),
@@ -2961,12 +2985,12 @@ Tool routing:
             status: 'error',
             title: 'Request timed out',
           });
-        } else if (abortedByLoopGuard) {
+        } else if (abortDisposition === 'loop_guard') {
           // Loop guard already published the user-facing assistant message and
           // an 'error' trace step with the loop-detected title. Do NOT overwrite
           // them here with a 'completed/Cancelled' state.
           logCtx('[ClaudeAgentRunner] Aborted by loop guard');
-        } else if (abortedByStreamError) {
+        } else if (abortDisposition === 'stream_error') {
           // Stream-error handling already published the user-facing assistant
           // message and the 'Request failed' trace state. Preserve them.
           logCtx('[ClaudeAgentRunner] Aborted by stream error');
