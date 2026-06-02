@@ -7,8 +7,8 @@ import zhTranslations from './locales/zh.json';
 import deTranslations from './locales/de.json';
 
 i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
+  .use(LanguageDetector) // Auto-detect browser language
+  .use(initReactI18next) // Initialize react-i18next
   .init({
     resources: {
       en: {
@@ -21,16 +21,16 @@ i18n
         translation: deTranslations,
       },
     },
-    fallbackLng: 'en',
-    supportedLngs: ['en', 'zh', 'de'],
+    fallbackLng: 'en', // Default language
+    supportedLngs: ['en', 'zh', 'de'], // Supported languages
     interpolation: {
-      escapeValue: false, // React 已经处理了 XSS
+      escapeValue: false, // React already handles XSS
     },
-    pluralSeparator: '_', // 复数分隔符
-    contextSeparator: '_', // 上下文分隔符
+    pluralSeparator: '_', // Plural separator
+    contextSeparator: '_', // Context separator
     detection: {
-      order: ['localStorage', 'navigator'], // 先检查 localStorage，再检查浏览器语言
-      caches: ['localStorage'], // 将语言选择保存到 localStorage
+      order: ['localStorage', 'navigator'], // Check localStorage first, then browser
+      caches: ['localStorage'], // Cache language choice in localStorage
       lookupLocalStorage: 'i18nextLng', // localStorage key
     },
   });

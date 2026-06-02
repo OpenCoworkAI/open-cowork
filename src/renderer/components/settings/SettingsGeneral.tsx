@@ -6,11 +6,8 @@ export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh')
-    ? 'zh'
-    : i18n.language.startsWith('de')
-      ? 'de'
-      : 'en';
+  const lang = i18n.language.split('-')[0];
+  const currentLang = lang === 'zh' ? 'zh' : lang === 'de' ? 'de' : 'en';
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
