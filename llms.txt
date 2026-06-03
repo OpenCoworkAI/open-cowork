@@ -42,7 +42,7 @@ Download from: https://github.com/OpenCoworkAI/open-cowork/releases
 | OpenRouter     | https://openrouter.ai/api                | claude-4-5-sonnet     |
 | Anthropic      | (Default)                                | claude-4-5-sonnet     |
 | Zhipu AI (GLM) | https://open.bigmodel.cn/api/anthropic   | glm-4.7, glm-4.6     |
-| MiniMax        | https://api.minimaxi.com/anthropic       | minimax-m2            |
+| MiniMax        | https://api.minimax.io/v1                | MiniMax-M3            |
 | Kimi           | https://api.kimi.com/coding/             | kimi-k2               |
 
 ## FAQ
