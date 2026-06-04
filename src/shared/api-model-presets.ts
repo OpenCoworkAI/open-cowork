@@ -52,6 +52,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     keyHint: '从 tokenmix.ai 获取',
   },
   openrouter: {
+    name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [
       { id: 'anthropic/claude-opus-4-6', name: 'anthropic/claude-opus-4-6' },
@@ -152,6 +153,7 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
     ],
   },
   openrouter: {
+    piProvider: 'openrouter',
     pick: [
       'anthropic/claude-opus-4-6',
       'anthropic/claude-sonnet-4-6',
