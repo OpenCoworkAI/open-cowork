@@ -101,7 +101,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.3",
+    "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^20.5.3",
     "@electron/notarize": "^2.5.0",
     "@types/archiver": "^7.0.0",
