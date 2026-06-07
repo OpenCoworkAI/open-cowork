@@ -34,10 +34,11 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
 /**
  * Application configuration schema
  */
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType = 'tokenmix' | 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
+  | 'tokenmix'
   | 'openrouter'
   | 'anthropic'
   | 'openai'
@@ -174,6 +175,11 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
 ]);
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
+  tokenmix: {
+    apiKey: '',
+    baseUrl: 'https://api.tokenmix.ai/v1',
+    model: 'claude-sonnet-4-6',
+  },
   openrouter: {
     apiKey: '',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -331,6 +337,7 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
 }
 
 const PROFILE_KEYS: ProviderProfileKey[] = [
+  'tokenmix',
   'openrouter',
   'anthropic',
   'openai',
@@ -344,6 +351,7 @@ const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
+    value === 'tokenmix' ||
     value === 'openrouter' ||
     value === 'anthropic' ||
     value === 'custom' ||
