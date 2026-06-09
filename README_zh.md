@@ -162,7 +162,7 @@ brew install lima
 | **OpenRouter** | [OpenRouter](https://openrouter.ai/)                                       | `https://openrouter.ai/api`              | `claude-4-5-sonnet`  |
 | **Anthropic**  | [Anthropic Console](https://console.anthropic.com/)                        | 默认                                     | `claude-4-5-sonnet`  |
 | **智谱 AI**    | [GLM Coding Plan](https://bigmodel.cn/glm-coding) (⚡️国产特惠)             | `https://open.bigmodel.cn/api/anthropic` | `glm-4.7`, `glm-4.6` |
-| **MiniMax**    | [MiniMax Coding Plan](https://platform.minimaxi.com/subscribe/coding-plan) | `https://api.minimaxi.com/anthropic`     | `minimax-m2`         |
+| **MiniMax**    | [MiniMax Platform](https://platform.minimax.io)                            | `https://api.minimax.io/v1`              | `MiniMax-M3`         |
 | **Kimi**       | [Kimi Coding Plan](https://www.kimi.com/membership/pricing)                | `https://api.kimi.com/coding/`           | `kimi-k2`            |
 
 ### 2. 配置应用

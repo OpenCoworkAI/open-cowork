@@ -262,6 +262,15 @@ describe('api config state helpers', () => {
     );
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('glm-5');
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
+      'MiniMax-M3'
+    );
+    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
+      'MiniMax-M2.7'
+    );
+    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
+      'MiniMax-M2.7-highspeed'
+    );
+    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).not.toContain(
       'MiniMax-M2.5'
     );
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
