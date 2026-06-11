@@ -6,7 +6,8 @@ export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+  const lang = i18n.language.split('-')[0];
+  const currentLang = lang === 'zh' ? 'zh' : lang === 'de' ? 'de' : 'en';
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
@@ -19,8 +20,9 @@ export function SettingsGeneral() {
   }, []);
 
   const languages = [
-    { code: 'en', nativeName: 'English' },
-    { code: 'zh', nativeName: '中文' },
+    { code: 'en', nativeName: t('language.english', 'English') },
+    { code: 'zh', nativeName: t('language.chinese', '中文') },
+    { code: 'de', nativeName: t('language.german', 'Deutsch') },
   ];
 
   const themeOptions = [
