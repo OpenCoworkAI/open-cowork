@@ -31,6 +31,8 @@ import {
   type AppConfig,
   type AppTheme,
   type CreateConfigSetPayload,
+  isPaletteTheme,
+  isLightTheme,
 } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
@@ -365,18 +367,33 @@ function setupTray() {
 
 function getSavedThemePreference(): AppTheme {
   const theme = configStore.get('theme');
-  return theme === 'dark' || theme === 'system' ? theme : 'light';
+  // Accept the three classic modes plus the six named palettes.
+  if (
+    theme === 'dark' ||
+    theme === 'light' ||
+    theme === 'system' ||
+    isPaletteTheme(theme)
+  ) {
+    return theme;
+  }
+  return 'light';
 }
 
 function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
   if (theme === 'system') {
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
   }
-  return theme;
+  return isLightTheme(theme) ? 'light' : 'dark';
 }
 
 function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = theme;
+  // nativeTheme only understands dark/light/system; map palettes to their
+  // underlying mode so native widgets (context menus, scrollbars) match.
+  if (theme === 'system') {
+    nativeTheme.themeSource = 'system';
+  } else {
+    nativeTheme.themeSource = isLightTheme(theme) ? 'light' : 'dark';
+  }
 }
 
 function createWindow() {
@@ -2775,7 +2792,8 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       if (
         event.payload.theme === 'dark' ||
         event.payload.theme === 'light' ||
-        event.payload.theme === 'system'
+        event.payload.theme === 'system' ||
+        isPaletteTheme(event.payload.theme as string)
       ) {
         const nextTheme = event.payload.theme as AppTheme;
         configStore.update({ theme: nextTheme });

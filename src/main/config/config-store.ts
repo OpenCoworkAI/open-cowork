@@ -36,7 +36,44 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
  */
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system';
+export type AppTheme =
+  | 'dark'
+  | 'light'
+  | 'system'
+  | 'nordic'
+  | 'tokyo-night'
+  | 'gruvbox'
+  | 'catppuccin'
+  | 'rose-pine'
+  | 'solarized-light';
+
+/**
+ * Palettes shipped with the app. Each entry declares whether it is a dark or
+ * light scheme so the Electron main process can pick the right native window
+ * background and `nativeTheme.themeSource`.
+ */
+export const THEME_PALETTES = [
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized-light',
+] as const;
+
+export const LIGHT_PALETTES = new Set<string>(['solarized-light']);
+
+/** Returns true when a theme id is one of the built-in named palettes. */
+export function isPaletteTheme(theme: string): boolean {
+  return (THEME_PALETTES as readonly string[]).includes(theme);
+}
+
+/** Resolve any AppTheme to its effective light/dark identity. */
+export function isLightTheme(theme: AppTheme): boolean {
+  if (theme === 'light') return true;
+  if (theme === 'dark' || theme === 'system') return false;
+  return LIGHT_PALETTES.has(theme);
+}
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -340,7 +377,17 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+const VALID_THEMES: AppTheme[] = [
+  'dark',
+  'light',
+  'system',
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized-light',
+];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (

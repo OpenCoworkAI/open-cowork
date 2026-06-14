@@ -58,6 +58,169 @@
     --color-error: #dc2626;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Named palette themes                                               */
+  /* Each block redefines the full --color-* / --shadow-* variable set. */
+  /* A palette class is applied to <html> alongside (or instead of) the */
+  /* default :root (dark) or .light override.                           */
+  /* ------------------------------------------------------------------ */
+
+  /* Nord — arctic, north-bluish color palette */
+  .theme-nordic {
+    --color-background: #2e3440;
+    --color-background-secondary: #3b4252;
+    --color-surface: #3b4252;
+    --color-surface-hover: #434c5e;
+    --color-surface-active: #4c566a;
+    --color-surface-muted: #2e3440;
+    --color-border: #4c566a;
+    --color-border-muted: #434c5e;
+    --color-border-subtle: rgba(216, 222, 233, 0.08);
+    --color-mcp: #b48ead;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(216, 222, 233, 0.04);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(216, 222, 233, 0.05);
+    --color-accent: #88c0d0;
+    --color-accent-hover: #8fbcbb;
+    --color-accent-muted: rgba(136, 192, 208, 0.14);
+    --color-text-primary: #eceff4;
+    --color-text-secondary: #d8dee9;
+    --color-text-muted: #81a1c1;
+    --color-success: #a3be8c;
+    --color-warning: #ebcb8b;
+    --color-error: #bf616a;
+  }
+
+  /* Tokyo Night — deep midnight blues with vivid neon accents */
+  .theme-tokyo-night {
+    --color-background: #1a1b26;
+    --color-background-secondary: #16161e;
+    --color-surface: #24283b;
+    --color-surface-hover: #2a2e44;
+    --color-surface-active: #2f3554;
+    --color-surface-muted: #16161e;
+    --color-border: #2f3554;
+    --color-border-muted: #2a2e44;
+    --color-border-subtle: rgba(187, 154, 247, 0.08);
+    --color-mcp: #bb9af7;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(122, 162, 247, 0.05);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(122, 162, 247, 0.06);
+    --color-accent: #7aa2f7;
+    --color-accent-hover: #89b4fa;
+    --color-accent-muted: rgba(122, 162, 247, 0.16);
+    --color-text-primary: #c0caf5;
+    --color-text-secondary: #a9b1d6;
+    --color-text-muted: #565f89;
+    --color-success: #9ece6a;
+    --color-warning: #e0af68;
+    --color-error: #f7768e;
+  }
+
+  /* Gruvbox Material — warm, earthy, retro */
+  .theme-gruvbox {
+    --color-background: #282828;
+    --color-background-secondary: #1d2021;
+    --color-surface: #32302f;
+    --color-surface-hover: #3c3836;
+    --color-surface-active: #504945;
+    --color-surface-muted: #1d2021;
+    --color-border: #504945;
+    --color-border-muted: #3c3836;
+    --color-border-subtle: rgba(221, 199, 161, 0.07);
+    --color-mcp: #d3869b;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.34);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(221, 199, 161, 0.04);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(221, 199, 161, 0.05);
+    --color-accent: #d8a657;
+    --color-accent-hover: #e0af68;
+    --color-accent-muted: rgba(216, 166, 87, 0.16);
+    --color-text-primary: #ddc7a1;
+    --color-text-secondary: #c4b393;
+    --color-text-muted: #928374;
+    --color-success: #a9b665;
+    --color-warning: #d8a657;
+    --color-error: #ea6962;
+  }
+
+  /* Catppuccin Mocha — soft pastels on a warm dark base */
+  .theme-catppuccin {
+    --color-background: #1e1e2e;
+    --color-background-secondary: #181825;
+    --color-surface: #313244;
+    --color-surface-hover: #45475a;
+    --color-surface-active: #585b70;
+    --color-surface-muted: #181825;
+    --color-border: #585b70;
+    --color-border-muted: #45475a;
+    --color-border-subtle: rgba(205, 214, 244, 0.08);
+    --color-mcp: #f5c2e7;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.32);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(205, 214, 244, 0.04);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(205, 214, 244, 0.05);
+    --color-accent: #cba6f7;
+    --color-accent-hover: #b4befe;
+    --color-accent-muted: rgba(203, 166, 247, 0.16);
+    --color-text-primary: #cdd6f4;
+    --color-text-secondary: #bac2de;
+    --color-text-muted: #a6adc8;
+    --color-success: #a6e3a1;
+    --color-warning: #f9e2af;
+    --color-error: #f38ba8;
+  }
+
+  /* Rosé Pine — sophisticated muted pinks, pine, gold on near-black */
+  .theme-rose-pine {
+    --color-background: #191724;
+    --color-background-secondary: #1f1d2e;
+    --color-surface: #1f1d2e;
+    --color-surface-hover: #26233a;
+    --color-surface-active: #2a2740;
+    --color-surface-muted: #191724;
+    --color-border: #403d52;
+    --color-border-muted: #26233a;
+    --color-border-subtle: rgba(224, 222, 244, 0.07);
+    --color-mcp: #c4a7e7;
+    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.36);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(224, 222, 244, 0.04);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.46), 0 0 0 1px rgba(224, 222, 244, 0.05);
+    --color-accent: #c4a7e7;
+    --color-accent-hover: #ebbcba;
+    --color-accent-muted: rgba(196, 167, 231, 0.16);
+    --color-text-primary: #e0def4;
+    --color-text-secondary: #908caa;
+    --color-text-muted: #6e6a86;
+    --color-success: #9ccfd8;
+    --color-warning: #f6c177;
+    --color-error: #eb6f92;
+  }
+
+  /* Solarized Light — the Ethan Schoonover classic */
+  .theme-solarized-light {
+    --color-background: #fdf6e3;
+    --color-background-secondary: #eee8d5;
+    --color-surface: #eee8d5;
+    --color-surface-hover: #e9e0c8;
+    --color-surface-active: #ddd4b8;
+    --color-surface-muted: #f5efdc;
+    --color-border: #d6cdb0;
+    --color-border-muted: #e2dac0;
+    --color-border-subtle: rgba(101, 123, 131, 0.08);
+    --color-mcp: #6c71c4;
+    --shadow-soft: 0 1px 4px rgba(101, 123, 131, 0.1);
+    --shadow-card: 0 1px 3px rgba(101, 123, 131, 0.1), 0 1px 2px rgba(101, 123, 131, 0.08);
+    --shadow-elevated: 0 4px 12px rgba(101, 123, 131, 0.14);
+    --color-accent: #268bd2;
+    --color-accent-hover: #1e6fa8;
+    --color-accent-muted: rgba(38, 139, 210, 0.12);
+    --color-text-primary: #586e75;
+    --color-text-secondary: #657b83;
+    --color-text-muted: #93a1a1;
+    --color-success: #859900;
+    --color-warning: #b58900;
+    --color-error: #dc322f;
+  }
+
   * {
     @apply border-border;
   }

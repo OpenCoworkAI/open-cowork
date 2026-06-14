@@ -95,15 +95,33 @@ function App() {
     }
   }, []); // Empty deps - run once
 
-  // Apply theme to document root
+  // Apply theme to document root.
+  // Built-in modes: 'dark' (no class — :root default), 'light' (.light),
+  // 'system' (resolves to dark/light via OS preference).
+  // Named palettes: '.theme-<palette>' overrides the variables entirely.
   useEffect(() => {
-    const effectiveTheme =
-      settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
+    const root = document.documentElement;
+    // Clear any previously-applied theme classes first.
+    root.classList.remove(
+      'light',
+      'theme-nordic',
+      'theme-tokyo-night',
+      'theme-gruvbox',
+      'theme-catppuccin',
+      'theme-rose-pine',
+      'theme-solarized-light'
+    );
 
-    if (effectiveTheme === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
+    const theme = settings.theme;
+    if (theme === 'system') {
+      if (!systemDarkMode) {
+        root.classList.add('light');
+      }
+    } else if (theme === 'light') {
+      root.classList.add('light');
+    } else if (theme !== 'dark') {
+      // Named palette (anything other than dark/light/system)
+      root.classList.add(`theme-${theme}`);
     }
   }, [settings.theme, systemDarkMode]);
 
