@@ -24,6 +24,7 @@ import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
+import { THEME_PALETTES } from './types';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -102,15 +103,8 @@ function App() {
   useEffect(() => {
     const root = document.documentElement;
     // Clear any previously-applied theme classes first.
-    root.classList.remove(
-      'light',
-      'theme-nordic',
-      'theme-tokyo-night',
-      'theme-gruvbox',
-      'theme-catppuccin',
-      'theme-rose-pine',
-      'theme-solarized-light'
-    );
+    const themeClasses = ['light', ...THEME_PALETTES.map((p) => `theme-${p}`)];
+    root.classList.remove(...themeClasses);
 
     const theme = settings.theme;
     if (theme === 'system') {

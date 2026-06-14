@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store';
-import type { AppTheme } from '../../types';
+import { LIGHT_PALETTES, type AppTheme } from '../../types';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
@@ -33,7 +33,12 @@ export function SettingsGeneral() {
   // Named palette themes. Each swatch shows the palette's background + accent
   // so users can preview the scheme before selecting it.
   const paletteOptions: { value: AppTheme; label: string; bg: string; accent: string }[] = [
-    { value: 'nordic', label: t('general.themeNordic', 'Nordic'), bg: '#2e3440', accent: '#88c0d0' },
+    {
+      value: 'nordic',
+      label: t('general.themeNordic', 'Nordic'),
+      bg: '#2e3440',
+      accent: '#88c0d0',
+    },
     {
       value: 'tokyo-night',
       label: t('general.themeTokyoNight', 'Tokyo Night'),
@@ -96,15 +101,13 @@ export function SettingsGeneral() {
         <div className="grid grid-cols-3 gap-2">
           {paletteOptions.map((opt) => {
             const selected = settings.theme === opt.value;
-            const isLightSwatch = opt.value === 'solarized-light';
+            const isLightSwatch = LIGHT_PALETTES.has(opt.value);
             return (
               <button
                 key={opt.value}
                 onClick={() => updateSettings({ theme: opt.value })}
                 className={`group relative flex flex-col items-start gap-2 p-2.5 rounded-lg border-2 transition-all ${
-                  selected
-                    ? 'border-accent'
-                    : 'border-border hover:border-accent/50'
+                  selected ? 'border-accent' : 'border-border hover:border-accent/50'
                 }`}
                 title={opt.label}
               >

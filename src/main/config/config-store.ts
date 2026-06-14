@@ -64,8 +64,8 @@ export const THEME_PALETTES = [
 export const LIGHT_PALETTES = new Set<string>(['solarized-light']);
 
 /** Returns true when a theme id is one of the built-in named palettes. */
-export function isPaletteTheme(theme: string): boolean {
-  return (THEME_PALETTES as readonly string[]).includes(theme);
+export function isPaletteTheme(theme: string): theme is (typeof THEME_PALETTES)[number] {
+  return THEME_PALETTES.includes(theme as (typeof THEME_PALETTES)[number]);
 }
 
 /** Resolve any AppTheme to its effective light/dark identity. */
@@ -377,7 +377,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const VALID_THEMES: AppTheme[] = [
+export const VALID_THEMES: AppTheme[] = [
   'dark',
   'light',
   'system',
