@@ -32,10 +32,10 @@ export function getSavedAppearance(raw: unknown): AppAppearance {
 
 /**
  * Normalize a persisted palette (theme) value. Accepts known palettes;
- * otherwise falls back to 'claude' (the default).
+ * otherwise maps any renamed legacy id ('solarized-light' -> 'solarized')
+ * and finally falls back to 'claude' (the default).
  */
 export function getSavedPalette(raw: AppTheme | string | undefined): AppTheme {
-  // 'claude' is the default; anything unknown collapses to it.
   const KNOWN: AppTheme[] = [
     'claude',
     'nordic',
@@ -45,7 +45,10 @@ export function getSavedPalette(raw: AppTheme | string | undefined): AppTheme {
     'rose-pine',
     'solarized',
   ];
-  return (KNOWN as string[]).includes(raw as string) ? (raw as AppTheme) : 'claude';
+  const LEGACY: Record<string, AppTheme> = { 'solarized-light': 'solarized' };
+  if ((KNOWN as string[]).includes(raw as string)) return raw as AppTheme;
+  if (typeof raw === 'string' && LEGACY[raw]) return LEGACY[raw];
+  return 'claude';
 }
 
 /**

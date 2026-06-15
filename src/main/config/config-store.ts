@@ -425,6 +425,13 @@ const LEGACY_THEME_TO_APPEARANCE: Record<string, AppAppearance> = {
   system: 'system',
 };
 
+/** Legacy palette ids renamed during the palette/appearance split. Maps
+ *  the old id to the new id so existing users keep their chosen palette
+ *  instead of falling through to the default. */
+const LEGACY_PALETTE_MAP: Record<string, AppTheme> = {
+  'solarized-light': 'solarized',
+};
+
 function isProviderType(value: unknown): value is ProviderType {
   return (
     value === 'openrouter' ||
@@ -1057,9 +1064,14 @@ export class ConfigStore {
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       // Backward compat: a pre-split config persisted theme as 'dark'/'light'/'system'
-      // (a mode, not a palette). Detect that and map it onto the new two-axis model:
-      // palette -> 'claude' (default), appearance -> the old mode.
-      theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      // (a mode, not a palette) or under a renamed id ('solarized-light').
+      // Map both onto the new two-axis model:
+      //   - legacy mode  -> palette 'claude', appearance = old mode
+      //   - renamed id   -> new palette id, appearance left at its default
+      theme: isAppTheme(raw.theme)
+        ? raw.theme
+        : (LEGACY_PALETTE_MAP[typeof raw.theme === 'string' ? raw.theme : ''] ??
+          defaultConfig.theme),
       appearance: isAppearance(raw.appearance)
         ? raw.appearance
         : (LEGACY_THEME_TO_APPEARANCE[typeof raw.theme === 'string' ? raw.theme : ''] ??

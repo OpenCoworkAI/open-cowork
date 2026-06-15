@@ -48,9 +48,12 @@ describe('getSavedPalette', () => {
     expect(getSavedPalette('dark')).toBe('claude');
     expect(getSavedPalette('light')).toBe('claude');
     expect(getSavedPalette('system')).toBe('claude');
-    expect(getSavedPalette('solarized-light')).toBe('claude');
     expect(getSavedPalette('dracula')).toBe('claude');
     expect(getSavedPalette(undefined)).toBe('claude');
+  });
+
+  it('migrates the renamed legacy solarized-light id to solarized', () => {
+    expect(getSavedPalette('solarized-light')).toBe('solarized');
   });
 });
 
