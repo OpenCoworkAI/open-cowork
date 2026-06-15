@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Upload, X } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { useIPC } from '../../hooks/useIPC';
 import { type AppAppearance, type AppTheme, type FontFamily, type FontSize } from '../../types';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const { selectObsidianTheme } = useIPC();
+  const [obsidianError, setObsidianError] = useState('');
+  const [obsidianBusy, setObsidianBusy] = useState(false);
+  const [obsidianName, setObsidianName] = useState('');
   const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
@@ -250,62 +256,67 @@ export function SettingsGeneral() {
         </div>
       </div>
 
-      {/* Font family (independent of palette; 'auto' inherits the palette) */}
+      {/* Obsidian theme (import a community .css; aliases in globals.css map
+          our --color-* vars onto the names Obsidian themes target) */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-text-primary">
-          {t('general.fontFamily', 'Font family')}
-        </h4>
-        <div className="grid grid-cols-2 gap-2">
-          {fontFamilyOptions.map((opt) => {
-            const selected = settings.fontFamily === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => updateSettings({ fontFamily: opt.value })}
-                className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg border-2 text-sm transition-all ${
-                  selected
-                    ? 'border-accent bg-accent/5 text-text-primary'
-                    : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
-                }`}
-              >
-                <span style={{ fontFamily: opt.previewFamily }} className="font-medium">
-                  {opt.label}
-                </span>
-                <span
-                  className="text-[10px] uppercase tracking-wider text-text-muted"
-                  style={{ fontFamily: opt.previewFamily }}
-                >
-                  Aa
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-text-primary">
+            {t('general.obsidianTheme', 'Obsidian theme')}
+          </h4>
+          {settings.obsidianThemeCss && (
+            <button
+              type="button"
+              onClick={() => {
+                updateSettings({ obsidianThemeCss: '' });
+                setObsidianName('');
+                setObsidianError('');
+              }}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-error transition-colors"
+            >
+              <X className="w-3 h-3" />
+              {t('general.clear', 'Clear')}
+            </button>
+          )}
         </div>
+        <p className="text-xs text-text-muted leading-relaxed">
+          {t(
+            'general.obsidianThemeDesc',
+            'Import a community Obsidian theme (.css). Colors are mapped onto the active palette.'
+          )}
+        </p>
+        <button
+          type="button"
+          disabled={obsidianBusy}
+          onClick={async () => {
+            setObsidianError('');
+            setObsidianBusy(true);
+            try {
+              const result = await selectObsidianTheme();
+              if (!result) return;
+              if (result.error) {
+                setObsidianError(result.error);
+                return;
+              }
+              if (result.css) {
+                updateSettings({ obsidianThemeCss: result.css });
+                setObsidianName(result.name);
+              }
+            } catch (err) {
+              setObsidianError(err instanceof Error ? err.message : String(err));
+            } finally {
+              setObsidianBusy(false);
+            }
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-border bg-surface hover:border-accent/50 text-sm font-medium text-text-secondary hover:text-text-primary transition-all disabled:opacity-50"
+        >
+          <Upload className="w-4 h-4" />
+          {settings.obsidianThemeCss
+            ? obsidianName || t('general.obsidianThemeLoaded', 'Theme loaded — replace')
+            : t('general.obsidianThemeImport', 'Import .css file')}
+        </button>
+        {obsidianError && <p className="text-xs text-error">{obsidianError}</p>}
       </div>
 
-      {/* Font size (scales the root font size) */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium text-text-primary">
-          {t('general.fontSize', 'Font size')}
-        </h4>
-        <div className="flex gap-2">
-          {fontSizeOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => updateSettings({ fontSize: opt.value })}
-              className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                settings.fontSize === opt.value
-                  ? 'border-accent bg-accent/5 text-text-primary'
-                  : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
-              }`}
-            >
-              <span style={{ fontSize: opt.preview }}>A</span>
-            </button>
-          ))}
-        </div>
-      </div>
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">{t('general.language')}</h4>
         <div className="flex gap-2">

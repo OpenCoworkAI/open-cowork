@@ -97,6 +97,11 @@
     "fontSizeMd": "M",
     "fontSizeLg": "L",
     "fontSizeXl": "XL",
+    "obsidianTheme": "Obsidian theme",
+    "obsidianThemeDesc": "Import a community Obsidian theme (.css). Colors are mapped onto the active palette.",
+    "obsidianThemeImport": "Import .css file",
+    "obsidianThemeLoaded": "Theme loaded — replace",
+    "clear": "Clear",
     "language": "Language"
   },
   "memory": {

@@ -36,6 +36,7 @@ function makeConfig(): AppConfig {
     appearance: 'light',
     fontFamily: 'auto',
     fontSize: 'md',
+    obsidianThemeCss: '',
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {

@@ -97,6 +97,11 @@
     "fontSizeMd": "M",
     "fontSizeLg": "L",
     "fontSizeXl": "XL",
+    "obsidianTheme": "Obsidian 主题",
+    "obsidianThemeDesc": "导入社区 Obsidian 主题（.css）。颜色会映射到当前配色方案。",
+    "obsidianThemeImport": "导入 .css 文件",
+    "obsidianThemeLoaded": "已加载主题 — 替换",
+    "clear": "清除",
     "language": "语言"
   },
   "memory": {

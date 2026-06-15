@@ -2778,6 +2778,28 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       return { success: false, path: '', error: 'User cancelled' };
     }
 
+    case 'obsidianTheme.select': {
+      // Open a file picker for a single .css file, read its contents, and
+      // return them. The renderer then persists the string via settings.update
+      // and App.tsx injects it into a <style> tag. Empty/cancel = '' so the
+      // caller can treat falsy as "no selection".
+      const themeResult = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Import Obsidian theme',
+        properties: ['openFile'],
+        filters: [{ name: 'CSS', extensions: ['css'] }],
+      });
+      if (themeResult.canceled || themeResult.filePaths.length === 0) {
+        return { css: '', name: '' };
+      }
+      try {
+        const css = fs.readFileSync(themeResult.filePaths[0], 'utf8');
+        const name = themeResult.filePaths[0].split(/[\\/]/).pop() ?? '';
+        return { css, name };
+      } catch (err) {
+        return { css: '', name: '', error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     case 'settings.update':
       if (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) {
         const nextTheme = event.payload.theme as AppTheme;
@@ -2802,13 +2824,17 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       if (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) {
         configStore.update({ fontSize: event.payload.fontSize as FontSize });
       }
+      if (typeof event.payload.obsidianThemeCss === 'string') {
+        configStore.update({ obsidianThemeCss: event.payload.obsidianThemeCss });
+      }
       if (
         (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) ||
         event.payload.appearance === 'dark' ||
         event.payload.appearance === 'light' ||
         event.payload.appearance === 'system' ||
         (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) ||
-        (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize))
+        (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) ||
+        typeof event.payload.obsidianThemeCss === 'string'
       ) {
         sendToRenderer({
           type: 'config.status',

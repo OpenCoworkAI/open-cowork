@@ -144,6 +144,29 @@ function App() {
     root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
   }, [settings.theme, settings.appearance, settings.fontFamily, settings.fontSize, systemDarkMode]);
 
+  // Inject (or remove) an imported Obsidian community theme. The CSS string is
+  // persisted in config; we mirror it into a dedicated <style> tag so it can
+  // be added/removed/updated without touching the main stylesheet. The
+  // Obsidian variable aliases in globals.css map our --color-* vars onto the
+  // names Obsidian themes target, so the imported rules resolve correctly.
+  useEffect(() => {
+    const STYLE_ID = 'obsidian-theme';
+    const existing = document.getElementById(STYLE_ID);
+    const css = settings.obsidianThemeCss?.trim() ?? '';
+    if (!css) {
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      existing.textContent = css;
+    } else {
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = css;
+      document.head.appendChild(style);
+    }
+  }, [settings.obsidianThemeCss]);
+
   // Auto-collapse panels based on window width
   useEffect(() => {
     setContextPanelCollapsed(width < 1100);

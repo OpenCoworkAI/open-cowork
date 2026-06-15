@@ -209,6 +209,13 @@ export interface AppConfig {
   // Base font size preset (scales --font-scale)
   fontSize: FontSize;
 
+  // Optional Obsidian community-theme CSS to inject into the document. When
+  // non-empty, App.tsx writes it into a <style id="obsidian-theme"> tag; the
+  // Obsidian variable aliases in globals.css map our --color-* vars onto the
+  // variable names Obsidian themes target (--background-primary, etc.) so the
+  // imported theme's overrides resolve. Empty string = no theme.
+  obsidianThemeCss: string;
+
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
@@ -267,6 +274,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'appearance',
   'fontFamily',
   'fontSize',
+  'obsidianThemeCss',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -346,6 +354,7 @@ const defaultConfig: AppConfig = {
   appearance: 'system',
   fontFamily: 'auto',
   fontSize: 'md',
+  obsidianThemeCss: '',
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -1115,6 +1124,10 @@ export class ConfigStore {
           defaultConfig.appearance),
       fontFamily: isFontFamily(raw.fontFamily) ? raw.fontFamily : defaultConfig.fontFamily,
       fontSize: isFontSize(raw.fontSize) ? raw.fontSize : defaultConfig.fontSize,
+      obsidianThemeCss:
+        typeof raw.obsidianThemeCss === 'string'
+          ? raw.obsidianThemeCss
+          : defaultConfig.obsidianThemeCss,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
@@ -1541,6 +1554,10 @@ export class ConfigStore {
       appearance: updates.appearance !== undefined ? updates.appearance : current.appearance,
       fontFamily: updates.fontFamily !== undefined ? updates.fontFamily : current.fontFamily,
       fontSize: updates.fontSize !== undefined ? updates.fontSize : current.fontSize,
+      obsidianThemeCss:
+        updates.obsidianThemeCss !== undefined
+          ? updates.obsidianThemeCss
+          : current.obsidianThemeCss,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

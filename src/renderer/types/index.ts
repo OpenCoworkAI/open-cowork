@@ -476,7 +476,8 @@ export type ClientEvent =
   | { type: 'folder.select'; payload: Record<string, never> }
   | { type: 'workdir.get'; payload: Record<string, never> }
   | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
-  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } };
+  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } }
+  | { type: 'obsidianTheme.select'; payload: Record<string, never> };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase =
@@ -573,6 +574,7 @@ export interface Settings {
   appearance: AppAppearance;
   fontFamily: FontFamily;
   fontSize: FontSize;
+  obsidianThemeCss?: string;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -734,6 +736,7 @@ export interface AppConfig {
   appearance?: AppAppearance;
   fontFamily?: FontFamily;
   fontSize?: FontSize;
+  obsidianThemeCss?: string;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;
