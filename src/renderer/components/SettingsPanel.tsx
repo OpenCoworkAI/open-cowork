@@ -62,7 +62,7 @@ const VALID_TABS = new Set<TabId>([
   'general',
 ]);
 
-export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab = 'general' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
   const compactSidebar = width < 900;
@@ -103,6 +103,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   }, [activeTab]);
 
   const tabs = [
+    {
+      id: 'general' as TabId,
+      label: t('settings.general'),
+      icon: Globe,
+      description: t('settings.generalDesc'),
+    },
     {
       id: 'api' as TabId,
       label: t('settings.apiSettings'),
@@ -150,12 +156,6 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.logs'),
       icon: AlertCircle,
       description: t('settings.logsDesc'),
-    },
-    {
-      id: 'general' as TabId,
-      label: t('settings.general'),
-      icon: Globe,
-      description: t('settings.generalDesc'),
     },
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab);

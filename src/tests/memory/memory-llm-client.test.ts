@@ -26,6 +26,8 @@ function makeConfig(timeoutMs: number): AppConfig {
     enableDevLogs: false,
     theme: 'claude',
     appearance: 'light',
+    fontFamily: 'auto',
+    fontSize: 'md',
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {

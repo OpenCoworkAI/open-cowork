@@ -32,6 +32,10 @@ import {
   type AppAppearance,
   type AppTheme,
   type CreateConfigSetPayload,
+  type FontFamily,
+  type FontSize,
+  isFontFamily,
+  isFontSize,
   isPaletteTheme,
 } from './config/config-store';
 import {
@@ -2792,11 +2796,19 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
         }
       }
+      if (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) {
+        configStore.update({ fontFamily: event.payload.fontFamily as FontFamily });
+      }
+      if (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) {
+        configStore.update({ fontSize: event.payload.fontSize as FontSize });
+      }
       if (
         (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) ||
         event.payload.appearance === 'dark' ||
         event.payload.appearance === 'light' ||
-        event.payload.appearance === 'system'
+        event.payload.appearance === 'system' ||
+        (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) ||
+        (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize))
       ) {
         sendToRenderer({
           type: 'config.status',

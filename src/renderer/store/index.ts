@@ -192,6 +192,8 @@ interface AppState {
 const defaultSettings: Settings = {
   theme: 'claude',
   appearance: 'light',
+  fontFamily: 'auto',
+  fontSize: 'md',
   defaultTools: [
     'askuserquestion',
     'todowrite',

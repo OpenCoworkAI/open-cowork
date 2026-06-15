@@ -1,8 +1,110 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Bitter:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Bitter:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600&family=Quicksand:wght@400;500;600;700&family=Saira+Condensed:wght@400;500;600;700&family=Lora:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Font presets                                                       */
+/*                                                                    */
+/* User-selectable typography, orthogonal to the color palette. The   */
+/* active preset class is applied to <html> by App.tsx and overrides  */
+/* --font-sans / --font-serif / --font-mono for the whole document.   */
+/* 'auto' (no class) inherits whatever the active palette set.        */
+/* ------------------------------------------------------------------ */
+.font-family-sans {
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.font-family-serif {
+  --font-sans: 'Source Serif 4', Georgia, serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.font-family-mono {
+  --font-sans: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.font-family-rounded {
+  --font-sans: 'Quicksand', system-ui, sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.font-family-condensed {
+  --font-sans: 'Saira Condensed', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.font-family-system {
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-mono: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------------------ */
+/* Font size presets                                                  */
+/*                                                                    */
+/* Scales the root font size via a CSS custom property consumed by    */
+/* the html {} rule below. --font-scale is multiplied against 16px.   */
+/* ------------------------------------------------------------------ */
+.font-size-sm {
+  --font-scale: 0.875;
+}
+.font-size-md {
+  --font-scale: 1;
+}
+.font-size-lg {
+  --font-scale: 1.125;
+}
+.font-size-xl {
+  --font-scale: 1.25;
+}
+
+/* ------------------------------------------------------------------ */
+/* Obsidian theme compatibility layer                                 */
+/*                                                                    */
+/* Obsidian community themes target Obsidian's own CSS variable names */
+/* (--background-primary, --text-normal, --interactive-accent, ...).  */
+/* When a user imports an Obsidian .css theme, the renderer injects   */
+/* its rules; these aliases translate our palette vars onto the most  */
+/* commonly-targeted Obsidian vars so imported themes "just work" for */
+/* background, surface, text and accent colors. Obsidian's selectors  */
+/* (.theme-dark / .theme-light) are also aliased to our .dark/.light. */
+/* ------------------------------------------------------------------ */
+.theme-dark,
+.dark {
+  --background-primary: var(--color-background);
+  --background-primary-alt: var(--color-background-secondary);
+  --background-secondary: var(--color-surface);
+  --background-secondary-alt: var(--color-surface-hover);
+  --background-modifier-border: var(--color-border);
+  --background-modifier-form-field: var(--color-surface);
+  --text-normal: var(--color-text-primary);
+  --text-muted: var(--color-text-secondary);
+  --text-faint: var(--color-text-muted);
+  --interactive-accent: var(--color-accent);
+  --interactive-accent-hover: var(--color-accent-hover);
+  --text-accent: var(--color-accent);
+  --text-on-accent: #ffffff;
+}
+.theme-light,
+.light {
+  --background-primary: var(--color-background);
+  --background-primary-alt: var(--color-background-secondary);
+  --background-secondary: var(--color-surface);
+  --background-secondary-alt: var(--color-surface-hover);
+  --background-modifier-border: var(--color-border);
+  --background-modifier-form-field: var(--color-surface);
+  --text-normal: var(--color-text-primary);
+  --text-muted: var(--color-text-secondary);
+  --text-faint: var(--color-text-muted);
+  --interactive-accent: var(--color-accent);
+  --interactive-accent-hover: var(--color-accent-hover);
+  --text-accent: var(--color-accent);
+  --text-on-accent: #ffffff;
+}
 
 /* ------------------------------------------------------------------ */
 /* Named palette themes                                               */
@@ -469,6 +571,11 @@
     margin: 0;
     overflow: hidden;
     overscroll-behavior: none;
+  }
+
+  /* Base font size scales with the user-selected preset (default 1). */
+  html {
+    font-size: calc(16px * var(--font-scale, 1));
   }
 
   body {

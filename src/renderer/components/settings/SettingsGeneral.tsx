@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store';
-import { type AppAppearance, type AppTheme } from '../../types';
+import { type AppAppearance, type AppTheme, type FontFamily, type FontSize } from '../../types';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
@@ -78,6 +78,51 @@ export function SettingsGeneral() {
     },
   ];
 
+  const fontFamilyOptions: { value: FontFamily; label: string; previewFamily: string }[] = [
+    {
+      value: 'auto',
+      label: t('general.fontFamilyAuto', 'Auto (palette)'),
+      previewFamily: 'inherit',
+    },
+    {
+      value: 'sans',
+      label: t('general.fontFamilySans', 'Plus Jakarta Sans'),
+      previewFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+    },
+    {
+      value: 'serif',
+      label: t('general.fontFamilySerif', 'Source Serif 4'),
+      previewFamily: "'Source Serif 4', Georgia, serif",
+    },
+    {
+      value: 'mono',
+      label: t('general.fontFamilyMono', 'JetBrains Mono'),
+      previewFamily: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+    },
+    {
+      value: 'rounded',
+      label: t('general.fontFamilyRounded', 'Quicksand'),
+      previewFamily: "'Quicksand', system-ui, sans-serif",
+    },
+    {
+      value: 'condensed',
+      label: t('general.fontFamilyCondensed', 'Saira Condensed'),
+      previewFamily: "'Saira Condensed', system-ui, sans-serif",
+    },
+    {
+      value: 'system',
+      label: t('general.fontFamilySystem', 'System'),
+      previewFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    },
+  ];
+
+  const fontSizeOptions: { value: FontSize; label: string; preview: string }[] = [
+    { value: 'sm', label: t('general.fontSizeSm', 'S'), preview: '0.8rem' },
+    { value: 'md', label: t('general.fontSizeMd', 'M'), preview: '0.95rem' },
+    { value: 'lg', label: t('general.fontSizeLg', 'L'), preview: '1.1rem' },
+    { value: 'xl', label: t('general.fontSizeXl', 'XL'), preview: '1.25rem' },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Appearance mode (light / dark / system) */}
@@ -148,7 +193,119 @@ export function SettingsGeneral() {
         </div>
       </div>
 
-      {/* Language */}
+      {/* Font family (independent of palette; 'auto' inherits the palette) */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.fontFamily', 'Font family')}
+        </h4>
+        <div className="grid grid-cols-2 gap-2">
+          {fontFamilyOptions.map((opt) => {
+            const selected = settings.fontFamily === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => updateSettings({ fontFamily: opt.value })}
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg border-2 text-sm transition-all ${
+                  selected
+                    ? 'border-accent bg-accent/5 text-text-primary'
+                    : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
+                }`}
+              >
+                <span style={{ fontFamily: opt.previewFamily }} className="font-medium">
+                  {opt.label}
+                </span>
+                <span
+                  className="text-[10px] uppercase tracking-wider text-text-muted"
+                  style={{ fontFamily: opt.previewFamily }}
+                >
+                  Aa
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Font size (scales the root font size) */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.fontSize', 'Font size')}
+        </h4>
+        <div className="flex gap-2">
+          {fontSizeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => updateSettings({ fontSize: opt.value })}
+              className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                settings.fontSize === opt.value
+                  ? 'border-accent bg-accent/5 text-text-primary'
+                  : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
+              }`}
+            >
+              <span style={{ fontSize: opt.preview }}>A</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Font family (independent of palette; 'auto' inherits the palette) */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.fontFamily', 'Font family')}
+        </h4>
+        <div className="grid grid-cols-2 gap-2">
+          {fontFamilyOptions.map((opt) => {
+            const selected = settings.fontFamily === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => updateSettings({ fontFamily: opt.value })}
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg border-2 text-sm transition-all ${
+                  selected
+                    ? 'border-accent bg-accent/5 text-text-primary'
+                    : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
+                }`}
+              >
+                <span style={{ fontFamily: opt.previewFamily }} className="font-medium">
+                  {opt.label}
+                </span>
+                <span
+                  className="text-[10px] uppercase tracking-wider text-text-muted"
+                  style={{ fontFamily: opt.previewFamily }}
+                >
+                  Aa
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Font size (scales the root font size) */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.fontSize', 'Font size')}
+        </h4>
+        <div className="flex gap-2">
+          {fontSizeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => updateSettings({ fontSize: opt.value })}
+              className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                settings.fontSize === opt.value
+                  ? 'border-accent bg-accent/5 text-text-primary'
+                  : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
+              }`}
+            >
+              <span style={{ fontSize: opt.preview }}>A</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">{t('general.language')}</h4>
         <div className="flex gap-2">

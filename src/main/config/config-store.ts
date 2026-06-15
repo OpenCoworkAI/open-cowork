@@ -86,18 +86,45 @@ export function isAppearance(value: unknown): value is AppAppearance {
   return value === 'dark' || value === 'light' || value === 'system';
 }
 
+// Note: resolveEffectiveAppearance lives in theme-resolution.ts (single source
+// of truth) so it can be unit-tested without booting Electron.
+
 /**
- * Resolve an appearance setting to its effective light/dark identity.
- * `systemPrefersDark` is the OS-level preference (nativeTheme.shouldUseDarkColors)
- * passed in by the caller so this stays pure.
+ * Font family presets the user can pick in Settings, independent of the
+ * palette. Each id maps to a stack defined in globals.css via the
+ * `--font-sans-<id>` / `--font-serif-<id>` / `--font-mono-<id>` variables.
+ * 'auto' means "inherit from the active palette" (the default).
  */
-export function resolveEffectiveAppearance(
-  appearance: AppAppearance,
-  systemPrefersDark: boolean
-): 'dark' | 'light' {
-  if (appearance === 'system') return systemPrefersDark ? 'dark' : 'light';
-  return appearance;
+export type FontFamily = 'auto' | 'sans' | 'serif' | 'mono' | 'rounded' | 'condensed' | 'system';
+
+export const VALID_FONT_FAMILIES: FontFamily[] = [
+  'auto',
+  'sans',
+  'serif',
+  'mono',
+  'rounded',
+  'condensed',
+  'system',
+];
+
+/** Type guard for a FontFamily value. */
+export function isFontFamily(value: unknown): value is FontFamily {
+  return typeof value === 'string' && (VALID_FONT_FAMILIES as string[]).includes(value);
 }
+
+/**
+ * Base font size presets. The renderer maps these onto a CSS custom property
+ * (`--font-scale`) that scales the root font size.
+ */
+export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+export const VALID_FONT_SIZES: FontSize[] = ['sm', 'md', 'lg', 'xl'];
+
+/** Type guard for a FontSize value. */
+export function isFontSize(value: unknown): value is FontSize {
+  return typeof value === 'string' && (VALID_FONT_SIZES as string[]).includes(value);
+}
+
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -176,6 +203,12 @@ export interface AppConfig {
   // Orthogonal light/dark/system mode applied on top of the palette
   appearance: AppAppearance;
 
+  // Font family preset ('auto' inherits from the active palette)
+  fontFamily: FontFamily;
+
+  // Base font size preset (scales --font-scale)
+  fontSize: FontSize;
+
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
@@ -232,6 +265,8 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'enableDevLogs',
   'theme',
   'appearance',
+  'fontFamily',
+  'fontSize',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -309,6 +344,8 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'claude',
   appearance: 'system',
+  fontFamily: 'auto',
+  fontSize: 'md',
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -1076,6 +1113,8 @@ export class ConfigStore {
         ? raw.appearance
         : (LEGACY_THEME_TO_APPEARANCE[typeof raw.theme === 'string' ? raw.theme : ''] ??
           defaultConfig.appearance),
+      fontFamily: isFontFamily(raw.fontFamily) ? raw.fontFamily : defaultConfig.fontFamily,
+      fontSize: isFontSize(raw.fontSize) ? raw.fontSize : defaultConfig.fontSize,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
@@ -1216,6 +1255,12 @@ export class ConfigStore {
           return defaultConfig[key];
         }
         if (key === 'appearance' && !isAppearance(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'fontFamily' && !isFontFamily(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'fontSize' && !isFontSize(rawValue)) {
           return defaultConfig[key];
         }
         if (
@@ -1494,6 +1539,8 @@ export class ConfigStore {
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
       appearance: updates.appearance !== undefined ? updates.appearance : current.appearance,
+      fontFamily: updates.fontFamily !== undefined ? updates.fontFamily : current.fontFamily,
+      fontSize: updates.fontSize !== undefined ? updates.fontSize : current.fontSize,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

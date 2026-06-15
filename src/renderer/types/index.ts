@@ -571,6 +571,8 @@ export type ServerEvent =
 export interface Settings {
   theme: AppTheme;
   appearance: AppAppearance;
+  fontFamily: FontFamily;
+  fontSize: FontSize;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -620,6 +622,13 @@ export type AppTheme =
   | 'catppuccin'
   | 'rose-pine'
   | 'solarized';
+
+/**
+ * Font family presets. 'auto' inherits from the active palette.
+ */
+export type FontFamily = 'auto' | 'sans' | 'serif' | 'mono' | 'rounded' | 'condensed' | 'system';
+
+export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
 
 /** Orthogonal light/dark/system mode applied on top of the selected palette. */
 export type AppAppearance = 'dark' | 'light' | 'system';
@@ -723,6 +732,8 @@ export interface AppConfig {
   globalSkillsPath?: string;
   theme?: AppTheme;
   appearance?: AppAppearance;
+  fontFamily?: FontFamily;
+  fontSize?: FontSize;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

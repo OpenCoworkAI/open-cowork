@@ -112,13 +112,37 @@ function App() {
     const root = document.documentElement;
     const effective =
       settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
-    const target = [`theme-${settings.theme}`, effective];
-    const allClasses = ['light', 'dark', ...THEME_PALETTES.map((p) => `theme-${p}`)];
+    // Font family: 'auto' means "no override class, inherit the palette's
+    // --font-* vars". Every other preset gets a `.font-family-<id>` class that
+    // overrides those vars for the whole document.
+    const fontFamilyClass =
+      settings.fontFamily && settings.fontFamily !== 'auto'
+        ? `font-family-${settings.fontFamily}`
+        : null;
+    const fontSizeClass = settings.fontSize ? `font-size-${settings.fontSize}` : null;
+    const target = [`theme-${settings.theme}`, effective, fontFamilyClass, fontSizeClass].filter(
+      (c): c is string => Boolean(c)
+    );
+    const allClasses = [
+      'light',
+      'dark',
+      ...THEME_PALETTES.map((p) => `theme-${p}`),
+      'font-family-sans',
+      'font-family-serif',
+      'font-family-mono',
+      'font-family-rounded',
+      'font-family-condensed',
+      'font-family-system',
+      'font-size-sm',
+      'font-size-md',
+      'font-size-lg',
+      'font-size-xl',
+    ];
 
     // Add new classes first (idempotent), then drop anything no longer active.
     root.classList.add(...target);
     root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
-  }, [settings.theme, settings.appearance, systemDarkMode]);
+  }, [settings.theme, settings.appearance, settings.fontFamily, settings.fontSize, systemDarkMode]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {

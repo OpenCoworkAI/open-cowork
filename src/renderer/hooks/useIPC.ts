@@ -123,6 +123,8 @@ export function useIPC() {
       store.setSettings({
         theme: config.theme || 'claude',
         appearance: config.appearance || 'system',
+        fontFamily: config.fontFamily || 'auto',
+        fontSize: config.fontSize || 'md',
       });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
