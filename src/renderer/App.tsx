@@ -24,6 +24,7 @@ import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
+import { THEME_PALETTES } from './types';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -95,17 +96,29 @@ function App() {
     }
   }, []); // Empty deps - run once
 
-  // Apply theme to document root
+  // Apply theme to document root.
+  // Two orthogonal axes:
+  //   - palette -> `.theme-<palette>` class (e.g. `.theme-gruvbox`)
+  //   - appearance -> `.dark`/`.light` class, with `system` resolved from
+  //     the OS preference (systemDarkMode, supplied by the main process).
+  // Both classes are applied simultaneously so CSS rules like
+  // `.theme-gruvbox.light` and `.theme-gruvbox.dark` can target each variant.
+  //
+  // Compute the full target class set first, then add the new classes BEFORE
+  // removing the stale ones — this avoids a flash of unstyled content where,
+  // for a frame, no theme class is present at all. `classList` is a set, so
+  // re-adding a class that's already present is a no-op.
   useEffect(() => {
-    const effectiveTheme =
-      settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
+    const root = document.documentElement;
+    const effective =
+      settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
+    const target = [`theme-${settings.theme}`, effective];
+    const allClasses = ['light', 'dark', ...THEME_PALETTES.map((p) => `theme-${p}`)];
 
-    if (effectiveTheme === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
-  }, [settings.theme, systemDarkMode]);
+    // Add new classes first (idempotent), then drop anything no longer active.
+    root.classList.add(...target);
+    root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
+  }, [settings.theme, settings.appearance, systemDarkMode]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {

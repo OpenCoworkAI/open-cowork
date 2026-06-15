@@ -32,7 +32,8 @@ function makeConfig(): AppConfig {
     defaultWorkdir: '',
     globalSkillsPath: '',
     enableDevLogs: false,
-    theme: 'light',
+    theme: 'claude',
+    appearance: 'light',
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {

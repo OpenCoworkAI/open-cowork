@@ -76,6 +76,14 @@
     "themeLight": "浅色",
     "themeDark": "深色",
     "themeSystem": "跟随系统",
+    "colorPalette": "配色方案",
+    "themeClaude": "Claude",
+    "themeNordic": "Nordic 极地",
+    "themeTokyoNight": "Tokyo Night 东京夜",
+    "themeGruvbox": "Gruvbox",
+    "themeCatppuccin": "Catppuccin 摩卡",
+    "themeRosePine": "Rosé Pine 玫瑰松",
+    "themeSolarized": "Solarized",
     "language": "语言"
   },
   "memory": {

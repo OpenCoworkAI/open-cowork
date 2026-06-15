@@ -36,7 +36,68 @@ import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-mo
  */
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system';
+
+/**
+ * Named color palettes. Each palette ships BOTH a light and a dark variant;
+ * which one is rendered is decided by the orthogonal `AppAppearance` setting
+ * (resolved against the OS preference when `appearance === 'system'`).
+ *
+ * 'claude' is the default palette and matches the historical app look.
+ */
+export type AppTheme =
+  | 'claude'
+  | 'nordic'
+  | 'tokyo-night'
+  | 'gruvbox'
+  | 'catppuccin'
+  | 'rose-pine'
+  | 'solarized';
+
+/**
+ * Orthogonal to `AppTheme`: which light/dark variant of the selected palette
+ * should be rendered. `system` defers to the OS dark-color preference.
+ */
+export type AppAppearance = 'dark' | 'light' | 'system';
+
+/**
+ * Palettes shipped with the app. Order here is the order shown in the
+ * Settings swatch grid.
+ */
+export const THEME_PALETTES = [
+  'claude',
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized',
+] as const;
+
+/** Appearance modes the user can pick alongside a palette. */
+export const VALID_APPEARANCES: AppAppearance[] = ['dark', 'light', 'system'];
+
+/** Returns true when a theme id is one of the built-in named palettes. */
+export function isPaletteTheme(theme: string): theme is (typeof THEME_PALETTES)[number] {
+  return THEME_PALETTES.includes(theme as (typeof THEME_PALETTES)[number]);
+}
+
+/** Type guard for an AppAppearance value. */
+export function isAppearance(value: unknown): value is AppAppearance {
+  return value === 'dark' || value === 'light' || value === 'system';
+}
+
+/**
+ * Resolve an appearance setting to its effective light/dark identity.
+ * `systemPrefersDark` is the OS-level preference (nativeTheme.shouldUseDarkColors)
+ * passed in by the caller so this stays pure.
+ */
+export function resolveEffectiveAppearance(
+  appearance: AppAppearance,
+  systemPrefersDark: boolean
+): 'dark' | 'light' {
+  if (appearance === 'system') return systemPrefersDark ? 'dark' : 'light';
+  return appearance;
+}
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -109,8 +170,11 @@ export interface AppConfig {
   // Developer logs
   enableDevLogs: boolean;
 
-  // UI theme preference
+  // UI palette preference (which color palette)
   theme: AppTheme;
+
+  // Orthogonal light/dark/system mode applied on top of the palette
+  appearance: AppAppearance;
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
@@ -167,6 +231,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'globalSkillsPath',
   'enableDevLogs',
   'theme',
+  'appearance',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -242,7 +307,8 @@ const defaultConfig: AppConfig = {
   defaultWorkdir: '',
   globalSkillsPath: '',
   enableDevLogs: false,
-  theme: 'light',
+  theme: 'claude',
+  appearance: 'system',
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -340,7 +406,31 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+export const VALID_THEMES: AppTheme[] = [
+  'claude',
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized',
+];
+
+/** Legacy theme ids persisted before the palette/appearance split. Mapped
+ *  to the new two-axis model by the normalizer so existing users keep a
+ *  working theme without touching their config file. */
+const LEGACY_THEME_TO_APPEARANCE: Record<string, AppAppearance> = {
+  dark: 'dark',
+  light: 'light',
+  system: 'system',
+};
+
+/** Legacy palette ids renamed during the palette/appearance split. Maps
+ *  the old id to the new id so existing users keep their chosen palette
+ *  instead of falling through to the default. */
+const LEGACY_PALETTE_MAP: Record<string, AppTheme> = {
+  'solarized-light': 'solarized',
+};
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
@@ -973,7 +1063,19 @@ export class ConfigStore {
           ? raw.globalSkillsPath
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
-      theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      // Backward compat: a pre-split config persisted theme as 'dark'/'light'/'system'
+      // (a mode, not a palette) or under a renamed id ('solarized-light').
+      // Map both onto the new two-axis model:
+      //   - legacy mode  -> palette 'claude', appearance = old mode
+      //   - renamed id   -> new palette id, appearance left at its default
+      theme: isAppTheme(raw.theme)
+        ? raw.theme
+        : (LEGACY_PALETTE_MAP[typeof raw.theme === 'string' ? raw.theme : ''] ??
+          defaultConfig.theme),
+      appearance: isAppearance(raw.appearance)
+        ? raw.appearance
+        : (LEGACY_THEME_TO_APPEARANCE[typeof raw.theme === 'string' ? raw.theme : ''] ??
+          defaultConfig.appearance),
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
@@ -1111,6 +1213,9 @@ export class ConfigStore {
           return defaultConfig[key];
         }
         if (key === 'theme' && !isAppTheme(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'appearance' && !isAppearance(rawValue)) {
           return defaultConfig[key];
         }
         if (
@@ -1388,6 +1493,7 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      appearance: updates.appearance !== undefined ? updates.appearance : current.appearance,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

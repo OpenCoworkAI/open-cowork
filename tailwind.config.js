@@ -42,8 +42,9 @@ module.exports = {
         error: 'var(--color-error)',
       },
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'monospace'],
+        sans: ['var(--font-sans, "Plus Jakarta Sans")', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-serif, "Source Serif 4")', 'Georgia', 'serif'],
+        mono: ['var(--font-mono, "JetBrains Mono")', 'SF Mono', 'Menlo', 'monospace'],
       },
       boxShadow: {
         'soft': 'var(--shadow-soft)',
