@@ -7,47 +7,16 @@
 /* ------------------------------------------------------------------ */
 /* Font presets                                                       */
 /*                                                                    */
-/* User-selectable typography, orthogonal to the color palette. The   */
-/* active preset class is applied to <html> by App.tsx and overrides  */
-/* --font-sans / --font-serif / --font-mono for the whole document.   */
-/* 'auto' (no class) inherits whatever the active palette set.        */
+/* NOTE: font *family* overrides are NOT applied here. A single-class */
+/* `.font-family-*` selector (specificity 0,1,0) would lose to the    */
+/* palette's compound `.theme-claude.dark` selector (0,2,0) and never  */
+/* take effect. Instead, App.tsx sets --font-sans / --font-serif /     */
+/* --font-mono via inline style on <html> (highest specificity).       */
 /* ------------------------------------------------------------------ */
-.font-family-sans {
-  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-serif: 'Source Serif 4', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-}
-.font-family-serif {
-  --font-sans: 'Source Serif 4', Georgia, serif;
-  --font-serif: 'Source Serif 4', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-}
-.font-family-mono {
-  --font-sans: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-  --font-serif: 'Source Serif 4', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-}
-.font-family-rounded {
-  --font-sans: 'Quicksand', system-ui, sans-serif;
-  --font-serif: 'Lora', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-}
-.font-family-condensed {
-  --font-sans: 'Saira Condensed', system-ui, sans-serif;
-  --font-serif: 'Source Serif 4', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-}
-.font-family-system {
-  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-serif: Georgia, 'Times New Roman', serif;
-  --font-mono: 'SF Mono', Menlo, Consolas, monospace;
-}
 
-/* ------------------------------------------------------------------ */
-/* Font size presets                                                  */
-/*                                                                    */
-/* Scales the root font size via a CSS custom property consumed by    */
-/* the html {} rule below. --font-scale is multiplied against 16px.   */
+/* Font *size* presets: scales the root font size via a CSS custom      */
+/* property consumed by the html {} rule below. --font-scale is         */
+/* multiplied against 16px. No competing rule, so class-based is fine.  */
 /* ------------------------------------------------------------------ */
 .font-size-sm {
   --font-scale: 0.875;

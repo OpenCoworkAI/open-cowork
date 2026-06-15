@@ -474,7 +474,7 @@ const LEGACY_THEME_TO_APPEARANCE: Record<string, AppAppearance> = {
 /** Legacy palette ids renamed during the palette/appearance split. Maps
  *  the old id to the new id so existing users keep their chosen palette
  *  instead of falling through to the default. */
-const LEGACY_PALETTE_MAP: Record<string, AppTheme> = {
+export const LEGACY_PALETTE_MAP: Record<string, AppTheme> = {
   'solarized-light': 'solarized',
 };
 

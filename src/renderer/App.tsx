@@ -25,6 +25,7 @@ import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
 import { THEME_PALETTES } from './types';
+import type { FontFamily } from './types';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -112,27 +113,16 @@ function App() {
     const root = document.documentElement;
     const effective =
       settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
-    // Font family: 'auto' means "no override class, inherit the palette's
-    // --font-* vars". Every other preset gets a `.font-family-<id>` class that
-    // overrides those vars for the whole document.
-    const fontFamilyClass =
-      settings.fontFamily && settings.fontFamily !== 'auto'
-        ? `font-family-${settings.fontFamily}`
-        : null;
+    // Font size: scales the root font size. '.font-size-<id>' sets --font-scale;
+    // no competing rule, so class-based is fine.
     const fontSizeClass = settings.fontSize ? `font-size-${settings.fontSize}` : null;
-    const target = [`theme-${settings.theme}`, effective, fontFamilyClass, fontSizeClass].filter(
-      (c): c is string => Boolean(c)
+    const target = [`theme-${settings.theme}`, effective, fontSizeClass].filter((c): c is string =>
+      Boolean(c)
     );
     const allClasses = [
       'light',
       'dark',
       ...THEME_PALETTES.map((p) => `theme-${p}`),
-      'font-family-sans',
-      'font-family-serif',
-      'font-family-mono',
-      'font-family-rounded',
-      'font-family-condensed',
-      'font-family-system',
       'font-size-sm',
       'font-size-md',
       'font-size-lg',
@@ -142,6 +132,58 @@ function App() {
     // Add new classes first (idempotent), then drop anything no longer active.
     root.classList.add(...target);
     root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
+
+    // Font family: applied via inline style on <html> rather than a class.
+    // A single-class `.font-family-*` selector (specificity 0,1,0) would lose
+    // to the palette's compound `.theme-claude.dark` selector (0,2,0) and the
+    // override would silently never take effect. Inline style has the highest
+    // specificity and wins unconditionally. 'auto' clears the inline props so
+    // the active palette's --font-* vars show through.
+    const FONT_STACKS: Record<
+      Exclude<FontFamily, 'auto'>,
+      { sans: string; serif: string; mono: string }
+    > = {
+      sans: {
+        sans: "'Plus Jakarta Sans', system-ui, sans-serif",
+        serif: "'Source Serif 4', Georgia, serif",
+        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      },
+      serif: {
+        sans: "'Source Serif 4', Georgia, serif",
+        serif: "'Source Serif 4', Georgia, serif",
+        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      },
+      mono: {
+        sans: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+        serif: "'Source Serif 4', Georgia, serif",
+        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      },
+      rounded: {
+        sans: "'Quicksand', system-ui, sans-serif",
+        serif: "'Lora', Georgia, serif",
+        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      },
+      condensed: {
+        sans: "'Saira Condensed', system-ui, sans-serif",
+        serif: "'Source Serif 4', Georgia, serif",
+        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      },
+      system: {
+        sans: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+        serif: "Georgia, 'Times New Roman', serif",
+        mono: "'SF Mono', Menlo, Consolas, monospace",
+      },
+    };
+    if (settings.fontFamily && settings.fontFamily !== 'auto') {
+      const stacks = FONT_STACKS[settings.fontFamily];
+      root.style.setProperty('--font-sans', stacks.sans);
+      root.style.setProperty('--font-serif', stacks.serif);
+      root.style.setProperty('--font-mono', stacks.mono);
+    } else {
+      root.style.removeProperty('--font-sans');
+      root.style.removeProperty('--font-serif');
+      root.style.removeProperty('--font-mono');
+    }
   }, [settings.theme, settings.appearance, settings.fontFamily, settings.fontSize, systemDarkMode]);
 
   // Inject (or remove) an imported Obsidian community theme. The CSS string is
