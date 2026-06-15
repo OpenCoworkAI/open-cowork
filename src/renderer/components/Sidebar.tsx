@@ -208,14 +208,18 @@ export function Sidebar() {
 
   const toggleTheme = () => {
     const next =
-      settings.theme === 'dark' ? 'light' : settings.theme === 'light' ? 'system' : 'dark';
-    updateSettings({ theme: next });
+      settings.appearance === 'dark'
+        ? 'light'
+        : settings.appearance === 'light'
+          ? 'system'
+          : 'dark';
+    updateSettings({ appearance: next });
   };
 
   const themeIcon =
-    settings.theme === 'dark' ? (
+    settings.appearance === 'dark' ? (
       <Sun className="w-4 h-4" />
-    ) : settings.theme === 'light' ? (
+    ) : settings.appearance === 'light' ? (
       <Moon className="w-4 h-4" />
     ) : (
       <Monitor className="w-4 h-4" />

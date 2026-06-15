@@ -77,12 +77,13 @@
     "themeDark": "Dark",
     "themeSystem": "System",
     "colorPalette": "Color palette",
+    "themeClaude": "Claude",
     "themeNordic": "Nordic",
     "themeTokyoNight": "Tokyo Night",
     "themeGruvbox": "Gruvbox",
     "themeCatppuccin": "Catppuccin",
     "themeRosePine": "Rosé Pine",
-    "themeSolarizedLight": "Solarized Light",
+    "themeSolarized": "Solarized",
     "language": "Language"
   },
   "memory": {

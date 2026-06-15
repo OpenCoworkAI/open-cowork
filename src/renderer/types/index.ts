@@ -570,6 +570,7 @@ export type ServerEvent =
 // Settings types
 export interface Settings {
   theme: AppTheme;
+  appearance: AppAppearance;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -606,41 +607,44 @@ export interface ExecutionContext {
 // App Config types
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
+
+/**
+ * Named color palettes. Each ships BOTH a light and dark variant; which one
+ * renders is decided by the orthogonal `AppAppearance` setting.
+ */
 export type AppTheme =
-  | 'dark'
-  | 'light'
-  | 'system'
+  | 'claude'
   | 'nordic'
   | 'tokyo-night'
   | 'gruvbox'
   | 'catppuccin'
   | 'rose-pine'
-  | 'solarized-light';
+  | 'solarized';
 
-/** Named palette themes (excludes the classic dark/light/system modes). */
+/** Orthogonal light/dark/system mode applied on top of the selected palette. */
+export type AppAppearance = 'dark' | 'light' | 'system';
+
+/** All built-in palettes (order matches the Settings swatch grid). */
 export const THEME_PALETTES = [
+  'claude',
   'nordic',
   'tokyo-night',
   'gruvbox',
   'catppuccin',
   'rose-pine',
-  'solarized-light',
+  'solarized',
 ] as const;
-
-/** Light-mode palettes (the rest are dark). */
-export const LIGHT_PALETTES = new Set<string>(['solarized-light']);
 
 /** Returns true when a theme id is one of the built-in named palettes. */
 export function isPaletteTheme(theme: string): theme is (typeof THEME_PALETTES)[number] {
   return THEME_PALETTES.includes(theme as (typeof THEME_PALETTES)[number]);
 }
 
-/** Resolve any AppTheme to its effective light/dark identity. */
-export function isLightTheme(theme: AppTheme): boolean {
-  if (theme === 'light') return true;
-  if (theme === 'dark' || theme === 'system') return false;
-  return LIGHT_PALETTES.has(theme);
+/** Type guard for an AppAppearance value. */
+export function isAppearance(value: unknown): value is AppAppearance {
+  return value === 'dark' || value === 'light' || value === 'system';
 }
+
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -718,6 +722,7 @@ export interface AppConfig {
   defaultWorkdir?: string;
   globalSkillsPath?: string;
   theme?: AppTheme;
+  appearance?: AppAppearance;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

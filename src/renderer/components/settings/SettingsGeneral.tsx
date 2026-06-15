@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store';
-import { LIGHT_PALETTES, type AppTheme } from '../../types';
+import { type AppAppearance, type AppTheme } from '../../types';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
@@ -24,15 +24,22 @@ export function SettingsGeneral() {
     { code: 'zh', nativeName: '中文' },
   ];
 
-  const themeOptions = [
-    { value: 'light' as const, label: t('general.themeLight') },
-    { value: 'dark' as const, label: t('general.themeDark') },
-    { value: 'system' as const, label: t('general.themeSystem', 'System') },
+  const appearanceOptions: { value: AppAppearance; label: string }[] = [
+    { value: 'light', label: t('general.themeLight') },
+    { value: 'dark', label: t('general.themeDark') },
+    { value: 'system', label: t('general.themeSystem', 'System') },
   ];
 
-  // Named palette themes. Each swatch shows the palette's background + accent
-  // so users can preview the scheme before selecting it.
+  // Named palette themes. Each swatch shows the palette's dark variant
+  // background + accent so users can preview the scheme before selecting it.
+  // (Every palette also has a light variant — switch via the mode row above.)
   const paletteOptions: { value: AppTheme; label: string; bg: string; accent: string }[] = [
+    {
+      value: 'claude',
+      label: t('general.themeClaude', 'Claude'),
+      bg: '#171614',
+      accent: '#d97757',
+    },
     {
       value: 'nordic',
       label: t('general.themeNordic', 'Nordic'),
@@ -64,25 +71,26 @@ export function SettingsGeneral() {
       accent: '#c4a7e7',
     },
     {
-      value: 'solarized-light',
-      label: t('general.themeSolarizedLight', 'Solarized Light'),
-      bg: '#fdf6e3',
+      value: 'solarized',
+      label: t('general.themeSolarized', 'Solarized'),
+      bg: '#002b36',
       accent: '#268bd2',
     },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Theme */}
+      {/* Appearance mode (light / dark / system) */}
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">{t('general.appearance')}</h4>
         <div className="flex gap-2">
-          {themeOptions.map((opt) => (
+          {appearanceOptions.map((opt) => (
             <button
               key={opt.value}
-              onClick={() => updateSettings({ theme: opt.value })}
+              type="button"
+              onClick={() => updateSettings({ appearance: opt.value })}
               className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                settings.theme === opt.value
+                settings.appearance === opt.value
                   ? 'border-accent bg-accent/5 text-text-primary'
                   : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
               }`}
@@ -93,7 +101,7 @@ export function SettingsGeneral() {
         </div>
       </div>
 
-      {/* Color palettes */}
+      {/* Color palettes (each renders both a light and dark variant) */}
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">
           {t('general.colorPalette', 'Color palette')}
@@ -101,10 +109,10 @@ export function SettingsGeneral() {
         <div className="grid grid-cols-3 gap-2">
           {paletteOptions.map((opt) => {
             const selected = settings.theme === opt.value;
-            const isLightSwatch = LIGHT_PALETTES.has(opt.value);
             return (
               <button
                 key={opt.value}
+                type="button"
                 onClick={() => updateSettings({ theme: opt.value })}
                 className={`group relative flex flex-col items-start gap-2 p-2.5 rounded-lg border-2 transition-all ${
                   selected ? 'border-accent' : 'border-border hover:border-accent/50'
@@ -130,11 +138,7 @@ export function SettingsGeneral() {
                   {opt.label}
                 </span>
                 {selected && (
-                  <span
-                    className={`absolute right-2 top-2 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                      isLightSwatch ? 'bg-accent/15 text-accent' : 'bg-accent text-white'
-                    }`}
-                  >
+                  <span className="absolute right-2 top-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent text-white">
                     ✓
                   </span>
                 )}

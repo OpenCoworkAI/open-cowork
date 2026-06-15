@@ -29,13 +29,14 @@ import {
   configStore,
   getPiAiModelPresets,
   type AppConfig,
+  type AppAppearance,
   type AppTheme,
   type CreateConfigSetPayload,
   isPaletteTheme,
 } from './config/config-store';
 import {
-  getSavedThemePreference as getSavedThemePreferenceFromConfig,
-  resolveEffectiveTheme as resolveEffectiveThemePure,
+  getSavedAppearance as getSavedAppearanceFromConfig,
+  resolveEffectiveAppearance as resolveEffectiveAppearancePure,
   resolveNativeThemeSource,
 } from './config/theme-resolution';
 import { runConfigApiTest } from './config/config-test-routing';
@@ -369,22 +370,22 @@ function setupTray() {
   });
 }
 
-function getSavedThemePreference(): AppTheme {
-  return getSavedThemePreferenceFromConfig(configStore.get('theme'));
+function getSavedAppearance(): AppAppearance {
+  return getSavedAppearanceFromConfig(configStore.get('appearance'));
 }
 
-function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
-  return resolveEffectiveThemePure(theme, nativeTheme.shouldUseDarkColors);
+function resolveEffectiveAppearance(appearance: AppAppearance): 'dark' | 'light' {
+  return resolveEffectiveAppearancePure(appearance, nativeTheme.shouldUseDarkColors);
 }
 
-function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = resolveNativeThemeSource(theme);
+function applyNativeThemePreference(appearance: AppAppearance): void {
+  nativeTheme.themeSource = resolveNativeThemeSource(appearance);
 }
 
 function createWindow() {
-  const savedTheme = getSavedThemePreference();
-  applyNativeThemePreference(savedTheme);
-  const effectiveTheme = resolveEffectiveTheme(savedTheme);
+  const savedAppearance = getSavedAppearance();
+  applyNativeThemePreference(savedAppearance);
+  const effectiveTheme = resolveEffectiveAppearance(savedAppearance);
   const THEME =
     effectiveTheme === 'dark'
       ? {
@@ -897,7 +898,7 @@ app
         type: 'native-theme.changed',
         payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
       });
-      if (getSavedThemePreference() === 'system' && mainWindow && !mainWindow.isDestroyed()) {
+      if (getSavedAppearance() === 'system' && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG);
       }
     });
@@ -2774,19 +2775,29 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'settings.update':
-      if (
-        event.payload.theme === 'dark' ||
-        event.payload.theme === 'light' ||
-        event.payload.theme === 'system' ||
-        isPaletteTheme(event.payload.theme as string)
-      ) {
+      if (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) {
         const nextTheme = event.payload.theme as AppTheme;
         configStore.update({ theme: nextTheme });
-        applyNativeThemePreference(nextTheme);
+      }
+      if (
+        event.payload.appearance === 'dark' ||
+        event.payload.appearance === 'light' ||
+        event.payload.appearance === 'system'
+      ) {
+        const nextAppearance = event.payload.appearance as AppAppearance;
+        configStore.update({ appearance: nextAppearance });
+        applyNativeThemePreference(nextAppearance);
         if (mainWindow && !mainWindow.isDestroyed()) {
-          const effectiveTheme = resolveEffectiveTheme(nextTheme);
+          const effectiveTheme = resolveEffectiveAppearance(nextAppearance);
           mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
         }
+      }
+      if (
+        (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) ||
+        event.payload.appearance === 'dark' ||
+        event.payload.appearance === 'light' ||
+        event.payload.appearance === 'system'
+      ) {
         sendToRenderer({
           type: 'config.status',
           payload: {

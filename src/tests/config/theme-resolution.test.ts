@@ -3,85 +3,75 @@
  * src/main/config/theme-resolution.
  *
  * These were previously private functions inside main/index.ts (untestable
- * without booting Electron). Extracted so the palette → native-theme mapping
- * is unit-covered, as requested in PR review.
+ * without booting Electron). Extracted so the palette/appearance mapping
+ * is unit-covered.
+ *
+ * The model now has two orthogonal axes:
+ *   - palette (AppTheme): which color palette
+ *   - appearance (AppAppearance): dark / light / system
  *
  * Covers:
- *   - getSavedThemePreference: accepts known modes + palettes, rejects garbage
- *   - resolveEffectiveTheme: every palette resolves to dark/light correctly,
- *     'system' honors the passed OS preference
- *   - resolveNativeThemeSource: maps to the three nativeTheme.themeSource
- *     values, with palettes collapsing to their underlying mode
+ *   - getSavedAppearance: accepts known modes, rejects garbage
+ *   - getSavedPalette: accepts known palettes, rejects garbage/legacy ids
+ *   - resolveEffectiveAppearance: resolves each mode; 'system' honors the
+ *     passed OS preference
+ *   - resolveNativeThemeSource: maps to the three nativeTheme.themeSource values
  */
 import { describe, it, expect } from 'vitest';
 import {
-  getSavedThemePreference,
-  resolveEffectiveTheme,
+  getSavedAppearance,
+  getSavedPalette,
+  resolveEffectiveAppearance,
   resolveNativeThemeSource,
 } from '../../main/config/theme-resolution';
-import { THEME_PALETTES } from '../../main/config/config-store';
+import { THEME_PALETTES, VALID_APPEARANCES } from '../../main/config/config-store';
 
-describe('getSavedThemePreference', () => {
-  it.each(['dark', 'light', 'system', ...THEME_PALETTES] as const)(
-    'passes known theme %s through unchanged',
-    (theme) => {
-      expect(getSavedThemePreference(theme)).toBe(theme);
-    }
-  );
+describe('getSavedAppearance', () => {
+  it.each(VALID_APPEARANCES)('passes known appearance %s through unchanged', (mode) => {
+    expect(getSavedAppearance(mode)).toBe(mode);
+  });
 
-  it('coerces garbage strings to the light default', () => {
-    // The function accepts AppTheme, so we cast to exercise the fallback path.
-    expect(getSavedThemePreference('dracula' as never)).toBe('light');
-    expect(getSavedThemePreference('' as never)).toBe('light');
-    expect(getSavedThemePreference('Nordic' as never)).toBe('light');
+  it('coerces garbage to the system default', () => {
+    expect(getSavedAppearance('dracula')).toBe('system');
+    expect(getSavedAppearance('')).toBe('system');
+    expect(getSavedAppearance(undefined)).toBe('system');
+    expect(getSavedAppearance(123)).toBe('system');
   });
 });
 
-describe('resolveEffectiveTheme', () => {
-  it('resolves the classic modes', () => {
-    expect(resolveEffectiveTheme('dark', false)).toBe('dark');
-    expect(resolveEffectiveTheme('dark', true)).toBe('dark');
-    expect(resolveEffectiveTheme('light', false)).toBe('light');
-    expect(resolveEffectiveTheme('light', true)).toBe('light');
+describe('getSavedPalette', () => {
+  it.each(THEME_PALETTES)('passes known palette %s through unchanged', (palette) => {
+    expect(getSavedPalette(palette)).toBe(palette);
+  });
+
+  it('coerces legacy mode ids and garbage to the claude default', () => {
+    expect(getSavedPalette('dark')).toBe('claude');
+    expect(getSavedPalette('light')).toBe('claude');
+    expect(getSavedPalette('system')).toBe('claude');
+    expect(getSavedPalette('solarized-light')).toBe('claude');
+    expect(getSavedPalette('dracula')).toBe('claude');
+    expect(getSavedPalette(undefined)).toBe('claude');
+  });
+});
+
+describe('resolveEffectiveAppearance', () => {
+  it('resolves the explicit modes regardless of OS pref', () => {
+    expect(resolveEffectiveAppearance('dark', false)).toBe('dark');
+    expect(resolveEffectiveAppearance('dark', true)).toBe('dark');
+    expect(resolveEffectiveAppearance('light', false)).toBe('light');
+    expect(resolveEffectiveAppearance('light', true)).toBe('light');
   });
 
   it('resolves "system" from the passed OS preference', () => {
-    expect(resolveEffectiveTheme('system', true)).toBe('dark');
-    expect(resolveEffectiveTheme('system', false)).toBe('light');
-  });
-
-  it('resolves every dark palette to dark regardless of OS pref', () => {
-    const darkPalettes = THEME_PALETTES.filter((p) => p !== 'solarized-light');
-    for (const p of darkPalettes) {
-      expect(resolveEffectiveTheme(p, false)).toBe('dark');
-      expect(resolveEffectiveTheme(p, true)).toBe('dark');
-    }
-  });
-
-  it('resolves solarized-light to light regardless of OS pref', () => {
-    expect(resolveEffectiveTheme('solarized-light', false)).toBe('light');
-    expect(resolveEffectiveTheme('solarized-light', true)).toBe('light');
+    expect(resolveEffectiveAppearance('system', true)).toBe('dark');
+    expect(resolveEffectiveAppearance('system', false)).toBe('light');
   });
 });
 
 describe('resolveNativeThemeSource', () => {
-  it('passes "system" through for native themeSource', () => {
-    expect(resolveNativeThemeSource('system')).toBe('system');
-  });
-
-  it('maps light/dark modes to themselves', () => {
-    expect(resolveNativeThemeSource('light')).toBe('light');
+  it('maps each appearance to the matching nativeTheme.themeSource value', () => {
     expect(resolveNativeThemeSource('dark')).toBe('dark');
-  });
-
-  it('collapses every dark palette to "dark"', () => {
-    const darkPalettes = THEME_PALETTES.filter((p) => p !== 'solarized-light');
-    for (const p of darkPalettes) {
-      expect(resolveNativeThemeSource(p)).toBe('dark');
-    }
-  });
-
-  it('collapses solarized-light to "light"', () => {
-    expect(resolveNativeThemeSource('solarized-light')).toBe('light');
+    expect(resolveNativeThemeSource('light')).toBe('light');
+    expect(resolveNativeThemeSource('system')).toBe('system');
   });
 });

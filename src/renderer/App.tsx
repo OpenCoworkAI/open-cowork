@@ -97,27 +97,23 @@ function App() {
   }, []); // Empty deps - run once
 
   // Apply theme to document root.
-  // Built-in modes: 'dark' (no class — :root default), 'light' (.light),
-  // 'system' (resolves to dark/light via OS preference).
-  // Named palettes: '.theme-<palette>' overrides the variables entirely.
+  // Two orthogonal axes:
+  //   - palette -> `.theme-<palette>` class (e.g. `.theme-gruvbox`)
+  //   - appearance -> `.dark`/`.light` class, with `system` resolved from
+  //     the OS preference (systemDarkMode, supplied by the main process).
+  // Both classes are applied simultaneously so CSS rules like
+  // `.theme-gruvbox.light` and `.theme-gruvbox.dark` can target each variant.
   useEffect(() => {
     const root = document.documentElement;
     // Clear any previously-applied theme classes first.
-    const themeClasses = ['light', ...THEME_PALETTES.map((p) => `theme-${p}`)];
+    const themeClasses = ['light', 'dark', ...THEME_PALETTES.map((p) => `theme-${p}`)];
     root.classList.remove(...themeClasses);
 
-    const theme = settings.theme;
-    if (theme === 'system') {
-      if (!systemDarkMode) {
-        root.classList.add('light');
-      }
-    } else if (theme === 'light') {
-      root.classList.add('light');
-    } else if (theme !== 'dark') {
-      // Named palette (anything other than dark/light/system)
-      root.classList.add(`theme-${theme}`);
-    }
-  }, [settings.theme, systemDarkMode]);
+    root.classList.add(`theme-${settings.theme}`);
+    const effective =
+      settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
+    root.classList.add(effective);
+  }, [settings.theme, settings.appearance, systemDarkMode]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {
