@@ -20,7 +20,7 @@
  * the full Electron main process. The only impure input — the OS dark-color
  * preference, used to resolve 'system' — is passed in as an argument.
  */
-import { isAppearance, type AppAppearance, type AppTheme } from './config-store';
+import { isAppearance, THEME_PALETTES, type AppAppearance, type AppTheme } from './config-store';
 
 /**
  * Normalize a persisted appearance value. Accepts known modes; otherwise
@@ -36,17 +36,8 @@ export function getSavedAppearance(raw: unknown): AppAppearance {
  * and finally falls back to 'claude' (the default).
  */
 export function getSavedPalette(raw: AppTheme | string | undefined): AppTheme {
-  const KNOWN: AppTheme[] = [
-    'claude',
-    'nordic',
-    'tokyo-night',
-    'gruvbox',
-    'catppuccin',
-    'rose-pine',
-    'solarized',
-  ];
   const LEGACY: Record<string, AppTheme> = { 'solarized-light': 'solarized' };
-  if ((KNOWN as string[]).includes(raw as string)) return raw as AppTheme;
+  if ((THEME_PALETTES as readonly string[]).includes(raw as string)) return raw as AppTheme;
   if (typeof raw === 'string' && LEGACY[raw]) return LEGACY[raw];
   return 'claude';
 }

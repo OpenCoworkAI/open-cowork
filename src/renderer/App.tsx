@@ -103,16 +103,21 @@ function App() {
   //     the OS preference (systemDarkMode, supplied by the main process).
   // Both classes are applied simultaneously so CSS rules like
   // `.theme-gruvbox.light` and `.theme-gruvbox.dark` can target each variant.
+  //
+  // Compute the full target class set first, then add the new classes BEFORE
+  // removing the stale ones — this avoids a flash of unstyled content where,
+  // for a frame, no theme class is present at all. `classList` is a set, so
+  // re-adding a class that's already present is a no-op.
   useEffect(() => {
     const root = document.documentElement;
-    // Clear any previously-applied theme classes first.
-    const themeClasses = ['light', 'dark', ...THEME_PALETTES.map((p) => `theme-${p}`)];
-    root.classList.remove(...themeClasses);
-
-    root.classList.add(`theme-${settings.theme}`);
     const effective =
       settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
-    root.classList.add(effective);
+    const target = [`theme-${settings.theme}`, effective];
+    const allClasses = ['light', 'dark', ...THEME_PALETTES.map((p) => `theme-${p}`)];
+
+    // Add new classes first (idempotent), then drop anything no longer active.
+    root.classList.add(...target);
+    root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
   }, [settings.theme, settings.appearance, systemDarkMode]);
 
   // Auto-collapse panels based on window width
