@@ -32,50 +32,6 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Obsidian theme compatibility layer                                 */
-/*                                                                    */
-/* Obsidian community themes target Obsidian's own CSS variable names */
-/* (--background-primary, --text-normal, --interactive-accent, ...).  */
-/* When a user imports an Obsidian .css theme, the renderer injects   */
-/* its rules; these aliases translate our palette vars onto the most  */
-/* commonly-targeted Obsidian vars so imported themes "just work" for */
-/* background, surface, text and accent colors. Obsidian's selectors  */
-/* (.theme-dark / .theme-light) are also aliased to our .dark/.light. */
-/* ------------------------------------------------------------------ */
-.theme-dark,
-.dark {
-  --background-primary: var(--color-background);
-  --background-primary-alt: var(--color-background-secondary);
-  --background-secondary: var(--color-surface);
-  --background-secondary-alt: var(--color-surface-hover);
-  --background-modifier-border: var(--color-border);
-  --background-modifier-form-field: var(--color-surface);
-  --text-normal: var(--color-text-primary);
-  --text-muted: var(--color-text-secondary);
-  --text-faint: var(--color-text-muted);
-  --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: var(--color-accent-hover);
-  --text-accent: var(--color-accent);
-  --text-on-accent: #ffffff;
-}
-.theme-light,
-.light {
-  --background-primary: var(--color-background);
-  --background-primary-alt: var(--color-background-secondary);
-  --background-secondary: var(--color-surface);
-  --background-secondary-alt: var(--color-surface-hover);
-  --background-modifier-border: var(--color-border);
-  --background-modifier-form-field: var(--color-surface);
-  --text-normal: var(--color-text-primary);
-  --text-muted: var(--color-text-secondary);
-  --text-faint: var(--color-text-muted);
-  --interactive-accent: var(--color-accent);
-  --interactive-accent-hover: var(--color-accent-hover);
-  --text-accent: var(--color-accent);
-  --text-on-accent: #ffffff;
-}
-
-/* ------------------------------------------------------------------ */
 /* Named palette themes                                               */
 /*                                                                    */
 /* Two orthogonal axes are applied to <html>:                         */

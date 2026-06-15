@@ -61,7 +61,6 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'workdir.get',
   'workdir.set',
   'workdir.select',
-  'obsidianTheme.select',
 ]);
 
 // Expose protected methods that allow the renderer process to use

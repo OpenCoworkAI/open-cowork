@@ -36,8 +36,8 @@ function makeConfig(): AppConfig {
     appearance: 'light',
     fontFamily: 'auto',
     fontSize: 'md',
-    obsidianThemes: [],
-    activeObsidianThemeId: null,
+    customFontFamily: '',
+    customColors: {},
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {

@@ -125,11 +125,14 @@ export function useIPC() {
         appearance: config.appearance || 'system',
         fontFamily: config.fontFamily || 'auto',
         fontSize: config.fontSize || 'md',
-        obsidianThemes: Array.isArray(config.obsidianThemes) ? config.obsidianThemes : [],
-        activeObsidianThemeId:
-          typeof config.activeObsidianThemeId === 'string' || config.activeObsidianThemeId === null
-            ? config.activeObsidianThemeId
-            : null,
+        customFontFamily:
+          typeof config.customFontFamily === 'string' ? config.customFontFamily : '',
+        customColors:
+          config.customColors &&
+          typeof config.customColors === 'object' &&
+          !Array.isArray(config.customColors)
+            ? config.customColors
+            : {},
       });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
@@ -770,26 +773,6 @@ export function useIPC() {
     return invoke<string | null>({ type: 'folder.select', payload: {} });
   }, [invoke]);
 
-  const selectObsidianTheme = useCallback(async (): Promise<{
-    css: string;
-    name: string;
-    fontsInlined?: number;
-    fontSkipped?: string[];
-    error?: string;
-  } | null> => {
-    if (!isElectron) return null;
-    return invoke<{
-      css: string;
-      name: string;
-      fontsInlined?: number;
-      fontSkipped?: string[];
-      error?: string;
-    } | null>({
-      type: 'obsidianTheme.select',
-      payload: {},
-    });
-  }, [invoke]);
-
   const getWorkingDir = useCallback(async (): Promise<string | null> => {
     if (!isElectron) {
       return '/mock/working/dir';
@@ -835,7 +818,6 @@ export function useIPC() {
     respondToPermission,
     respondToSudoPassword,
     selectFolder,
-    selectObsidianTheme,
     getWorkingDir,
     changeWorkingDir,
     getMCPServers,

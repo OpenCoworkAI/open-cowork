@@ -476,8 +476,7 @@ export type ClientEvent =
   | { type: 'folder.select'; payload: Record<string, never> }
   | { type: 'workdir.get'; payload: Record<string, never> }
   | { type: 'workdir.set'; payload: { path: string; sessionId?: string } }
-  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } }
-  | { type: 'obsidianTheme.select'; payload: Record<string, never> };
+  | { type: 'workdir.select'; payload: { sessionId?: string; currentPath?: string } };
 
 // Sandbox setup types (app startup)
 export type SandboxSetupPhase =
@@ -574,8 +573,8 @@ export interface Settings {
   appearance: AppAppearance;
   fontFamily: FontFamily;
   fontSize: FontSize;
-  obsidianThemes?: ObsidianImportedTheme[];
-  activeObsidianThemeId?: string | null;
+  customFontFamily?: string;
+  customColors?: Record<string, string>;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -684,19 +683,6 @@ export function previewFamilyFor(family: FontFamily): string {
 
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
 
-/** A user-imported Obsidian community theme. Stored in config alongside the
- *  built-in palettes; the renderer renders a card per entry. */
-export interface ObsidianImportedTheme {
-  /** Stable opaque id (uuid-ish). Used as React key + to identify the active
-   *  theme via `activeObsidianThemeId`. */
-  id: string;
-  /** Display name — defaults to the filename the user picked. */
-  name: string;
-  /** The theme's CSS, with any @font-face relative URLs already inlined as
-   *  base64 data URIs by the main process (see obsidian-theme.ts). */
-  css: string;
-}
-
 /** Orthogonal light/dark/system mode applied on top of the selected palette. */
 export type AppAppearance = 'dark' | 'light' | 'system';
 
@@ -801,8 +787,8 @@ export interface AppConfig {
   appearance?: AppAppearance;
   fontFamily?: FontFamily;
   fontSize?: FontSize;
-  obsidianThemes?: ObsidianImportedTheme[];
-  activeObsidianThemeId?: string | null;
+  customFontFamily?: string;
+  customColors?: Record<string, string>;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

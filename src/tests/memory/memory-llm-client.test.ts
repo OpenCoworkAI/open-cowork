@@ -28,8 +28,8 @@ function makeConfig(timeoutMs: number): AppConfig {
     appearance: 'light',
     fontFamily: 'auto',
     fontSize: 'md',
-    obsidianThemes: [],
-    activeObsidianThemeId: null,
+    customFontFamily: '',
+    customColors: {},
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {
