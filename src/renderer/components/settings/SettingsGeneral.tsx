@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Upload, X } from 'lucide-react';
+import { ExternalLink, Upload, X } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { useIPC } from '../../hooks/useIPC';
 import { type AppAppearance, type AppTheme, type FontFamily, type FontSize } from '../../types';
@@ -313,6 +313,14 @@ export function SettingsGeneral() {
           {settings.obsidianThemeCss
             ? obsidianName || t('general.obsidianThemeLoaded', 'Theme loaded — replace')
             : t('general.obsidianThemeImport', 'Import .css file')}
+        </button>
+        <button
+          type="button"
+          onClick={() => window.electronAPI?.openExternal?.('https://obsidian.md/themes')}
+          className="flex items-center gap-1.5 text-xs text-text-muted hover:text-accent transition-colors"
+        >
+          <ExternalLink className="w-3 h-3" />
+          {t('general.obsidianThemeBrowse', 'Browse Obsidian themes online')}
         </button>
         {obsidianError && <p className="text-xs text-error">{obsidianError}</p>}
       </div>

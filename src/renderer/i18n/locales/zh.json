@@ -101,6 +101,7 @@
     "obsidianThemeDesc": "导入社区 Obsidian 主题（.css）。颜色会映射到当前配色方案。",
     "obsidianThemeImport": "导入 .css 文件",
     "obsidianThemeLoaded": "已加载主题 — 替换",
+    "obsidianThemeBrowse": "浏览 Obsidian 在线主题库",
     "clear": "清除",
     "language": "语言"
   },
