@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, Upload, X } from 'lucide-react';
+import { Check, ExternalLink, Trash2, Upload } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { useIPC } from '../../hooks/useIPC';
-import { type AppAppearance, type AppTheme, type FontFamily, type FontSize } from '../../types';
+import {
+  type AppAppearance,
+  type AppTheme,
+  type FontFamily,
+  type FontSize,
+  previewFamilyFor,
+} from '../../types';
+import {
+  activateImportedTheme,
+  addImportedTheme,
+  removeImportedTheme,
+} from '../../../shared/obsidian-theme-list';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
@@ -12,7 +23,14 @@ export function SettingsGeneral() {
   const { selectObsidianTheme } = useIPC();
   const [obsidianError, setObsidianError] = useState('');
   const [obsidianBusy, setObsidianBusy] = useState(false);
-  const [obsidianName, setObsidianName] = useState('');
+  const [obsidianFontsInlined, setObsidianFontsInlined] = useState<number | null>(null);
+  const [obsidianFontsSkipped, setObsidianFontsSkipped] = useState<string[]>([]);
+  // Renderer-safe id generator (browser crypto global). Passed to the shared
+  // obsidian-theme-list helpers so they stay environment-agnostic.
+  const rendererIdGenerator = () =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
@@ -88,37 +106,37 @@ export function SettingsGeneral() {
     {
       value: 'auto',
       label: t('general.fontFamilyAuto', 'Auto (palette)'),
-      previewFamily: 'inherit',
+      previewFamily: previewFamilyFor('auto'),
     },
     {
       value: 'sans',
       label: t('general.fontFamilySans', 'Plus Jakarta Sans'),
-      previewFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      previewFamily: previewFamilyFor('sans'),
     },
     {
       value: 'serif',
       label: t('general.fontFamilySerif', 'Source Serif 4'),
-      previewFamily: "'Source Serif 4', Georgia, serif",
+      previewFamily: previewFamilyFor('serif'),
     },
     {
       value: 'mono',
       label: t('general.fontFamilyMono', 'JetBrains Mono'),
-      previewFamily: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      previewFamily: previewFamilyFor('mono'),
     },
     {
       value: 'rounded',
       label: t('general.fontFamilyRounded', 'Quicksand'),
-      previewFamily: "'Quicksand', system-ui, sans-serif",
+      previewFamily: previewFamilyFor('rounded'),
     },
     {
       value: 'condensed',
       label: t('general.fontFamilyCondensed', 'Saira Condensed'),
-      previewFamily: "'Saira Condensed', system-ui, sans-serif",
+      previewFamily: previewFamilyFor('condensed'),
     },
     {
       value: 'system',
       label: t('general.fontFamilySystem', 'System'),
-      previewFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      previewFamily: previewFamilyFor('system'),
     },
   ];
 
@@ -256,64 +274,159 @@ export function SettingsGeneral() {
         </div>
       </div>
 
-      {/* Obsidian theme (import a community .css; aliases in globals.css map
-          our --color-* vars onto the names Obsidian themes target) */}
+      {/* Obsidian themes — a scrollable grid of cards, one per imported theme.
+          Each card renders a live preview using the theme's CSS variables
+          (Obsidian names: --background-primary, --text-normal,
+          --interactive-accent). Click a card to activate; trash removes. */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-medium text-text-primary">
-            {t('general.obsidianTheme', 'Obsidian theme')}
+            {t('general.obsidianTheme', 'Obsidian themes')}
           </h4>
-          {settings.obsidianThemeCss && (
-            <button
-              type="button"
-              onClick={() => {
-                updateSettings({ obsidianThemeCss: '' });
-                setObsidianName('');
-                setObsidianError('');
-              }}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-error transition-colors"
-            >
-              <X className="w-3 h-3" />
-              {t('general.clear', 'Clear')}
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={obsidianBusy}
+            onClick={async () => {
+              setObsidianError('');
+              setObsidianBusy(true);
+              try {
+                const result = await selectObsidianTheme();
+                if (!result) return;
+                if (result.error) {
+                  setObsidianError(result.error);
+                  return;
+                }
+                if (result.css) {
+                  const themes = settings.obsidianThemes ?? [];
+                  const { list, id } = addImportedTheme(
+                    themes,
+                    { name: result.name, css: result.css },
+                    rendererIdGenerator
+                  );
+                  const activeId = activateImportedTheme(
+                    list,
+                    settings.activeObsidianThemeId ?? null,
+                    id
+                  );
+                  updateSettings({
+                    obsidianThemes: list,
+                    activeObsidianThemeId: activeId,
+                  });
+                  setObsidianFontsInlined(result.fontsInlined ?? null);
+                  setObsidianFontsSkipped(result.fontSkipped ?? []);
+                }
+              } catch (err) {
+                setObsidianError(err instanceof Error ? err.message : String(err));
+              } finally {
+                setObsidianBusy(false);
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-border bg-surface hover:border-accent/50 text-xs font-medium text-text-secondary hover:text-text-primary transition-all disabled:opacity-50"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {t('general.obsidianThemeImport', 'Import .css')}
+          </button>
         </div>
         <p className="text-xs text-text-muted leading-relaxed">
           {t(
             'general.obsidianThemeDesc',
-            'Import a community Obsidian theme (.css). Colors are mapped onto the active palette.'
+            'Import community Obsidian themes (.css). Click a card to activate it.'
           )}
         </p>
-        <button
-          type="button"
-          disabled={obsidianBusy}
-          onClick={async () => {
-            setObsidianError('');
-            setObsidianBusy(true);
-            try {
-              const result = await selectObsidianTheme();
-              if (!result) return;
-              if (result.error) {
-                setObsidianError(result.error);
-                return;
-              }
-              if (result.css) {
-                updateSettings({ obsidianThemeCss: result.css });
-                setObsidianName(result.name);
-              }
-            } catch (err) {
-              setObsidianError(err instanceof Error ? err.message : String(err));
-            } finally {
-              setObsidianBusy(false);
-            }
-          }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-border bg-surface hover:border-accent/50 text-sm font-medium text-text-secondary hover:text-text-primary transition-all disabled:opacity-50"
-        >
-          <Upload className="w-4 h-4" />
-          {settings.obsidianThemeCss
-            ? obsidianName || t('general.obsidianThemeLoaded', 'Theme loaded — replace')
-            : t('general.obsidianThemeImport', 'Import .css file')}
-        </button>
+        {/* Scrollable grid of imported-theme cards with live previews. */}
+        {(settings.obsidianThemes?.length ?? 0) > 0 ? (
+          <div className="max-h-72 overflow-y-auto pr-1 space-y-2">
+            {settings.obsidianThemes!.map((theme) => {
+              const isActive = settings.activeObsidianThemeId === theme.id;
+              return (
+                <div
+                  key={theme.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    const next = activateImportedTheme(
+                      settings.obsidianThemes ?? [],
+                      settings.activeObsidianThemeId ?? null,
+                      isActive ? null : theme.id
+                    );
+                    updateSettings({ activeObsidianThemeId: next });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.currentTarget.click();
+                    }
+                  }}
+                  className={`group relative rounded-lg border-2 transition-all cursor-pointer overflow-hidden ${
+                    isActive
+                      ? 'border-accent ring-1 ring-accent/30'
+                      : 'border-border hover:border-accent/50'
+                  }`}
+                >
+                  {/* Live preview pane: apply the theme's CSS (scoped to this
+                      subtree via @scope), then read Obsidian's variable names
+                      so the preview reflects the imported theme's intent. */}
+                  <style>{`@scope { ${theme.css} }`}</style>
+                  <div
+                    className="p-3 flex items-center gap-3"
+                    style={{ background: 'var(--background-primary, var(--color-background))' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-md flex-shrink-0"
+                      style={{ background: 'var(--interactive-accent, var(--color-accent))' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="text-sm font-medium truncate"
+                        style={{ color: 'var(--text-normal, var(--color-text))' }}
+                      >
+                        {theme.name}
+                      </div>
+                      <div
+                        className="text-xs truncate"
+                        style={{ color: 'var(--text-muted, var(--color-text-muted))' }}
+                      >
+                        {isActive
+                          ? t('general.obsidianThemeActive', 'Active')
+                          : t('general.obsidianThemeClickToActivate', 'Click to activate')}
+                      </div>
+                    </div>
+                    {isActive && (
+                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white flex-shrink-0">
+                        <Check className="w-3.5 h-3.5" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const themes = settings.obsidianThemes ?? [];
+                        const { list, activeId } = removeImportedTheme(
+                          themes,
+                          settings.activeObsidianThemeId ?? null,
+                          theme.id
+                        );
+                        updateSettings({
+                          obsidianThemes: list,
+                          activeObsidianThemeId: activeId,
+                        });
+                      }}
+                      className="flex items-center justify-center w-6 h-6 rounded text-text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0"
+                      aria-label={t('general.obsidianThemeRemove', 'Remove theme')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-text-muted italic">
+            {t('general.obsidianThemeNone', 'No themes imported yet.')}
+          </p>
+        )}
+
         <button
           type="button"
           onClick={() => window.electronAPI?.openExternal?.('https://community.obsidian.md/themes')}
@@ -322,6 +435,23 @@ export function SettingsGeneral() {
           <ExternalLink className="w-3 h-3" />
           {t('general.obsidianThemeBrowse', 'Browse Obsidian themes online')}
         </button>
+        {obsidianFontsInlined !== null && obsidianFontsInlined > 0 && (
+          <p className="text-xs text-success">
+            {t('general.obsidianFontsBundled', {
+              defaultValue: '{{count}} font(s) bundled into the theme',
+              count: obsidianFontsInlined,
+            })}
+          </p>
+        )}
+        {obsidianFontsSkipped.length > 0 && (
+          <p className="text-xs text-warning">
+            {t('general.obsidianFontsSkipped', {
+              defaultValue:
+                '{{count}} font reference(s) could not be loaded (the theme will fall back to default fonts for those)',
+              count: obsidianFontsSkipped.length,
+            })}
+          </p>
+        )}
         {obsidianError && <p className="text-xs text-error">{obsidianError}</p>}
       </div>
 

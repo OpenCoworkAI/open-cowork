@@ -574,7 +574,8 @@ export interface Settings {
   appearance: AppAppearance;
   fontFamily: FontFamily;
   fontSize: FontSize;
-  obsidianThemeCss?: string;
+  obsidianThemes?: ObsidianImportedTheme[];
+  activeObsidianThemeId?: string | null;
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -630,7 +631,71 @@ export type AppTheme =
  */
 export type FontFamily = 'auto' | 'sans' | 'serif' | 'mono' | 'rounded' | 'condensed' | 'system';
 
+/**
+ * Font stacks for each non-'auto' FontFamily preset. SINGLE SOURCE OF TRUTH.
+ * App.tsx applies these via inline style.setProperty (to win CSS specificity
+ * over the palette's compound selectors), and SettingsGeneral.tsx uses them
+ * for the live font previews. Keeping them here prevents drift between the
+ * runtime override and the preview.
+ *
+ * 'auto' is intentionally absent: it means "inherit the active palette's
+ * --font-* vars" (no override).
+ */
+export const FONT_STACKS: Record<
+  Exclude<FontFamily, 'auto'>,
+  { sans: string; serif: string; mono: string }
+> = {
+  sans: {
+    sans: "'Plus Jakarta Sans', system-ui, sans-serif",
+    serif: "'Source Serif 4', Georgia, serif",
+    mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  },
+  serif: {
+    sans: "'Source Serif 4', Georgia, serif",
+    serif: "'Source Serif 4', Georgia, serif",
+    mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  },
+  mono: {
+    sans: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+    serif: "'Source Serif 4', Georgia, serif",
+    mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  },
+  rounded: {
+    sans: "'Quicksand', system-ui, sans-serif",
+    serif: "'Lora', Georgia, serif",
+    mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  },
+  condensed: {
+    sans: "'Saira Condensed', system-ui, sans-serif",
+    serif: "'Source Serif 4', Georgia, serif",
+    mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  },
+  system: {
+    sans: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    serif: "Georgia, 'Times New Roman', serif",
+    mono: "'SF Mono', Menlo, Consolas, monospace",
+  },
+};
+
+/** Convenience preview family for a preset (sans stack). 'auto' → 'inherit'. */
+export function previewFamilyFor(family: FontFamily): string {
+  return family === 'auto' ? 'inherit' : FONT_STACKS[family].sans;
+}
+
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+/** A user-imported Obsidian community theme. Stored in config alongside the
+ *  built-in palettes; the renderer renders a card per entry. */
+export interface ObsidianImportedTheme {
+  /** Stable opaque id (uuid-ish). Used as React key + to identify the active
+   *  theme via `activeObsidianThemeId`. */
+  id: string;
+  /** Display name — defaults to the filename the user picked. */
+  name: string;
+  /** The theme's CSS, with any @font-face relative URLs already inlined as
+   *  base64 data URIs by the main process (see obsidian-theme.ts). */
+  css: string;
+}
 
 /** Orthogonal light/dark/system mode applied on top of the selected palette. */
 export type AppAppearance = 'dark' | 'light' | 'system';
@@ -736,7 +801,8 @@ export interface AppConfig {
   appearance?: AppAppearance;
   fontFamily?: FontFamily;
   fontSize?: FontSize;
-  obsidianThemeCss?: string;
+  obsidianThemes?: ObsidianImportedTheme[];
+  activeObsidianThemeId?: string | null;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
   memoryRuntime?: MemoryRuntimeConfig;

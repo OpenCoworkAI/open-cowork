@@ -30,6 +30,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { migrateLegacyObsidianTheme, cryptoIdGenerator } from './obsidian-theme-list';
 
 /**
  * Application configuration schema
@@ -125,6 +126,29 @@ export function isFontSize(value: unknown): value is FontSize {
   return typeof value === 'string' && (VALID_FONT_SIZES as string[]).includes(value);
 }
 
+/**
+ * A user-imported Obsidian community theme. Mirror of the renderer-side type
+ * in renderer/types/index.ts — the main and renderer process each define
+ * their own copy (this codebase's convention) but they must stay in sync.
+ */
+export interface ObsidianImportedTheme {
+  id: string;
+  name: string;
+  css: string;
+}
+
+/** Type guard for a single ObsidianImportedTheme (used by the array guard). */
+function isObsidianImportedTheme(value: unknown): value is ObsidianImportedTheme {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.id === 'string' && typeof v.name === 'string' && typeof v.css === 'string';
+}
+
+/** Type guard for the obsidianThemes array. */
+export function isObsidianImportedThemeArray(value: unknown): value is ObsidianImportedTheme[] {
+  return Array.isArray(value) && value.every(isObsidianImportedTheme);
+}
+
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -209,12 +233,17 @@ export interface AppConfig {
   // Base font size preset (scales --font-scale)
   fontSize: FontSize;
 
-  // Optional Obsidian community-theme CSS to inject into the document. When
-  // non-empty, App.tsx writes it into a <style id="obsidian-theme"> tag; the
+  // User-imported Obsidian community themes. Each entry's CSS is injected
+  // into a <style id="obsidian-theme"> tag when it is the active theme; the
   // Obsidian variable aliases in globals.css map our --color-* vars onto the
-  // variable names Obsidian themes target (--background-primary, etc.) so the
-  // imported theme's overrides resolve. Empty string = no theme.
-  obsidianThemeCss: string;
+  // names Obsidian themes target (--background-primary, etc.) so the imported
+  // theme's overrides resolve. Empty array = no imported themes.
+  obsidianThemes: ObsidianImportedTheme[];
+
+  // Which imported theme (by id) is currently live, or null to use the
+  // built-in palettes only. Must reference an id present in obsidianThemes,
+  // otherwise it is treated as null.
+  activeObsidianThemeId: string | null;
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
@@ -274,7 +303,8 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'appearance',
   'fontFamily',
   'fontSize',
-  'obsidianThemeCss',
+  'obsidianThemes',
+  'activeObsidianThemeId',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -354,7 +384,8 @@ const defaultConfig: AppConfig = {
   appearance: 'system',
   fontFamily: 'auto',
   fontSize: 'md',
-  obsidianThemeCss: '',
+  obsidianThemes: [],
+  activeObsidianThemeId: null,
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -1124,16 +1155,35 @@ export class ConfigStore {
           defaultConfig.appearance),
       fontFamily: isFontFamily(raw.fontFamily) ? raw.fontFamily : defaultConfig.fontFamily,
       fontSize: isFontSize(raw.fontSize) ? raw.fontSize : defaultConfig.fontSize,
-      obsidianThemeCss:
-        typeof raw.obsidianThemeCss === 'string'
-          ? raw.obsidianThemeCss
-          : defaultConfig.obsidianThemeCss,
+      obsidianThemes: isObsidianImportedThemeArray(raw.obsidianThemes)
+        ? raw.obsidianThemes
+        : defaultConfig.obsidianThemes,
+      activeObsidianThemeId:
+        typeof raw.activeObsidianThemeId === 'string' || raw.activeObsidianThemeId === null
+          ? (raw.activeObsidianThemeId as string | null)
+          : defaultConfig.activeObsidianThemeId,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
+
+    // One-time migration from the legacy single-theme storage
+    // (`obsidianThemeCss: string`) to the new list storage. Runs every
+    // normalize but is a no-op once the new fields are populated.
+    const legacyCss = (raw as { obsidianThemeCss?: unknown }).obsidianThemeCss;
+    if (typeof legacyCss === 'string' && legacyCss.trim()) {
+      const migrated = migrateLegacyObsidianTheme({
+        legacyCss,
+        list: result.obsidianThemes,
+        activeId: result.activeObsidianThemeId,
+        genId: cryptoIdGenerator,
+      });
+      result.obsidianThemes = migrated.list;
+      result.activeObsidianThemeId = migrated.activeId;
+    }
+
     this.normalizeModelIds(result);
     return result;
   }
@@ -1554,10 +1604,12 @@ export class ConfigStore {
       appearance: updates.appearance !== undefined ? updates.appearance : current.appearance,
       fontFamily: updates.fontFamily !== undefined ? updates.fontFamily : current.fontFamily,
       fontSize: updates.fontSize !== undefined ? updates.fontSize : current.fontSize,
-      obsidianThemeCss:
-        updates.obsidianThemeCss !== undefined
-          ? updates.obsidianThemeCss
-          : current.obsidianThemeCss,
+      obsidianThemes:
+        updates.obsidianThemes !== undefined ? updates.obsidianThemes : current.obsidianThemes,
+      activeObsidianThemeId:
+        updates.activeObsidianThemeId !== undefined
+          ? updates.activeObsidianThemeId
+          : current.activeObsidianThemeId,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

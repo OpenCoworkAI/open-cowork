@@ -194,7 +194,8 @@ const defaultSettings: Settings = {
   appearance: 'light',
   fontFamily: 'auto',
   fontSize: 'md',
-  obsidianThemeCss: '',
+  obsidianThemes: [],
+  activeObsidianThemeId: null,
   defaultTools: [
     'askuserquestion',
     'todowrite',

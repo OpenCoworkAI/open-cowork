@@ -46,6 +46,8 @@ import {
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules } from './config/permission-rules-store';
+import { createFsFontReader, inlineRelativeFontUrls } from './config/obsidian-theme';
+import { isObsidianImportedThemeArray } from './config/config-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
@@ -2779,24 +2781,43 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'obsidianTheme.select': {
-      // Open a file picker for a single .css file, read its contents, and
-      // return them. The renderer then persists the string via settings.update
-      // and App.tsx injects it into a <style> tag. Empty/cancel = '' so the
-      // caller can treat falsy as "no selection".
+      // Open a file picker for a single .css file, read its contents, inline
+      // any @font-face relative URLs as base64 data URIs (so the theme's
+      // bundled fonts load even though our document has a different base
+      // URL), and return the result. The renderer then persists the CSS
+      // string via settings.update and App.tsx injects it into a <style> tag.
+      // Empty/cancel = '' so the caller can treat falsy as "no selection".
       const themeResult = await dialog.showOpenDialog(mainWindow!, {
         title: 'Import Obsidian theme',
         properties: ['openFile'],
         filters: [{ name: 'CSS', extensions: ['css'] }],
       });
       if (themeResult.canceled || themeResult.filePaths.length === 0) {
-        return { css: '', name: '' };
+        return { css: '', name: '', fontsInlined: 0, fontSkipped: [] as string[] };
       }
       try {
-        const css = fs.readFileSync(themeResult.filePaths[0], 'utf8');
-        const name = themeResult.filePaths[0].split(/[\\/]/).pop() ?? '';
-        return { css, name };
+        const cssPath = themeResult.filePaths[0];
+        const rawCss = fs.readFileSync(cssPath, 'utf8');
+        const name = cssPath.split(/[\\/]/).pop() ?? '';
+        const baseDir = cssPath.split(/[\\/]/).slice(0, -1).join('/');
+        // Inline bundled fonts so they survive the document's base-URL change.
+        const { css, inlined, skipped } = await inlineRelativeFontUrls(
+          rawCss,
+          baseDir,
+          createFsFontReader(logWarn)
+        );
+        if (skipped.length > 0) {
+          logWarn('[obsidianTheme.select] skipped font URLs:', skipped);
+        }
+        return { css, name, fontsInlined: inlined, fontSkipped: skipped };
       } catch (err) {
-        return { css: '', name: '', error: err instanceof Error ? err.message : String(err) };
+        return {
+          css: '',
+          name: '',
+          fontsInlined: 0,
+          fontSkipped: [],
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
     }
 
@@ -2824,8 +2845,21 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       if (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) {
         configStore.update({ fontSize: event.payload.fontSize as FontSize });
       }
-      if (typeof event.payload.obsidianThemeCss === 'string') {
-        configStore.update({ obsidianThemeCss: event.payload.obsidianThemeCss });
+      if (
+        Array.isArray(event.payload.obsidianThemes) &&
+        isObsidianImportedThemeArray(event.payload.obsidianThemes)
+      ) {
+        configStore.update({
+          obsidianThemes: event.payload.obsidianThemes,
+        });
+      }
+      if (
+        typeof event.payload.activeObsidianThemeId === 'string' ||
+        event.payload.activeObsidianThemeId === null
+      ) {
+        configStore.update({
+          activeObsidianThemeId: event.payload.activeObsidianThemeId as string | null,
+        });
       }
       if (
         (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) ||
@@ -2834,7 +2868,9 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         event.payload.appearance === 'system' ||
         (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) ||
         (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) ||
-        typeof event.payload.obsidianThemeCss === 'string'
+        Array.isArray(event.payload.obsidianThemes) ||
+        typeof event.payload.activeObsidianThemeId === 'string' ||
+        event.payload.activeObsidianThemeId === null
       ) {
         sendToRenderer({
           type: 'config.status',

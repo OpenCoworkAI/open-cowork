@@ -24,8 +24,8 @@ import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
-import { THEME_PALETTES } from './types';
-import type { FontFamily } from './types';
+import { FONT_STACKS, THEME_PALETTES } from './types';
+import { getActiveThemeCss } from '../shared/obsidian-theme-list';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -138,42 +138,8 @@ function App() {
     // to the palette's compound `.theme-claude.dark` selector (0,2,0) and the
     // override would silently never take effect. Inline style has the highest
     // specificity and wins unconditionally. 'auto' clears the inline props so
-    // the active palette's --font-* vars show through.
-    const FONT_STACKS: Record<
-      Exclude<FontFamily, 'auto'>,
-      { sans: string; serif: string; mono: string }
-    > = {
-      sans: {
-        sans: "'Plus Jakarta Sans', system-ui, sans-serif",
-        serif: "'Source Serif 4', Georgia, serif",
-        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-      },
-      serif: {
-        sans: "'Source Serif 4', Georgia, serif",
-        serif: "'Source Serif 4', Georgia, serif",
-        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-      },
-      mono: {
-        sans: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-        serif: "'Source Serif 4', Georgia, serif",
-        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-      },
-      rounded: {
-        sans: "'Quicksand', system-ui, sans-serif",
-        serif: "'Lora', Georgia, serif",
-        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-      },
-      condensed: {
-        sans: "'Saira Condensed', system-ui, sans-serif",
-        serif: "'Source Serif 4', Georgia, serif",
-        mono: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
-      },
-      system: {
-        sans: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-        serif: "Georgia, 'Times New Roman', serif",
-        mono: "'SF Mono', Menlo, Consolas, monospace",
-      },
-    };
+    // the active palette's --font-* vars show through. The stacks themselves
+    // live in types/index.ts (FONT_STACKS) so the Settings preview shares them.
     if (settings.fontFamily && settings.fontFamily !== 'auto') {
       const stacks = FONT_STACKS[settings.fontFamily];
       root.style.setProperty('--font-sans', stacks.sans);
@@ -187,14 +153,15 @@ function App() {
   }, [settings.theme, settings.appearance, settings.fontFamily, settings.fontSize, systemDarkMode]);
 
   // Inject (or remove) an imported Obsidian community theme. The CSS string is
-  // persisted in config; we mirror it into a dedicated <style> tag so it can
-  // be added/removed/updated without touching the main stylesheet. The
-  // Obsidian variable aliases in globals.css map our --color-* vars onto the
-  // names Obsidian themes target, so the imported rules resolve correctly.
+  // persisted in config; we mirror the ACTIVE theme's CSS into a dedicated
+  // <style> tag so it can be added/removed/updated without touching the main
+  // stylesheet. The Obsidian variable aliases in globals.css map our --color-*
+  // vars onto the names Obsidian themes target, so the imported rules resolve.
   useEffect(() => {
     const STYLE_ID = 'obsidian-theme';
     const existing = document.getElementById(STYLE_ID);
-    const css = settings.obsidianThemeCss?.trim() ?? '';
+    const themes = settings.obsidianThemes ?? [];
+    const css = getActiveThemeCss(themes, settings.activeObsidianThemeId ?? null)?.trim() ?? '';
     if (!css) {
       existing?.remove();
       return;
@@ -207,7 +174,7 @@ function App() {
       style.textContent = css;
       document.head.appendChild(style);
     }
-  }, [settings.obsidianThemeCss]);
+  }, [settings.obsidianThemes, settings.activeObsidianThemeId]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {

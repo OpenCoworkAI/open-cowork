@@ -125,7 +125,11 @@ export function useIPC() {
         appearance: config.appearance || 'system',
         fontFamily: config.fontFamily || 'auto',
         fontSize: config.fontSize || 'md',
-        obsidianThemeCss: config.obsidianThemeCss || '',
+        obsidianThemes: Array.isArray(config.obsidianThemes) ? config.obsidianThemes : [],
+        activeObsidianThemeId:
+          typeof config.activeObsidianThemeId === 'string' || config.activeObsidianThemeId === null
+            ? config.activeObsidianThemeId
+            : null,
       });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
@@ -769,10 +773,18 @@ export function useIPC() {
   const selectObsidianTheme = useCallback(async (): Promise<{
     css: string;
     name: string;
+    fontsInlined?: number;
+    fontSkipped?: string[];
     error?: string;
   } | null> => {
     if (!isElectron) return null;
-    return invoke<{ css: string; name: string; error?: string } | null>({
+    return invoke<{
+      css: string;
+      name: string;
+      fontsInlined?: number;
+      fontSkipped?: string[];
+      error?: string;
+    } | null>({
       type: 'obsidianTheme.select',
       payload: {},
     });
