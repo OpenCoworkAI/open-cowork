@@ -2805,6 +2805,9 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
       if (typeof event.payload.customFontFamily === 'string') {
         configStore.update({ customFontFamily: event.payload.customFontFamily });
       }
+      if (typeof event.payload.logoText === 'string') {
+        configStore.update({ logoText: event.payload.logoText });
+      }
       if (
         event.payload.customColors &&
         typeof event.payload.customColors === 'object' &&
@@ -2822,6 +2825,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) ||
         (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) ||
         typeof event.payload.customFontFamily === 'string' ||
+        typeof event.payload.logoText === 'string' ||
         (event.payload.customColors !== undefined && typeof event.payload.customColors === 'object')
       ) {
         sendToRenderer({

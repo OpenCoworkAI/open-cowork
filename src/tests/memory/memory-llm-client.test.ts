@@ -29,6 +29,7 @@ function makeConfig(timeoutMs: number): AppConfig {
     fontFamily: 'auto',
     fontSize: 'md',
     customFontFamily: '',
+    logoText: '',
     customColors: {},
     sandboxEnabled: false,
     memoryEnabled: true,

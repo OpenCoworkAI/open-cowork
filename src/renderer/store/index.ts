@@ -195,6 +195,7 @@ const defaultSettings: Settings = {
   fontFamily: 'auto',
   fontSize: 'md',
   customFontFamily: '',
+  logoText: '',
   customColors: {},
   defaultTools: [
     'askuserquestion',

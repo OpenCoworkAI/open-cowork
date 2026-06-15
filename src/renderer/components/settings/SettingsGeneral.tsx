@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Wand2, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../store';
 import {
   type AppAppearance,
@@ -8,6 +9,12 @@ import {
   type FontSize,
   previewFamilyFor,
 } from '../../types';
+import {
+  COLOR_SLOTS,
+  suggestPalette,
+  isValidHex,
+  type ColorSlot,
+} from '../../../shared/color-suggest';
 
 export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
@@ -15,6 +22,11 @@ export function SettingsGeneral() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
   const [appVer, setAppVer] = useState('');
+  // Seed color for the "suggest palette" feature. Defaults to the current
+  // accent override if present, otherwise a neutral indigo.
+  const [seedColor, setSeedColor] = useState(() => settings.customColors?.accent || '#6366f1');
+  // Memoized human label + CSS-var name per slot, so the render map stays stable.
+  const colorSlots = useMemo(() => COLOR_SLOTS, []);
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -252,6 +264,138 @@ export function SettingsGeneral() {
             >
               <span style={{ fontSize: opt.preview }}>A</span>
             </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom logo — emoji / character / short text. Empty = default PNG. */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.customLogo', 'Custom logo')}
+        </h4>
+        <p className="text-xs text-text-muted leading-relaxed">
+          {t(
+            'general.customLogoDesc',
+            'Enter an emoji, character, or short text to replace the app logo. Leave empty to use the default image.'
+          )}
+        </p>
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-2xl border border-border-subtle bg-background/60 flex items-center justify-center text-xl flex-shrink-0"
+            aria-hidden
+          >
+            {settings.logoText?.trim() ? settings.logoText.trim() : '🅾️'}
+          </div>
+          <input
+            type="text"
+            value={settings.logoText ?? ''}
+            onChange={(e) => updateSettings({ logoText: e.target.value.slice(0, 8) })}
+            placeholder={t('general.customLogoPlaceholder', '🦊 or any emoji/text')}
+            className="flex-1 px-3 py-2 rounded-lg border-2 border-border bg-surface text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+            maxLength={8}
+          />
+        </div>
+      </div>
+
+      {/* Custom font family — free-form CSS font-family string. */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.customFont', 'Custom font')}
+        </h4>
+        <p className="text-xs text-text-muted leading-relaxed">
+          {t(
+            'general.customFontDesc',
+            'Enter a font name (e.g. "Comic Sans MS" or "Arial, sans-serif"). Overrides the font family selected above when set.'
+          )}
+        </p>
+        <input
+          type="text"
+          value={settings.customFontFamily ?? ''}
+          onChange={(e) => updateSettings({ customFontFamily: e.target.value })}
+          placeholder={t('general.customFontPlaceholder', 'e.g. Comic Sans MS')}
+          className="w-full px-3 py-2 rounded-lg border-2 border-border bg-surface text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+        />
+      </div>
+
+      {/* Per-element color overrides + seed-based palette suggestion. */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-text-primary">
+            {t('general.customColors', 'Custom colors')}
+          </h4>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isValidHex(seedColor)) return;
+                updateSettings({ customColors: suggestPalette(seedColor) });
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-border bg-surface hover:border-accent/50 text-xs font-medium text-text-secondary hover:text-text-primary transition-all"
+            >
+              <Wand2 className="w-3.5 h-3.5" />
+              {t('general.suggestPalette', 'Suggest palette')}
+            </button>
+            <button
+              type="button"
+              onClick={() => updateSettings({ customColors: {} })}
+              disabled={Object.keys(settings.customColors ?? {}).length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-border bg-surface hover:border-accent/50 text-xs font-medium text-text-secondary hover:text-text-primary transition-all disabled:opacity-40"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {t('general.resetColors', 'Reset')}
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-text-muted leading-relaxed">
+          {t(
+            'general.customColorsDesc',
+            'Override individual colors. Pick a seed color and click "Suggest palette" to auto-fill a harmonious set.'
+          )}
+        </p>
+        {/* Seed color row */}
+        <div className="flex items-center gap-3 p-2.5 rounded-lg border-2 border-dashed border-border">
+          <input
+            type="color"
+            value={isValidHex(seedColor) ? seedColor : '#6366f1'}
+            onChange={(e) => setSeedColor(e.target.value)}
+            className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0"
+            aria-label={t('general.colorSeed', 'Seed color')}
+          />
+          <span className="text-xs text-text-secondary">
+            {t('general.colorSeed', 'Seed color')} — <span className="font-mono">{seedColor}</span>
+          </span>
+        </div>
+        {/* Per-slot color grid */}
+        <div className="grid grid-cols-1 gap-2">
+          {colorSlots.map((slot: ColorSlot) => (
+            <div
+              key={slot}
+              className="flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg border border-border bg-surface/50"
+            >
+              <label htmlFor={`color-${slot}`} className="text-xs text-text-secondary capitalize">
+                {t(`general.color_${slot}`, slot.replace(/-/g, ' '))}
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-text-muted">
+                  {settings.customColors?.[slot] || '—'}
+                </span>
+                <input
+                  id={`color-${slot}`}
+                  type="color"
+                  value={
+                    settings.customColors?.[slot] && isValidHex(settings.customColors[slot]!)
+                      ? settings.customColors[slot]
+                      : '#888888'
+                  }
+                  onChange={(e) =>
+                    updateSettings({
+                      customColors: { ...(settings.customColors ?? {}), [slot]: e.target.value },
+                    })
+                  }
+                  className="w-7 h-7 rounded cursor-pointer bg-transparent border border-border-muted p-0"
+                />
+              </div>
+            </div>
           ))}
         </div>
       </div>

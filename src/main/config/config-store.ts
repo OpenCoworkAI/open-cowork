@@ -214,6 +214,11 @@ export interface AppConfig {
   // of whatever palette/preset is active. Empty = use the selected preset.
   customFontFamily: string;
 
+  // User-entered custom logo (emoji, character, or short text). When non-empty
+  // the renderer renders it in a styled box instead of the bundled PNG in the
+  // sidebar + welcome view. Empty = use the default logo image.
+  logoText: string;
+
   // Per-element color overrides. Each non-empty value is applied to the
   // matching --color-* CSS variable via inline style on <html>, on top of
   // the active palette. Empty = inherit from the palette.
@@ -278,6 +283,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'fontFamily',
   'fontSize',
   'customFontFamily',
+  'logoText',
   'customColors',
   'sandboxEnabled',
   'memoryEnabled',
@@ -359,6 +365,7 @@ const defaultConfig: AppConfig = {
   fontFamily: 'auto',
   fontSize: 'md',
   customFontFamily: '',
+  logoText: '',
   customColors: {},
   sandboxEnabled: false,
   memoryEnabled: true,
@@ -1133,6 +1140,7 @@ export class ConfigStore {
         typeof raw.customFontFamily === 'string'
           ? raw.customFontFamily
           : defaultConfig.customFontFamily,
+      logoText: typeof raw.logoText === 'string' ? raw.logoText : defaultConfig.logoText,
       customColors:
         raw.customColors && typeof raw.customColors === 'object' && !Array.isArray(raw.customColors)
           ? (Object.fromEntries(
@@ -1572,6 +1580,7 @@ export class ConfigStore {
         updates.customFontFamily !== undefined
           ? updates.customFontFamily
           : current.customFontFamily,
+      logoText: updates.logoText !== undefined ? updates.logoText : current.logoText,
       customColors:
         updates.customColors !== undefined ? updates.customColors : current.customColors,
       sandboxEnabled:

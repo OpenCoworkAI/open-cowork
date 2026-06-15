@@ -25,6 +25,7 @@ import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
 import { FONT_STACKS, THEME_PALETTES } from './types';
+import { COLOR_SLOTS } from '../shared/color-suggest';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -149,7 +150,36 @@ function App() {
       root.style.removeProperty('--font-serif');
       root.style.removeProperty('--font-mono');
     }
-  }, [settings.theme, settings.appearance, settings.fontFamily, settings.fontSize, systemDarkMode]);
+
+    // Custom font family (free-form string): when non-empty it overrides
+    // --font-sans for the whole document, on top of any preset/palette stack.
+    // When empty we leave --font-sans as the preset/palette set it above.
+    if (settings.customFontFamily && settings.customFontFamily.trim()) {
+      root.style.setProperty('--font-sans', settings.customFontFamily.trim());
+    }
+
+    // Per-element color overrides. Each filled slot maps to its --color-*
+    // variable via inline style (highest specificity, beats palette rules).
+    // Empty/absent slots are cleared so the palette value shows through.
+    const customColors = settings.customColors ?? {};
+    for (const slot of COLOR_SLOTS) {
+      const value = customColors[slot];
+      const varName = `--color-${slot}`;
+      if (value && value.trim()) {
+        root.style.setProperty(varName, value.trim());
+      } else {
+        root.style.removeProperty(varName);
+      }
+    }
+  }, [
+    settings.theme,
+    settings.appearance,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.customFontFamily,
+    settings.customColors,
+    systemDarkMode,
+  ]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {

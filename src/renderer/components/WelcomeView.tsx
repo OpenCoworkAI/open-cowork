@@ -43,6 +43,7 @@ export function WelcomeView() {
   const setGlobalNotice = useAppStore((state) => state.setGlobalNotice);
   const isConfigured = useAppStore((state) => state.isConfigured);
   const setShowSettings = useAppStore((state) => state.setShowSettings);
+  const logoText = useAppStore((state) => state.settings.logoText);
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
 
@@ -443,11 +444,21 @@ export function WelcomeView() {
       <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
         <div className="space-y-4 text-center">
           <div className="flex items-center justify-center gap-4">
-            <img
-              src={welcomeLogoSrc}
-              alt={t('welcome.logoAlt')}
-              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
-            />
+            {logoText && logoText.trim() ? (
+              <div
+                className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] border border-border-subtle bg-background/60 shadow-soft flex items-center justify-center text-3xl md:text-4xl leading-none"
+                role="img"
+                aria-label={t('welcome.logoAlt')}
+              >
+                {logoText.trim()}
+              </div>
+            ) : (
+              <img
+                src={welcomeLogoSrc}
+                alt={t('welcome.logoAlt')}
+                className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+              />
+            )}
             <div className="text-left">
               <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
                 Open Cowork

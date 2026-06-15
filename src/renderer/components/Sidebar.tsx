@@ -283,11 +283,21 @@ export function Sidebar() {
       <div className="px-4 pt-5 pb-4 border-b border-border-muted">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">
-            <img
-              src={sidebarLogoSrc}
-              alt={t('common.appLogoAlt')}
-              className="w-10 h-10 rounded-2xl object-cover border border-border-subtle bg-background/60 flex-shrink-0"
-            />
+            {settings.logoText && settings.logoText.trim() ? (
+              <div
+                className="w-10 h-10 rounded-2xl border border-border-subtle bg-background/60 flex items-center justify-center text-xl leading-none flex-shrink-0"
+                role="img"
+                aria-label={t('common.appLogoAlt')}
+              >
+                {settings.logoText.trim()}
+              </div>
+            ) : (
+              <img
+                src={sidebarLogoSrc}
+                alt={t('common.appLogoAlt')}
+                className="w-10 h-10 rounded-2xl object-cover border border-border-subtle bg-background/60 flex-shrink-0"
+              />
+            )}
             <div className="min-w-0">
               <h1 className="text-[1.34rem] leading-none font-semibold tracking-[-0.035em] text-text-primary">
                 Open Cowork
