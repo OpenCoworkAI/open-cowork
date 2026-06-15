@@ -316,7 +316,7 @@ export function SettingsGeneral() {
         </button>
         <button
           type="button"
-          onClick={() => window.electronAPI?.openExternal?.('https://obsidian.md/themes')}
+          onClick={() => window.electronAPI?.openExternal?.('https://community.obsidian.md/themes')}
           className="flex items-center gap-1.5 text-xs text-text-muted hover:text-accent transition-colors"
         >
           <ExternalLink className="w-3 h-3" />
