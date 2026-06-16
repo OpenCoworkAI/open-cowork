@@ -30,6 +30,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { mt, setBackendLanguage, DEFAULT_BACKEND_LANGUAGE } from '../i18n';
 
 /**
  * Application configuration schema
@@ -111,6 +112,10 @@ export interface AppConfig {
 
   // UI theme preference
   theme: AppTheme;
+
+  // UI language. Mirrors the renderer's active react-i18next language and drives
+  // backend (main-process) strings via setBackendLanguage(). Defaults to Chinese.
+  uiLanguage?: string;
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
@@ -218,7 +223,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
 
 const defaultConfigSet: ApiConfigSet = {
   id: DEFAULT_CONFIG_SET_ID,
-  name: '默认方案',
+  name: mt('configDefaultSetName'),
   isSystem: true,
   provider: 'openrouter',
   customProtocol: 'anthropic',
@@ -243,6 +248,7 @@ const defaultConfig: AppConfig = {
   globalSkillsPath: '',
   enableDevLogs: false,
   theme: 'light',
+  uiLanguage: DEFAULT_BACKEND_LANGUAGE,
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -539,6 +545,9 @@ export class ConfigStore {
       warn: logWarn,
     }) as unknown as Store<AppConfig>;
     this.ensureNormalized();
+    // Seed the backend translator from the persisted UI language so main-process
+    // strings (errors, dialogs) match the user's last choice from first launch.
+    setBackendLanguage((this.store.store as AppConfig).uiLanguage);
   }
 
   private ensureNormalized(): void {
@@ -858,7 +867,7 @@ export class ConfigStore {
 
       const normalizedSet = this.normalizeConfigSet(rawSet, {
         id: nextId,
-        name: toNonEmptyString(rawSet.name) || `方案 ${index + 1}`,
+        name: toNonEmptyString(rawSet.name) || mt('configFallbackSetName', { index: index + 1 }),
         provider: legacy.provider,
         customProtocol: legacy.customProtocol,
         activeProfileKey: legacy.activeProfileKey,
@@ -974,6 +983,10 @@ export class ConfigStore {
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      uiLanguage:
+        typeof raw.uiLanguage === 'string' && raw.uiLanguage.trim()
+          ? raw.uiLanguage
+          : defaultConfig.uiLanguage,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
@@ -995,6 +1008,8 @@ export class ConfigStore {
   private saveConfig(config: AppConfig): void {
     const normalized = this.normalizeConfig(config);
     this.store.set(normalized);
+    // Keep the backend translator in sync when the UI language changes.
+    setBackendLanguage(normalized.uiLanguage);
   }
 
   private composeProjectedConfig(
@@ -1388,6 +1403,7 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      uiLanguage: updates.uiLanguage !== undefined ? updates.uiLanguage : current.uiLanguage,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

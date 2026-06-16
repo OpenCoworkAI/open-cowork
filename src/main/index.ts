@@ -32,6 +32,7 @@ import {
   type AppTheme,
   type CreateConfigSetPayload,
 } from './config/config-store';
+import { mt } from './i18n';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules } from './config/permission-rules-store';
@@ -1007,7 +1008,7 @@ app
   .catch((error) => {
     logError('[App] Startup failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown startup error';
-    dialog.showErrorBox('Open Cowork 启动失败', `${message}\n\n请查看日志获取更多信息。`);
+    dialog.showErrorBox(mt('startupFailedTitle'), mt('startupFailedBody', { message }));
     app.quit();
   });
 
@@ -2665,7 +2666,7 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     sendToRenderer({
       type: 'error',
       payload: {
-        message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
+        message: mt('errConfigRequired'),
         code: 'CONFIG_REQUIRED_ACTIVE_SET',
         action: 'open_api_settings',
       },
