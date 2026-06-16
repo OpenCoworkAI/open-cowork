@@ -145,11 +145,14 @@ function resolveBundledToolsBinDir(): string | null {
  * 3. Deduplicates all entries
  * 4. Writes the result back to `process.env.PATH`
  *
- * Called once before the first `createCodingTools()` — subsequent calls are no-ops.
+ * Idempotent: enriches once and caches the result, so it is safe to call from
+ * multiple entry points. Call at app startup (before the sandbox bootstrap /
+ * Lima detection) and before the first `createCodingTools()` — subsequent calls
+ * are no-ops.
  */
 let pathEnriched = false;
 
-async function enrichProcessPathForBuild(): Promise<void> {
+export async function enrichProcessPathForBuild(): Promise<void> {
   if (pathEnriched) return;
   pathEnriched = true;
 
