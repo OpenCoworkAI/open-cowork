@@ -38,6 +38,7 @@ import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
+import { enrichProcessPathForBuild } from './claude/agent-runner';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type {
   ClientEvent,
@@ -759,6 +760,14 @@ function sendToRenderer(event: ServerEvent) {
 app
   .whenReady()
   .then(async () => {
+    // Enrich PATH before anything else so Homebrew-installed CLIs (notably
+    // `limactl`) are discoverable by the sandbox bootstrap and the
+    // `sandbox.checkLima` IPC. In the packaged macOS app, GUI processes inherit
+    // a stripped launchd PATH that excludes /opt/homebrew/bin and
+    // /usr/local/bin, which otherwise makes `which limactl` fail and reports
+    // the sandbox as unavailable even when Lima is installed.
+    await enrichProcessPathForBuild();
+
     // Apply dev logs setting from config
     const enableDevLogs = configStore.get('enableDevLogs');
     setDevLogsEnabled(enableDevLogs);
