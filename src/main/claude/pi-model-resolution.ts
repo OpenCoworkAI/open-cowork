@@ -328,15 +328,20 @@ export function applyPiModelRuntimeOverrides(
     } as typeof nextModel;
   }
 
-  // DeepSeek V4 models on custom/relay endpoints need thinking blocks in content[] array.
+  // DeepSeek V4 models on some custom/relay endpoints (and local Ollama) need thinking
+  // blocks in the content[] array. Ollama CLOUD (ollama.com), however, rejects that
+  // non-standard {type:"thinking"} content block with "invalid message format". Local
+  // Ollama (loopback :11434) is a different service and keeps the existing behavior.
   if (nextModel.api === 'openai-completions' && DEEPSEEK_V4_MODEL_PATTERN.test(nextModel.id)) {
     const currentCompat = (nextModel.compat || {}) as Record<string, unknown>;
-    if (!currentCompat.requiresThinkingInContent) {
+    const endpoint = `${options.customBaseUrl || ''} ${nextModel.baseUrl || ''}`.toLowerCase();
+    const isOllamaCloud = endpoint.includes('ollama.com');
+    if (currentCompat.requiresThinkingInContent === undefined) {
       nextModel = {
         ...nextModel,
         compat: {
           ...currentCompat,
-          requiresThinkingInContent: true,
+          requiresThinkingInContent: !isOllamaCloud,
         },
       } as typeof nextModel;
     }

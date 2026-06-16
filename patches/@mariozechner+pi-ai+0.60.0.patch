@@ -1,8 +1,25 @@
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-index 29ae8cf..6d9ea61 100644
+index 29ae8cf..7204589 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-@@ -474,13 +474,32 @@ export function convertMessages(model, context, compat) {
+@@ -446,9 +446,15 @@ export function convertMessages(model, context, compat) {
+                     : content;
+                 if (filteredContent.length === 0)
+                     continue;
++                // Flatten text-only content to a plain string for maximum endpoint
++                // compatibility. Ollama and some OpenAI-compatible servers reject the
++                // content-block array form for plain text with "invalid message format".
++                const isTextOnly = filteredContent.every((c) => c.type === "text");
+                 params.push({
+                     role: "user",
+-                    content: filteredContent,
++                    content: isTextOnly
++                        ? filteredContent.map((c) => c.text).join("")
++                        : filteredContent,
+                 });
+             }
+         }
+@@ -474,13 +480,32 @@ export function convertMessages(model, context, compat) {
              // Filter out empty thinking blocks to avoid API validation errors
              const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
              if (nonEmptyThinkingBlocks.length > 0) {
@@ -37,7 +54,7 @@ index 29ae8cf..6d9ea61 100644
                      else {
                          assistantMsg.content = [{ type: "text", text: thinkingText }];
                      }
-@@ -658,6 +677,7 @@ function mapStopReason(reason) {
+@@ -658,6 +683,7 @@ function mapStopReason(reason) {
  function detectCompat(model) {
      const provider = model.provider;
      const baseUrl = model.baseUrl;
@@ -45,7 +62,7 @@ index 29ae8cf..6d9ea61 100644
      const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
      const isNonStandard = provider === "cerebras" ||
          baseUrl.includes("cerebras.ai") ||
-@@ -690,6 +710,7 @@ function detectCompat(model) {
+@@ -690,6 +716,7 @@ function detectCompat(model) {
          requiresToolResultName: false,
          requiresAssistantAfterToolResult: false,
          requiresThinkingAsText: false,
@@ -53,7 +70,7 @@ index 29ae8cf..6d9ea61 100644
          thinkingFormat: isZai ? "zai" : "openai",
          openRouterRouting: {},
          vercelGatewayRouting: {},
-@@ -714,6 +735,7 @@ function getCompat(model) {
+@@ -714,6 +741,7 @@ function getCompat(model) {
          requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
          requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
          requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
