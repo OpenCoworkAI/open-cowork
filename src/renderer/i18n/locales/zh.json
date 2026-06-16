@@ -101,7 +101,6 @@
     "fontSizeMd": "M",
     "fontSizeLg": "L",
     "fontSizeXl": "XL",
-    "clear": "清除",
     "language": "语言",
     "customLogo": "自定义图标",
     "customLogoDesc": "输入 emoji、字符或简短文字来替换应用图标。留空则使用默认图片。",

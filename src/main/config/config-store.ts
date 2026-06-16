@@ -30,6 +30,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { COLOR_SLOTS } from '../../shared/color-suggest';
 
 /**
  * Application configuration schema
@@ -1157,7 +1158,10 @@ export class ConfigStore {
         raw.customColors && typeof raw.customColors === 'object' && !Array.isArray(raw.customColors)
           ? (Object.fromEntries(
               Object.entries(raw.customColors as Record<string, unknown>).filter(
-                ([k, v]) => typeof k === 'string' && typeof v === 'string'
+                ([k, v]) =>
+                  typeof k === 'string' &&
+                  typeof v === 'string' &&
+                  (COLOR_SLOTS as readonly string[]).includes(k)
               )
             ) as Record<string, string>)
           : defaultConfig.customColors,
