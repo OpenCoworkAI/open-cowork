@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import type { ContentBlock } from '../types';
 import { getInitialSessionTitle } from '../../shared/session-title';
+import { getGreetingBucketForDate, pickVariationIndex, buildGreeting } from '../../shared/greeting';
 import {
   FileText,
   BarChart3,
@@ -27,7 +28,7 @@ type AttachedFile = {
 import welcomeLogoSrc from '../assets/logo.png';
 
 export function WelcomeView() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,8 +44,29 @@ export function WelcomeView() {
   const setGlobalNotice = useAppStore((state) => state.setGlobalNotice);
   const isConfigured = useAppStore((state) => state.isConfigured);
   const setShowSettings = useAppStore((state) => state.setShowSettings);
+  const logoText = useAppStore((state) => state.settings.logoText);
+  const displayName = useAppStore((state) => state.settings.displayName);
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
+
+  // Time-based, localized, name-aware greeting with daily rotation across
+  // phrasings. Recomputed when the locale changes (variations come from i18n)
+  // or when the user edits their display name. The hour bucket is read once
+  // per mount; the variation index is anchored to the calendar day so the
+  // greeting is stable within a single day (no flicker on re-render).
+  const greeting = useMemo(() => {
+    const bucket = getGreetingBucketForDate();
+    const variations = t(`welcome.greeting.${bucket}`, { returnObjects: true }) as string[];
+    const idx = pickVariationIndex(bucket, Array.isArray(variations) ? variations.length : 0);
+    return buildGreeting({
+      bucket,
+      variations: Array.isArray(variations) ? variations : [],
+      variationIndex: idx,
+      name: displayName,
+      fallback: t('welcome.greeting.fallback', 'Hello'),
+      withName: (g, n) => t('welcome.greeting.withName', { greeting: g, name: n }),
+    });
+  }, [t, i18n.language, displayName]);
 
   const handleSelectFolder = async () => {
     try {
@@ -443,11 +465,21 @@ export function WelcomeView() {
       <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
         <div className="space-y-4 text-center">
           <div className="flex items-center justify-center gap-4">
-            <img
-              src={welcomeLogoSrc}
-              alt={t('welcome.logoAlt')}
-              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
-            />
+            {logoText && logoText.trim() ? (
+              <div
+                className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] border border-border-subtle bg-background/60 shadow-soft flex items-center justify-center text-3xl md:text-4xl leading-none"
+                role="img"
+                aria-label={t('welcome.logoAlt')}
+              >
+                {logoText.trim()}
+              </div>
+            ) : (
+              <img
+                src={welcomeLogoSrc}
+                alt={t('welcome.logoAlt')}
+                className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+              />
+            )}
             <div className="text-left">
               <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
                 Open Cowork
@@ -455,7 +487,7 @@ export function WelcomeView() {
             </div>
           </div>
           <p className="heading-serif text-[1.15rem] md:text-[1.45rem] font-medium tracking-[-0.02em] text-text-secondary text-center">
-            {t('welcome.title')}
+            {greeting}
           </p>
         </div>
 

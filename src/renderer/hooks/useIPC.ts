@@ -120,7 +120,22 @@ export function useIPC() {
       const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
       store.setIsConfigured(isConfigured);
       store.setAppConfig(config);
-      store.setSettings({ theme: config.theme || 'light' });
+      store.setSettings({
+        theme: config.theme || 'claude',
+        appearance: config.appearance || 'system',
+        fontFamily: config.fontFamily || 'auto',
+        fontSize: config.fontSize || 'md',
+        customFontFamily:
+          typeof config.customFontFamily === 'string' ? config.customFontFamily : '',
+        logoText: typeof config.logoText === 'string' ? config.logoText : '',
+        displayName: typeof config.displayName === 'string' ? config.displayName : '',
+        customColors:
+          config.customColors &&
+          typeof config.customColors === 'object' &&
+          !Array.isArray(config.customColors)
+            ? config.customColors
+            : {},
+      });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
       }

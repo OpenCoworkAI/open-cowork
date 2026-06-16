@@ -15,7 +15,8 @@ const mockConfigState = vi.hoisted(() => ({
     defaultWorkdir: '',
     globalSkillsPath: '',
     enableDevLogs: false,
-    theme: 'light',
+    theme: 'claude',
+    appearance: 'light',
     sandboxEnabled: false,
     memoryEnabled: true,
     memoryRuntime: {
@@ -74,7 +75,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DatabaseInstance, MessageRow, SessionRow } from '../../main/db/database';
-import type { MemoryCompletionRequest, MemoryLLMClientLike } from '../../main/memory/memory-llm-client';
+import type {
+  MemoryCompletionRequest,
+  MemoryLLMClientLike,
+} from '../../main/memory/memory-llm-client';
 import { MemoryService } from '../../main/memory/memory-service';
 import { configStore } from '../../main/config/config-store';
 
@@ -178,11 +182,12 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
       update: vi.fn(),
       get: vi.fn(
         (id: string) =>
-          db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id) as SessionRow | undefined
+          db.prepare('SELECT * FROM sessions WHERE id = ? LIMIT 1').get(id) as
+            | SessionRow
+            | undefined
       ),
       getAll: vi.fn(
-        () =>
-          db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as SessionRow[]
+        () => db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as SessionRow[]
       ),
       delete: vi.fn(),
     },
@@ -191,9 +196,9 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
       update: vi.fn(),
       getBySessionId: vi.fn(
         (sessionId: string) =>
-          db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(
-            sessionId
-          ) as MessageRow[]
+          db
+            .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC')
+            .all(sessionId) as MessageRow[]
       ),
       delete: vi.fn(),
       deleteBySessionId: vi.fn(),

@@ -24,6 +24,8 @@ import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import type { AppConfig } from './types';
+import { FONT_STACKS, THEME_PALETTES } from './types';
+import { COLOR_SLOTS } from '../shared/color-suggest';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -95,17 +97,89 @@ function App() {
     }
   }, []); // Empty deps - run once
 
-  // Apply theme to document root
+  // Apply theme to document root.
+  // Two orthogonal axes:
+  //   - palette -> `.theme-<palette>` class (e.g. `.theme-gruvbox`)
+  //   - appearance -> `.dark`/`.light` class, with `system` resolved from
+  //     the OS preference (systemDarkMode, supplied by the main process).
+  // Both classes are applied simultaneously so CSS rules like
+  // `.theme-gruvbox.light` and `.theme-gruvbox.dark` can target each variant.
+  //
+  // Compute the full target class set first, then add the new classes BEFORE
+  // removing the stale ones — this avoids a flash of unstyled content where,
+  // for a frame, no theme class is present at all. `classList` is a set, so
+  // re-adding a class that's already present is a no-op.
   useEffect(() => {
-    const effectiveTheme =
-      settings.theme === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.theme;
+    const root = document.documentElement;
+    const effective =
+      settings.appearance === 'system' ? (systemDarkMode ? 'dark' : 'light') : settings.appearance;
+    // Font size: scales the root font size. '.font-size-<id>' sets --font-scale;
+    // no competing rule, so class-based is fine.
+    const fontSizeClass = settings.fontSize ? `font-size-${settings.fontSize}` : null;
+    const target = [`theme-${settings.theme}`, effective, fontSizeClass].filter((c): c is string =>
+      Boolean(c)
+    );
+    const allClasses = [
+      'light',
+      'dark',
+      ...THEME_PALETTES.map((p) => `theme-${p}`),
+      'font-size-sm',
+      'font-size-md',
+      'font-size-lg',
+      'font-size-xl',
+    ];
 
-    if (effectiveTheme === 'light') {
-      document.documentElement.classList.add('light');
+    // Add new classes first (idempotent), then drop anything no longer active.
+    root.classList.add(...target);
+    root.classList.remove(...allClasses.filter((c) => !target.includes(c)));
+
+    // Font family: applied via inline style on <html> rather than a class.
+    // A single-class `.font-family-*` selector (specificity 0,1,0) would lose
+    // to the palette's compound `.theme-claude.dark` selector (0,2,0) and the
+    // override would silently never take effect. Inline style has the highest
+    // specificity and wins unconditionally. 'auto' clears the inline props so
+    // the active palette's --font-* vars show through. The stacks themselves
+    // live in types/index.ts (FONT_STACKS) so the Settings preview shares them.
+    if (settings.fontFamily && settings.fontFamily !== 'auto') {
+      const stacks = FONT_STACKS[settings.fontFamily];
+      root.style.setProperty('--font-sans', stacks.sans);
+      root.style.setProperty('--font-serif', stacks.serif);
+      root.style.setProperty('--font-mono', stacks.mono);
     } else {
-      document.documentElement.classList.remove('light');
+      root.style.removeProperty('--font-sans');
+      root.style.removeProperty('--font-serif');
+      root.style.removeProperty('--font-mono');
     }
-  }, [settings.theme, systemDarkMode]);
+
+    // Custom font family (free-form string): when non-empty it overrides
+    // --font-sans for the whole document, on top of any preset/palette stack.
+    // When empty we leave --font-sans as the preset/palette set it above.
+    if (settings.customFontFamily && settings.customFontFamily.trim()) {
+      root.style.setProperty('--font-sans', settings.customFontFamily.trim());
+    }
+
+    // Per-element color overrides. Each filled slot maps to its --color-*
+    // variable via inline style (highest specificity, beats palette rules).
+    // Empty/absent slots are cleared so the palette value shows through.
+    const customColors = settings.customColors ?? {};
+    for (const slot of COLOR_SLOTS) {
+      const value = customColors[slot];
+      const varName = `--color-${slot}`;
+      if (value && value.trim()) {
+        root.style.setProperty(varName, value.trim());
+      } else {
+        root.style.removeProperty(varName);
+      }
+    }
+  }, [
+    settings.theme,
+    settings.appearance,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.customFontFamily,
+    settings.customColors,
+    systemDarkMode,
+  ]);
 
   // Auto-collapse panels based on window width
   useEffect(() => {

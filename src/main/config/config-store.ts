@@ -30,13 +30,110 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { COLOR_SLOTS } from '../../shared/color-suggest';
 
 /**
  * Application configuration schema
  */
 export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system';
+
+/**
+ * Named color palettes. Each palette ships BOTH a light and a dark variant;
+ * which one is rendered is decided by the orthogonal `AppAppearance` setting
+ * (resolved against the OS preference when `appearance === 'system'`).
+ *
+ * 'claude' is the default palette and matches the historical app look.
+ */
+export type AppTheme =
+  | 'claude'
+  | 'nordic'
+  | 'tokyo-night'
+  | 'gruvbox'
+  | 'catppuccin'
+  | 'rose-pine'
+  | 'solarized'
+  | 'dracula'
+  | 'one-dark'
+  | 'kanagawa'
+  | 'everforest';
+
+/**
+ * Orthogonal to `AppTheme`: which light/dark variant of the selected palette
+ * should be rendered. `system` defers to the OS dark-color preference.
+ */
+export type AppAppearance = 'dark' | 'light' | 'system';
+
+/**
+ * Palettes shipped with the app. Order here is the order shown in the
+ * Settings swatch grid.
+ */
+export const THEME_PALETTES = [
+  'claude',
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized',
+  'dracula',
+  'one-dark',
+  'kanagawa',
+  'everforest',
+] as const;
+
+/** Appearance modes the user can pick alongside a palette. */
+export const VALID_APPEARANCES: AppAppearance[] = ['dark', 'light', 'system'];
+
+/** Returns true when a theme id is one of the built-in named palettes. */
+export function isPaletteTheme(theme: string): theme is (typeof THEME_PALETTES)[number] {
+  return THEME_PALETTES.includes(theme as (typeof THEME_PALETTES)[number]);
+}
+
+/** Type guard for an AppAppearance value. */
+export function isAppearance(value: unknown): value is AppAppearance {
+  return value === 'dark' || value === 'light' || value === 'system';
+}
+
+// Note: resolveEffectiveAppearance lives in theme-resolution.ts (single source
+// of truth) so it can be unit-tested without booting Electron.
+
+/**
+ * Font family presets the user can pick in Settings, independent of the
+ * palette. Each id maps to a stack defined in globals.css via the
+ * `--font-sans-<id>` / `--font-serif-<id>` / `--font-mono-<id>` variables.
+ * 'auto' means "inherit from the active palette" (the default).
+ */
+export type FontFamily = 'auto' | 'sans' | 'serif' | 'mono' | 'rounded' | 'condensed' | 'system';
+
+export const VALID_FONT_FAMILIES: FontFamily[] = [
+  'auto',
+  'sans',
+  'serif',
+  'mono',
+  'rounded',
+  'condensed',
+  'system',
+];
+
+/** Type guard for a FontFamily value. */
+export function isFontFamily(value: unknown): value is FontFamily {
+  return typeof value === 'string' && (VALID_FONT_FAMILIES as string[]).includes(value);
+}
+
+/**
+ * Base font size presets. The renderer maps these onto a CSS custom property
+ * (`--font-scale`) that scales the root font size.
+ */
+export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+export const VALID_FONT_SIZES: FontSize[] = ['sm', 'md', 'lg', 'xl'];
+
+/** Type guard for a FontSize value. */
+export function isFontSize(value: unknown): value is FontSize {
+  return typeof value === 'string' && (VALID_FONT_SIZES as string[]).includes(value);
+}
+
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
@@ -109,8 +206,35 @@ export interface AppConfig {
   // Developer logs
   enableDevLogs: boolean;
 
-  // UI theme preference
+  // UI palette preference (which color palette)
   theme: AppTheme;
+
+  // Orthogonal light/dark/system mode applied on top of the palette
+  appearance: AppAppearance;
+
+  // Font family preset ('auto' inherits from the active palette)
+  fontFamily: FontFamily;
+
+  // Base font size preset (scales --font-scale)
+  fontSize: FontSize;
+
+  // User-entered custom font-family string (e.g. "Comic Sans MS, cursive").
+  // When non-empty it overrides --font-sans for the whole document, on top
+  // of whatever palette/preset is active. Empty = use the selected preset.
+  customFontFamily: string;
+
+  // User-entered custom logo (emoji, character, or short text). When non-empty
+  // the renderer renders it in a styled box instead of the bundled PNG in the
+  // sidebar + welcome view. Empty = use the default logo image.
+  logoText: string;
+  // Optional display name used to personalize the welcome greeting
+  // ("Good morning, {name}"). Empty = the generic, nameless greeting.
+  displayName: string;
+
+  // Per-element color overrides. Each non-empty value is applied to the
+  // matching --color-* CSS variable via inline style on <html>, on top of
+  // the active palette. Empty = inherit from the palette.
+  customColors: Record<string, string>;
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
@@ -167,6 +291,13 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'globalSkillsPath',
   'enableDevLogs',
   'theme',
+  'appearance',
+  'fontFamily',
+  'fontSize',
+  'customFontFamily',
+  'logoText',
+  'displayName',
+  'customColors',
   'sandboxEnabled',
   'memoryEnabled',
   'enableThinking',
@@ -242,7 +373,14 @@ const defaultConfig: AppConfig = {
   defaultWorkdir: '',
   globalSkillsPath: '',
   enableDevLogs: false,
-  theme: 'light',
+  theme: 'claude',
+  appearance: 'system',
+  fontFamily: 'auto',
+  fontSize: 'md',
+  customFontFamily: '',
+  logoText: '',
+  displayName: '',
+  customColors: {},
   sandboxEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
@@ -340,7 +478,35 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:openai',
   'custom:gemini',
 ];
-const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+export const VALID_THEMES: AppTheme[] = [
+  'claude',
+  'nordic',
+  'tokyo-night',
+  'gruvbox',
+  'catppuccin',
+  'rose-pine',
+  'solarized',
+  'dracula',
+  'one-dark',
+  'kanagawa',
+  'everforest',
+];
+
+/** Legacy theme ids persisted before the palette/appearance split. Mapped
+ *  to the new two-axis model by the normalizer so existing users keep a
+ *  working theme without touching their config file. */
+const LEGACY_THEME_TO_APPEARANCE: Record<string, AppAppearance> = {
+  dark: 'dark',
+  light: 'light',
+  system: 'system',
+};
+
+/** Legacy palette ids renamed during the palette/appearance split. Maps
+ *  the old id to the new id so existing users keep their chosen palette
+ *  instead of falling through to the default. */
+export const LEGACY_PALETTE_MAP: Record<string, AppTheme> = {
+  'solarized-light': 'solarized',
+};
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
@@ -973,13 +1139,46 @@ export class ConfigStore {
           ? raw.globalSkillsPath
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
-      theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      // Backward compat: a pre-split config persisted theme as 'dark'/'light'/'system'
+      // (a mode, not a palette) or under a renamed id ('solarized-light').
+      // Map both onto the new two-axis model:
+      //   - legacy mode  -> palette 'claude', appearance = old mode
+      //   - renamed id   -> new palette id, appearance left at its default
+      theme: isAppTheme(raw.theme)
+        ? raw.theme
+        : (LEGACY_PALETTE_MAP[typeof raw.theme === 'string' ? raw.theme : ''] ??
+          defaultConfig.theme),
+      appearance: isAppearance(raw.appearance)
+        ? raw.appearance
+        : (LEGACY_THEME_TO_APPEARANCE[typeof raw.theme === 'string' ? raw.theme : ''] ??
+          defaultConfig.appearance),
+      fontFamily: isFontFamily(raw.fontFamily) ? raw.fontFamily : defaultConfig.fontFamily,
+      fontSize: isFontSize(raw.fontSize) ? raw.fontSize : defaultConfig.fontSize,
+      customFontFamily:
+        typeof raw.customFontFamily === 'string'
+          ? raw.customFontFamily
+          : defaultConfig.customFontFamily,
+      logoText: typeof raw.logoText === 'string' ? raw.logoText : defaultConfig.logoText,
+      displayName:
+        typeof raw.displayName === 'string' ? raw.displayName : defaultConfig.displayName,
+      customColors:
+        raw.customColors && typeof raw.customColors === 'object' && !Array.isArray(raw.customColors)
+          ? (Object.fromEntries(
+              Object.entries(raw.customColors as Record<string, unknown>).filter(
+                ([k, v]) =>
+                  typeof k === 'string' &&
+                  typeof v === 'string' &&
+                  (COLOR_SLOTS as readonly string[]).includes(k)
+              )
+            ) as Record<string, string>)
+          : defaultConfig.customColors,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
+
     this.normalizeModelIds(result);
     return result;
   }
@@ -1111,6 +1310,15 @@ export class ConfigStore {
           return defaultConfig[key];
         }
         if (key === 'theme' && !isAppTheme(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'appearance' && !isAppearance(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'fontFamily' && !isFontFamily(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'fontSize' && !isFontSize(rawValue)) {
           return defaultConfig[key];
         }
         if (
@@ -1388,6 +1596,17 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      appearance: updates.appearance !== undefined ? updates.appearance : current.appearance,
+      fontFamily: updates.fontFamily !== undefined ? updates.fontFamily : current.fontFamily,
+      fontSize: updates.fontSize !== undefined ? updates.fontSize : current.fontSize,
+      customFontFamily:
+        updates.customFontFamily !== undefined
+          ? updates.customFontFamily
+          : current.customFontFamily,
+      logoText: updates.logoText !== undefined ? updates.logoText : current.logoText,
+      displayName: updates.displayName !== undefined ? updates.displayName : current.displayName,
+      customColors:
+        updates.customColors !== undefined ? updates.customColors : current.customColors,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       memoryEnabled:

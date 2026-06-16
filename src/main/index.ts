@@ -29,9 +29,20 @@ import {
   configStore,
   getPiAiModelPresets,
   type AppConfig,
+  type AppAppearance,
   type AppTheme,
   type CreateConfigSetPayload,
+  type FontFamily,
+  type FontSize,
+  isFontFamily,
+  isFontSize,
+  isPaletteTheme,
 } from './config/config-store';
+import {
+  getSavedAppearance as getSavedAppearanceFromConfig,
+  resolveEffectiveAppearance as resolveEffectiveAppearancePure,
+  resolveNativeThemeSource,
+} from './config/theme-resolution';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules } from './config/permission-rules-store';
@@ -363,26 +374,22 @@ function setupTray() {
   });
 }
 
-function getSavedThemePreference(): AppTheme {
-  const theme = configStore.get('theme');
-  return theme === 'dark' || theme === 'system' ? theme : 'light';
+function getSavedAppearance(): AppAppearance {
+  return getSavedAppearanceFromConfig(configStore.get('appearance'));
 }
 
-function resolveEffectiveTheme(theme: AppTheme): 'dark' | 'light' {
-  if (theme === 'system') {
-    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-  }
-  return theme;
+function resolveEffectiveAppearance(appearance: AppAppearance): 'dark' | 'light' {
+  return resolveEffectiveAppearancePure(appearance, nativeTheme.shouldUseDarkColors);
 }
 
-function applyNativeThemePreference(theme: AppTheme): void {
-  nativeTheme.themeSource = theme;
+function applyNativeThemePreference(appearance: AppAppearance): void {
+  nativeTheme.themeSource = resolveNativeThemeSource(appearance);
 }
 
 function createWindow() {
-  const savedTheme = getSavedThemePreference();
-  applyNativeThemePreference(savedTheme);
-  const effectiveTheme = resolveEffectiveTheme(savedTheme);
+  const savedAppearance = getSavedAppearance();
+  applyNativeThemePreference(savedAppearance);
+  const effectiveTheme = resolveEffectiveAppearance(savedAppearance);
   const THEME =
     effectiveTheme === 'dark'
       ? {
@@ -895,7 +902,7 @@ app
         type: 'native-theme.changed',
         payload: { shouldUseDarkColors: nativeTheme.shouldUseDarkColors },
       });
-      if (getSavedThemePreference() === 'system' && mainWindow && !mainWindow.isDestroyed()) {
+      if (getSavedAppearance() === 'system' && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG);
       }
     });
@@ -2772,18 +2779,55 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     }
 
     case 'settings.update':
-      if (
-        event.payload.theme === 'dark' ||
-        event.payload.theme === 'light' ||
-        event.payload.theme === 'system'
-      ) {
+      if (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) {
         const nextTheme = event.payload.theme as AppTheme;
         configStore.update({ theme: nextTheme });
-        applyNativeThemePreference(nextTheme);
+      }
+      if (
+        event.payload.appearance === 'dark' ||
+        event.payload.appearance === 'light' ||
+        event.payload.appearance === 'system'
+      ) {
+        const nextAppearance = event.payload.appearance as AppAppearance;
+        configStore.update({ appearance: nextAppearance });
+        applyNativeThemePreference(nextAppearance);
         if (mainWindow && !mainWindow.isDestroyed()) {
-          const effectiveTheme = resolveEffectiveTheme(nextTheme);
+          const effectiveTheme = resolveEffectiveAppearance(nextAppearance);
           mainWindow.setBackgroundColor(effectiveTheme === 'dark' ? DARK_BG : LIGHT_BG);
         }
+      }
+      if (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) {
+        configStore.update({ fontFamily: event.payload.fontFamily as FontFamily });
+      }
+      if (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) {
+        configStore.update({ fontSize: event.payload.fontSize as FontSize });
+      }
+      if (typeof event.payload.customFontFamily === 'string') {
+        configStore.update({ customFontFamily: event.payload.customFontFamily });
+      }
+      if (typeof event.payload.logoText === 'string') {
+        configStore.update({ logoText: event.payload.logoText });
+      }
+      if (
+        event.payload.customColors &&
+        typeof event.payload.customColors === 'object' &&
+        !Array.isArray(event.payload.customColors)
+      ) {
+        configStore.update({
+          customColors: event.payload.customColors as Record<string, string>,
+        });
+      }
+      if (
+        (typeof event.payload.theme === 'string' && isPaletteTheme(event.payload.theme)) ||
+        event.payload.appearance === 'dark' ||
+        event.payload.appearance === 'light' ||
+        event.payload.appearance === 'system' ||
+        (typeof event.payload.fontFamily === 'string' && isFontFamily(event.payload.fontFamily)) ||
+        (typeof event.payload.fontSize === 'string' && isFontSize(event.payload.fontSize)) ||
+        typeof event.payload.customFontFamily === 'string' ||
+        typeof event.payload.logoText === 'string' ||
+        (event.payload.customColors !== undefined && typeof event.payload.customColors === 'object')
+      ) {
         sendToRenderer({
           type: 'config.status',
           payload: {

@@ -190,7 +190,14 @@ interface AppState {
 }
 
 const defaultSettings: Settings = {
-  theme: 'light',
+  theme: 'claude',
+  appearance: 'light',
+  fontFamily: 'auto',
+  fontSize: 'md',
+  customFontFamily: '',
+  logoText: '',
+  displayName: '',
+  customColors: {},
   defaultTools: [
     'askuserquestion',
     'todowrite',
