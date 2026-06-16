@@ -346,6 +346,27 @@ export function SettingsGeneral() {
         />
       </div>
 
+      {/* Display name — personalizes the welcome greeting. */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">
+          {t('general.displayName', 'Display name')}
+        </h4>
+        <p className="text-xs text-text-muted leading-relaxed">
+          {t(
+            'general.displayNameDesc',
+            'Your name, used to personalize the welcome greeting. Leave empty for a generic greeting.'
+          )}
+        </p>
+        <input
+          type="text"
+          value={settings.displayName ?? ''}
+          onChange={(e) => updateSettings({ displayName: e.target.value.slice(0, 40) })}
+          placeholder={t('general.displayNamePlaceholder', 'e.g. Alex')}
+          className="w-full px-3 py-2 rounded-lg border-2 border-border bg-surface text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          maxLength={40}
+        />
+      </div>
+
       {/* Per-element color overrides + seed-based palette suggestion. */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">

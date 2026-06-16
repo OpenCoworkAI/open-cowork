@@ -128,6 +128,7 @@ export function useIPC() {
         customFontFamily:
           typeof config.customFontFamily === 'string' ? config.customFontFamily : '',
         logoText: typeof config.logoText === 'string' ? config.logoText : '',
+        displayName: typeof config.displayName === 'string' ? config.displayName : '',
         customColors:
           config.customColors &&
           typeof config.customColors === 'object' &&

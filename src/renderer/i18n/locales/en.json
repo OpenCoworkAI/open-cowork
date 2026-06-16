@@ -23,6 +23,13 @@
   },
   "welcome": {
     "title": "How can I help you today?",
+    "greeting": {
+      "morning": ["Good morning", "Morning!", "Hope your morning's off to a good start"],
+      "afternoon": ["Good afternoon", "Afternoon!", "Hope your day's going well"],
+      "evening": ["Good evening", "Evening!", "Hope you're having a good evening"],
+      "fallback": "Hello",
+      "withName": "{{greeting}}, {{name}}"
+    },
     "placeholder": "Describe what you'd like to do...",
     "createFile": "Create a file",
     "crunchData": "Crunch data",
@@ -108,6 +115,9 @@
     "customFont": "Custom font",
     "customFontDesc": "Enter a font name (e.g. \"Comic Sans MS\" or \"Arial, sans-serif\"). Overrides the font family selected above when set.",
     "customFontPlaceholder": "e.g. Comic Sans MS",
+    "displayName": "Display name",
+    "displayNameDesc": "Your name, used to personalize the welcome greeting. Leave empty for a generic greeting.",
+    "displayNamePlaceholder": "e.g. Alex",
     "customColors": "Custom colors",
     "customColorsDesc": "Override individual colors. Pick a seed color and click \"Suggest palette\" to auto-fill a harmonious set.",
     "colorSeed": "Seed color",

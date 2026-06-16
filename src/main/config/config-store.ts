@@ -227,6 +227,9 @@ export interface AppConfig {
   // the renderer renders it in a styled box instead of the bundled PNG in the
   // sidebar + welcome view. Empty = use the default logo image.
   logoText: string;
+  // Optional display name used to personalize the welcome greeting
+  // ("Good morning, {name}"). Empty = the generic, nameless greeting.
+  displayName: string;
 
   // Per-element color overrides. Each non-empty value is applied to the
   // matching --color-* CSS variable via inline style on <html>, on top of
@@ -293,6 +296,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'fontSize',
   'customFontFamily',
   'logoText',
+  'displayName',
   'customColors',
   'sandboxEnabled',
   'memoryEnabled',
@@ -375,6 +379,7 @@ const defaultConfig: AppConfig = {
   fontSize: 'md',
   customFontFamily: '',
   logoText: '',
+  displayName: '',
   customColors: {},
   sandboxEnabled: false,
   memoryEnabled: true,
@@ -1154,6 +1159,8 @@ export class ConfigStore {
           ? raw.customFontFamily
           : defaultConfig.customFontFamily,
       logoText: typeof raw.logoText === 'string' ? raw.logoText : defaultConfig.logoText,
+      displayName:
+        typeof raw.displayName === 'string' ? raw.displayName : defaultConfig.displayName,
       customColors:
         raw.customColors && typeof raw.customColors === 'object' && !Array.isArray(raw.customColors)
           ? (Object.fromEntries(
@@ -1597,6 +1604,7 @@ export class ConfigStore {
           ? updates.customFontFamily
           : current.customFontFamily,
       logoText: updates.logoText !== undefined ? updates.logoText : current.logoText,
+      displayName: updates.displayName !== undefined ? updates.displayName : current.displayName,
       customColors:
         updates.customColors !== undefined ? updates.customColors : current.customColors,
       sandboxEnabled:

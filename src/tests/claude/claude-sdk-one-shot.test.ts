@@ -38,6 +38,7 @@ function makeConfig(): AppConfig {
     fontSize: 'md',
     customFontFamily: '',
     logoText: '',
+    displayName: '',
     customColors: {},
     sandboxEnabled: false,
     memoryEnabled: true,

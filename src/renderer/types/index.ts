@@ -575,6 +575,7 @@ export interface Settings {
   fontSize: FontSize;
   customFontFamily?: string;
   logoText?: string;
+  displayName?: string;
   customColors?: Record<string, string>;
   apiKey?: string;
   defaultTools: string[];
@@ -798,6 +799,7 @@ export interface AppConfig {
   fontSize?: FontSize;
   customFontFamily?: string;
   logoText?: string;
+  displayName?: string;
   customColors?: Record<string, string>;
   sandboxEnabled?: boolean;
   memoryEnabled?: boolean;
