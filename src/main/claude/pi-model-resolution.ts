@@ -139,7 +139,15 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: autoReasoning,
-    input: ['text', 'image'],
+    // Default unknown/synthetic models to text-only input. We cannot know whether
+    // an arbitrary model supports image input, and falsely claiming vision support
+    // causes hard request failures rather than gracefully dropping images — e.g.
+    // Ollama returns HTTP 400 "this model does not support image input" for a
+    // text-only model like deepseek-v4-pro, which surfaces to the user as an
+    // opaque "invalid message format" error. Vision-capable models resolved from
+    // the pi-ai registry keep their real input modalities; only synthetic
+    // fallbacks are affected here.
+    input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: contextWindow || knownSpecs?.contextWindow || 128000,
     maxTokens: maxTokens || knownSpecs?.maxTokens || 16384,
