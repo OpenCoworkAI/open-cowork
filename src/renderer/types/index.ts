@@ -624,7 +624,11 @@ export type AppTheme =
   | 'gruvbox'
   | 'catppuccin'
   | 'rose-pine'
-  | 'solarized';
+  | 'solarized'
+  | 'dracula'
+  | 'one-dark'
+  | 'kanagawa'
+  | 'everforest';
 
 /**
  * Font family presets. 'auto' inherits from the active palette.
@@ -696,6 +700,10 @@ export const THEME_PALETTES = [
   'catppuccin',
   'rose-pine',
   'solarized',
+  'dracula',
+  'one-dark',
+  'kanagawa',
+  'everforest',
 ] as const;
 
 /** Returns true when a theme id is one of the built-in named palettes. */

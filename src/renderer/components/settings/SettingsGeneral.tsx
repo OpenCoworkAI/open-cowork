@@ -94,6 +94,30 @@ export function SettingsGeneral() {
       bg: '#002b36',
       accent: '#268bd2',
     },
+    {
+      value: 'dracula',
+      label: t('general.themeDracula', 'Dracula'),
+      bg: '#282a36',
+      accent: '#bd93f9',
+    },
+    {
+      value: 'one-dark',
+      label: t('general.themeOneDark', 'One Dark'),
+      bg: '#282c34',
+      accent: '#61afef',
+    },
+    {
+      value: 'kanagawa',
+      label: t('general.themeKanagawa', 'Kanagawa'),
+      bg: '#1f1f28',
+      accent: '#7e9cd8',
+    },
+    {
+      value: 'everforest',
+      label: t('general.themeEverforest', 'Everforest'),
+      bg: '#2d353b',
+      accent: '#a7c080',
+    },
   ];
 
   const fontFamilyOptions: { value: FontFamily; label: string; previewFamily: string }[] = [
@@ -176,7 +200,12 @@ export function SettingsGeneral() {
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => updateSettings({ theme: opt.value })}
+                onClick={() =>
+                  // Switching palette clears any per-element color overrides so the
+                  // newly-selected palette's colors show through unmodified. The
+                  // user can re-apply overrides afterwards if desired.
+                  updateSettings({ theme: opt.value, customColors: {} })
+                }
                 className={`group relative flex flex-col items-start gap-2 p-2.5 rounded-lg border-2 transition-all ${
                   selected ? 'border-accent' : 'border-border hover:border-accent/50'
                 }`}

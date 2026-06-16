@@ -28,7 +28,7 @@ describe('isPaletteTheme', () => {
   });
 
   it('returns false for unknown / malformed values', () => {
-    expect(isPaletteTheme('dracula')).toBe(false);
+    expect(isPaletteTheme('monokai')).toBe(false);
     expect(isPaletteTheme('')).toBe(false);
     expect(isPaletteTheme('CLAUDE')).toBe(false); // case-sensitive
     expect(isPaletteTheme('solarized-light')).toBe(false); // legacy id, no longer a palette

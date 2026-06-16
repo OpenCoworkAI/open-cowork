@@ -51,7 +51,11 @@ export type AppTheme =
   | 'gruvbox'
   | 'catppuccin'
   | 'rose-pine'
-  | 'solarized';
+  | 'solarized'
+  | 'dracula'
+  | 'one-dark'
+  | 'kanagawa'
+  | 'everforest';
 
 /**
  * Orthogonal to `AppTheme`: which light/dark variant of the selected palette
@@ -71,6 +75,10 @@ export const THEME_PALETTES = [
   'catppuccin',
   'rose-pine',
   'solarized',
+  'dracula',
+  'one-dark',
+  'kanagawa',
+  'everforest',
 ] as const;
 
 /** Appearance modes the user can pick alongside a palette. */
@@ -472,6 +480,10 @@ export const VALID_THEMES: AppTheme[] = [
   'catppuccin',
   'rose-pine',
   'solarized',
+  'dracula',
+  'one-dark',
+  'kanagawa',
+  'everforest',
 ];
 
 /** Legacy theme ids persisted before the palette/appearance split. Mapped

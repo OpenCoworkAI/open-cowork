@@ -48,7 +48,7 @@ describe('getSavedPalette', () => {
     expect(getSavedPalette('dark')).toBe('claude');
     expect(getSavedPalette('light')).toBe('claude');
     expect(getSavedPalette('system')).toBe('claude');
-    expect(getSavedPalette('dracula')).toBe('claude');
+    expect(getSavedPalette('monokai')).toBe('claude');
     expect(getSavedPalette(undefined)).toBe('claude');
   });
 

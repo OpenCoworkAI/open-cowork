@@ -430,6 +430,226 @@
   --color-error: #dc322f;
 }
 
+/* ===== Dracula — dark purple with neon pink/cyan/green ===== */
+.theme-dracula {
+  --font-sans: 'Fira Code', 'JetBrains Mono', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'Fira Code', 'SF Mono', Menlo, monospace;
+}
+.theme-dracula.dark {
+  --color-background: #282a36;
+  --color-background-secondary: #21222c;
+  --color-surface: #44475a;
+  --color-surface-hover: #343746;
+  --color-surface-active: #565b78;
+  --color-surface-muted: #21222c;
+  --color-border: #44475a;
+  --color-border-muted: #343746;
+  --color-border-subtle: rgba(248, 248, 242, 0.08);
+  --color-mcp: #ff79c6;
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.34);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(248, 248, 242, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(248, 248, 242, 0.05);
+  --color-accent: #bd93f9;
+  --color-accent-hover: #caa9fa;
+  --color-accent-muted: rgba(189, 147, 249, 0.16);
+  --color-text-primary: #f8f8f2;
+  --color-text-secondary: #bcbcb6;
+  --color-text-muted: #6272a4;
+  --color-success: #50fa7b;
+  --color-warning: #f1fa8c;
+  --color-error: #ff5555;
+}
+.theme-dracula.light {
+  --color-background: #f8f8f2;
+  --color-background-secondary: #e9e9e3;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f0f0ea;
+  --color-surface-active: #e0e0da;
+  --color-surface-muted: #f4f4ee;
+  --color-border: #d4d4ce;
+  --color-border-muted: #e0e0da;
+  --color-border-subtle: rgba(40, 42, 54, 0.08);
+  --color-mcp: #d63384;
+  --shadow-soft: 0 1px 4px rgba(40, 42, 54, 0.08);
+  --shadow-card: 0 1px 3px rgba(40, 42, 54, 0.1), 0 1px 2px rgba(40, 42, 54, 0.06);
+  --shadow-elevated: 0 4px 12px rgba(40, 42, 54, 0.12);
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d28d9;
+  --color-accent-muted: rgba(124, 58, 237, 0.12);
+  --color-text-primary: #282a36;
+  --color-text-secondary: #44475a;
+  --color-text-muted: #6272a4;
+  --color-success: #2e7d32;
+  --color-warning: #b58900;
+  --color-error: #c62828;
+}
+
+/* ===== One Dark — Atom's classic, balanced dark blue-gray ===== */
+.theme-one-dark {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.theme-one-dark.dark {
+  --color-background: #282c34;
+  --color-background-secondary: #21252b;
+  --color-surface: #2c313a;
+  --color-surface-hover: #353b45;
+  --color-surface-active: #3e4451;
+  --color-surface-muted: #21252b;
+  --color-border: #3e4451;
+  --color-border-muted: #2c313a;
+  --color-border-subtle: rgba(171, 178, 191, 0.08);
+  --color-mcp: #c678dd;
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(171, 178, 191, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(171, 178, 191, 0.05);
+  --color-accent: #61afef;
+  --color-accent-hover: #79c0fc;
+  --color-accent-muted: rgba(97, 175, 239, 0.16);
+  --color-text-primary: #abb2bf;
+  --color-text-secondary: #9da5b4;
+  --color-text-muted: #5c6370;
+  --color-success: #98c379;
+  --color-warning: #e5c07b;
+  --color-error: #e06c75;
+}
+.theme-one-dark.light {
+  --color-background: #fafafa;
+  --color-background-secondary: #f0f0f0;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f5f5f5;
+  --color-surface-active: #ebebeb;
+  --color-surface-muted: #f7f7f7;
+  --color-border: #d0d0d0;
+  --color-border-muted: #e0e0e0;
+  --color-border-subtle: rgba(40, 44, 52, 0.08);
+  --color-mcp: #9c27b0;
+  --shadow-soft: 0 1px 4px rgba(40, 44, 52, 0.08);
+  --shadow-card: 0 1px 3px rgba(40, 44, 52, 0.1), 0 1px 2px rgba(40, 44, 52, 0.06);
+  --shadow-elevated: 0 4px 12px rgba(40, 44, 52, 0.12);
+  --color-accent: #1976d2;
+  --color-accent-hover: #1565c0;
+  --color-accent-muted: rgba(25, 118, 210, 0.12);
+  --color-text-primary: #282c34;
+  --color-text-secondary: #3e4451;
+  --color-text-muted: #5c6370;
+  --color-success: #2e7d32;
+  --color-warning: #f57f17;
+  --color-error: #c62828;
+}
+
+/* ===== Kanagawa — Japanese wave-inspired, soft blues and warm browns ===== */
+.theme-kanagawa {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.theme-kanagawa.dark {
+  --color-background: #1f1f28;
+  --color-background-secondary: #16161d;
+  --color-surface: #2a2a37;
+  --color-surface-hover: #363648;
+  --color-surface-active: #434458;
+  --color-surface-muted: #16161d;
+  --color-border: #434458;
+  --color-border-muted: #363648;
+  --color-border-subtle: rgba(220, 220, 215, 0.07);
+  --color-mcp: #d27e99;
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.34);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(220, 220, 215, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(220, 220, 215, 0.05);
+  --color-accent: #7e9cd8;
+  --color-accent-hover: #98b5e6;
+  --color-accent-muted: rgba(126, 156, 216, 0.16);
+  --color-text-primary: #dcdcd3;
+  --color-text-secondary: #c8c8bf;
+  --color-text-muted: #727169;
+  --color-success: #98bb6c;
+  --color-warning: #e6c384;
+  --color-error: #c84353;
+}
+.theme-kanagawa.light {
+  --color-background: #f2ecbc;
+  --color-background-secondary: #ede4c8;
+  --color-surface: #faf8e8;
+  --color-surface-hover: #f2ecbc;
+  --color-surface-active: #e8dfc0;
+  --color-surface-muted: #f5efda;
+  --color-border: #d4c89e;
+  --color-border-muted: #e0d6b0;
+  --color-border-subtle: rgba(60, 56, 44, 0.08);
+  --color-mcp: #a8456e;
+  --shadow-soft: 0 1px 4px rgba(60, 56, 44, 0.08);
+  --shadow-card: 0 1px 3px rgba(60, 56, 44, 0.1), 0 1px 2px rgba(60, 56, 44, 0.06);
+  --shadow-elevated: 0 4px 12px rgba(60, 56, 44, 0.12);
+  --color-accent: #4a6fa5;
+  --color-accent-hover: #3d5d8c;
+  --color-accent-muted: rgba(74, 111, 165, 0.12);
+  --color-text-primary: #43435c;
+  --color-text-secondary: #5c5c4f;
+  --color-text-muted: #8a8a6e;
+  --color-success: #5e7a3a;
+  --color-warning: #9c6b1e;
+  --color-error: #b53b3b;
+}
+
+/* ===== Everforest — green, nature-inspired, calm and balanced ===== */
+.theme-everforest {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+}
+.theme-everforest.dark {
+  --color-background: #2d353b;
+  --color-background-secondary: #232a2e;
+  --color-surface: #343f44;
+  --color-surface-hover: #3d484d;
+  --color-surface-active: #475558;
+  --color-surface-muted: #232a2e;
+  --color-border: #475558;
+  --color-border-muted: #3d484d;
+  --color-border-subtle: rgba(211, 198, 170, 0.07);
+  --color-mcp: #d699b6;
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(211, 198, 170, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(211, 198, 170, 0.05);
+  --color-accent: #a7c080;
+  --color-accent-hover: #b9d29a;
+  --color-accent-muted: rgba(167, 192, 128, 0.16);
+  --color-text-primary: #d3c6aa;
+  --color-text-secondary: #bdae93;
+  --color-text-muted: #7a8478;
+  --color-success: #a7c080;
+  --color-warning: #dbbc7f;
+  --color-error: #e67e80;
+}
+.theme-everforest.light {
+  --color-background: #fdf6e3;
+  --color-background-secondary: #f3efda;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f7f3e7;
+  --color-surface-active: #ede8d0;
+  --color-surface-muted: #f5f1e0;
+  --color-border: #ddd6c0;
+  --color-border-muted: #e8e0cc;
+  --color-border-subtle: rgba(60, 72, 80, 0.08);
+  --color-mcp: #9c5b8a;
+  --shadow-soft: 0 1px 4px rgba(60, 72, 80, 0.08);
+  --shadow-card: 0 1px 3px rgba(60, 72, 80, 0.1), 0 1px 2px rgba(60, 72, 80, 0.06);
+  --shadow-elevated: 0 4px 12px rgba(60, 72, 80, 0.12);
+  --color-accent: #6b8b3a;
+  --color-accent-hover: #5a7730;
+  --color-accent-muted: rgba(107, 139, 58, 0.12);
+  --color-text-primary: #3c4841;
+  --color-text-secondary: #5c6b5f;
+  --color-text-muted: #8a9a8c;
+  --color-success: #4e7a2e;
+  --color-warning: #b57828;
+  --color-error: #c44040;
+}
+
 @layer base {
   /* Define CSS variables for theming */
   :root {
