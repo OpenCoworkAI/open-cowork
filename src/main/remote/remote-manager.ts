@@ -58,6 +58,44 @@ export interface RemoteInteraction {
   expiresAt: number;
 }
 
+const SAFE_REMOTE_TOOL_NAMES = new Set([
+  // Read-only tools
+  'read',
+  'glob',
+  'grep',
+  'ls',
+  'webfetch',
+  'web_fetch',
+  'websearch',
+  'web_search',
+  // Browser tools exposed either as canonical MCP names or display names
+  'navigate_page',
+  'take_screenshot',
+  'take_snapshot',
+  'click',
+  'fill',
+  'hover',
+  'list_pages',
+  'select_page',
+  'new_page',
+  'close_page',
+  'wait_for',
+  'press_key',
+  'get_network_request',
+  'list_network_requests',
+  'list_console_messages',
+]);
+
+export function normalizeRemoteToolNameForAutoApprove(toolName: string): string {
+  const trimmed = toolName.trim();
+  const mcpMatch = trimmed.match(/^mcp__[^_]+__(.+)$/i);
+  return (mcpMatch?.[1] ?? trimmed).toLowerCase();
+}
+
+export function isSafeRemoteAutoApprovedTool(toolName: string): boolean {
+  return SAFE_REMOTE_TOOL_NAMES.has(normalizeRemoteToolNameForAutoApprove(toolName));
+}
+
 export class RemoteManager extends EventEmitter {
   private gateway?: RemoteGateway;
   private messageRouter: MessageRouter;
@@ -618,36 +656,7 @@ export class RemoteManager extends EventEmitter {
     // Check if auto-approve is enabled for safe tools
     const config = remoteConfigStore.getAll();
     if (config.gateway.autoApproveSafeTools) {
-      const safeTools = [
-        // Read-only tools
-        'Read',
-        'Glob',
-        'Grep',
-        'LS',
-        'WebFetch',
-        'WebSearch',
-        // MCP Chrome tools (for browsing)
-        'mcp__Chrome__navigate_page',
-        'mcp__Chrome__take_screenshot',
-        'mcp__Chrome__take_snapshot',
-        'mcp__Chrome__click',
-        'mcp__Chrome__fill',
-        'mcp__Chrome__hover',
-        'mcp__Chrome__list_pages',
-        'mcp__Chrome__select_page',
-        'mcp__Chrome__new_page',
-        'mcp__Chrome__close_page',
-        'mcp__Chrome__wait_for',
-        'mcp__Chrome__press_key',
-        'mcp__Chrome__evaluate_script',
-        'mcp__Chrome__get_network_request',
-        'mcp__Chrome__list_network_requests',
-        'mcp__Chrome__list_console_messages',
-        // Task tools
-        'Task',
-      ];
-
-      if (safeTools.includes(toolName)) {
+      if (isSafeRemoteAutoApprovedTool(toolName)) {
         log('[RemoteManager] Auto-approving safe tool:', toolName);
         // Send notification to user
         await this.doSendToChannel(channelInfo, `🔧 自动执行: **${toolName}**`);
