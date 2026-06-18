@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
   <img src="https://img.shields.io/badge/Node.js-18+-brightgreen" alt="Node.js" />
   <a href="https://discord.gg/pynjtQDf"><img src="https://img.shields.io/discord/1493588403260883078?logo=discord&label=Discord&color=5865F2" alt="Discord" /></a>
@@ -27,7 +27,7 @@
 
 ---
 
-Open Cowork is a free, open-source AI agent desktop application for Windows and macOS. It wraps Claude Code, OpenAI, Gemini, DeepSeek, and other AI models into a user-friendly GUI with one-click installation — no coding required. Key capabilities include VM-level sandbox isolation (WSL2 on Windows, Lima on macOS), a built-in Skills system for generating PPTX, DOCX, XLSX, and PDF documents, MCP (Model Context Protocol) integration for connecting to browsers, Notion, and other desktop apps, GUI automation via computer use, and remote control through Feishu (Lark) and Slack. Open Cowork is the open-source implementation of Claude Cowork, designed to make AI-powered desktop automation accessible to everyone.
+Open Cowork is a free, open-source AI agent desktop application for Windows, macOS, and Linux. It wraps Claude Code, OpenAI, Gemini, DeepSeek, and other AI models into a user-friendly GUI with one-click installation — no coding required. Key capabilities include VM-level sandbox isolation (WSL2 on Windows, Lima on macOS), a built-in Skills system for generating PPTX, DOCX, XLSX, and PDF documents, MCP (Model Context Protocol) integration for connecting to browsers, Notion, and other desktop apps, GUI automation via computer use, and remote control through Feishu (Lark) and Slack. Open Cowork is the open-source implementation of Claude Cowork, designed to make AI-powered desktop automation accessible to everyone.
 
 ---
 
@@ -110,10 +110,51 @@ brew install --cask --no-quarantine open-cowork
 
 Get the latest version from our [Releases Page](https://github.com/OpenCoworkAI/open-cowork/releases).
 
-| Platform                  | File Type |
-| ------------------------- | --------- |
-| **Windows**               | `.exe`    |
-| **macOS** (Apple Silicon) | `.dmg`    |
+| Platform                  | File Type   |
+| ------------------------- | ----------- |
+| **Windows**               | `.exe`      |
+| **macOS** (Apple Silicon) | `.dmg`      |
+| **Linux** (x64)           | `.AppImage` |
+
+#### Linux Desktop Integration
+
+After downloading the AppImage, run the install script to add it to your application launcher:
+
+```bash
+# Make executable and run
+chmod +x "Open Cowork-*.AppImage"
+./scripts/install-linux-desktop.sh ./release
+```
+
+Or manually:
+
+```bash
+# Copy to a permanent location
+cp "Open Cowork-*.AppImage" ~/.local/bin/open-cowork
+chmod +x ~/.local/bin/open-cowork
+
+# Install icon
+mkdir -p ~/.local/share/icons/hicolor/256x256/apps
+cp resources/icon.png ~/.local/share/icons/hicolor/256x256/apps/open-cowork.png
+
+# Create desktop entry
+mkdir -p ~/.local/share/applications
+cat > ~/.local/share/applications/open-cowork.desktop << 'EOF'
+[Desktop Entry]
+Name=Open Cowork
+Comment=Open-source AI agent desktop app
+Exec=/home/$USER/.local/bin/open-cowork %U
+Icon=open-cowork
+Type=Application
+Categories=Development;Utility;
+Terminal=false
+EOF
+
+# Refresh launcher
+update-desktop-database ~/.local/share/applications/
+```
+
+Press **Super** and search for "Open Cowork" — the app appears in your launcher.
 
 ### Option 3: Build from Source
 
@@ -299,7 +340,7 @@ Claude (via Anthropic or OpenRouter), OpenAI-compatible APIs, and Chinese models
 Yes. Open Cowork itself is completely free and open-source under the MIT license. You only need to pay for the AI model API usage from your chosen provider.
 
 **Does Open Cowork work on Linux?**
-Currently, Open Cowork provides pre-built installers for Windows and macOS only. Linux users can build from source — see the [Build from Source](#installation) section.
+Yes. Linux (x64) AppImages are available on the [Releases page](https://github.com/OpenCoworkAI/open-cowork/releases). For desktop launcher integration, run `scripts/install-linux-desktop.sh` after downloading. You can also build from source — see the [Build from Source](#installation) section.
 
 **How does sandbox isolation work?**
 Open Cowork offers multi-level protection: basic path-based restrictions on all platforms, and enhanced VM-level isolation using WSL2 (Windows) or Lima (macOS). When a VM is available, all commands execute inside an isolated Linux environment, protecting your host system.
