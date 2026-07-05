@@ -2216,9 +2216,12 @@ Tool routing:
         // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
         const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
 
-        // Per-session compaction instructions (from session metadata or global config)
-        const sessionCompactInstructions =
-          (session as { compactInstructions?: string }).compactInstructions || undefined;
+        // Per-session compaction instructions (from session metadata if present)
+        const sessionCompactInstructions: string | undefined =
+          'compactInstructions' in session &&
+          typeof (session as Record<string, unknown>).compactInstructions === 'string'
+            ? ((session as Record<string, unknown>).compactInstructions as string)
+            : undefined;
 
         const resourceLoader = new DefaultResourceLoader({
           cwd: effectiveCwd,

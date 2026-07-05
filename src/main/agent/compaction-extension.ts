@@ -186,13 +186,6 @@ export function createCompactionExtensionFactory(config: CompactionConfig = {}):
         keepRecent
       );
 
-      if (prunedCount > 0) {
-        // Log is informational only — no access to app logger from extension context
-        // The SDK will reflect this in its own compaction metrics
-        void prunedCount;
-        void totalToolResults;
-      }
-
       // Phase 2: Inject custom instructions for the summarizer.
       // The SDK reads event.customInstructions after extension handlers return.
       // If no instructions were already set (e.g., from a manual compact() call),
