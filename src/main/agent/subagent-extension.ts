@@ -21,9 +21,11 @@ import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resol
 import type { ServerEvent } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 
-const MAX_TIMEOUT_MS = 300_000; // 5 minutes
-const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+const MAX_TIMEOUT_MS = 300_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const TIMEOUT_MESSAGE = 'Subagent timed out';
+const MAX_CONCURRENT_SUBAGENTS = 3;
+const MAX_TASK_LENGTH = 10_000;
 
 interface SubagentParams {
   task: string;
@@ -46,12 +48,24 @@ function buildChildSystemPrompt(task: string, resultFormat?: string): string {
   return parts.join('\n');
 }
 
+function safeSendEvent(sendEvent: SendEvent, event: ServerEvent): void {
+  try {
+    sendEvent(event);
+  } catch {
+    // Renderer may be disconnected — swallow to avoid disrupting tool execution
+  }
+}
+
 type SendEvent = (event: ServerEvent) => void;
+type PermissionHandler = (toolName: string, toolInput: unknown) => Promise<'allow' | 'deny'>;
 
 function createSpawnSubagentTool(
   mcpManager: MCPManager | null,
   sendEvent: SendEvent,
-  parentSessionId: string
+  parentSessionId: string,
+  requestPermission: PermissionHandler | null,
+  getParentAbortSignal: () => AbortSignal | null,
+  concurrencyState: { active: number }
 ): AgentRuntimeCustomTool {
   return {
     name: 'spawn_subagent',
@@ -97,6 +111,31 @@ function createSpawnSubagentTool(
         };
       }
 
+      if (task.length > MAX_TASK_LENGTH) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: task exceeds maximum length (${MAX_TASK_LENGTH} chars). Shorten the task description.`,
+            },
+          ],
+          details: undefined as unknown,
+        };
+      }
+
+      // Concurrency guard
+      if (concurrencyState.active >= MAX_CONCURRENT_SUBAGENTS) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: maximum concurrent subagents (${MAX_CONCURRENT_SUBAGENTS}) reached. Wait for a running subagent to complete.`,
+            },
+          ],
+          details: undefined as unknown,
+        };
+      }
+
       const timeoutMs = Math.min(
         (timeout_seconds || DEFAULT_TIMEOUT_MS / 1000) * 1000,
         MAX_TIMEOUT_MS
@@ -106,8 +145,9 @@ function createSpawnSubagentTool(
       log(`[SubagentExtension] Spawning child ${subagentId} for task: "${task.slice(0, 100)}..."`);
       const startTime = Date.now();
 
-      // Emit subagent.started
-      sendEvent({
+      concurrencyState.active++;
+
+      safeSendEvent(sendEvent, {
         type: 'subagent.progress',
         payload: {
           parentSessionId,
@@ -171,7 +211,6 @@ function createSpawnSubagentTool(
           });
         }
 
-        // Filter allowed_tools if specified
         if (allowed_tools && allowed_tools.length > 0) {
           const allowSet = new Set(allowed_tools);
           mcpCustomTools = mcpCustomTools.filter((t) => allowSet.has(t.name));
@@ -202,9 +241,29 @@ function createSpawnSubagentTool(
           cwd,
         });
 
+        // Install permission gating on child session (mirrors parent behavior)
+        if (requestPermission) {
+          const piSession = childSession as unknown as {
+            setBeforeToolCall?: (
+              hook: (call: {
+                toolName: string;
+                args: unknown;
+              }) => Promise<{ block: boolean; reason?: string } | void>
+            ) => void;
+          };
+          if (piSession.setBeforeToolCall) {
+            piSession.setBeforeToolCall(async (call) => {
+              const decision = await requestPermission(call.toolName, call.args);
+              if (decision === 'deny') {
+                return { block: true, reason: 'Permission denied by parent session policy' };
+              }
+              return undefined;
+            });
+          }
+        }
+
         let finalText = '';
         const unsubscribe = childSession.subscribe((event) => {
-          // Collect final text from agent_end
           if (event.type === 'agent_end') {
             const messages = (event as { messages?: unknown[] }).messages || [];
             for (let i = messages.length - 1; i >= 0; i--) {
@@ -219,9 +278,8 @@ function createSpawnSubagentTool(
             }
           }
 
-          // Stream progress events to renderer
           if (event.type === 'tool_execution_start') {
-            sendEvent({
+            safeSendEvent(sendEvent, {
               type: 'subagent.progress',
               payload: {
                 parentSessionId,
@@ -232,7 +290,7 @@ function createSpawnSubagentTool(
             } as ServerEvent);
           } else if (event.type === 'tool_execution_end') {
             const e = event as { toolName?: string; isError?: boolean };
-            sendEvent({
+            safeSendEvent(sendEvent, {
               type: 'subagent.progress',
               payload: {
                 parentSessionId,
@@ -253,7 +311,7 @@ function createSpawnSubagentTool(
                 })
                 .pop();
               if (lastText) {
-                sendEvent({
+                safeSendEvent(sendEvent, {
                   type: 'subagent.progress',
                   payload: {
                     parentSessionId,
@@ -268,22 +326,52 @@ function createSpawnSubagentTool(
         });
 
         let timeoutId: NodeJS.Timeout | undefined;
+        const parentSignal = getParentAbortSignal();
+        let parentAbortHandler: (() => void) | undefined;
+
         try {
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error(TIMEOUT_MESSAGE)), timeoutMs);
           });
-          await Promise.race([childSession.prompt(task), timeoutPromise]);
+
+          // Propagate parent cancellation
+          const parentAbortPromise = parentSignal
+            ? new Promise<never>((_, reject) => {
+                if (parentSignal.aborted) {
+                  reject(new Error('Parent session cancelled'));
+                  return;
+                }
+                parentAbortHandler = () => reject(new Error('Parent session cancelled'));
+                parentSignal.addEventListener('abort', parentAbortHandler);
+              })
+            : null;
+
+          const racers: Promise<unknown>[] = [childSession.prompt(task), timeoutPromise];
+          if (parentAbortPromise) racers.push(parentAbortPromise);
+
+          await Promise.race(racers);
         } finally {
           if (timeoutId) clearTimeout(timeoutId);
+          if (parentAbortHandler && parentSignal) {
+            parentSignal.removeEventListener('abort', parentAbortHandler);
+          }
           unsubscribe();
+          // Abort the child session to stop in-flight API calls and tool executions
+          try {
+            const abortable = childSession as unknown as { abort?: () => Promise<void> | void };
+            if (abortable.abort) {
+              await abortable.abort();
+            }
+          } catch {
+            // abort may throw if session already completed — safe to ignore
+          }
           childSession.dispose();
         }
 
         const durationMs = Date.now() - startTime;
         log(`[SubagentExtension] Child ${subagentId} completed in ${durationMs}ms`);
 
-        // Emit subagent.completed
-        sendEvent({
+        safeSendEvent(sendEvent, {
           type: 'subagent.progress',
           payload: {
             parentSessionId,
@@ -305,15 +393,15 @@ function createSpawnSubagentTool(
         logError(`[SubagentExtension] Child ${subagentId} failed after ${durationMs}ms:`, message);
 
         const isTimeout = message === TIMEOUT_MESSAGE;
+        const isCancelled = message.includes('Parent session cancelled');
 
-        // Emit subagent.failed
-        sendEvent({
+        safeSendEvent(sendEvent, {
           type: 'subagent.progress',
           payload: {
             parentSessionId,
             subagentId,
             event: 'failed',
-            error: isTimeout ? 'timeout' : message.slice(0, 200),
+            error: isTimeout ? 'timeout' : isCancelled ? 'cancelled' : message.slice(0, 200),
             durationMs,
           },
         } as ServerEvent);
@@ -324,11 +412,15 @@ function createSpawnSubagentTool(
               type: 'text' as const,
               text: isTimeout
                 ? `Subagent timed out after ${Math.round(durationMs / 1000)}s. Consider simplifying the task or increasing timeout_seconds.`
-                : `Subagent error: ${message}`,
+                : isCancelled
+                  ? 'Subagent cancelled: parent session was stopped.'
+                  : `Subagent error: ${message}`,
             },
           ],
           details: undefined as unknown,
         };
+      } finally {
+        concurrencyState.active--;
       }
     },
   };
@@ -336,16 +428,26 @@ function createSpawnSubagentTool(
 
 export class SubagentExtension implements AgentRuntimeExtension {
   readonly name = 'subagent';
+  private concurrencyState = { active: 0 };
 
   constructor(
     private readonly getMcpManager: () => MCPManager | null,
-    private readonly sendEvent: SendEvent
+    private readonly sendEvent: SendEvent,
+    private readonly requestPermission: PermissionHandler | null = null,
+    private readonly getParentAbortSignal: () => AbortSignal | null = () => null
   ) {}
 
   async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
     return {
       customTools: [
-        createSpawnSubagentTool(this.getMcpManager(), this.sendEvent, context.session.id),
+        createSpawnSubagentTool(
+          this.getMcpManager(),
+          this.sendEvent,
+          context.session.id,
+          this.requestPermission,
+          this.getParentAbortSignal,
+          this.concurrencyState
+        ),
       ],
     };
   }

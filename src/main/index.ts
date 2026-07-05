@@ -41,7 +41,7 @@ import {
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
-import { setPermissionRules } from './config/permission-rules-store';
+import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
@@ -868,7 +868,18 @@ app
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
-        new SubagentExtension(() => sessionManager?.getMCPManager() ?? null, sendToRenderer),
+        new SubagentExtension(
+          () => sessionManager?.getMCPManager() ?? null,
+          sendToRenderer,
+          async (toolName, toolInput) => {
+            const decision = decidePermission(
+              'subagent',
+              toolName,
+              toolInput as Record<string, unknown>
+            );
+            return decision === 'deny' ? 'deny' : 'allow';
+          }
+        ),
       ]);
 
       // Build the JSONL sender with permission interception BEFORE constructing SessionManager
@@ -1149,7 +1160,18 @@ app
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),
-      new SubagentExtension(() => sessionManager?.getMCPManager() ?? null, sendToRenderer),
+      new SubagentExtension(
+        () => sessionManager?.getMCPManager() ?? null,
+        sendToRenderer,
+        async (toolName, toolInput) => {
+          const decision = decidePermission(
+            'subagent',
+            toolName,
+            toolInput as Record<string, unknown>
+          );
+          return decision === 'deny' ? 'deny' : 'allow';
+        }
+      ),
     ]);
 
     // Initialize session manager before creating an interactive window.
