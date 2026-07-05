@@ -86,6 +86,7 @@ import {
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
+import { createCompactionExtensionFactory } from './compaction-extension';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -2214,10 +2215,22 @@ Tool routing:
         // First query in this session — create new agent session
         // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
         const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
+
+        // Per-session compaction instructions (from session metadata or global config)
+        const sessionCompactInstructions =
+          (session as { compactInstructions?: string }).compactInstructions || undefined;
+
         const resourceLoader = new DefaultResourceLoader({
           cwd: effectiveCwd,
           additionalSkillPaths: skillPaths,
           appendSystemPrompt: coworkAppendPrompt,
+          extensionFactories: [
+            createCompactionExtensionFactory({
+              customInstructions: sessionCompactInstructions,
+              pruneToolOutputAbove: 500,
+              keepRecentToolResults: 3,
+            }),
+          ],
         });
         await resourceLoader.reload();
 
