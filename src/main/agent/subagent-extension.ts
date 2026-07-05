@@ -27,6 +27,18 @@ const TIMEOUT_MESSAGE = 'Subagent timed out';
 const MAX_CONCURRENT_SUBAGENTS = 3;
 const MAX_TASK_LENGTH = 10_000;
 
+class SubagentTimeoutError extends Error {
+  constructor() {
+    super(TIMEOUT_MESSAGE);
+  }
+}
+
+class ParentCancelledError extends Error {
+  constructor() {
+    super('Parent session cancelled');
+  }
+}
+
 interface SubagentParams {
   task: string;
   result_format?: string;
@@ -340,17 +352,17 @@ function createSpawnSubagentTool(
 
         try {
           const timeoutPromise = new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error(TIMEOUT_MESSAGE)), timeoutMs);
+            timeoutId = setTimeout(() => reject(new SubagentTimeoutError()), timeoutMs);
           });
 
           // Propagate parent cancellation
           const parentAbortPromise = parentSignal
             ? new Promise<never>((_, reject) => {
                 if (parentSignal.aborted) {
-                  reject(new Error('Parent session cancelled'));
+                  reject(new ParentCancelledError());
                   return;
                 }
-                parentAbortHandler = () => reject(new Error('Parent session cancelled'));
+                parentAbortHandler = () => reject(new ParentCancelledError());
                 parentSignal.addEventListener('abort', parentAbortHandler);
               })
             : null;
@@ -403,8 +415,8 @@ function createSpawnSubagentTool(
         const message = err instanceof Error ? err.message : String(err);
         logError(`[SubagentExtension] Child ${subagentId} failed after ${durationMs}ms:`, message);
 
-        const isTimeout = message === TIMEOUT_MESSAGE;
-        const isCancelled = message.includes('Parent session cancelled');
+        const isTimeout = err instanceof SubagentTimeoutError;
+        const isCancelled = err instanceof ParentCancelledError;
 
         safeSendEvent(
           sendEvent,
