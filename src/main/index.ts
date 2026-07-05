@@ -868,7 +868,7 @@ app
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
-        new SubagentExtension(() => sessionManager?.getMCPManager() ?? null),
+        new SubagentExtension(() => sessionManager?.getMCPManager() ?? null, sendToRenderer),
       ]);
 
       // Build the JSONL sender with permission interception BEFORE constructing SessionManager
@@ -1149,7 +1149,7 @@ app
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),
-      new SubagentExtension(() => sessionManager?.getMCPManager() ?? null),
+      new SubagentExtension(() => sessionManager?.getMCPManager() ?? null, sendToRenderer),
     ]);
 
     // Initialize session manager before creating an interactive window.

@@ -566,6 +566,20 @@ export type ServerEvent =
       };
     }
   | {
+      type: 'subagent.progress';
+      payload: {
+        parentSessionId: string;
+        subagentId: string;
+        event: 'started' | 'tool_start' | 'tool_end' | 'text_delta' | 'completed' | 'failed';
+        task?: string;
+        toolName?: string;
+        isError?: boolean;
+        text?: string;
+        error?: string;
+        durationMs?: number;
+      };
+    }
+  | {
       type: 'navigate.to';
       payload: { page: 'welcome' | 'settings' | 'session'; tab?: string; sessionId?: string };
     }

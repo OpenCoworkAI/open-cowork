@@ -17,10 +17,18 @@ import { SubagentExtension } from '../../main/agent/subagent-extension';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
 
+const noopSend = () => {};
+const mockContext = {
+  session: { id: 'test-session' },
+  prompt: '',
+  existingMessages: [],
+  isColdStart: false,
+};
+
 describe('SubagentExtension', () => {
   it('registers spawn_subagent tool via beforeSessionRun', async () => {
-    const extension = new SubagentExtension(() => null);
-    const result = await extension.beforeSessionRun();
+    const extension = new SubagentExtension(() => null, noopSend);
+    const result = await extension.beforeSessionRun(mockContext as never);
 
     expect(result.customTools).toHaveLength(1);
     expect(result.customTools![0].name).toBe('spawn_subagent');
@@ -28,14 +36,14 @@ describe('SubagentExtension', () => {
   });
 
   it('has correct extension name', () => {
-    const extension = new SubagentExtension(() => null);
+    const extension = new SubagentExtension(() => null, noopSend);
     expect(extension.name).toBe('subagent');
   });
 
   describe('spawn_subagent tool', () => {
     it('rejects empty task parameter', async () => {
-      const extension = new SubagentExtension(() => null);
-      const result = await extension.beforeSessionRun();
+      const extension = new SubagentExtension(() => null, noopSend);
+      const result = await extension.beforeSessionRun(mockContext as never);
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
       const execResult = (await execute('test-call', { task: '' })) as {
@@ -46,8 +54,8 @@ describe('SubagentExtension', () => {
     });
 
     it('rejects null params', async () => {
-      const extension = new SubagentExtension(() => null);
-      const result = await extension.beforeSessionRun();
+      const extension = new SubagentExtension(() => null, noopSend);
+      const result = await extension.beforeSessionRun(mockContext as never);
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
       const execResult = (await execute('test-call', null)) as {
@@ -58,8 +66,8 @@ describe('SubagentExtension', () => {
     });
 
     it('rejects whitespace-only task', async () => {
-      const extension = new SubagentExtension(() => null);
-      const result = await extension.beforeSessionRun();
+      const extension = new SubagentExtension(() => null, noopSend);
+      const result = await extension.beforeSessionRun(mockContext as never);
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
       const execResult = (await execute('test-call', { task: '   ' })) as {
@@ -70,17 +78,13 @@ describe('SubagentExtension', () => {
     });
 
     it('returns structured error when model cannot be resolved', async () => {
-      // Force configStore to hand back a model/provider combination that
-      // cannot resolve to any known pi-ai registry model. This makes the
-      // failure deterministic (no dependency on real auth being configured)
-      // and lets us assert the exact error surfaced to the caller.
       mockGetAll.mockReturnValue({
         model: 'nonexistent-provider/fake-model-xyz',
         provider: 'nonexistent-provider',
       });
 
-      const extension = new SubagentExtension(() => null);
-      const result = await extension.beforeSessionRun();
+      const extension = new SubagentExtension(() => null, noopSend);
+      const result = await extension.beforeSessionRun(mockContext as never);
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
       const execResult = (await execute('test-call', { task: 'test task' })) as {
@@ -93,14 +97,35 @@ describe('SubagentExtension', () => {
     });
 
     it('tool has correct parameter schema', async () => {
-      const extension = new SubagentExtension(() => null);
-      const result = await extension.beforeSessionRun();
+      const extension = new SubagentExtension(() => null, noopSend);
+      const result = await extension.beforeSessionRun(mockContext as never);
       const tool = result.customTools![0];
 
       const schema = tool.parameters;
       expect(schema).toBeDefined();
-      // The schema should have task as required and other optional params
       expect(schema.properties).toBeDefined();
+    });
+
+    it('emits subagent.progress started event on execution', async () => {
+      mockGetAll.mockReturnValue({
+        model: 'nonexistent-provider/fake-model-xyz',
+        provider: 'nonexistent-provider',
+      });
+
+      const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+      const captureSend = (event: unknown) => events.push(event as (typeof events)[0]);
+
+      const extension = new SubagentExtension(() => null, captureSend as never);
+      const result = await extension.beforeSessionRun(mockContext as never);
+      const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
+
+      await execute('test-call', { task: 'test streaming' });
+
+      const startedEvent = events.find((e) => e.payload?.event === 'started');
+      expect(startedEvent).toBeDefined();
+      expect(startedEvent!.type).toBe('subagent.progress');
+      expect(startedEvent!.payload.parentSessionId).toBe('test-session');
+      expect(startedEvent!.payload.task).toContain('test streaming');
     });
   });
 });

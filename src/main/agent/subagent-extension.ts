@@ -10,6 +10,7 @@ import {
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
+  BeforeSessionRunContext,
   AgentRuntimeCustomTool,
 } from '../extensions/agent-runtime-extension';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
@@ -17,6 +18,8 @@ import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
+import type { ServerEvent } from '../../renderer/types';
+import { v4 as uuidv4 } from 'uuid';
 
 const MAX_TIMEOUT_MS = 300_000; // 5 minutes
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
@@ -43,7 +46,13 @@ function buildChildSystemPrompt(task: string, resultFormat?: string): string {
   return parts.join('\n');
 }
 
-function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCustomTool {
+type SendEvent = (event: ServerEvent) => void;
+
+function createSpawnSubagentTool(
+  mcpManager: MCPManager | null,
+  sendEvent: SendEvent,
+  parentSessionId: string
+): AgentRuntimeCustomTool {
   return {
     name: 'spawn_subagent',
     label: 'spawn_subagent',
@@ -93,8 +102,20 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
         MAX_TIMEOUT_MS
       );
 
-      log(`[SubagentExtension] Spawning child for task: "${task.slice(0, 100)}..."`);
+      const subagentId = uuidv4();
+      log(`[SubagentExtension] Spawning child ${subagentId} for task: "${task.slice(0, 100)}..."`);
       const startTime = Date.now();
+
+      // Emit subagent.started
+      sendEvent({
+        type: 'subagent.progress',
+        payload: {
+          parentSessionId,
+          subagentId,
+          event: 'started',
+          task: task.slice(0, 200),
+        },
+      } as ServerEvent);
 
       try {
         const config = configStore.getAll();
@@ -183,6 +204,7 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
 
         let finalText = '';
         const unsubscribe = childSession.subscribe((event) => {
+          // Collect final text from agent_end
           if (event.type === 'agent_end') {
             const messages = (event as { messages?: unknown[] }).messages || [];
             for (let i = messages.length - 1; i >= 0; i--) {
@@ -193,6 +215,53 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
                   .map((b) => b.text)
                   .join('');
                 break;
+              }
+            }
+          }
+
+          // Stream progress events to renderer
+          if (event.type === 'tool_execution_start') {
+            sendEvent({
+              type: 'subagent.progress',
+              payload: {
+                parentSessionId,
+                subagentId,
+                event: 'tool_start',
+                toolName: (event as { toolName?: string }).toolName || 'unknown',
+              },
+            } as ServerEvent);
+          } else if (event.type === 'tool_execution_end') {
+            const e = event as { toolName?: string; isError?: boolean };
+            sendEvent({
+              type: 'subagent.progress',
+              payload: {
+                parentSessionId,
+                subagentId,
+                event: 'tool_end',
+                toolName: e.toolName || 'unknown',
+                isError: e.isError || false,
+              },
+            } as ServerEvent);
+          } else if (event.type === 'message_update') {
+            const e = event as { message?: { content?: unknown[] } };
+            const content = e.message?.content;
+            if (Array.isArray(content)) {
+              const lastText = content
+                .filter((b): b is { type: 'text'; text: string } => {
+                  const block = b as { type?: string; text?: string };
+                  return block.type === 'text' && typeof block.text === 'string';
+                })
+                .pop();
+              if (lastText) {
+                sendEvent({
+                  type: 'subagent.progress',
+                  payload: {
+                    parentSessionId,
+                    subagentId,
+                    event: 'text_delta',
+                    text: lastText.text.slice(-100),
+                  },
+                } as ServerEvent);
               }
             }
           }
@@ -211,7 +280,18 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
         }
 
         const durationMs = Date.now() - startTime;
-        log(`[SubagentExtension] Child completed in ${durationMs}ms`);
+        log(`[SubagentExtension] Child ${subagentId} completed in ${durationMs}ms`);
+
+        // Emit subagent.completed
+        sendEvent({
+          type: 'subagent.progress',
+          payload: {
+            parentSessionId,
+            subagentId,
+            event: 'completed',
+            durationMs,
+          },
+        } as ServerEvent);
 
         return {
           content: [
@@ -222,9 +302,22 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
       } catch (err: unknown) {
         const durationMs = Date.now() - startTime;
         const message = err instanceof Error ? err.message : String(err);
-        logError(`[SubagentExtension] Child failed after ${durationMs}ms:`, message);
+        logError(`[SubagentExtension] Child ${subagentId} failed after ${durationMs}ms:`, message);
 
         const isTimeout = message === TIMEOUT_MESSAGE;
+
+        // Emit subagent.failed
+        sendEvent({
+          type: 'subagent.progress',
+          payload: {
+            parentSessionId,
+            subagentId,
+            event: 'failed',
+            error: isTimeout ? 'timeout' : message.slice(0, 200),
+            durationMs,
+          },
+        } as ServerEvent);
+
         return {
           content: [
             {
@@ -244,11 +337,16 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
 export class SubagentExtension implements AgentRuntimeExtension {
   readonly name = 'subagent';
 
-  constructor(private readonly getMcpManager: () => MCPManager | null) {}
+  constructor(
+    private readonly getMcpManager: () => MCPManager | null,
+    private readonly sendEvent: SendEvent
+  ) {}
 
-  async beforeSessionRun(): Promise<BeforeSessionRunResult> {
+  async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
     return {
-      customTools: [createSpawnSubagentTool(this.getMcpManager())],
+      customTools: [
+        createSpawnSubagentTool(this.getMcpManager(), this.sendEvent, context.session.id),
+      ],
     };
   }
 }
