@@ -2098,6 +2098,18 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
             ? `<workspace_info>Your current workspace is: ${workingDir}</workspace_info>`
             : '';
 
+      // Build a concise summary of the agent's own runtime configuration.
+      // Intentionally excludes API keys, base URLs, and any other sensitive data.
+      const configSummaryPrompt = `<your_configuration>
+- Model: ${piModel.id}
+- Provider: ${provider}
+- Context Window: ${piModel.contextWindow || 'unknown'} tokens
+- Max Output Tokens: ${piModel.maxTokens || 'default'}
+- Thinking: ${enableThinking ? 'enabled' : 'disabled'}
+- Sandbox: ${runtimeConfig.sandboxEnabled ? 'enabled' : 'disabled'}
+- Memory: ${runtimeConfig.memoryEnabled ? 'enabled' : 'disabled'}
+</your_configuration>`;
+
       const coworkAppendPrompt = [
         'You are an Open Cowork assistant. Be concise, accurate, and tool-capable.',
         `CRITICAL BEHAVIORAL RULES:
@@ -2106,6 +2118,7 @@ This is an isolated sandbox environment. Use ${VIRTUAL_WORKSPACE_PATH} as the ro
 3. For relative time windows like "within two days" in browsing or research tasks, assume the most recent two relevant publication days unless the user explicitly defines another date range.
 4. For bracketed placeholders like [Agent], [Topic], etc., treat the word inside brackets as the literal search keyword unless the user says otherwise.
 5. When given a task, START DOING IT. Do not restate the task, do not list what you will do, do not ask for confirmation. Just execute.`,
+        configSummaryPrompt,
         workspaceInfoPrompt,
         `<citation_requirements>
 If your answer uses linkable content from MCP tools, include a "Sources:" section and otherwise use standard Markdown links: [Title](https://claude.ai/chat/URL).

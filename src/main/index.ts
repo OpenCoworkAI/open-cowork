@@ -24,6 +24,7 @@ import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
+import { ConfigExtension } from './config/config-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
 import {
   configStore,
@@ -859,6 +860,7 @@ app
       memoryService = new MemoryService(db);
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
+        new ConfigExtension(configStore),
       ]);
 
       // Build the JSONL sender with permission interception BEFORE constructing SessionManager
@@ -1132,7 +1134,10 @@ app
 
     pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
     memoryService = new MemoryService(db);
-    const extensionManager = new AgentRuntimeExtensionManager([new MemoryExtension(memoryService)]);
+    const extensionManager = new AgentRuntimeExtensionManager([
+      new MemoryExtension(memoryService),
+      new ConfigExtension(configStore),
+    ]);
 
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
