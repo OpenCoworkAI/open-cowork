@@ -65,6 +65,19 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'workdir.select',
 ]);
 
+// Invoke a whitelisted ClientEvent and wait for the response. Defined once at
+// module scope so both the generic `invoke()` API and the typed `session.*`
+// helpers below share the same ALLOWED_CLIENT_EVENTS check instead of one of
+// them bypassing it via a raw ipcRenderer.invoke('client-invoke', ...) call.
+const invoke = async <T>(event: ClientEvent): Promise<T> => {
+  if (!ALLOWED_CLIENT_EVENTS.has(event.type)) {
+    console.warn('[Preload] Blocked unauthorized invoke type:', event.type);
+    throw new Error(`Unauthorized event type: ${event.type}`);
+  }
+  console.log('[Preload] Invoking:', event.type);
+  return ipcRenderer.invoke('client-invoke', event);
+};
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -109,14 +122,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Invoke and wait for response
-  invoke: async <T>(event: ClientEvent): Promise<T> => {
-    if (!ALLOWED_CLIENT_EVENTS.has(event.type)) {
-      console.warn('[Preload] Blocked unauthorized invoke type:', event.type);
-      throw new Error(`Unauthorized event type: ${event.type}`);
-    }
-    console.log('[Preload] Invoking:', event.type);
-    return ipcRenderer.invoke('client-invoke', event);
-  },
+  invoke,
 
   // Session compaction and context usage
   session: {
@@ -129,7 +135,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       tokensBefore: number;
       details?: unknown;
     } | null> =>
-      ipcRenderer.invoke('client-invoke', {
+      invoke({
         type: 'session.compact',
         payload: { sessionId, customInstructions },
       }),
@@ -140,7 +146,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       contextWindow: number;
       percent: number | null;
     } | null> =>
-      ipcRenderer.invoke('client-invoke', {
+      invoke({
         type: 'session.getContextUsage',
         payload: { sessionId },
       }),
