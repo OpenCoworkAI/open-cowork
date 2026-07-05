@@ -2855,8 +2855,8 @@ Tool routing:
                 event.willRetry
               );
 
-              // Surface compaction result details to the renderer
-              if (event.result) {
+              // Surface compaction result details to the renderer (skip if retrying)
+              if (event.result && !event.willRetry) {
                 const compactionDetails = event.result.details as
                   | { readFiles?: string[]; modifiedFiles?: string[] }
                   | undefined;
@@ -3121,15 +3121,20 @@ Tool routing:
       return null;
     }
     log('[CoworkAgentRunner] Manual compact triggered for session:', sessionId);
-    const result = await cached.session.compact(customInstructions);
-    log(
-      '[CoworkAgentRunner] Manual compact completed:',
-      JSON.stringify({
-        summaryLen: result.summary.length,
-        tokensBefore: result.tokensBefore,
-      })
-    );
-    return result;
+    try {
+      const result = await cached.session.compact(customInstructions);
+      log(
+        '[CoworkAgentRunner] Manual compact completed:',
+        JSON.stringify({
+          summaryLen: result.summary.length,
+          tokensBefore: result.tokensBefore,
+        })
+      );
+      return result;
+    } catch (err) {
+      logError('[CoworkAgentRunner] compact error:', err);
+      return null;
+    }
   }
 
   /**
@@ -3145,8 +3150,14 @@ Tool routing:
     if (!cached) {
       return null;
     }
-    const usage = cached.session.getContextUsage();
-    return usage ?? null;
+    try {
+      const usage = cached.session.getContextUsage();
+      log('[CoworkAgentRunner] getContextUsage:', sessionId, JSON.stringify(usage));
+      return usage ?? null;
+    } catch (err) {
+      logError('[CoworkAgentRunner] getContextUsage error:', err);
+      return null;
+    }
   }
 
   cancel(sessionId: string): void {

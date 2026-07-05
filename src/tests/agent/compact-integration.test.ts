@@ -308,7 +308,9 @@ describe('auto_compaction_end event surfacing', () => {
 
     const event = {
       type: 'auto_compaction_end' as const,
-      result: undefined,
+      result: undefined as
+        | { summary: string; firstKeptEntryId: string; tokensBefore: number; details?: unknown }
+        | undefined,
       aborted: true,
       willRetry: false,
       errorMessage: 'Compaction was aborted',
@@ -343,8 +345,7 @@ describe('auto_compaction_end event surfacing', () => {
         summary: 'Simple conversation.',
         firstKeptEntryId: 'entry-1',
         tokensBefore: 20000,
-        // details is undefined — no readFiles/modifiedFiles tracked
-      },
+      } as { summary: string; firstKeptEntryId: string; tokensBefore: number; details?: unknown },
       aborted: false,
       willRetry: false,
     };
