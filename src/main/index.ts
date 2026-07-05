@@ -1898,7 +1898,7 @@ ipcMain.handle('config.discover-local', async (_event, payload?: { baseUrl?: str
 // Config file export/import IPC handlers
 ipcMain.handle('config.exportFile', () => {
   try {
-    configStore.exportSafeConfig();
+    exportOnConfigChange();
     return { success: true, path: configStore.getPublicConfigPath() };
   } catch (error) {
     logError('[Config] Error exporting config file:', error);
