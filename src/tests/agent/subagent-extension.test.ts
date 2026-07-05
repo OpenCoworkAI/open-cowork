@@ -165,5 +165,54 @@ describe('SubagentExtension', () => {
       expect(startedEvent!.payload.parentSessionId).toBe('test-session');
       expect(startedEvent!.payload.task).toContain('test streaming');
     });
+
+    it('does not emit completed/failed when model resolution fails early', async () => {
+      mockGetAll.mockReturnValue({
+        model: 'nonexistent-provider/fake-model-xyz',
+        provider: 'nonexistent-provider',
+      });
+
+      const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+      const captureSend = (event: unknown) => events.push(event as (typeof events)[0]);
+
+      const extension = new SubagentExtension(
+        () => null,
+        captureSend as never,
+        noopPermission,
+        noopSignal
+      );
+      const result = await extension.beforeSessionRun(mockContext as never);
+      const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
+
+      await execute('test-call', { task: 'test early failure' });
+
+      // Model resolution failure happens before session creation,
+      // so only 'started' is emitted (no completed/failed since the tool returns early)
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      const eventTypes = events.map((e) => e.payload?.event);
+      expect(eventTypes).toContain('started');
+      // No completed event since it returns with error before entering the session flow
+      expect(eventTypes).not.toContain('completed');
+    });
+
+    it('decrements concurrency counter even on failure', async () => {
+      mockGetAll.mockReturnValue({
+        model: 'nonexistent-provider/fake-model-xyz',
+        provider: 'nonexistent-provider',
+      });
+
+      const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+      const state = (extension as unknown as { concurrencyState: { active: number } })
+        .concurrencyState;
+
+      expect(state.active).toBe(0);
+      const result = await extension.beforeSessionRun(mockContext as never);
+      const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
+
+      await execute('test-call', { task: 'test concurrency decrement' });
+
+      // Even though execution failed (model not found), counter should be back to 0
+      expect(state.active).toBe(0);
+    });
   });
 });

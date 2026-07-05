@@ -251,7 +251,7 @@ function createSpawnSubagentTool(
               }) => Promise<{ block: boolean; reason?: string } | void>
             ) => void;
           };
-          if (piSession.setBeforeToolCall) {
+          if (typeof piSession.setBeforeToolCall === 'function') {
             piSession.setBeforeToolCall(async (call) => {
               const decision = await requestPermission(call.toolName, call.args);
               if (decision === 'deny') {
@@ -259,6 +259,10 @@ function createSpawnSubagentTool(
               }
               return undefined;
             });
+          } else {
+            logError(
+              '[SubagentExtension] Child session does not support setBeforeToolCall — permission gating disabled'
+            );
           }
         }
 
@@ -317,7 +321,7 @@ function createSpawnSubagentTool(
                     parentSessionId,
                     subagentId,
                     event: 'text_delta',
-                    text: lastText.text.slice(-100),
+                    text: lastText.text,
                   },
                 } as ServerEvent);
               }
