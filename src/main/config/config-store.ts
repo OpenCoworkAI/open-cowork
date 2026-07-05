@@ -11,6 +11,8 @@
  *
  * Dependencies: electron-store, auth-utils, api-model-presets
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import Store, { type Options as StoreOptions } from 'electron-store';
 import { log, logWarn } from '../utils/logger';
 import {
@@ -172,6 +174,24 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'enableThinking',
   'isConfigured',
 ]);
+
+/**
+ * Fields safe to expose in the plaintext config file.
+ * NEVER include API keys, tokens, or other secrets.
+ */
+export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
+  'defaultWorkdir',
+  'globalSkillsPath',
+  'theme',
+  'enableDevLogs',
+  'sandboxEnabled',
+  'enableThinking',
+  'memoryEnabled',
+  'model',
+  'provider',
+  'contextWindow',
+  'maxTokens',
+];
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
   openrouter: {
@@ -1645,6 +1665,75 @@ export class ConfigStore {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY ? '✓ Set' : '(empty/unset)',
       GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || '(default)',
     });
+  }
+
+  /**
+   * Export non-sensitive config to a plaintext JSON file.
+   * File location: {userData}/config.public.json
+   */
+  exportSafeConfig(): void {
+    const config = this.getAll();
+    const safeSubset: Partial<AppConfig> = {};
+    for (const key of EXPORTABLE_FIELDS) {
+      if (config[key] !== undefined) {
+        (safeSubset as Record<string, unknown>)[key] = config[key];
+      }
+    }
+    const filePath = this.getPublicConfigPath();
+    fs.writeFileSync(filePath, JSON.stringify(safeSubset, null, 2), 'utf-8');
+    log('[ConfigStore] Exported safe config to:', filePath);
+  }
+
+  /**
+   * Import config from the plaintext JSON file, applying only safe fields.
+   * Returns true if any fields were applied, false otherwise.
+   */
+  importSafeConfig(): boolean {
+    const filePath = this.getPublicConfigPath();
+    if (!fs.existsSync(filePath)) return false;
+
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      logWarn('[ConfigStore] Failed to read public config file:', err);
+      return false;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      logWarn('[ConfigStore] Public config file contains malformed JSON, skipping import:', err);
+      return false;
+    }
+
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      logWarn('[ConfigStore] Public config file root is not an object, skipping import');
+      return false;
+    }
+
+    // Only apply fields that are in the exportable set
+    const updates: Partial<AppConfig> = {};
+    for (const key of EXPORTABLE_FIELDS) {
+      if (key in parsed && parsed[key] !== undefined) {
+        (updates as Record<string, unknown>)[key] = parsed[key];
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      this.update(updates);
+      log('[ConfigStore] Imported safe config from:', filePath, 'fields:', Object.keys(updates));
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get the path to the public plaintext config file.
+   */
+  getPublicConfigPath(): string {
+    return path.join(path.dirname(this.getPath()), 'config.public.json');
   }
 
   /**
