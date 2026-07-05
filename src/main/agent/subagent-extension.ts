@@ -56,6 +56,19 @@ function safeSendEvent(sendEvent: SendEvent, event: ServerEvent): void {
   }
 }
 
+type SubagentProgressPayload = Extract<ServerEvent, { type: 'subagent.progress' }>['payload'];
+
+function buildProgressEvent(
+  parentSessionId: string,
+  subagentId: string,
+  payload: Omit<SubagentProgressPayload, 'parentSessionId' | 'subagentId'>
+): ServerEvent {
+  return {
+    type: 'subagent.progress',
+    payload: { parentSessionId, subagentId, ...payload },
+  };
+}
+
 type SendEvent = (event: ServerEvent) => void;
 type PermissionHandler = (toolName: string, toolInput: unknown) => Promise<'allow' | 'deny'>;
 
@@ -147,15 +160,13 @@ function createSpawnSubagentTool(
 
       concurrencyState.active++;
 
-      safeSendEvent(sendEvent, {
-        type: 'subagent.progress',
-        payload: {
-          parentSessionId,
-          subagentId,
+      safeSendEvent(
+        sendEvent,
+        buildProgressEvent(parentSessionId, subagentId, {
           event: 'started',
           task: task.slice(0, 200),
-        },
-      } as ServerEvent);
+        })
+      );
 
       try {
         const config = configStore.getAll();
@@ -283,27 +294,23 @@ function createSpawnSubagentTool(
           }
 
           if (event.type === 'tool_execution_start') {
-            safeSendEvent(sendEvent, {
-              type: 'subagent.progress',
-              payload: {
-                parentSessionId,
-                subagentId,
+            safeSendEvent(
+              sendEvent,
+              buildProgressEvent(parentSessionId, subagentId, {
                 event: 'tool_start',
                 toolName: (event as { toolName?: string }).toolName || 'unknown',
-              },
-            } as ServerEvent);
+              })
+            );
           } else if (event.type === 'tool_execution_end') {
             const e = event as { toolName?: string; isError?: boolean };
-            safeSendEvent(sendEvent, {
-              type: 'subagent.progress',
-              payload: {
-                parentSessionId,
-                subagentId,
+            safeSendEvent(
+              sendEvent,
+              buildProgressEvent(parentSessionId, subagentId, {
                 event: 'tool_end',
                 toolName: e.toolName || 'unknown',
                 isError: e.isError || false,
-              },
-            } as ServerEvent);
+              })
+            );
           } else if (event.type === 'message_update') {
             const e = event as { message?: { content?: unknown[] } };
             const content = e.message?.content;
@@ -315,15 +322,13 @@ function createSpawnSubagentTool(
                 })
                 .pop();
               if (lastText) {
-                safeSendEvent(sendEvent, {
-                  type: 'subagent.progress',
-                  payload: {
-                    parentSessionId,
-                    subagentId,
+                safeSendEvent(
+                  sendEvent,
+                  buildProgressEvent(parentSessionId, subagentId, {
                     event: 'text_delta',
                     text: lastText.text,
-                  },
-                } as ServerEvent);
+                  })
+                );
               }
             }
           }
@@ -364,7 +369,11 @@ function createSpawnSubagentTool(
           try {
             const abortable = childSession as unknown as { abort?: () => Promise<void> | void };
             if (abortable.abort) {
-              await abortable.abort();
+              const abortResult = abortable.abort();
+              if (abortResult && typeof abortResult === 'object' && 'then' in abortResult) {
+                const abortTimeout = new Promise<void>((r) => setTimeout(r, 5000));
+                await Promise.race([abortResult, abortTimeout]);
+              }
             }
           } catch {
             // abort may throw if session already completed — safe to ignore
@@ -375,15 +384,13 @@ function createSpawnSubagentTool(
         const durationMs = Date.now() - startTime;
         log(`[SubagentExtension] Child ${subagentId} completed in ${durationMs}ms`);
 
-        safeSendEvent(sendEvent, {
-          type: 'subagent.progress',
-          payload: {
-            parentSessionId,
-            subagentId,
+        safeSendEvent(
+          sendEvent,
+          buildProgressEvent(parentSessionId, subagentId, {
             event: 'completed',
             durationMs,
-          },
-        } as ServerEvent);
+          })
+        );
 
         return {
           content: [
@@ -399,16 +406,14 @@ function createSpawnSubagentTool(
         const isTimeout = message === TIMEOUT_MESSAGE;
         const isCancelled = message.includes('Parent session cancelled');
 
-        safeSendEvent(sendEvent, {
-          type: 'subagent.progress',
-          payload: {
-            parentSessionId,
-            subagentId,
+        safeSendEvent(
+          sendEvent,
+          buildProgressEvent(parentSessionId, subagentId, {
             event: 'failed',
             error: isTimeout ? 'timeout' : isCancelled ? 'cancelled' : message.slice(0, 200),
             durationMs,
-          },
-        } as ServerEvent);
+          })
+        );
 
         return {
           content: [
