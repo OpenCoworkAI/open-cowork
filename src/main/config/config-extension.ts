@@ -109,7 +109,7 @@ function createConfigReadTool(configStore: ConfigStore): AgentRuntimeCustomTool 
             content: [
               {
                 type: 'text' as const,
-                text: `Error: field "${key}" is either sensitive, does not exist, or is not readable.`,
+                text: `Error: field "${key}" is not readable.`,
               },
             ],
             details: undefined as unknown,
