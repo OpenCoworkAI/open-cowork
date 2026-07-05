@@ -1,4 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Mock configStore so the error-path test can force a deterministic model
+// resolution failure instead of depending on whatever auth/config happens to
+// be present in the test environment.
+// `vi.mock` factories are hoisted above imports/const declarations, so the
+// mock function must be created via `vi.hoisted` to avoid a TDZ reference error.
+const { mockGetAll } = vi.hoisted(() => ({ mockGetAll: vi.fn() }));
+vi.mock('../../main/config/config-store', () => ({
+  configStore: {
+    getAll: mockGetAll,
+    get: vi.fn(),
+  },
+}));
+
 import { SubagentExtension } from '../../main/agent/subagent-extension';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
@@ -55,21 +69,27 @@ describe('SubagentExtension', () => {
       expect(execResult.content[0].text).toContain('task parameter is required');
     });
 
-    it('returns structured error when execution fails', async () => {
+    it('returns structured error when model cannot be resolved', async () => {
+      // Force configStore to hand back a model/provider combination that
+      // cannot resolve to any known pi-ai registry model. This makes the
+      // failure deterministic (no dependency on real auth being configured)
+      // and lets us assert the exact error surfaced to the caller.
+      mockGetAll.mockReturnValue({
+        model: 'nonexistent-provider/fake-model-xyz',
+        provider: 'nonexistent-provider',
+      });
+
       const extension = new SubagentExtension(() => null);
       const result = await extension.beforeSessionRun();
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
-      // With the real configStore and no valid auth configured in the test
-      // environment, session creation/execution is expected to fail. The tool
-      // must surface that failure as a structured error result, not throw.
       const execResult = (await execute('test-call', { task: 'test task' })) as {
         content: { type: string; text: string }[];
       };
 
       expect(execResult.content).toBeDefined();
       expect(execResult.content[0].type).toBe('text');
-      expect(execResult.content[0].text.length).toBeGreaterThan(0);
+      expect(execResult.content[0].text).toContain('could not resolve model');
     });
 
     it('tool has correct parameter schema', async () => {

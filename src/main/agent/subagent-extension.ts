@@ -66,7 +66,7 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
       allowed_tools: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            'Restrict tools available to the child. If omitted, the child inherits all parent tools except spawn_subagent.',
+            'Restrict MCP tools available to the child. Standard coding tools (read, write, edit, bash) are always available. If omitted, the child inherits all parent MCP tools.',
         })
       ),
       timeout_seconds: Type.Optional(
