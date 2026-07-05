@@ -134,11 +134,14 @@ export function pruneToolOutputs(
     const toolUseId = block.toolUseId || block.tool_use_id || '';
     const truncatedNote = `[Output truncated: ${loc.textLength} chars → see tool_use_id=${toolUseId || 'unknown'}]`;
 
-    // Replace the content with the truncated note
+    // Replace the content with the truncated note. Only text-type blocks are
+    // replaced — non-text blocks (e.g., images) are preserved as-is.
     if (typeof block.content === 'string') {
       block.content = truncatedNote;
     } else if (Array.isArray(block.content)) {
-      block.content = [{ type: 'text', text: truncatedNote }];
+      block.content = block.content.map((item: { type: string; text?: string }) =>
+        item.type === 'text' ? { type: 'text', text: truncatedNote } : item
+      );
     }
 
     prunedCount++;

@@ -233,6 +233,33 @@ describe('compaction-extension', () => {
       ]);
     });
 
+    it('preserves non-text content blocks during pruning', () => {
+      const messages = [
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'toolResult',
+              toolUseId: 'tool-1',
+              content: [
+                { type: 'text', text: 'a'.repeat(600) },
+                { type: 'image', source: { data: 'base64data' } },
+              ],
+            },
+          ],
+        },
+      ];
+
+      pruneToolOutputs(messages, 500, 0);
+
+      const resultContent = messages[0].content[0].content;
+      expect(resultContent).toHaveLength(2);
+      expect(resultContent[0].type).toBe('text');
+      expect(resultContent[0].text).toContain('[Output truncated');
+      expect(resultContent[1].type).toBe('image');
+      expect(resultContent[1].source).toEqual({ data: 'base64data' });
+    });
+
     it('handles tool_result type (underscore variant)', () => {
       const longOutput = 'x'.repeat(600);
       const messages = [
