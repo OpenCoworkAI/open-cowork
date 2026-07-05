@@ -9,7 +9,8 @@
  * - Race condition handling: skip import if the change was triggered by our own export.
  */
 import * as fs from 'fs';
-import { configStore } from './config-store';
+import * as path from 'path';
+import { configStore, ConfigStore } from './config-store';
 import { log, logWarn } from '../utils/logger';
 
 const DEBOUNCE_MS = 500;
@@ -79,10 +80,41 @@ export function exportOnConfigChange(): void {
 }
 
 /**
+ * Import config from the public file on startup, retrying on failure.
+ *
+ * The initial read happens synchronously during app startup. If another
+ * process (e.g. an editor doing an atomic save) is mid-write, the read can
+ * hit a partially-written file. Retry with a short synchronous delay to
+ * give the concurrent writer time to finish, rather than silently
+ * corrupting config from a torn read.
+ */
+function tryImportWithRetry(store: ConfigStore, retries = 2, delayMs = 200): void {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const imported = store.importSafeConfig();
+      if (imported) {
+        log('[ConfigFileWatcher] Imported existing config.public.json on startup');
+      }
+      return;
+    } catch (err) {
+      if (i === retries) {
+        logWarn('[ConfigFileWatcher] Error importing config on startup after retries:', err);
+        return;
+      }
+      // Synchronous delay for startup path — busy wait, only runs on startup.
+      const start = Date.now();
+      while (Date.now() - start < delayMs) {
+        /* busy wait */
+      }
+    }
+  }
+}
+
+/**
  * Start the bidirectional file watcher.
  * - If config.public.json does not exist, creates it (initial export).
  * - If it exists, imports it (file takes precedence for safe fields).
- * - Sets up fs.watch() for ongoing external changes.
+ * - Sets up fs.watch() on the parent directory for ongoing external changes.
  */
 export function startConfigFileWatcher(): void {
   if (started) return;
@@ -93,14 +125,7 @@ export function startConfigFileWatcher(): void {
 
   // Initial sync: if file exists, import; otherwise, export to create it.
   if (fs.existsSync(filePath)) {
-    try {
-      const imported = configStore.importSafeConfig();
-      if (imported) {
-        log('[ConfigFileWatcher] Imported existing config.public.json on startup');
-      }
-    } catch (err) {
-      logWarn('[ConfigFileWatcher] Error importing config on startup:', err);
-    }
+    tryImportWithRetry(configStore);
   } else {
     try {
       markOwnExport();
@@ -111,12 +136,17 @@ export function startConfigFileWatcher(): void {
     }
   }
 
-  // Start watching the file for external changes
+  // Start watching the parent directory rather than the file itself.
+  // fs.watch() on Linux (inotify) tracks the file by inode: if an editor
+  // replaces the file atomically (write to temp file, rename over the
+  // original), the watch on the old inode goes silently dead. Watching the
+  // directory and filtering by basename survives atomic replacement.
+  const parentDir = path.dirname(filePath);
+  const basename = path.basename(filePath);
   try {
-    watcher = fs.watch(filePath, (eventType) => {
-      if (eventType === 'change' || eventType === 'rename') {
-        handleFileChange();
-      }
+    watcher = fs.watch(parentDir, (_eventType, filename) => {
+      if (filename !== basename) return;
+      handleFileChange();
     });
 
     watcher.on('error', (err) => {
