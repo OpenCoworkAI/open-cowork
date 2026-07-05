@@ -10,6 +10,8 @@ export function eventRequiresSessionManager(event: ClientEvent): boolean {
     case 'session.list':
     case 'session.getMessages':
     case 'session.getTraceSteps':
+    case 'session.compact':
+    case 'session.getContextUsage':
     case 'permission.response':
       return true;
     default:

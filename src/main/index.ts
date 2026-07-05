@@ -3028,6 +3028,12 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     case 'session.getTraceSteps':
       return sm.getTraceSteps(event.payload.sessionId);
 
+    case 'session.compact':
+      return sm.compactSession(event.payload.sessionId, event.payload.customInstructions);
+
+    case 'session.getContextUsage':
+      return sm.getContextUsage(event.payload.sessionId);
+
     case 'permission.response':
       return sm.handlePermissionResponse(event.payload.toolUseId, event.payload.result);
 

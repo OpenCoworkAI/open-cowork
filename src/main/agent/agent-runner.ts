@@ -2854,6 +2854,33 @@ Tool routing:
                 'willRetry:',
                 event.willRetry
               );
+
+              // Surface compaction result details to the renderer
+              if (event.result) {
+                const compactionDetails = event.result.details as
+                  | { readFiles?: string[]; modifiedFiles?: string[] }
+                  | undefined;
+                this.sendToRenderer({
+                  type: 'compaction.result',
+                  payload: {
+                    sessionId: session.id,
+                    summary: event.result.summary,
+                    tokensBefore: event.result.tokensBefore,
+                    readFiles: compactionDetails?.readFiles || [],
+                    modifiedFiles: compactionDetails?.modifiedFiles || [],
+                  },
+                });
+                log(
+                  '[CoworkAgentRunner] Compaction result surfaced:',
+                  JSON.stringify({
+                    summaryLen: event.result.summary.length,
+                    tokensBefore: event.result.tokensBefore,
+                    readFiles: compactionDetails?.readFiles?.length || 0,
+                    modifiedFiles: compactionDetails?.modifiedFiles?.length || 0,
+                  })
+                );
+              }
+
               if (compactionStepId) {
                 this.sendTraceUpdate(session.id, compactionStepId, { status, title });
                 compactionStepId = undefined;
@@ -3071,6 +3098,55 @@ Tool routing:
         }
       }
     }
+  }
+
+  /**
+   * Manually trigger context compaction for a session.
+   * Delegates to the SDK's AgentSession.compact() method.
+   *
+   * @returns CompactionResult if successful, null if no session cached
+   */
+  async compact(
+    sessionId: string,
+    customInstructions?: string
+  ): Promise<{
+    summary: string;
+    firstKeptEntryId: string;
+    tokensBefore: number;
+    details?: unknown;
+  } | null> {
+    const cached = this.piSessions.get(sessionId);
+    if (!cached) {
+      logWarn('[CoworkAgentRunner] No cached pi session for compact:', sessionId);
+      return null;
+    }
+    log('[CoworkAgentRunner] Manual compact triggered for session:', sessionId);
+    const result = await cached.session.compact(customInstructions);
+    log(
+      '[CoworkAgentRunner] Manual compact completed:',
+      JSON.stringify({
+        summaryLen: result.summary.length,
+        tokensBefore: result.tokensBefore,
+      })
+    );
+    return result;
+  }
+
+  /**
+   * Get current context usage for a session.
+   * Delegates to the SDK's AgentSession.getContextUsage() method.
+   *
+   * @returns ContextUsage { tokens, contextWindow, percent } or null
+   */
+  getContextUsage(
+    sessionId: string
+  ): { tokens: number | null; contextWindow: number; percent: number | null } | null {
+    const cached = this.piSessions.get(sessionId);
+    if (!cached) {
+      return null;
+    }
+    const usage = cached.session.getContextUsage();
+    return usage ?? null;
   }
 
   cancel(sessionId: string): void {

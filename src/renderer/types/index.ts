@@ -470,6 +470,11 @@ export type ClientEvent =
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
+  | {
+      type: 'session.compact';
+      payload: { sessionId: string; customInstructions?: string };
+    }
+  | { type: 'session.getContextUsage'; payload: { sessionId: string } }
   | { type: 'permission.response'; payload: { toolUseId: string; result: PermissionResult } }
   | { type: 'sudo.password.response'; payload: { toolUseId: string; password: string | null } }
   | { type: 'settings.update'; payload: Record<string, unknown> }
@@ -550,6 +555,16 @@ export type ServerEvent =
     }
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
+  | {
+      type: 'compaction.result';
+      payload: {
+        sessionId: string;
+        summary: string;
+        tokensBefore: number;
+        readFiles: string[];
+        modifiedFiles: string[];
+      };
+    }
   | {
       type: 'navigate.to';
       payload: { page: 'welcome' | 'settings' | 'session'; tab?: string; sessionId?: string };

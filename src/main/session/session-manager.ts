@@ -63,6 +63,18 @@ interface AgentRunner {
   cancel(sessionId: string): void;
   clearSdkSession?(sessionId: string): void;
   clearAllSdkSessions?(): void;
+  compact?(
+    sessionId: string,
+    customInstructions?: string
+  ): Promise<{
+    summary: string;
+    firstKeptEntryId: string;
+    tokensBefore: number;
+    details?: unknown;
+  } | null>;
+  getContextUsage?(
+    sessionId: string
+  ): { tokens: number | null; contextWindow: number; percent: number | null } | null;
 }
 
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
@@ -1081,6 +1093,39 @@ export class SessionManager {
 
   clearAllCachedAgentSessions(): void {
     this.agentRunner?.clearAllSdkSessions?.();
+  }
+
+  /**
+   * Manually trigger context compaction for a session.
+   * Delegates to the agent runner's compact() method.
+   */
+  async compactSession(
+    sessionId: string,
+    customInstructions?: string
+  ): Promise<{
+    summary: string;
+    firstKeptEntryId: string;
+    tokensBefore: number;
+    details?: unknown;
+  } | null> {
+    if (!this.agentRunner?.compact) {
+      logWarn('[SessionManager] Agent runner does not support compact()');
+      return null;
+    }
+    return this.agentRunner.compact(sessionId, customInstructions);
+  }
+
+  /**
+   * Get current context usage for a session.
+   * Delegates to the agent runner's getContextUsage() method.
+   */
+  getContextUsage(
+    sessionId: string
+  ): { tokens: number | null; contextWindow: number; percent: number | null } | null {
+    if (!this.agentRunner?.getContextUsage) {
+      return null;
+    }
+    return this.agentRunner.getContextUsage(sessionId);
   }
 
   // Save message to database
