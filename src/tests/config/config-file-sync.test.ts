@@ -2,30 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { EXPORTABLE_FIELDS, FIELD_VALIDATORS } from '../../main/config/config-store';
 
 /**
  * Test the config file export/import logic.
  *
  * Since ConfigStore has heavy Electron dependencies (electron-store, encryption),
  * we test the underlying logic directly: field filtering, JSON parsing, error handling.
- * The EXPORTABLE_FIELDS list is duplicated here to keep tests independent of module loading.
+ * EXPORTABLE_FIELDS and FIELD_VALIDATORS are imported directly from config-store.ts
+ * (rather than duplicated here) so these tests fail loudly if the source changes.
  */
-
-// Mirror of the EXPORTABLE_FIELDS from config-store.ts — tests will fail if the
-// source list changes, prompting an update here.
-const EXPORTABLE_FIELDS = [
-  'defaultWorkdir',
-  'globalSkillsPath',
-  'theme',
-  'enableDevLogs',
-  'sandboxEnabled',
-  'enableThinking',
-  'memoryEnabled',
-  'model',
-  'provider',
-  'contextWindow',
-  'maxTokens',
-] as const;
 
 type ExportableKey = (typeof EXPORTABLE_FIELDS)[number];
 
@@ -43,7 +29,9 @@ function buildSafeSubset(config: Record<string, unknown>): Record<string, unknow
 }
 
 /**
- * Simulate importSafeConfig logic: parse JSON and extract only exportable fields.
+ * Simulate importSafeConfig logic: parse JSON, extract only exportable fields, and
+ * apply the same per-field FIELD_VALIDATORS used by the real importSafeConfig so
+ * these tests exercise the actual validation rules rather than a re-implementation.
  * Returns null on error, empty object if no valid fields found.
  */
 function parseAndFilterImport(raw: string): Record<string, unknown> | null {
@@ -62,6 +50,10 @@ function parseAndFilterImport(raw: string): Record<string, unknown> | null {
   const updates: Record<string, unknown> = {};
   for (const key of EXPORTABLE_FIELDS) {
     if (key in obj && obj[key] !== undefined) {
+      const validator = FIELD_VALIDATORS[key];
+      if (validator && !validator(obj[key])) {
+        continue; // Reject invalid values, mirroring importSafeConfig
+      }
       updates[key] = obj[key];
     }
   }
@@ -228,15 +220,126 @@ describe('Config File Sync', () => {
       expect(Object.keys(updates!)).toHaveLength(0);
     });
 
-    it('ignores fields with undefined values', () => {
-      // JSON.parse of {"theme": null} gives null, which we should skip
+    it('rejects a value that fails field validation (e.g., null theme)', () => {
+      // theme's validator requires 'dark' | 'light' | 'system'; null fails validation
+      // and must be skipped, matching importSafeConfig's real behavior.
       const updates = parseAndFilterImport('{"theme": null}');
       expect(updates).not.toBeNull();
-      // null is not undefined, so it would be included (JSON has no undefined)
-      // But the actual importSafeConfig checks `parsed[key] !== undefined`
-      // and JSON.parse never produces `undefined` values, so null would pass through
-      // This tests that the filtering logic works at the boundary
-      expect(updates!.theme).toBeNull();
+      expect('theme' in updates!).toBe(false);
+    });
+  });
+
+  describe('FIELD_VALIDATORS enforcement', () => {
+    it('rejects an out-of-whitelist theme value', () => {
+      const updates = parseAndFilterImport(JSON.stringify({ theme: 'neon' }));
+      expect(updates).not.toBeNull();
+      expect('theme' in updates!).toBe(false);
+    });
+
+    it('accepts every whitelisted theme value', () => {
+      for (const theme of ['dark', 'light', 'system']) {
+        const updates = parseAndFilterImport(JSON.stringify({ theme }));
+        expect(updates!.theme).toBe(theme);
+      }
+    });
+
+    it('rejects an out-of-whitelist provider value', () => {
+      const updates = parseAndFilterImport(JSON.stringify({ provider: 'evil-provider' }));
+      expect(updates).not.toBeNull();
+      expect('provider' in updates!).toBe(false);
+    });
+
+    it('accepts every whitelisted provider value', () => {
+      const validProviders = ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'];
+      for (const provider of validProviders) {
+        const updates = parseAndFilterImport(JSON.stringify({ provider }));
+        expect(updates!.provider).toBe(provider);
+      }
+    });
+
+    it('rejects non-positive or non-numeric values for contextWindow and maxTokens', () => {
+      const invalidNumbers: unknown[] = [0, -1, -200000, 'not-a-number', null, true];
+      for (const value of invalidNumbers) {
+        const updates = parseAndFilterImport(
+          JSON.stringify({ contextWindow: value, maxTokens: value })
+        );
+        expect(updates).not.toBeNull();
+        expect('contextWindow' in updates!).toBe(false);
+        expect('maxTokens' in updates!).toBe(false);
+      }
+    });
+
+    it('accepts positive numeric values for contextWindow and maxTokens', () => {
+      const updates = parseAndFilterImport(
+        JSON.stringify({ contextWindow: 128000, maxTokens: 4096 })
+      );
+      expect(updates!.contextWindow).toBe(128000);
+      expect(updates!.maxTokens).toBe(4096);
+    });
+
+    it('rejects non-boolean values for boolean fields', () => {
+      const booleanFields = [
+        'enableDevLogs',
+        'sandboxEnabled',
+        'enableThinking',
+        'memoryEnabled',
+      ] as const;
+      const invalidValues: unknown[] = ['true', 1, 0, null, 'yes'];
+      for (const field of booleanFields) {
+        for (const value of invalidValues) {
+          const updates = parseAndFilterImport(JSON.stringify({ [field]: value }));
+          expect(updates).not.toBeNull();
+          expect(field in updates!).toBe(false);
+        }
+      }
+    });
+
+    it('accepts boolean values for boolean fields', () => {
+      const booleanFields = [
+        'enableDevLogs',
+        'sandboxEnabled',
+        'enableThinking',
+        'memoryEnabled',
+      ] as const;
+      for (const field of booleanFields) {
+        for (const value of [true, false]) {
+          const updates = parseAndFilterImport(JSON.stringify({ [field]: value }));
+          expect(updates![field]).toBe(value);
+        }
+      }
+    });
+
+    it('rejects non-string values for string fields', () => {
+      const stringFields = ['defaultWorkdir', 'globalSkillsPath', 'model'] as const;
+      const invalidValues: unknown[] = [123, true, null, {}, []];
+      for (const field of stringFields) {
+        for (const value of invalidValues) {
+          const updates = parseAndFilterImport(JSON.stringify({ [field]: value }));
+          expect(updates).not.toBeNull();
+          expect(field in updates!).toBe(false);
+        }
+      }
+    });
+
+    it('drops only the invalid fields while keeping valid ones in the same payload', () => {
+      const fileContent = JSON.stringify({
+        theme: 'not-a-real-theme', // invalid, should be dropped
+        provider: 'anthropic', // valid
+        contextWindow: -1, // invalid, should be dropped
+        maxTokens: 8192, // valid
+        enableDevLogs: 'yes', // invalid, should be dropped
+        sandboxEnabled: true, // valid
+      });
+
+      const updates = parseAndFilterImport(fileContent);
+
+      expect(updates).not.toBeNull();
+      expect('theme' in updates!).toBe(false);
+      expect('contextWindow' in updates!).toBe(false);
+      expect('enableDevLogs' in updates!).toBe(false);
+      expect(updates!.provider).toBe('anthropic');
+      expect(updates!.maxTokens).toBe(8192);
+      expect(updates!.sandboxEnabled).toBe(true);
     });
   });
 

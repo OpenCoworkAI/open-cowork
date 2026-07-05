@@ -193,6 +193,26 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'maxTokens',
 ];
 
+/**
+ * Per-field type/value validators applied when importing the plaintext config
+ * file (see `importSafeConfig`). Fields not listed here are accepted as-is.
+ */
+export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
+  defaultWorkdir: (v) => typeof v === 'string',
+  globalSkillsPath: (v) => typeof v === 'string',
+  theme: (v) => v === 'dark' || v === 'light' || v === 'system',
+  enableDevLogs: (v) => typeof v === 'boolean',
+  sandboxEnabled: (v) => typeof v === 'boolean',
+  enableThinking: (v) => typeof v === 'boolean',
+  memoryEnabled: (v) => typeof v === 'boolean',
+  model: (v) => typeof v === 'string',
+  provider: (v) =>
+    typeof v === 'string' &&
+    ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
+  contextWindow: (v) => typeof v === 'number' && v > 0,
+  maxTokens: (v) => typeof v === 'number' && v > 0,
+};
+
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
   openrouter: {
     apiKey: '',
@@ -1715,21 +1735,6 @@ export class ConfigStore {
 
     // Only apply fields that are in the exportable set AND pass type validation
     const updates: Partial<AppConfig> = {};
-    const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
-      defaultWorkdir: (v) => typeof v === 'string',
-      globalSkillsPath: (v) => typeof v === 'string',
-      theme: (v) => v === 'dark' || v === 'light' || v === 'system',
-      enableDevLogs: (v) => typeof v === 'boolean',
-      sandboxEnabled: (v) => typeof v === 'boolean',
-      enableThinking: (v) => typeof v === 'boolean',
-      memoryEnabled: (v) => typeof v === 'boolean',
-      model: (v) => typeof v === 'string',
-      provider: (v) =>
-        typeof v === 'string' &&
-        ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
-      contextWindow: (v) => typeof v === 'number' && v > 0,
-      maxTokens: (v) => typeof v === 'number' && v > 0,
-    };
     for (const key of EXPORTABLE_FIELDS) {
       if (key in parsed && parsed[key] !== undefined) {
         const validator = FIELD_VALIDATORS[key];
