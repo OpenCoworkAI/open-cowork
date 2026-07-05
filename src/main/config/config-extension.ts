@@ -54,7 +54,8 @@ export function buildSafeConfigSnapshot(config: AppConfig): Record<string, unkno
   for (const key of SAFE_TOP_LEVEL_KEYS) {
     if (key in config) {
       const value = config[key];
-      // Defense-in-depth: skip string values that look like credentials
+      // Defense-in-depth: skip this field if its key name matches the
+      // sensitive pattern (checks the key name, not the value content).
       if (typeof value === 'string' && SENSITIVE_KEY_PATTERN.test(key)) {
         continue;
       }
@@ -112,7 +113,7 @@ function createConfigReadTool(configStore: ConfigStore): AgentRuntimeCustomTool 
                 text: `Error: field "${key}" is not readable.`,
               },
             ],
-            details: undefined as unknown,
+            details: undefined,
           };
         }
 
@@ -124,7 +125,7 @@ function createConfigReadTool(configStore: ConfigStore): AgentRuntimeCustomTool 
               text: JSON.stringify({ [key]: value }, null, 2),
             },
           ],
-          details: undefined as unknown,
+          details: undefined,
         };
       }
 
@@ -137,7 +138,7 @@ function createConfigReadTool(configStore: ConfigStore): AgentRuntimeCustomTool 
             text: JSON.stringify(snapshot, null, 2),
           },
         ],
-        details: undefined as unknown,
+        details: undefined,
       };
     },
   };
