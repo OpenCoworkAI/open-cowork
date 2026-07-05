@@ -82,13 +82,13 @@ export function exportOnConfigChange(): void {
 /**
  * Import config from the public file on startup, retrying on failure.
  *
- * The initial read happens synchronously during app startup. If another
- * process (e.g. an editor doing an atomic save) is mid-write, the read can
- * hit a partially-written file. Retry with a short synchronous delay to
- * give the concurrent writer time to finish, rather than silently
- * corrupting config from a torn read.
+ * The initial read happens during app startup. If another process (e.g. an
+ * editor doing an atomic save) is mid-write, the read can hit a
+ * partially-written file. Retry with a short async delay to give the
+ * concurrent writer time to finish, rather than silently corrupting config
+ * from a torn read.
  */
-function tryImportWithRetry(store: ConfigStore, retries = 2, delayMs = 200): void {
+async function tryImportWithRetry(store: ConfigStore, retries = 2, delayMs = 200): Promise<void> {
   for (let i = 0; i <= retries; i++) {
     try {
       const imported = store.importSafeConfig();
@@ -101,11 +101,7 @@ function tryImportWithRetry(store: ConfigStore, retries = 2, delayMs = 200): voi
         logWarn('[ConfigFileWatcher] Error importing config on startup after retries:', err);
         return;
       }
-      // Synchronous delay for startup path — busy wait, only runs on startup.
-      const start = Date.now();
-      while (Date.now() - start < delayMs) {
-        /* busy wait */
-      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 }
@@ -116,7 +112,7 @@ function tryImportWithRetry(store: ConfigStore, retries = 2, delayMs = 200): voi
  * - If it exists, imports it (file takes precedence for safe fields).
  * - Sets up fs.watch() on the parent directory for ongoing external changes.
  */
-export function startConfigFileWatcher(): void {
+export async function startConfigFileWatcher(): Promise<void> {
   if (started) return;
   started = true;
 
@@ -125,7 +121,7 @@ export function startConfigFileWatcher(): void {
 
   // Initial sync: if file exists, import; otherwise, export to create it.
   if (fs.existsSync(filePath)) {
-    tryImportWithRetry(configStore);
+    await tryImportWithRetry(configStore);
   } else {
     try {
       markOwnExport();
