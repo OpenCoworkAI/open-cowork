@@ -48,6 +48,8 @@ export default defineConfig({
                 'ws',
                 'glob',
                 'dotenv',
+                '@slack/bolt',
+                '@slack/web-api',
               ],
               output: {
                 // Ensure consistent interop for CJS/ESM
