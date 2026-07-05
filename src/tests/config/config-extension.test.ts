@@ -70,7 +70,6 @@ function createMockConfigStore(overrides: Partial<AppConfig> = {}) {
 
   return {
     getAll: vi.fn(() => defaults),
-    get: vi.fn((key: keyof AppConfig) => defaults[key]),
   };
 }
 
@@ -229,12 +228,32 @@ describe('config-extension', () => {
       expect(parsed).toHaveProperty('sandboxEnabled', true);
       expect(parsed).toHaveProperty('memoryEnabled', true);
       expect(parsed).toHaveProperty('enableThinking', true);
+      expect(parsed).toHaveProperty('activeProfileKey', 'anthropic');
+      expect(parsed).toHaveProperty('activeConfigSetId', 'default');
 
       // Should NOT include sensitive fields
       expect(parsed).not.toHaveProperty('apiKey');
       expect(parsed).not.toHaveProperty('profiles');
       expect(parsed).not.toHaveProperty('configSets');
       expect(parsed).not.toHaveProperty('memoryRuntime');
+    });
+
+    it('reads activeProfileKey individually', async () => {
+      const result = (await configReadTool.execute('test-call', { key: 'activeProfileKey' })) as {
+        content: { type: string; text: string }[];
+      };
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toEqual({ activeProfileKey: 'anthropic' });
+    });
+
+    it('reads activeConfigSetId individually', async () => {
+      const result = (await configReadTool.execute('test-call', {
+        key: 'activeConfigSetId',
+      })) as {
+        content: { type: string; text: string }[];
+      };
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toEqual({ activeConfigSetId: 'default' });
     });
 
     it('returns a specific field when key is provided', async () => {

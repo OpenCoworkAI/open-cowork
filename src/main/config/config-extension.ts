@@ -16,17 +16,13 @@ import type {
 import type { ConfigStore, AppConfig } from './config-store';
 
 /**
- * Pattern that matches config field names considered sensitive.
- * Used as a defense-in-depth check in buildSafeConfigSnapshot to
- * guard against accidentally adding a sensitive key to SAFE_TOP_LEVEL_KEYS.
- */
-const SENSITIVE_KEY_PATTERN = /key|token|secret|password|credential/i;
-
-/**
- * Top-level keys that are safe to expose to the agent.
- * Keys containing sensitive patterns (checked by SENSITIVE_KEY_PATTERN)
- * can still be in this list if they are genuinely non-secret numeric/boolean
- * values (e.g. `maxTokens` is a numeric limit, not a credential).
+ * Top-level keys that are safe to expose to the agent. This allow-list is
+ * the sole trust boundary for both buildSafeConfigSnapshot and
+ * isKeyReadable below — every entry has been manually vetted as
+ * non-sensitive, even when its name coincidentally contains a
+ * credential-like substring (e.g. `maxTokens` is a numeric limit,
+ * `activeProfileKey` is a profile identifier like "anthropic" — neither
+ * is a credential).
  */
 const SAFE_TOP_LEVEL_KEYS = new Set<keyof AppConfig>([
   'provider',
@@ -46,20 +42,15 @@ const SAFE_TOP_LEVEL_KEYS = new Set<keyof AppConfig>([
 
 /**
  * Build a filtered view of the config that excludes sensitive data.
- * Defense-in-depth: even if a key is in SAFE_TOP_LEVEL_KEYS, we still
- * verify its runtime value isn't a string that looks like a credential.
+ * Every key in SAFE_TOP_LEVEL_KEYS has already been manually vetted as
+ * non-sensitive (see the set's docstring above), so no further
+ * name-pattern filtering is applied here.
  */
 export function buildSafeConfigSnapshot(config: AppConfig): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const key of SAFE_TOP_LEVEL_KEYS) {
     if (key in config) {
-      const value = config[key];
-      // Defense-in-depth: skip this field if its key name matches the
-      // sensitive pattern (checks the key name, not the value content).
-      if (typeof value === 'string' && SENSITIVE_KEY_PATTERN.test(key)) {
-        continue;
-      }
-      result[key] = value;
+      result[key] = config[key];
     }
   }
   return result;
