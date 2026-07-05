@@ -180,11 +180,7 @@ export function createCompactionExtensionFactory(config: CompactionConfig = {}):
       // Phase 1: Pre-prune verbose tool outputs in messagesToSummarize.
       // This reduces token count the summarizer model needs to process,
       // leading to faster and cheaper compaction without losing key context.
-      const { prunedCount, totalToolResults } = pruneToolOutputs(
-        preparation.messagesToSummarize,
-        threshold,
-        keepRecent
-      );
+      pruneToolOutputs(preparation.messagesToSummarize, threshold, keepRecent);
 
       // Phase 2: Inject custom instructions for the summarizer.
       // The SDK reads event.customInstructions after extension handlers return.
