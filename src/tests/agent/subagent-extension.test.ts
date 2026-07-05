@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { SubagentExtension } from '../../main/agent/subagent-extension';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
@@ -55,25 +55,21 @@ describe('SubagentExtension', () => {
       expect(execResult.content[0].text).toContain('task parameter is required');
     });
 
-    it('returns error when model cannot be resolved', async () => {
-      // Mock configStore to return empty config (no model configured)
-      vi.doMock('../../main/config/config-store', () => ({
-        configStore: {
-          getAll: () => ({ model: '', provider: '' }),
-          get: () => undefined,
-        },
-      }));
-
+    it('returns structured error when execution fails', async () => {
       const extension = new SubagentExtension(() => null);
       const result = await extension.beforeSessionRun();
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
 
+      // With the real configStore and no valid auth configured in the test
+      // environment, session creation/execution is expected to fail. The tool
+      // must surface that failure as a structured error result, not throw.
       const execResult = (await execute('test-call', { task: 'test task' })) as {
         content: { type: string; text: string }[];
       };
 
-      // Should either error about model resolution or proceed with default model
-      expect(execResult.content[0].text).toBeTruthy();
+      expect(execResult.content).toBeDefined();
+      expect(execResult.content[0].type).toBe('text');
+      expect(execResult.content[0].text.length).toBeGreaterThan(0);
     });
 
     it('tool has correct parameter schema', async () => {

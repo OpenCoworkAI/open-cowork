@@ -20,6 +20,7 @@ import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resol
 
 const MAX_TIMEOUT_MS = 300_000; // 5 minutes
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+const TIMEOUT_MESSAGE = 'Subagent timed out';
 
 interface SubagentParams {
   task: string;
@@ -197,12 +198,14 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
           }
         });
 
+        let timeoutId: NodeJS.Timeout | undefined;
         try {
           const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('Subagent timed out')), timeoutMs);
+            timeoutId = setTimeout(() => reject(new Error(TIMEOUT_MESSAGE)), timeoutMs);
           });
           await Promise.race([childSession.prompt(task), timeoutPromise]);
         } finally {
+          if (timeoutId) clearTimeout(timeoutId);
           unsubscribe();
           childSession.dispose();
         }
@@ -221,7 +224,7 @@ function createSpawnSubagentTool(mcpManager: MCPManager | null): AgentRuntimeCus
         const message = err instanceof Error ? err.message : String(err);
         logError(`[SubagentExtension] Child failed after ${durationMs}ms:`, message);
 
-        const isTimeout = message.includes('timed out') || message.includes('abort');
+        const isTimeout = message === TIMEOUT_MESSAGE;
         return {
           content: [
             {
