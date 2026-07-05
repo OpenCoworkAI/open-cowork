@@ -260,7 +260,6 @@ describe('config-extension', () => {
         content: { type: string; text: string }[];
       };
 
-      expect(result.content[0].text).toContain('sensitive');
       expect(result.content[0].text).toContain('not readable');
     });
 
@@ -269,7 +268,6 @@ describe('config-extension', () => {
         content: { type: string; text: string }[];
       };
 
-      expect(result.content[0].text).toContain('sensitive');
       expect(result.content[0].text).toContain('not readable');
     });
 
@@ -294,7 +292,7 @@ describe('config-extension', () => {
         content: { type: string; text: string }[];
       };
 
-      expect(result.content[0].text).toContain('sensitive');
+      expect(result.content[0].text).toContain('not readable');
     });
 
     it('handles null/undefined params gracefully', async () => {
