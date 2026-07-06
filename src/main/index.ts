@@ -134,6 +134,36 @@ let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
 
+/**
+ * Tool names that a spawned subagent may never invoke, regardless of what
+ * `decidePermission` returns. Subagents run non-interactively — there is no
+ * user present to answer a permission prompt — so for tools whose whole
+ * purpose is to require interactive approval (like `config_write`, which
+ * mutates persisted app configuration), the only safe non-interactive
+ * decision is `deny`. This intentionally overrides even an explicit
+ * `'allow'` permission rule: config writes must always go through the
+ * interactive dialog in the top-level session, never through a background
+ * subagent.
+ */
+const SUBAGENT_ALWAYS_DENIED_TOOLS = new Set<string>(['config_write']);
+
+/**
+ * Resolve the allow/deny decision for a tool call made by a spawned
+ * subagent. Delegates to the shared `decidePermission` rules cache, but
+ * hard-denies tools in `SUBAGENT_ALWAYS_DENIED_TOOLS` first — see that
+ * constant's docstring for why.
+ */
+function resolveSubagentToolPermission(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): 'allow' | 'deny' {
+  if (SUBAGENT_ALWAYS_DENIED_TOOLS.has(toolName)) {
+    return 'deny';
+  }
+  const decision = decidePermission('subagent', toolName, toolInput);
+  return decision === 'deny' ? 'deny' : 'allow';
+}
+
 function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
   if (!value) {
     return null;
@@ -871,14 +901,8 @@ app
         new SubagentExtension(
           () => sessionManager?.getMCPManager() ?? null,
           sendToRenderer,
-          async (toolName, toolInput) => {
-            const decision = decidePermission(
-              'subagent',
-              toolName,
-              toolInput as Record<string, unknown>
-            );
-            return decision === 'deny' ? 'deny' : 'allow';
-          }
+          async (toolName, toolInput) =>
+            resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
         ),
       ]);
 
@@ -1163,14 +1187,8 @@ app
       new SubagentExtension(
         () => sessionManager?.getMCPManager() ?? null,
         sendToRenderer,
-        async (toolName, toolInput) => {
-          const decision = decidePermission(
-            'subagent',
-            toolName,
-            toolInput as Record<string, unknown>
-          );
-          return decision === 'deny' ? 'deny' : 'allow';
-        }
+        async (toolName, toolInput) =>
+          resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
       ),
     ]);
 
