@@ -657,6 +657,21 @@
     "contextUsage": "上下文用量",
     "contextUsageLabel": "{{used}} / {{total}}"
   },
+  "compaction": {
+    "turnsLeft": "轮剩余",
+    "compactNow": "压缩",
+    "compacting": "压缩中…",
+    "confirmTitle": "压缩上下文？",
+    "confirmDescription": "早期对话将被摘要以释放上下文窗口空间。最近的消息和关键决策会被保留。",
+    "confirm": "立即压缩",
+    "history": "压缩历史",
+    "autoCompact": "自动压缩",
+    "manualCompact": "手动压缩",
+    "tokens": "tokens",
+    "summary": "摘要",
+    "filesReferenced": "引用的文件",
+    "more": "更多"
+  },
   "messageCard": {
     "request": "请求",
     "queued": "排队中",

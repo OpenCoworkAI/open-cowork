@@ -31,6 +31,17 @@ export interface SessionExecutionClock {
   endAt: number | null;
 }
 
+export interface CompactionEvent {
+  id: string;
+  timestamp: number;
+  tokensBefore: number;
+  tokensAfter: number | null;
+  summary: string;
+  readFiles: string[];
+  modifiedFiles: string[];
+  type: 'auto' | 'manual';
+}
+
 // Unified per-session state that replaces 8 parallel xxxBySession Maps
 export interface SessionState {
   messages: Message[];
@@ -41,6 +52,7 @@ export interface SessionState {
   executionClock: SessionExecutionClock;
   traceSteps: TraceStep[];
   contextWindow: number;
+  compactionHistory: CompactionEvent[];
 }
 
 const DEFAULT_SESSION_STATE: SessionState = {
@@ -52,6 +64,7 @@ const DEFAULT_SESSION_STATE: SessionState = {
   executionClock: { startAt: null, endAt: null },
   traceSteps: [],
   contextWindow: 0,
+  compactionHistory: [],
 };
 
 // Helper to immutably update a single session's state within the record
@@ -184,6 +197,9 @@ interface AppState {
 
   // Context window actions
   setSessionContextWindow: (sessionId: string, contextWindow: number) => void;
+
+  // Compaction history actions
+  addCompactionEvent: (sessionId: string, event: CompactionEvent) => void;
 
   // System theme actions
   setSystemDarkMode: (dark: boolean) => void;
@@ -591,6 +607,21 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       sessionStates: patchSession(state.sessionStates, sessionId, { contextWindow }),
     })),
+
+  // Compaction history actions
+  addCompactionEvent: (sessionId, event) =>
+    set((state) => {
+      const current = state.sessionStates[sessionId] ?? DEFAULT_SESSION_STATE;
+      return {
+        sessionStates: {
+          ...state.sessionStates,
+          [sessionId]: {
+            ...current,
+            compactionHistory: [...current.compactionHistory, event],
+          },
+        },
+      };
+    }),
 
   // System theme actions
   setSystemDarkMode: (dark) => set({ systemDarkMode: dark }),

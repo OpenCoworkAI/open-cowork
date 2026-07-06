@@ -657,6 +657,21 @@
     "contextUsage": "Context Usage",
     "contextUsageLabel": "{{used}} / {{total}}"
   },
+  "compaction": {
+    "turnsLeft": "turns left",
+    "compactNow": "Compact",
+    "compacting": "Compacting…",
+    "confirmTitle": "Compact context?",
+    "confirmDescription": "Earlier conversation will be summarized to free up context window space. Recent messages and key decisions are preserved.",
+    "confirm": "Compact Now",
+    "history": "Compaction History",
+    "autoCompact": "Auto-compact",
+    "manualCompact": "Manual compact",
+    "tokens": "tokens",
+    "summary": "Summary",
+    "filesReferenced": "Files referenced",
+    "more": "more"
+  },
   "messageCard": {
     "request": "Request",
     "queued": "Queued",

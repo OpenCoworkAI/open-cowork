@@ -326,6 +326,21 @@ export function useIPC() {
             handleSubagentProgressEvent(event.payload);
             break;
 
+          case 'compaction.result': {
+            const { sessionId, summary, tokensBefore, readFiles, modifiedFiles } = event.payload;
+            store.addCompactionEvent(sessionId, {
+              id: `compact-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              timestamp: Date.now(),
+              tokensBefore,
+              tokensAfter: null,
+              summary,
+              readFiles,
+              modifiedFiles,
+              type: 'auto',
+            });
+            break;
+          }
+
           default:
             console.log('[useIPC] Unknown server event:', event);
         }

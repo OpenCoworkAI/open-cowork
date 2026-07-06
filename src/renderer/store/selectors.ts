@@ -17,7 +17,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './index';
 import type { Session, Message, TraceStep, Settings, AppConfig } from '../types';
-import type { GlobalNotice, SessionExecutionClock } from './index';
+import type { GlobalNotice, SessionExecutionClock, CompactionEvent } from './index';
 
 // ---------------------------------------------------------------------------
 // Session domain
@@ -293,5 +293,12 @@ export function usePendingDialogs() {
       pendingPermission: s.pendingPermission,
       pendingSudoPassword: s.pendingSudoPassword,
     }))
+  );
+}
+
+/** Returns the compaction event history for the active session. */
+export function useActiveCompactionHistory(): CompactionEvent[] {
+  return useAppStore((s) =>
+    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.compactionHistory ?? []) : []
   );
 }

@@ -14,6 +14,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
+import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
 
@@ -669,6 +670,9 @@ export function ChatView() {
           </>
         )}
       </div>
+
+      {/* Context Usage Bar */}
+      <ContextUsageBar />
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
