@@ -908,6 +908,8 @@ app
 
       // Build the JSONL sender with permission interception BEFORE constructing SessionManager
       const headlessSendToRenderer = createHeadlessSendToRenderer();
+      // Mutable interceptor: set in stdio mode to route events to StdioChannel
+      let stdioEventInterceptor: ((event: ServerEvent) => void) | null = null;
       const headlessSendWithPermission = (event: ServerEvent) => {
         if (event.type === 'permission.request') {
           const { toolUseId } = event.payload;
@@ -925,6 +927,12 @@ app
           setTimeout(() => {
             sessionManager?.handleSudoPasswordResponse(toolUseId, null);
           }, 0);
+        }
+        // Route to stdio channel if interceptor is set (must come before headlessSendToRenderer
+        // because headlessSendToRenderer writes JSONL to stdout which conflicts with stdio events)
+        if (stdioEventInterceptor) {
+          stdioEventInterceptor(event);
+          return;
         }
         headlessSendToRenderer(event);
       };
@@ -1142,9 +1150,10 @@ app
 
         const stdioChannel = await remoteManager.startStdioMode(headlessArgs.cwd);
 
-        // Override the event sender to also write stdio events for remote sessions
-        const originalEventSender = eventSender;
-        eventSender = (event: ServerEvent) => {
+        // Set the interceptor so ALL events from SM flow through stdio routing
+        // (fixes the dead-code issue: SM calls headlessSendWithPermission directly,
+        // which now checks stdioEventInterceptor before writing JSONL)
+        stdioEventInterceptor = (event: ServerEvent) => {
           const payload =
             'payload' in event
               ? (event.payload as { sessionId?: string; [key: string]: unknown })
@@ -1152,7 +1161,6 @@ app
           const sessionId = payload?.sessionId;
 
           if (sessionId && remoteManager.isRemoteSession(sessionId)) {
-            // Write structured events to the stdio channel
             if (event.type === 'stream.partial') {
               stdioChannel.writeEvent({
                 type: 'agent.text_delta',
@@ -1183,22 +1191,8 @@ app
                 stdioChannel.writeSessionEnd(sessionId);
                 remoteManager.clearSessionBuffer(sessionId).catch(() => {});
               }
-            } else if (event.type === 'permission.request') {
-              // Auto-handle permissions based on --auto-approve flag
-              const { toolUseId } = payload;
-              const result = headlessArgs.autoApprove ? 'allow' : 'deny';
-              log(
-                `[Stdio] Permission ${result} for ${payload.toolName} (auto-approve=${headlessArgs.autoApprove})`
-              );
-              setTimeout(() => {
-                sessionManager?.handlePermissionResponse(toolUseId as string, result);
-              }, 0);
             }
-          }
-
-          // Still call the headless sender for JSONL output on stderr/stdout
-          if (originalEventSender) {
-            originalEventSender(event);
+            // permission.request is already handled by headlessSendWithPermission above
           }
         };
 

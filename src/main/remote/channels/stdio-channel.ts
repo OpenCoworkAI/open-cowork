@@ -74,6 +74,16 @@ export class StdioChannel extends ChannelBase {
     this.rl.on('line', (line) => this.handleLine(line));
     this.rl.on('close', () => this.handleClose());
 
+    // Handle EPIPE: reader closed the pipe while we're still writing
+    process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EPIPE') {
+        log('[StdioChannel] stdout EPIPE — reader disconnected');
+        this._connected = false;
+      } else {
+        logError('[StdioChannel] stdout error:', err);
+      }
+    });
+
     this._connected = true;
     this.logStatus('started');
     this.writeEvent({ type: 'stdio.ready' });
@@ -289,6 +299,20 @@ export class StdioChannel extends ChannelBase {
   private handleClose(): void {
     log('[StdioChannel] stdin closed');
     this._connected = false;
+
+    // Emit abort for all active sessions so the agent stops
+    for (const sessionId of this.activeSessions) {
+      this.emitMessage({
+        id: this.generateMessageId(),
+        channelType: this.type,
+        channelId: sessionId,
+        sender: { id: 'stdio-user', name: 'stdio', isBot: false },
+        content: { type: 'text', text: '!stop' },
+        timestamp: Date.now(),
+        isGroup: false,
+        isMentioned: true,
+      });
+    }
     this.activeSessions.clear();
 
     if (this.rl) {
