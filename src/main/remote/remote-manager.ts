@@ -254,10 +254,8 @@ export class RemoteManager extends EventEmitter {
     });
 
     // Set response callback so errors from agentCallback reach the client
-    this.messageRouter.onResponse((response) => {
-      stdioChannel.send(response).catch((err: Error) => {
-        logError('[RemoteManager] Failed to send response via stdio:', err);
-      });
+    this.messageRouter.onResponse(async (response) => {
+      await stdioChannel.send(response);
     });
 
     if (defaultCwd) {

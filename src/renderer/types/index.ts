@@ -561,6 +561,7 @@ export type ServerEvent =
         sessionId: string;
         summary: string;
         tokensBefore: number;
+        isManual?: boolean;
         readFiles: string[];
         modifiedFiles: string[];
       };

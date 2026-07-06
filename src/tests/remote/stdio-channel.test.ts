@@ -55,7 +55,7 @@ describe('StdioChannel', () => {
     const mockStdin = new Readable({
       read() {},
     });
-    mockStdin.isTTY = false;
+    (mockStdin as unknown as { isTTY: boolean }).isTTY = false;
     return mockStdin;
   }
 
