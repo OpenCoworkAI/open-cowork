@@ -390,7 +390,30 @@ describe('StdioChannel', () => {
   });
 
   describe('send method (RemoteResponse)', () => {
-    it('sends text content as agent.text_delta', async () => {
+    it('forwards error replies with replyTo set', async () => {
+      const mockStdin = createMockStdin();
+      Object.defineProperty(process, 'stdin', { value: mockStdin, writable: true });
+
+      const channel = await getStdioChannel();
+      await channel.start();
+      writeSpy.mockClear();
+
+      await channel.send({
+        channelType: 'stdio' as 'feishu',
+        channelId: 'sid-1',
+        replyTo: 'msg-123',
+        content: { type: 'text', text: 'An internal error occurred.' },
+      });
+
+      const output = JSON.parse((writeSpy.mock.calls[0][0] as string).trim());
+      expect(output.type).toBe('error');
+      expect(output.sessionId).toBe('sid-1');
+      expect(output.message).toBe('An internal error occurred.');
+
+      await channel.stop();
+    });
+
+    it('ignores responses without replyTo (streaming handled by interceptor)', async () => {
       const mockStdin = createMockStdin();
       Object.defineProperty(process, 'stdin', { value: mockStdin, writable: true });
 
@@ -404,31 +427,8 @@ describe('StdioChannel', () => {
         content: { type: 'text', text: 'Hello world' },
       });
 
-      const output = JSON.parse((writeSpy.mock.calls[0][0] as string).trim());
-      expect(output.type).toBe('agent.text_delta');
-      expect(output.sessionId).toBe('sid-1');
-      expect(output.text).toBe('Hello world');
-
-      await channel.stop();
-    });
-
-    it('sends markdown content as agent.text_delta', async () => {
-      const mockStdin = createMockStdin();
-      Object.defineProperty(process, 'stdin', { value: mockStdin, writable: true });
-
-      const channel = await getStdioChannel();
-      await channel.start();
-      writeSpy.mockClear();
-
-      await channel.send({
-        channelType: 'stdio' as 'feishu',
-        channelId: 'sid-1',
-        content: { type: 'markdown', markdown: '# Title' },
-      });
-
-      const output = JSON.parse((writeSpy.mock.calls[0][0] as string).trim());
-      expect(output.type).toBe('agent.text_delta');
-      expect(output.text).toBe('# Title');
+      // No output — streaming text is handled by stdioEventInterceptor, not send()
+      expect(writeSpy).not.toHaveBeenCalled();
 
       await channel.stop();
     });
@@ -444,6 +444,7 @@ describe('StdioChannel', () => {
       await channel.send({
         channelType: 'stdio' as 'feishu',
         channelId: 'sid-1',
+        replyTo: 'msg-123',
         content: { type: 'text', text: 'Hello' },
       });
 
