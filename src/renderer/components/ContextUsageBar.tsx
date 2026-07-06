@@ -7,6 +7,12 @@ import { useIPC } from '../hooks/useIPC';
 import { useActiveSessionId } from '../store/selectors';
 import { useActiveCompactionHistory } from '../store/selectors';
 
+function formatTokens(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 export function ContextUsageBar() {
   const { t } = useTranslation();
   const usage = useContextUsage();
@@ -16,11 +22,16 @@ export function ContextUsageBar() {
   const [isCompacting, setIsCompacting] = useState(false);
   const compactionHistory = useActiveCompactionHistory();
   const lastHistoryLengthRef = useRef(compactionHistory.length);
+  const compactTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset compacting state when a new compaction event arrives (instead of blind timeout)
+  // Reset compacting state when a new compaction event arrives
   useEffect(() => {
     if (compactionHistory.length > lastHistoryLengthRef.current && isCompacting) {
       setIsCompacting(false);
+      if (compactTimeoutRef.current) {
+        clearTimeout(compactTimeoutRef.current);
+        compactTimeoutRef.current = null;
+      }
     }
     lastHistoryLengthRef.current = compactionHistory.length;
   }, [compactionHistory.length, isCompacting]);
@@ -31,6 +42,13 @@ export function ContextUsageBar() {
     setIsCompacting(false);
   }, [activeSessionId]);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (compactTimeoutRef.current) clearTimeout(compactTimeoutRef.current);
+    };
+  }, []);
+
   const handleCompact = useCallback(() => {
     if (!activeSessionId) return;
     setIsCompacting(true);
@@ -39,6 +57,8 @@ export function ContextUsageBar() {
       type: 'session.compact',
       payload: { sessionId: activeSessionId },
     });
+    // Safety timeout: if no compaction.result arrives within 30s, reset state
+    compactTimeoutRef.current = setTimeout(() => setIsCompacting(false), 30000);
   }, [activeSessionId, send]);
 
   if (!usage) return null;
@@ -46,12 +66,6 @@ export function ContextUsageBar() {
   const { tokens, contextWindow, percent, projectedTurnsRemaining } = usage;
   const showCompactButton = percent > 50;
   const isUrgent = percent > 80;
-
-  const formatTokens = (n: number): string => {
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-    return String(n);
-  };
 
   const barColor = percent > 80 ? 'bg-error' : percent > 50 ? 'bg-warning' : 'bg-accent';
 

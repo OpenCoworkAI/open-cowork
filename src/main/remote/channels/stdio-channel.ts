@@ -106,20 +106,19 @@ export class StdioChannel extends ChannelBase {
   async send(response: RemoteResponse): Promise<void> {
     if (!this._connected) return;
 
-    const { channelId, content } = response;
+    const { channelId, content, replyTo } = response;
 
-    // Map RemoteResponse content to stdout events
+    // The stdioEventInterceptor handles real-time streaming (text_delta, tool events)
+    // using proper session IDs. This send() path is only called by MessageRouter's
+    // responseCallback for error/status responses (which have replyTo set).
+    // Skip non-reply responses to avoid duplicate text with wrong session IDs.
+    if (!replyTo) return;
+
     if (content.type === 'text' && content.text) {
       this.writeEvent({
-        type: 'agent.text_delta',
+        type: 'error',
         sessionId: channelId,
-        text: content.text,
-      });
-    } else if (content.type === 'markdown' && content.markdown) {
-      this.writeEvent({
-        type: 'agent.text_delta',
-        sessionId: channelId,
-        text: content.markdown,
+        message: content.text,
       });
     }
   }
