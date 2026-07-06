@@ -36,11 +36,16 @@ export interface SubagentState {
 const subagentStates = new Map<string, SubagentState>();
 const listeners = new Set<() => void>();
 const cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let rafId: number | null = null;
 
 function notifyListeners() {
-  for (const listener of listeners) {
-    listener();
-  }
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    for (const listener of listeners) {
+      listener();
+    }
+  });
 }
 
 /**
@@ -90,10 +95,13 @@ export function handleSubagentProgressEvent(payload: {
       const state = subagentStates.get(subagentId);
       if (!state) return;
       state.activeToolName = null;
-      const lastTool = state.tools[state.tools.length - 1];
-      if (lastTool) {
-        lastTool.durationMs = Date.now() - lastTool.startedAt;
-        lastTool.isError = payload.isError;
+      // Match by toolName (handle parallel tool execution)
+      const matchingTool = [...state.tools]
+        .reverse()
+        .find((t) => t.toolName === (payload.toolName || 'unknown') && t.durationMs == null);
+      if (matchingTool) {
+        matchingTool.durationMs = Date.now() - matchingTool.startedAt;
+        matchingTool.isError = payload.isError;
       }
       break;
     }
@@ -101,7 +109,8 @@ export function handleSubagentProgressEvent(payload: {
     case 'text_delta': {
       const state = subagentStates.get(subagentId);
       if (!state) return;
-      state.accumulatedText += payload.text || '';
+      // Backend sends full text (not delta), so replace rather than append
+      state.accumulatedText = payload.text || '';
       break;
     }
 
@@ -113,7 +122,10 @@ export function handleSubagentProgressEvent(payload: {
       state.completedAt = Date.now();
       state.activeToolName = null;
 
-      // Schedule cleanup after 5 seconds
+      // Clear existing timer if duplicate event
+      const existingTimer = cleanupTimers.get(subagentId);
+      if (existingTimer) clearTimeout(existingTimer);
+
       const timer = setTimeout(() => {
         subagentStates.delete(subagentId);
         cleanupTimers.delete(subagentId);
@@ -132,7 +144,10 @@ export function handleSubagentProgressEvent(payload: {
       state.completedAt = Date.now();
       state.activeToolName = null;
 
-      // Schedule cleanup after 5 seconds
+      // Clear existing timer if duplicate event
+      const existingTimerF = cleanupTimers.get(subagentId);
+      if (existingTimerF) clearTimeout(existingTimerF);
+
       const timer = setTimeout(() => {
         subagentStates.delete(subagentId);
         cleanupTimers.delete(subagentId);
@@ -143,6 +158,21 @@ export function handleSubagentProgressEvent(payload: {
     }
   }
 
+  notifyListeners();
+}
+
+/**
+ * Clear all subagent state for a session (call on session delete/reset).
+ */
+export function clearSubagentStatesForSession(sessionId: string) {
+  for (const [id, state] of subagentStates) {
+    if (state.parentSessionId === sessionId) {
+      const timer = cleanupTimers.get(id);
+      if (timer) clearTimeout(timer);
+      cleanupTimers.delete(id);
+      subagentStates.delete(id);
+    }
+  }
   notifyListeners();
 }
 
@@ -165,11 +195,11 @@ export function useSubagentStates(sessionId: string | null): SubagentState[] {
     };
   }, [handleChange]);
 
-  // Build array of subagent states for this session
+  // Clone state objects so memo() on child components detects changes
   const states: SubagentState[] = [];
   for (const state of subagentStates.values()) {
     if (state.parentSessionId === sessionId) {
-      states.push(state);
+      states.push({ ...state, tools: [...state.tools] });
     }
   }
 
