@@ -327,7 +327,8 @@ export function useIPC() {
             break;
 
           case 'compaction.result': {
-            const { sessionId, summary, tokensBefore, readFiles, modifiedFiles } = event.payload;
+            const { sessionId, summary, tokensBefore, readFiles, modifiedFiles, isManual } =
+              event.payload;
             store.addCompactionEvent(sessionId, {
               id: `compact-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               timestamp: Date.now(),
@@ -336,7 +337,7 @@ export function useIPC() {
               summary,
               readFiles,
               modifiedFiles,
-              type: 'auto',
+              type: isManual ? 'manual' : 'auto',
             });
             break;
           }

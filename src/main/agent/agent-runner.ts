@@ -3164,6 +3164,20 @@ Tool routing:
           tokensBefore: result.tokensBefore,
         })
       );
+      const compactionDetails = result.details as
+        | { readFiles?: string[]; modifiedFiles?: string[] }
+        | undefined;
+      this.sendToRenderer({
+        type: 'compaction.result',
+        payload: {
+          sessionId,
+          summary: result.summary,
+          tokensBefore: result.tokensBefore,
+          isManual: true,
+          readFiles: compactionDetails?.readFiles || [],
+          modifiedFiles: compactionDetails?.modifiedFiles || [],
+        },
+      });
       return result;
     } catch (err) {
       logError('[CoworkAgentRunner] compact error:', err);

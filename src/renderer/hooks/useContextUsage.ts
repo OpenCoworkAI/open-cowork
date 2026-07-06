@@ -17,14 +17,13 @@ export interface ContextUsageInfo {
  */
 export function useContextUsage(): ContextUsageInfo | null {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const sessionStates = useAppStore((s) => s.sessionStates);
+  const contextWindow = useAppStore(
+    (s) => (activeSessionId ? s.sessionStates[activeSessionId]?.contextWindow : undefined) ?? null
+  );
   const messages = useActiveSessionMessages();
 
   return useMemo(() => {
-    if (!activeSessionId) return null;
-    const ss = sessionStates[activeSessionId];
-    const contextWindow = ss?.contextWindow;
-    if (!contextWindow) return null;
+    if (!activeSessionId || !contextWindow) return null;
 
     // Find last message with token usage to get current context occupation
     let lastInput = 0;
@@ -57,5 +56,5 @@ export function useContextUsage(): ContextUsageInfo | null {
       percent,
       projectedTurnsRemaining,
     };
-  }, [activeSessionId, sessionStates, messages]);
+  }, [activeSessionId, contextWindow, messages]);
 }
