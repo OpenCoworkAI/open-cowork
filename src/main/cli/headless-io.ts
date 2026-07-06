@@ -257,7 +257,7 @@ export interface HeadlessArgs {
   prompt: string | null;
   cwd: string;
   autoApprove: boolean;
-  mode: 'json' | 'rpc';
+  mode: 'json' | 'rpc' | 'stdio';
 }
 
 /**
@@ -291,11 +291,11 @@ export function parseHeadlessArgs(): HeadlessArgs {
   const autoApprove = argv.includes('--auto-approve');
 
   // Parse --mode
-  let mode: 'json' | 'rpc' = prompt ? 'json' : 'rpc';
+  let mode: 'json' | 'rpc' | 'stdio' = prompt ? 'json' : 'rpc';
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--mode' && i + 1 < argv.length) {
       const val = argv[i + 1];
-      if (val === 'json' || val === 'rpc') {
+      if (val === 'json' || val === 'rpc' || val === 'stdio') {
         mode = val;
       }
       break;

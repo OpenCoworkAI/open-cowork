@@ -1098,6 +1098,117 @@ app
         });
 
         // Process stays alive until stdin closes or signal received
+      } else if (headlessArgs.mode === 'stdio') {
+        // ── Stdio channel mode: session-based RPC via RemoteManager ──
+        log('[Headless] Stdio channel mode');
+
+        if (!configStore.hasUsableCredentialsForActiveSet()) {
+          headlessSendWithPermission({
+            type: 'error',
+            payload: {
+              message: 'No usable API credentials configured. Run the GUI to set up API keys.',
+              code: 'CONFIG_REQUIRED_ACTIVE_SET',
+            },
+          });
+          await headlessCleanup();
+          process.exit(1);
+          return;
+        }
+
+        // Set up RemoteManager with StdioChannel
+        const stdioAgentExecutor: AgentExecutor = {
+          startSession: async (title, prompt, cwd) => {
+            if (!sessionManager) throw new Error('Session manager not initialized');
+            const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
+            if (unsupportedReason) {
+              throw new Error(unsupportedReason);
+            }
+            return sessionManager.startSession(title, prompt, cwd);
+          },
+          continueSession: async (sessionId, prompt, content) => {
+            if (!sessionManager) throw new Error('Session manager not initialized');
+            await sessionManager.continueSession(sessionId, prompt, content);
+          },
+          stopSession: async (sessionId) => {
+            if (!sessionManager) throw new Error('Session manager not initialized');
+            await sessionManager.stopSession(sessionId);
+          },
+          validateWorkingDirectory: (cwd) => {
+            return getWorkspacePathUnsupportedReason(cwd) || null;
+          },
+        };
+        remoteManager.setAgentExecutor(stdioAgentExecutor);
+        remoteManager.setRendererCallback(headlessSendWithPermission);
+
+        const stdioChannel = await remoteManager.startStdioMode(headlessArgs.cwd);
+
+        // Override the event sender to also write stdio events for remote sessions
+        const originalEventSender = eventSender;
+        eventSender = (event: ServerEvent) => {
+          const payload =
+            'payload' in event
+              ? (event.payload as { sessionId?: string; [key: string]: unknown })
+              : undefined;
+          const sessionId = payload?.sessionId;
+
+          if (sessionId && remoteManager.isRemoteSession(sessionId)) {
+            // Write structured events to the stdio channel
+            if (event.type === 'stream.partial') {
+              stdioChannel.writeEvent({
+                type: 'agent.text_delta',
+                sessionId,
+                text: (payload.delta as string) || '',
+              });
+            } else if (event.type === 'trace.step') {
+              const step = payload.step as {
+                type?: string;
+                toolName?: string;
+                status?: string;
+                title?: string;
+                input?: unknown;
+                output?: string;
+              };
+              if (step?.type === 'tool_call' && step?.toolName) {
+                if (step.status === 'running') {
+                  stdioChannel.writeToolStart(sessionId, step.toolName, step.input || {});
+                } else if (step.status === 'completed' || step.status === 'error') {
+                  stdioChannel.writeToolEnd(sessionId, step.toolName, step.output || '');
+                }
+              }
+            } else if (event.type === 'session.status') {
+              const status = payload.status as string;
+              if (status === 'running') {
+                stdioChannel.writeSessionStarted(sessionId);
+              } else if (status === 'idle' || status === 'error') {
+                stdioChannel.writeSessionEnd(sessionId);
+                remoteManager.clearSessionBuffer(sessionId).catch(() => {});
+              }
+            } else if (event.type === 'permission.request') {
+              // Auto-handle permissions based on --auto-approve flag
+              const { toolUseId } = payload;
+              const result = headlessArgs.autoApprove ? 'allow' : 'deny';
+              log(
+                `[Stdio] Permission ${result} for ${payload.toolName} (auto-approve=${headlessArgs.autoApprove})`
+              );
+              setTimeout(() => {
+                sessionManager?.handlePermissionResponse(toolUseId as string, result);
+              }, 0);
+            }
+          }
+
+          // Still call the headless sender for JSONL output on stderr/stdout
+          if (originalEventSender) {
+            originalEventSender(event);
+          }
+        };
+
+        // Notify that session.started events should come through the channel
+        // The StdioChannel's onMessage triggers the MessageRouter which calls
+        // remoteManager.executeAgent → sessionManager.startSession. When the session
+        // is created, the remoteManager will call back writeSessionStarted via
+        // its session mapping.
+
+        // Process stays alive until stdin closes or signal received
       } else {
         // No prompt and not RPC mode — try reading from stdin pipe
         log('[Headless] Attempting to read prompt from stdin');

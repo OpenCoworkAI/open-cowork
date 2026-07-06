@@ -77,7 +77,14 @@ export interface TunnelConfig {
 // Channel Configuration
 // ============================================================================
 
-export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket' | 'slack';
+export type ChannelType =
+  | 'feishu'
+  | 'wechat'
+  | 'telegram'
+  | 'dingtalk'
+  | 'websocket'
+  | 'slack'
+  | 'stdio';
 
 export interface ChannelConfig {
   /** Channel type */

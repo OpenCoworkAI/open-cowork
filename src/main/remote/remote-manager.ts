@@ -10,6 +10,7 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -232,6 +233,34 @@ export class RemoteManager extends EventEmitter {
       logError('[RemoteManager] Failed to start remote control:', error);
       throw error;
     }
+  }
+
+  /**
+   * Start in stdio mode (headless RPC).
+   * Connects a StdioChannel directly to the MessageRouter without a full Gateway.
+   * Returns the StdioChannel instance for direct event writing.
+   */
+  async startStdioMode(defaultCwd?: string): Promise<StdioChannel> {
+    log('[RemoteManager] Starting in stdio mode');
+
+    const stdioChannel = new StdioChannel();
+
+    // Wire channel messages directly to the message router (bypass gateway auth)
+    stdioChannel.onMessage((message) => {
+      this.messageRouter.routeMessage(message);
+    });
+    stdioChannel.onError((error) => {
+      logError('[RemoteManager] StdioChannel error:', error);
+    });
+
+    if (defaultCwd) {
+      this.setDefaultWorkingDirectory(defaultCwd);
+    }
+
+    await stdioChannel.start();
+    log('[RemoteManager] Stdio channel started');
+
+    return stdioChannel;
   }
 
   /**
