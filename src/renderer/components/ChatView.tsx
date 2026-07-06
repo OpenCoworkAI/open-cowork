@@ -13,6 +13,7 @@ import {
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
+import { SubagentTracker } from './SubagentTracker';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
 
@@ -693,6 +694,9 @@ export function ChatView() {
               );
             })
           )}
+
+          {/* Subagent progress indicators */}
+          <SubagentTracker sessionId={activeSessionId} />
 
           {/* Processing indicator - show when we have an active turn but no streaming content yet */}
           {hasActiveTurn &&

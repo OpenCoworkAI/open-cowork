@@ -10,6 +10,7 @@ import type {
   TraceStep,
   ContentBlock,
 } from '../types';
+import { handleSubagentProgressEvent } from './useSubagentProgress';
 import i18n from '../i18n/config';
 
 // Check if running in Electron
@@ -319,6 +320,10 @@ export function useIPC() {
             if (event.payload === 'settings') {
               store.setShowSettings(true);
             }
+            break;
+
+          case 'subagent.progress':
+            handleSubagentProgressEvent(event.payload);
             break;
 
           default:

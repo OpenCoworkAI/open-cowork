@@ -912,5 +912,11 @@
     "description": "An unexpected error occurred in the application. You can try to recover by clicking the button below.",
     "details": "Error details",
     "retry": "Try again"
+  },
+  "subagent": {
+    "label": "Subagent",
+    "completed": "Completed",
+    "inDuration": "in {{duration}}",
+    "showResult": "Show result"
   }
 }

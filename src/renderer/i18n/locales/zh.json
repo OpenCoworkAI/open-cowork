@@ -912,5 +912,11 @@
     "description": "应用遇到了意外错误。你可以点击下方按钮尝试恢复。",
     "details": "错误详情",
     "retry": "重试"
+  },
+  "subagent": {
+    "label": "子代理",
+    "completed": "已完成",
+    "inDuration": "耗时 {{duration}}",
+    "showResult": "查看结果"
   }
 }
