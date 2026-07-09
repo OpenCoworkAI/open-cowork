@@ -35,6 +35,17 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('http://localhost:3000/v1')).toBeNull();
   });
 
+  it('detects MiniMax global and China endpoints with the target model', () => {
+    const globalSetup = detectCommonProviderSetup('https://api.minimax.io/v1');
+    expect(globalSetup?.id).toBe('minimax');
+    expect(globalSetup?.recommendedProtocol).toBe('openai');
+    expect(globalSetup?.recommendedBaseUrl).toBe('https://api.minimax.io/v1');
+    expect(globalSetup?.exampleModel).toBe('MiniMax-M3');
+
+    const cnSetup = detectCommonProviderSetup('https://api.minimaxi.com/anthropic/v1');
+    expect(cnSetup?.id).toBe('minimax');
+  });
+
   it('keeps unknown hosts unmatched and exposes the generic OpenAI fallback separately', () => {
     expect(detectCommonProviderSetup('https://relay.example.internal/v1')).toBeNull();
     expect(getFallbackOpenAISetup().id).toBe('generic-openai');
