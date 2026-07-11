@@ -470,7 +470,7 @@ const ContentBlockView = memo(function ContentBlockView({
             }
           >
             <MessageMarkdown
-              normalizedText={normalizedText}
+              normalizedText={escapeThinkTags(normalizedText)}
               isStreaming={isStreaming}
               components={markdownComponents}
             />
@@ -1107,6 +1107,10 @@ function renderThinkingPreview(raw: string): React.ReactNode[] {
   return parts;
 }
 
+function escapeThinkTags(text: string): string {
+  return text.replace(/<(\/?think)>/g, '&lt;$1&gt;');
+}
+
 // Thinking block — collapsible card (Claude style)
 const ThinkingBlock = memo(function ThinkingBlock({
   block,
@@ -1161,7 +1165,7 @@ const ThinkingBlock = memo(function ThinkingBlock({
                   <div className="whitespace-pre-wrap">{text}</div>
                 }
               >
-                <MessageMarkdown normalizedText={text} />
+                <MessageMarkdown normalizedText={escapeThinkTags(text)} />
               </Suspense>
             </PanelErrorBoundary>
           </div>

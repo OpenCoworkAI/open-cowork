@@ -52,7 +52,6 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
-import { ThinkTagStreamParser } from './think-tag-parser';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -1668,7 +1667,6 @@ Tool routing:
       let compactionStepId: string | undefined;
       let hasEmittedError = false;
       let terminalErrorText: string | undefined;
-      const thinkParser = new ThinkTagStreamParser();
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
 
@@ -1770,17 +1768,8 @@ Tool routing:
             const ame = event.assistantMessageEvent;
             if (ame.type === 'text_delta') {
               markFirstStreamEvent(ame.type);
-              const parsed = thinkParser.push(ame.delta);
-              if (parsed.thinking) {
-                this.sendToRenderer({
-                  type: 'stream.thinking',
-                  payload: { sessionId: session.id, delta: parsed.thinking },
-                });
-              }
-              if (parsed.text) {
-                streamedText += parsed.text;
-                this.sendPartial(session.id, parsed.text);
-              }
+              streamedText += ame.delta;
+              this.sendPartial(session.id, ame.delta);
             } else if (ame.type === 'thinking_delta') {
               markFirstStreamEvent(ame.type);
               // Forward thinking delta to renderer for real-time display
@@ -1818,19 +1807,6 @@ Tool routing:
             // Unified handler: send the final assistant message to the renderer.
             // Works for all providers (some emit 'done' via message_update, others don't).
             if (controller.signal.aborted) break;
-
-            // Flush any buffered content from the think-tag parser
-            const flushed = thinkParser.flush();
-            if (flushed.thinking) {
-              this.sendToRenderer({
-                type: 'stream.thinking',
-                payload: { sessionId: session.id, delta: flushed.thinking },
-              });
-            }
-            if (flushed.text) {
-              streamedText += flushed.text;
-              this.sendPartial(session.id, flushed.text);
-            }
 
             const msg = event.message;
             if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
