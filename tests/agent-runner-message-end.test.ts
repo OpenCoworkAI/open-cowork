@@ -53,6 +53,43 @@ describe('resolveMessageEndPayload', () => {
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe('模型返回了一个空的成功结果，当前模型或网关兼容性可能有问题，请重试或切换协议后再试。');
   });
+
+  it('preserves literal <think> in text as-is (never parsed)', () => {
+    const result = resolveMessageEndPayload({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Use <think>reasoning</think> to think' }],
+        stopReason: 'stop',
+      },
+      streamedText: '',
+    });
+
+    expect(result.effectiveContent).toEqual([
+      { type: 'text', text: 'Use <think>reasoning</think> to think' },
+    ]);
+  });
+
+  it('preserves literal <think> in thinking block content', () => {
+    const result = resolveMessageEndPayload({
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'The user asks about <think> and </think> tags.',
+          },
+          { type: 'text', text: 'The <think> tag wraps reasoning.' },
+        ],
+        stopReason: 'stop',
+      },
+      streamedText: '',
+    });
+
+    expect(result.effectiveContent).toEqual([
+      { type: 'thinking', thinking: 'The user asks about <think> and </think> tags.' },
+      { type: 'text', text: 'The <think> tag wraps reasoning.' },
+    ]);
+  });
 });
 
 describe('toUserFacingErrorText', () => {
