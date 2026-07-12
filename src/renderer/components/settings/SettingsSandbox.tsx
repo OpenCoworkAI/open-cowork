@@ -47,6 +47,14 @@ export function SettingsSandbox() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isTogglingSandbox, setIsTogglingSandbox] = useState(false);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const reloadTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+      if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
+    };
+  }, []);
 
   const platform = window.electronAPI?.platform || 'unknown';
   const isWindows = platform === 'win32';
@@ -121,7 +129,8 @@ export function SettingsSandbox() {
           text: nextEnabled ? t('sandbox.enabledWillSetup') : t('sandbox.disabled'),
         });
         // Backend reloads the sandbox bridge on change; refresh status once that settles.
-        setTimeout(async () => {
+        if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
+        reloadTimeoutRef.current = setTimeout(async () => {
           await loadStatus();
         }, 500);
         if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
@@ -311,12 +320,12 @@ export function SettingsSandbox() {
     ? status?.wsl?.available
     : isMac
       ? status?.lima?.available
-      : true; // Linux runs natively - no VM/bridge required, so it's always "available"
+      : status?.initialized === true; // Linux: available once backend adapter reports initialized
   const sandboxReady = isWindows
     ? status?.wsl?.available && status?.wsl?.nodeAvailable
     : isMac
       ? status?.lima?.available && status?.lima?.instanceRunning && status?.lima?.nodeAvailable
-      : true; // Linux has no extra setup step, so it's ready as soon as it's enabled
+      : status?.initialized === true; // Linux: ready once backend adapter reports initialized
   const sandboxStatusText = !sandboxEnabled
     ? t('sandbox.disabledStatus')
     : sandboxReady
@@ -357,9 +366,6 @@ export function SettingsSandbox() {
           </p>
         </div>
         <div className="flex items-center justify-center gap-3">
-          <span className="text-sm text-text-secondary">
-            {sandboxEnabled ? t('common.enable') : t('common.disable')}
-          </span>
           <button
             onClick={handleToggleSandbox}
             disabled={isTogglingSandbox}
