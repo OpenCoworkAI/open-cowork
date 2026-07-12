@@ -21,6 +21,24 @@ function createSpawnProcess(): SpawnProcess {
   return (command, args, options) => spawn(command, args, options);
 }
 
+/**
+ * Validate a WSL distro name before it reaches a spawned command line.
+ * Mirrors WSLBridge.validateDistroName (kept local to avoid a cross-module
+ * private dependency - that method is private to the WSLBridge class).
+ *
+ * In the current call path `distro` always comes from WSLBridge's own
+ * detected `wslStatus.distro` (see agent-runner.ts), not from any external
+ * or user-supplied input, so this is defense-in-depth rather than a fix for
+ * a reachable injection today - but it's cheap insurance against this
+ * function being reused from a call site where that stops being true.
+ */
+function validateDistroName(distro: string): string {
+  if (!/^[a-zA-Z0-9\-_.]+$/.test(distro)) {
+    throw new Error(`Invalid WSL distro name: ${distro}`);
+  }
+  return distro;
+}
+
 async function waitForProcessClose(child: ChildProcess, timeoutMs: number): Promise<void> {
   await new Promise<void>((resolve) => {
     let settled = false;
@@ -73,6 +91,7 @@ export function createWslSandboxBashOperations(
   distro: string,
   options: WslSandboxBashOperationsOptions = {}
 ): BashOperations {
+  const validatedDistro = validateDistroName(distro);
   const spawnProcess = options.spawnProcess ?? createSpawnProcess();
   const terminationGraceMs = options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS;
   const taskkillWaitMs = options.taskkillWaitMs ?? DEFAULT_TASKKILL_WAIT_MS;
@@ -88,9 +107,9 @@ export function createWslSandboxBashOperations(
         const escapedCwd = shellEscapePath(cwd);
         const script = `mkdir -p '${escapedCwd}' 2>/dev/null; cd '${escapedCwd}' || { echo "Working directory does not exist in WSL sandbox: ${cwd}" >&2; exit 1; }; ${command}`;
 
-        log(`[WslSandboxBash] Executing in distro=${distro} cwd=${cwd}`);
+        log(`[WslSandboxBash] Executing in distro=${validatedDistro} cwd=${cwd}`);
 
-        const child = spawnProcess('wsl', ['-d', distro, '-e', 'bash', '-c', script], {
+        const child = spawnProcess('wsl', ['-d', validatedDistro, '-e', 'bash', '-c', script], {
           detached: false,
           env: env ?? process.env,
           stdio: ['ignore', 'pipe', 'pipe'],
