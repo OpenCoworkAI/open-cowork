@@ -45,6 +45,7 @@ export function SettingsSandbox() {
   const [error, setError] = useState<LocalizedBanner | null>(null);
   const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isTogglingSandbox, setIsTogglingSandbox] = useState(false);
 
   const platform = window.electronAPI?.platform || 'unknown';
   const isWindows = platform === 'win32';
@@ -103,8 +104,34 @@ export function SettingsSandbox() {
     }
   }
 
-  // TODO: Re-enable when sandbox debugging is complete
-  // async function handleToggleSandbox() { ... }
+  async function handleToggleSandbox() {
+    if (isTogglingSandbox) return;
+    setIsTogglingSandbox(true);
+    setError(null);
+    setSuccess(null);
+
+    const nextEnabled = !sandboxEnabled;
+    try {
+      const result = await window.electronAPI.config.save({ sandboxEnabled: nextEnabled });
+      if (result.success) {
+        setSandboxEnabled(result.config.sandboxEnabled !== false);
+        setSuccess({
+          text: nextEnabled ? t('sandbox.enabledWillSetup') : t('sandbox.disabled'),
+        });
+        // Backend reloads the sandbox bridge on change; refresh status once that settles.
+        setTimeout(async () => {
+          await loadStatus();
+        }, 500);
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError({ text: t('sandbox.failedToSave') });
+      }
+    } catch (err) {
+      setError({ text: err instanceof Error ? err.message : t('sandbox.failedToSave') });
+    } finally {
+      setIsTogglingSandbox(false);
+    }
+  }
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
@@ -325,6 +352,28 @@ export function SettingsSandbox() {
                 ? t('sandbox.limaDesc')
                 : t('sandbox.nativeDesc')}
           </p>
+        </div>
+        <div className="flex items-center justify-center gap-3">
+          <span className="text-sm text-text-secondary">
+            {sandboxEnabled ? t('common.enable') : t('common.disable')}
+          </span>
+          <button
+            onClick={handleToggleSandbox}
+            disabled={isTogglingSandbox}
+            role="switch"
+            aria-checked={sandboxEnabled}
+            aria-label={t('sandbox.enableSandbox')}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 flex-shrink-0 ${
+              sandboxEnabled ? 'bg-accent' : 'bg-surface-muted'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-text-primary transition-transform ${
+                sandboxEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+          {isTogglingSandbox && <Loader2 className="w-4 h-4 animate-spin text-text-muted" />}
         </div>
         <div
           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
