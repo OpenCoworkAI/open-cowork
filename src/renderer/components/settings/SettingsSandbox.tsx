@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Shield, AlertCircle, CheckCircle, Settings, Loader2 } from 'lucide-react';
 import { renderLocalizedBannerMessage } from './shared';
@@ -46,6 +46,7 @@ export function SettingsSandbox() {
   const [success, setSuccess] = useState<LocalizedBanner | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isTogglingSandbox, setIsTogglingSandbox] = useState(false);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const platform = window.electronAPI?.platform || 'unknown';
   const isWindows = platform === 'win32';
@@ -105,6 +106,7 @@ export function SettingsSandbox() {
   }
 
   async function handleToggleSandbox() {
+    if (!isElectron) return;
     if (isTogglingSandbox) return;
     setIsTogglingSandbox(true);
     setError(null);
@@ -122,7 +124,8 @@ export function SettingsSandbox() {
         setTimeout(async () => {
           await loadStatus();
         }, 500);
-        setTimeout(() => setSuccess(null), 3000);
+        if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+        successTimeoutRef.current = setTimeout(() => setSuccess(null), 3000);
       } else {
         setError({ text: t('sandbox.failedToSave') });
       }
@@ -308,12 +311,12 @@ export function SettingsSandbox() {
     ? status?.wsl?.available
     : isMac
       ? status?.lima?.available
-      : false;
+      : true; // Linux runs natively - no VM/bridge required, so it's always "available"
   const sandboxReady = isWindows
     ? status?.wsl?.available && status?.wsl?.nodeAvailable
     : isMac
       ? status?.lima?.available && status?.lima?.instanceRunning && status?.lima?.nodeAvailable
-      : false;
+      : true; // Linux has no extra setup step, so it's ready as soon as it's enabled
   const sandboxStatusText = !sandboxEnabled
     ? t('sandbox.disabledStatus')
     : sandboxReady
