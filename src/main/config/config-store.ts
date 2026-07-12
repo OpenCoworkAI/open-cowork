@@ -258,7 +258,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
 
 const defaultConfigSet: ApiConfigSet = {
   id: DEFAULT_CONFIG_SET_ID,
-  name: '默认方案',
+  name: 'Default profile',
   isSystem: true,
   provider: 'openrouter',
   customProtocol: 'anthropic',
@@ -898,7 +898,7 @@ export class ConfigStore {
 
       const normalizedSet = this.normalizeConfigSet(rawSet, {
         id: nextId,
-        name: toNonEmptyString(rawSet.name) || `方案 ${index + 1}`,
+        name: toNonEmptyString(rawSet.name) || `Profile ${index + 1}`,
         provider: legacy.provider,
         customProtocol: legacy.customProtocol,
         activeProfileKey: legacy.activeProfileKey,

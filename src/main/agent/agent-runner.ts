@@ -71,7 +71,6 @@ import {
   resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
-import { ThinkTagStreamParser } from './think-tag-parser';
 import {
   LoopGuard,
   buildAbortUserMessage,
@@ -2376,7 +2375,6 @@ Tool routing:
       let compactionStepId: string | undefined;
       let hasEmittedError = false;
       let terminalErrorText: string | undefined;
-      const thinkParser = new ThinkTagStreamParser();
       const promptStartedAt = Date.now();
       const streamEventCounts = new Map<string, number>();
 
@@ -2506,37 +2504,13 @@ Tool routing:
           )
         );
 
-      const emitTerminalError = (
-        errorText: string,
-        options: { abort?: boolean; includePartialText?: boolean } = {}
-      ): void => {
+      const emitTerminalError = (errorText: string, options: { abort?: boolean } = {}): void => {
         terminalErrorText = errorText;
-
-        let flushedThinking = '';
-        let flushedText = '';
-
-        if (options.includePartialText) {
-          const flushed = thinkParser.flush();
-          flushedThinking = flushed.thinking;
-          flushedText = flushed.text;
-        }
 
         const emission = buildTerminalErrorEmissionDetails({
           errorText,
           streamedText,
-          flushedThinking,
-          flushedText,
         });
-
-        if (emission.thinkingDelta) {
-          this.sendToRenderer({
-            type: 'stream.thinking',
-            payload: { sessionId: session.id, delta: emission.thinkingDelta },
-          });
-        }
-        if (emission.textDelta) {
-          this.sendPartial(session.id, emission.textDelta);
-        }
 
         const partialText = emission.partialText ? sanitizeOutputPaths(emission.partialText) : '';
         const messageText = buildTerminalErrorMessage(errorText, partialText);
@@ -2615,17 +2589,8 @@ Tool routing:
               const ame = event.assistantMessageEvent;
               if (ame.type === 'text_delta') {
                 markFirstStreamEvent(ame.type);
-                const parsed = thinkParser.push(ame.delta);
-                if (parsed.thinking) {
-                  this.sendToRenderer({
-                    type: 'stream.thinking',
-                    payload: { sessionId: session.id, delta: parsed.thinking },
-                  });
-                }
-                if (parsed.text) {
-                  streamedText += parsed.text;
-                  this.sendPartial(session.id, parsed.text);
-                }
+                streamedText += ame.delta;
+                this.sendPartial(session.id, ame.delta);
               } else if (ame.type === 'thinking_delta') {
                 markFirstStreamEvent(ame.type);
                 // Forward thinking delta to renderer for real-time display
@@ -2660,10 +2625,7 @@ Tool routing:
                 markFirstStreamEvent(ame.type);
                 const errorDetail = JSON.stringify(ame.error?.content || 'no content');
                 logCtxError('[CoworkAgentRunner] pi-ai stream error:', ame.reason, errorDetail);
-                emitTerminalError(resolveAssistantStreamErrorText(ame), {
-                  abort: true,
-                  includePartialText: true,
-                });
+                emitTerminalError(resolveAssistantStreamErrorText(ame), { abort: true });
               }
               break;
             }
@@ -2672,19 +2634,6 @@ Tool routing:
               // Unified handler: send the final assistant message to the renderer.
               // Works for all providers (some emit 'done' via message_update, others don't).
               if (controller.signal.aborted) break;
-
-              // Flush any buffered content from the think-tag parser
-              const flushed = thinkParser.flush();
-              if (flushed.thinking) {
-                this.sendToRenderer({
-                  type: 'stream.thinking',
-                  payload: { sessionId: session.id, delta: flushed.thinking },
-                });
-              }
-              if (flushed.text) {
-                streamedText += flushed.text;
-                this.sendPartial(session.id, flushed.text);
-              }
 
               const msg = event.message;
               if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
@@ -2716,7 +2665,7 @@ Tool routing:
                 );
               }
               if (resolvedPayload.errorText) {
-                emitTerminalError(resolvedPayload.errorText, { includePartialText: true });
+                emitTerminalError(resolvedPayload.errorText);
                 break;
               }
               if (resolvedPayload.shouldEmitMessage) {
@@ -2995,7 +2944,12 @@ Tool routing:
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          content: [
+            {
+              type: 'text',
+              text: '**Request timed out**: no response received for a while, operation aborted.',
+            },
+          ],
           timestamp: Date.now(),
         };
         this.sendMessage(session.id, errorMsg);
@@ -3038,7 +2992,12 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            content: [
+              {
+                type: 'text',
+                text: '**Request timed out**: no response received for a while, operation aborted.',
+              },
+            ],
             timestamp: Date.now(),
           };
           this.sendMessage(session.id, errorMsg);
