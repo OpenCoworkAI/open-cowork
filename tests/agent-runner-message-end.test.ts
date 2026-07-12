@@ -42,7 +42,7 @@ describe('resolveMessageEndPayload', () => {
     expect(result.shouldEmitMessage).toBe(false);
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe(
-      '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。'
+      'Model response timed out: no response from upstream for a while. Please retry later or check the current model/gateway load.'
     );
   });
 
@@ -60,36 +60,94 @@ describe('resolveMessageEndPayload', () => {
     expect(result.shouldEmitMessage).toBe(false);
     expect(result.effectiveContent).toEqual([]);
     expect(result.errorText).toBe(
-      '模型返回了一个空的成功结果，当前模型或网关兼容性可能有问题，请重试或切换协议后再试。'
+      'The model returned an empty success result. There may be a compatibility issue with the current model or gateway. Please retry or switch protocol.'
     );
+  });
+
+  it('preserves literal <think> in text as-is (never parsed)', () => {
+    const result = resolveMessageEndPayload({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Use <think>reasoning</think> to think' }],
+        stopReason: 'stop',
+      },
+      streamedText: '',
+    });
+
+    expect(result.effectiveContent).toEqual([
+      { type: 'text', text: 'Use <think>reasoning</think> to think' },
+    ]);
+  });
+
+  it('preserves literal <think> in thinking block content (reasoning field mentions <think>)', () => {
+    const result = resolveMessageEndPayload({
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'The user asks about <think> and </think> tags and what they mean.',
+          },
+          { type: 'text', text: 'The <think> tag wraps reasoning.' },
+        ],
+        stopReason: 'stop',
+      },
+      streamedText: '',
+    });
+
+    expect(result.effectiveContent).toEqual([
+      {
+        type: 'thinking',
+        thinking: 'The user asks about <think> and </think> tags and what they mean.',
+      },
+      { type: 'text', text: 'The <think> tag wraps reasoning.' },
+    ]);
+  });
+
+  it('preserves literal <think> in streamedText when message content is empty (Ollama streaming fallback)', () => {
+    const result = resolveMessageEndPayload({
+      message: {
+        role: 'assistant',
+        content: [],
+        stopReason: 'stop',
+      },
+      streamedText: 'The <think> tag is used for reasoning, not <think>actual reasoning</think>.',
+    });
+
+    expect(result.effectiveContent).toEqual([
+      {
+        type: 'text',
+        text: 'The <think> tag is used for reasoning, not <think>actual reasoning</think>.',
+      },
+    ]);
   });
 });
 
 describe('toUserFacingErrorText', () => {
   it('maps 400 / bad request to configuration hint', () => {
     const result = toUserFacingErrorText('HTTP 400: bad request - ROLE_UNSPECIFIED');
-    expect(result).toContain('请求被上游拒绝（400）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Request rejected by upstream (400)');
+    expect(result).toContain('Original error:');
     expect(result).toContain('ROLE_UNSPECIFIED');
   });
 
   it('maps invalid request to configuration hint', () => {
     const result = toUserFacingErrorText('invalid request: unsupported parameter "store"');
-    expect(result).toContain('请求被上游拒绝（400）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Request rejected by upstream (400)');
+    expect(result).toContain('Original error:');
   });
 
   it('maps 401 to authentication hint', () => {
     const result = toUserFacingErrorText('Error 401: Unauthorized');
-    expect(result).toContain('认证失败');
+    expect(result).toContain('Authentication failed');
     expect(result).toContain('API Key');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Original error:');
   });
 
   it('maps 429 / rate limit to throttle hint', () => {
     const result = toUserFacingErrorText('429 Too Many Requests - rate limit exceeded');
-    expect(result).toContain('请求被限流（429）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Request rate-limited (429)');
+    expect(result).toContain('Original error:');
   });
 
   it('passes through unknown errors unchanged', () => {
@@ -99,57 +157,57 @@ describe('toUserFacingErrorText', () => {
 
   it('still maps first_response_timeout correctly (regression)', () => {
     expect(toUserFacingErrorText('first_response_timeout')).toBe(
-      '模型响应超时：长时间未收到上游返回，请稍后重试或检查当前模型/网关负载。'
+      'Model response timed out: no response from upstream for a while. Please retry later or check the current model/gateway load.'
     );
   });
 
   it('maps 5xx server errors to upstream service hint', () => {
     const result = toUserFacingErrorText('HTTP 502: Bad Gateway');
-    expect(result).toContain('上游服务异常');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Upstream service error');
+    expect(result).toContain('Original error:');
     expect(result).toContain('502');
   });
 
   it('maps "server error" to upstream service hint', () => {
     const result = toUserFacingErrorText('internal server error');
-    expect(result).toContain('上游服务异常');
+    expect(result).toContain('Upstream service error');
   });
 
   it('maps "overloaded" to upstream service hint', () => {
     const result = toUserFacingErrorText('overloaded_error');
-    expect(result).toContain('上游服务异常');
+    expect(result).toContain('Upstream service error');
   });
 
   it('maps "terminated" to network connection hint', () => {
     const result = toUserFacingErrorText('terminated');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
     expect(result).toContain('terminated');
   });
 
   it('maps "connection error" to network connection hint', () => {
     const result = toUserFacingErrorText('connection error: ECONNRESET');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "fetch failed" to network connection hint', () => {
     const result = toUserFacingErrorText('fetch failed');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "other side closed" to network connection hint', () => {
     const result = toUserFacingErrorText('other side closed');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 
   it('maps "too many requests" without status code to throttle hint', () => {
     const result = toUserFacingErrorText('too many requests');
-    expect(result).toContain('请求被限流（429）');
-    expect(result).toContain('原始错误:');
+    expect(result).toContain('Request rate-limited (429)');
+    expect(result).toContain('Original error:');
   });
 
   it('maps "retry delay exceeded" to network connection hint', () => {
     const result = toUserFacingErrorText('retry delay exceeded');
-    expect(result).toContain('网络连接中断');
+    expect(result).toContain('Network connection interrupted');
   });
 });
 
@@ -178,7 +236,7 @@ describe('resolveAssistantStreamErrorText', () => {
       },
     });
 
-    expect(result).toContain('请求被上游拒绝（400）');
+    expect(result).toContain('Request rejected by upstream (400)');
     expect(result).toContain('malformed tool call JSON');
   });
 
@@ -228,28 +286,24 @@ describe('buildTerminalErrorMessage', () => {
 
     expect(result).toContain('Partial analysis already streamed');
     expect(result).toContain('**Error**: HTTP 400: invalid request');
-    expect(result).toContain('请检查配置后重试');
+    expect(result).toContain('Please check your configuration and retry');
   });
 
   it('uses the retry hint for non-4xx terminal errors', () => {
     const result = buildTerminalErrorMessage('connection reset');
-    expect(result).toContain('Agent 正在自动重试');
+    expect(result).toContain('Agent is retrying automatically');
   });
 });
 
 describe('buildTerminalErrorEmissionDetails', () => {
-  it('preserves flushed thinking/text deltas and appends them to partial text', () => {
+  it('preserves streamed partial text before the error footer', () => {
     const result = buildTerminalErrorEmissionDetails({
       errorText: 'HTTP 400: invalid request',
       streamedText: 'Partial body',
-      flushedThinking: 'inner reasoning',
-      flushedText: ' plus tail',
     });
 
-    expect(result.thinkingDelta).toBe('inner reasoning');
-    expect(result.textDelta).toBe(' plus tail');
-    expect(result.partialText).toBe('Partial body plus tail');
-    expect(result.messageText).toContain('Partial body plus tail');
+    expect(result.partialText).toBe('Partial body');
+    expect(result.messageText).toContain('Partial body');
     expect(result.messageText).toContain('**Error**: HTTP 400: invalid request');
   });
 
@@ -259,10 +313,8 @@ describe('buildTerminalErrorEmissionDetails', () => {
       streamedText: '',
     });
 
-    expect(result.thinkingDelta).toBeUndefined();
-    expect(result.textDelta).toBeUndefined();
     expect(result.partialText).toBe('');
-    expect(result.messageText).toContain('Agent 正在自动重试');
+    expect(result.messageText).toContain('Agent is retrying automatically');
   });
 });
 
