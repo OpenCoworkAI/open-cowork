@@ -43,7 +43,7 @@ import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
-import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
+import { getSandboxAdapter, initializeSandbox, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
@@ -2405,6 +2405,26 @@ ipcMain.on('window.close', () => {
 ipcMain.handle('sandbox.getStatus', async () => {
   try {
     const adapter = getSandboxAdapter();
+
+    // The adapter only initializes lazily, the first time a session actually needs the
+    // sandbox (see SessionManager.ensureSandboxInitialized). If the user checks Settings
+    // before that has ever happened, adapter.initialized is still false, and this handler
+    // used to report a hardcoded 'native'/'none' placeholder below - even when WSL2 itself
+    // is working fine. Trigger (or wait for) real initialization here so the status shown
+    // reflects reality instead of "nothing has tried yet". skipInstallPrompts avoids
+    // popping a Node-install dialog just from opening the Settings tab.
+    if (!adapter.initialized) {
+      try {
+        await initializeSandbox({
+          workspacePath: currentWorkingDir || app.getPath('userData'),
+          mainWindow: null,
+          skipInstallPrompts: true,
+        });
+      } catch (initError) {
+        logError('[Sandbox] On-demand initialization for status check failed:', initError);
+      }
+    }
+
     const platform = process.platform;
 
     if (platform === 'win32') {
