@@ -136,7 +136,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     matcher: {
       hosts: ['api.minimax.io', 'api.minimaxi.com'],
       hostContains: ['minimax'],
-      pathPrefixes: ['/v1', '/anthropic/v1'],
+      pathPrefixes: ['/v1', '/anthropic'],
     },
   },
   {

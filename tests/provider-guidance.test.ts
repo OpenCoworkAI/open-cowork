@@ -42,7 +42,7 @@ describe('provider guidance helpers', () => {
     expect(globalSetup?.recommendedBaseUrl).toBe('https://api.minimax.io/v1');
     expect(globalSetup?.exampleModel).toBe('MiniMax-M3');
 
-    const cnSetup = detectCommonProviderSetup('https://api.minimaxi.com/anthropic/v1');
+    const cnSetup = detectCommonProviderSetup('https://api.minimaxi.com/anthropic');
     expect(cnSetup?.id).toBe('minimax');
   });
 
