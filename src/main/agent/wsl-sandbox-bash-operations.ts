@@ -198,6 +198,12 @@ export function createWslSandboxBashOperations(
         child.once('close', onClose);
         child.once('error', onError);
 
+        // `timeout` is in seconds, matching @mariozechner/pi-coding-agent's own
+        // BashOperations contract (see node_modules/@mariozechner/pi-coding-agent/dist/
+        // core/tools/bash.js's schema: `Type.Number({ description: "Timeout in seconds
+        // (optional, no default timeout)" })`), and its own createLocalBashOperations()
+        // does the same `timeout * 1000` conversion this code does - so this is not a
+        // unit mismatch, it mirrors the SDK's documented and implemented convention.
         if (timeout !== undefined && timeout > 0) {
           timeoutHandle = setTimeout(() => {
             timedOut = true;
