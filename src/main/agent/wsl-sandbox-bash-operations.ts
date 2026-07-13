@@ -105,6 +105,15 @@ export function createWslSandboxBashOperations(
         }
 
         const escapedCwd = shellEscapePath(cwd);
+        // `command` is intentionally NOT escaped here. It is executable bash source
+        // provided by the coding agent's bash tool, not untrusted data being embedded
+        // into a fixed template - the caller already has full command execution via
+        // this exact argument, so there is no lesser-privileged boundary for escaping
+        // to protect. Only `cwd` (plain data, not shell syntax) is escaped, via
+        // shellEscapePath above, so it can be safely wrapped in single quotes. Applying
+        // string-escaping to `command` itself would corrupt any legitimate command that
+        // contains its own quoting (e.g. `git commit -m "..."`, `echo 'text'`), breaking
+        // normal usage without adding any real protection.
         const script = `mkdir -p '${escapedCwd}' 2>/dev/null; cd '${escapedCwd}' || { echo "Working directory does not exist in WSL sandbox: ${cwd}" >&2; exit 1; }; ${command}`;
 
         log(`[WslSandboxBash] Executing in distro=${validatedDistro} cwd=${cwd}`);
