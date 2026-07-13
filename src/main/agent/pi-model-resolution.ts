@@ -95,11 +95,36 @@ export function inferPiApi(protocol: string): string {
   }
 }
 
+interface KnownModelSpec {
+  contextWindow: number;
+  maxTokens: number;
+  reasoning?: boolean;
+  input?: Model<Api>['input'];
+  cost?: Model<Api>['cost'];
+}
+
 /**
- * Known context window / max output specs for common Ollama model families.
- * Used as a middle layer between user config overrides and the hardcoded default.
+ * Known metadata for synthetic models that are not yet present in the pi-ai registry.
+ * The current runtime schema supports text and image input but not video metadata.
  */
-const KNOWN_MODEL_SPECS: Record<string, { contextWindow: number; maxTokens: number }> = {
+const EXACT_MODEL_SPECS: Record<string, KnownModelSpec> = {
+  // M3 pricing is tiered by input length and service tier, which the flat cost schema cannot express.
+  'minimax-m3': {
+    contextWindow: 1000000,
+    maxTokens: 524288,
+    reasoning: true,
+    input: ['text', 'image'],
+  },
+  'minimax-m2.7': {
+    contextWindow: 204800,
+    maxTokens: 204800,
+    reasoning: true,
+    input: ['text'],
+    cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 },
+  },
+};
+
+const KNOWN_MODEL_SPECS: Record<string, KnownModelSpec> = {
   'qwen3.5': { contextWindow: 258048, maxTokens: 32768 },
   qwen3: { contextWindow: 40960, maxTokens: 8192 },
   'qwen2.5': { contextWindow: 131072, maxTokens: 8192 },
@@ -120,10 +145,12 @@ const KNOWN_MODEL_SPECS: Record<string, { contextWindow: number; maxTokens: numb
   'command-r': { contextWindow: 131072, maxTokens: 4096 },
 };
 
-function lookupModelSpecs(
-  modelId: string
-): { contextWindow: number; maxTokens: number } | undefined {
+function lookupModelSpecs(modelId: string): KnownModelSpec | undefined {
   const lower = modelId.toLowerCase();
+  const exact = EXACT_MODEL_SPECS[lower];
+  if (exact) {
+    return exact;
+  }
   // Match by prefix: "qwen3.5:0.8b" → "qwen3.5", "deepseek-r1-distill" → "deepseek-r1"
   for (const [key, specs] of Object.entries(KNOWN_MODEL_SPECS)) {
     if (lower === key || lower.startsWith(key + ':') || lower.startsWith(key + '-')) {
@@ -144,8 +171,8 @@ export function buildSyntheticPiModel(
   maxTokens?: number
 ): Model<Api> {
   const api = apiOverride || inferPiApi(protocol);
-  const autoReasoning = reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
   const knownSpecs = lookupModelSpecs(modelId);
+  const autoReasoning = reasoning ?? knownSpecs?.reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
   return {
     id: modelId,
     name: modelId,
@@ -153,8 +180,8 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: autoReasoning,
-    input: ['text', 'image'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    input: knownSpecs?.input ?? ['text', 'image'],
+    cost: knownSpecs?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 128000,
     maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
   } as Model<Api>;

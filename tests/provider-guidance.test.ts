@@ -35,15 +35,23 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('http://localhost:3000/v1')).toBeNull();
   });
 
-  it('detects MiniMax global and China endpoints with the target model', () => {
-    const globalSetup = detectCommonProviderSetup('https://api.minimax.io/v1');
-    expect(globalSetup?.id).toBe('minimax');
-    expect(globalSetup?.recommendedProtocol).toBe('openai');
-    expect(globalSetup?.recommendedBaseUrl).toBe('https://api.minimax.io/v1');
-    expect(globalSetup?.exampleModel).toBe('MiniMax-M3');
+  it('detects each MiniMax region and protocol endpoint with the target model', () => {
+    const endpoints = [
+      ['https://api.minimax.io/v1', 'minimax-global-openai', 'openai'],
+      ['https://api.minimax.io/anthropic', 'minimax-global-anthropic', 'anthropic'],
+      ['https://api.minimaxi.com/v1', 'minimax-cn-openai', 'openai'],
+      ['https://api.minimaxi.com/anthropic', 'minimax-cn-anthropic', 'anthropic'],
+    ] as const;
 
-    const cnSetup = detectCommonProviderSetup('https://api.minimaxi.com/anthropic');
-    expect(cnSetup?.id).toBe('minimax');
+    for (const [baseUrl, id, protocol] of endpoints) {
+      const setup = detectCommonProviderSetup(baseUrl);
+      expect(setup?.id).toBe(id);
+      expect(setup?.recommendedProtocol).toBe(protocol);
+      expect(setup?.recommendedBaseUrl).toBe(baseUrl);
+      expect(setup?.exampleModel).toBe('MiniMax-M3');
+    }
+
+    expect(detectCommonProviderSetup('https://minimax-proxy.example.com/v1')).toBeNull();
   });
 
   it('keeps unknown hosts unmatched and exposes the generic OpenAI fallback separately', () => {

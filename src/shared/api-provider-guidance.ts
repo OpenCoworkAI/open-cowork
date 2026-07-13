@@ -7,7 +7,10 @@ export type CommonProviderSetupId =
   | 'glm-anthropic'
   | 'ollama'
   | 'gemini-custom'
-  | 'minimax'
+  | 'minimax-global-openai'
+  | 'minimax-global-anthropic'
+  | 'minimax-cn-openai'
+  | 'minimax-cn-anthropic'
   | 'generic-openai';
 
 export interface CommonProviderSetup {
@@ -126,17 +129,59 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     },
   },
   {
-    id: 'minimax',
+    id: 'minimax-global-openai',
     nameKey: 'api.guidance.setups.minimax.name',
     noteKey: 'api.guidance.setups.minimax.note',
     applyProvider: 'custom',
     recommendedProtocol: 'openai',
     recommendedBaseUrl: 'https://api.minimax.io/v1',
     exampleModel: 'MiniMax-M3',
+    protocolLabel: 'OpenAI (Global)',
     matcher: {
-      hosts: ['api.minimax.io', 'api.minimaxi.com'],
-      hostContains: ['minimax'],
-      pathPrefixes: ['/v1', '/anthropic'],
+      hosts: ['api.minimax.io'],
+      pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'minimax-global-anthropic',
+    nameKey: 'api.guidance.setups.minimax.name',
+    noteKey: 'api.guidance.setups.minimax.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'anthropic',
+    recommendedBaseUrl: 'https://api.minimax.io/anthropic',
+    exampleModel: 'MiniMax-M3',
+    protocolLabel: 'Anthropic (Global)',
+    matcher: {
+      hosts: ['api.minimax.io'],
+      pathPrefixes: ['/anthropic'],
+    },
+  },
+  {
+    id: 'minimax-cn-openai',
+    nameKey: 'api.guidance.setups.minimax.name',
+    noteKey: 'api.guidance.setups.minimax.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'https://api.minimaxi.com/v1',
+    exampleModel: 'MiniMax-M3',
+    protocolLabel: 'OpenAI (China)',
+    matcher: {
+      hosts: ['api.minimaxi.com'],
+      pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'minimax-cn-anthropic',
+    nameKey: 'api.guidance.setups.minimax.name',
+    noteKey: 'api.guidance.setups.minimax.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'anthropic',
+    recommendedBaseUrl: 'https://api.minimaxi.com/anthropic',
+    exampleModel: 'MiniMax-M3',
+    protocolLabel: 'Anthropic (China)',
+    matcher: {
+      hosts: ['api.minimaxi.com'],
+      pathPrefixes: ['/anthropic'],
     },
   },
   {
