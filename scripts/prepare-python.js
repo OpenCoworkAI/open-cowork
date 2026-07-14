@@ -323,11 +323,15 @@ function ensurePipAvailable(pythonBin) {
   }
 }
 
-function installPackages(siteDir, platformTag, pythonBin) {
+function installPackages(siteDir, platformTag, pythonBin, platform) {
   ensureDir(siteDir);
 
   const pipPython = process.env.OPEN_COWORK_PIP_PYTHON || pythonBin;
-  const packageSpecs = [...BUNDLED_GUI_PACKAGES];
+  // pyobjc is macOS-only — skip on Linux to avoid pip resolution errors
+  const packageSpecs = BUNDLED_GUI_PACKAGES.filter(pkg => {
+    if (pkg.startsWith('pyobjc') && platform !== 'darwin') return false;
+    return true;
+  });
   const pythonRoot = path.resolve(siteDir, '..');
   const runtimeMarkerFile = resolveRuntimeVersionFile(pythonRoot);
   const runtimeMarker = exists(runtimeMarkerFile)
@@ -513,7 +517,7 @@ async function preparePlatformArch(platform, arch) {
   }
 
   // Install packages for GUI automation
-  installPackages(siteDir, target.platformTag, pythonBin);
+  installPackages(siteDir, target.platformTag, pythonBin, platform);
 
   // Clean site-packages of non-whitelisted packages (also runs after pip install)
   cleanPythonRuntime(destDir, siteDir);
