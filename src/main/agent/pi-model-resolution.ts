@@ -8,6 +8,13 @@ const REASONING_MODEL_PATTERN =
 const DEEPSEEK_V4_MODEL_PATTERN = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i;
 type PiRegistryProvider = Parameters<typeof getModel>[0];
 
+interface KnownSyntheticModelMetadata {
+  reasoning: boolean;
+  input: Model<Api>['input'];
+  cost: Model<Api>['cost'];
+  contextWindow: number;
+}
+
 export interface PiModelStringInput {
   provider?: string;
   customProtocol?: string;
@@ -120,6 +127,31 @@ const KNOWN_MODEL_SPECS: Record<string, { contextWindow: number; maxTokens: numb
   'command-r': { contextWindow: 131072, maxTokens: 4096 },
 };
 
+const KNOWN_SYNTHETIC_MODEL_METADATA: Record<string, KnownSyntheticModelMetadata> = {
+  'minimax-m3': {
+    reasoning: true,
+    input: ['text', 'image'],
+    cost: {
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
+      cacheWrite: 0,
+    },
+    contextWindow: 1000000,
+  },
+  'minimax-m2.7': {
+    reasoning: true,
+    input: ['text'],
+    cost: {
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
+      cacheWrite: 0.375,
+    },
+    contextWindow: 204800,
+  },
+};
+
 function lookupModelSpecs(
   modelId: string
 ): { contextWindow: number; maxTokens: number } | undefined {
@@ -133,6 +165,10 @@ function lookupModelSpecs(
   return undefined;
 }
 
+function lookupSyntheticModelMetadata(modelId: string): KnownSyntheticModelMetadata | undefined {
+  return KNOWN_SYNTHETIC_MODEL_METADATA[modelId.toLowerCase()];
+}
+
 export function buildSyntheticPiModel(
   modelId: string,
   provider: string,
@@ -144,7 +180,9 @@ export function buildSyntheticPiModel(
   maxTokens?: number
 ): Model<Api> {
   const api = apiOverride || inferPiApi(protocol);
-  const autoReasoning = reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
+  const knownMetadata = lookupSyntheticModelMetadata(modelId);
+  const autoReasoning =
+    reasoning ?? knownMetadata?.reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
   const knownSpecs = lookupModelSpecs(modelId);
   return {
     id: modelId,
@@ -153,9 +191,10 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: autoReasoning,
-    input: ['text', 'image'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 128000,
+    input: knownMetadata?.input ?? ['text', 'image'],
+    cost: knownMetadata?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow:
+      contextWindow ?? knownMetadata?.contextWindow ?? knownSpecs?.contextWindow ?? 128000,
     maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
   } as Model<Api>;
 }

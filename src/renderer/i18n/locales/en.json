@@ -270,8 +270,9 @@
           "note": "Use Gemini-compatible mode and the exact model ID exposed by the endpoint."
         },
         "minimax": {
-          "name": "MiniMax",
-          "note": "Use OpenAI-compatible mode unless your MiniMax gateway documents another protocol."
+          "globalName": "MiniMax (Global)",
+          "chinaName": "MiniMax (China)",
+          "note": "Choose the endpoint that matches your account region. Both compatible protocols are supported."
         },
         "genericOpenAI": {
           "name": "Generic OpenAI-compatible",
