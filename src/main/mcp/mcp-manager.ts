@@ -12,7 +12,7 @@
  * Dependencies: config-store (via mcp-config-store)
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createHash } from 'crypto';
@@ -381,8 +381,10 @@ export class MCPManager {
     const platform = os.platform();
     const homeDir = os.homedir();
 
-    // Start with current process env
-    let env = { ...process.env } as Record<string, string>;
+    // Start with MCP SDK's safe default environment (HOME, LOGNAME, PATH, SHELL, TERM, USER)
+    // instead of the full process.env which contains API keys and cloud credentials.
+    // See: https://github.com/modelcontextprotocol/typescript-sdk/blob/main/src/client/stdio.ts
+    let env = { ...getDefaultEnvironment() } as Record<string, string>;
 
     // For macOS/Linux, try to get full environment from user's shell
     // This is essential for packaged apps where process.env is minimal
@@ -865,14 +867,13 @@ export class MCPManager {
       commandForLogging = command;
       argsForLogging = args;
 
-      log('[MCPManager] Server auth env summary', {
+      // Log only safe metadata — do not probe sensitive env keys
+      // (the child process only receives getDefaultEnvironment() + config.env,
+      //  so sensitive variables are no longer present in 'env')
+      log('[MCPManager] Server env config', {
         server: config.name,
-        OPENAI_API_KEY: env.OPENAI_API_KEY?.trim() ? 'set' : 'unset',
-        OPENAI_BASE_URL: env.OPENAI_BASE_URL || '(unset)',
-        OPENAI_MODEL: env.OPENAI_MODEL || '(unset)',
-        OPENAI_ACCOUNT_ID: env.OPENAI_ACCOUNT_ID?.trim() ? 'set' : 'unset',
-        ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY?.trim() ? 'set' : 'unset',
-        ANTHROPIC_AUTH_TOKEN: env.ANTHROPIC_AUTH_TOKEN?.trim() ? 'set' : 'unset',
+        envKeysCount: Object.keys(env).length,
+        hasCustomEnv: Object.keys(config.env || {}).length > 0,
       });
 
       // In production, set NODE_PATH to include unpacked node_modules
