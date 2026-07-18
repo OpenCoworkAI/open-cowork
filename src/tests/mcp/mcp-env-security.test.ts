@@ -3,6 +3,9 @@
  * to MCP child processes. The fix uses getDefaultEnvironment() (safe base) instead
  * of { ...process.env } which would include API keys, tokens, and cloud credentials.
  *
+ * Also verifies that user-provided config.env is correctly merged without
+ * re-introducing sensitive variables.
+ *
  * See: https://github.com/OpenCoworkAI/open-cowork/pull/306
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -46,7 +49,6 @@ const SAFE_SHELL_OUTPUT = [
 ].join('\n');
 
 // Mock child_process.execFile with correct Node.js callback signature
-// Actual execFile callback: (error, stdout: string, stderr: string)
 vi.mock('child_process', () => {
   const execFile = vi.fn(
     (
@@ -83,23 +85,25 @@ const SENSITIVE_PATTERNS = [
   /ENCRYPTION_KEY/i,
 ];
 
-/**
- * Helper: call private resolveBaseEnv via type-cast.
- * The method is private because it's an internal implementation detail.
- * If it's renamed or removed, TypeScript will error at compile time
- * during `npm run typecheck`, so this access is not silently broken.
- */
+// Helper to access private resolveBaseEnv
 async function getResolvedEnv(manager: MCPManager): Promise<Record<string, string>> {
-  // @ts-expect-error — private method, but we need to test its security property
+  // @ts-expect-error — private method, testing internal implementation
   return manager.resolveBaseEnv();
+}
+
+// Helper to access private getEnhancedEnv
+async function getEnhancedEnv(
+  manager: MCPManager,
+  configEnv: Record<string, string>
+): Promise<Record<string, string>> {
+  // @ts-expect-error — private method, testing internal merge behavior
+  return manager.getEnhancedEnv(configEnv);
 }
 
 describe('MCPManager Environment Security', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    // Inject fake sensitive variables into process.env
-    // These simulate what a real developer machine would have
     process.env.OPENAI_API_KEY = 'sk-fake-test-key-12345678901234567890';
     process.env.ANTHROPIC_API_KEY = 'sk-ant-fake-test-key-1234567890';
     process.env.AWS_SECRET_ACCESS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
@@ -115,7 +119,6 @@ describe('MCPManager Environment Security', () => {
   });
 
   afterEach(() => {
-    // Restore original environment
     process.env = { ...originalEnv };
   });
 
@@ -153,11 +156,8 @@ describe('MCPManager Environment Security', () => {
     const manager = new MCPManager();
     const env = await getResolvedEnv(manager);
 
-    // PATH must always be present (critical for MCP server discovery)
     expect(env).toHaveProperty('PATH');
     expect(env.PATH.length).toBeGreaterThan(0);
-
-    // HOME should be present (either from getDefaultEnvironment or shell)
     expect(env).toHaveProperty('HOME');
   });
 
@@ -165,10 +165,64 @@ describe('MCPManager Environment Security', () => {
     const manager = new MCPManager();
     const env = await getResolvedEnv(manager);
 
-    // process.env has 50+ vars on most systems; our safe env should have far fewer
     const envKeyCount = Object.keys(env).length;
     const processEnvKeyCount = Object.keys(process.env).length;
 
     expect(envKeyCount).toBeLessThan(processEnvKeyCount);
+  });
+});
+
+describe('MCPManager Config Env Merging', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('user-provided config.env variables are merged into the final environment', async () => {
+    const manager = new MCPManager();
+
+    const userConfig = {
+      NODE_ENV: 'production',
+      CUSTOM_API_ENDPOINT: 'https://api.example.com',
+      DEBUG: 'false',
+    };
+
+    const env = await getEnhancedEnv(manager, userConfig);
+
+    expect(env.NODE_ENV).toBe('production');
+    expect(env.CUSTOM_API_ENDPOINT).toBe('https://api.example.com');
+    expect(env.DEBUG).toBe('false');
+
+    // Safe base vars should still be present
+    expect(env.PATH).toBeDefined();
+    expect(env.HOME).toBeDefined();
+  });
+
+  it('user config.env takes precedence over base env for conflicting keys', async () => {
+    const manager = new MCPManager();
+
+    const userConfig = {
+      HOME: '/custom/home/override',
+      SHELL: '/bin/zsh',
+    };
+
+    const env = await getEnhancedEnv(manager, userConfig);
+
+    expect(env.HOME).toBe('/custom/home/override');
+    expect(env.SHELL).toBe('/bin/zsh');
+  });
+
+  it('config.env merging does not re-introduce sensitive process.env vars', async () => {
+    const manager = new MCPManager();
+
+    process.env.OPENAI_API_KEY = 'sk-test-leak-check';
+    process.env.AWS_SECRET_ACCESS_KEY = 'leak-check-secret';
+
+    const env = await getEnhancedEnv(manager, { CUSTOM_VAR: 'safe' });
+
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(env.CUSTOM_VAR).toBe('safe');
   });
 });
