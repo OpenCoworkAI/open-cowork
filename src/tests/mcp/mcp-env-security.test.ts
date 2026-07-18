@@ -33,28 +33,29 @@ vi.mock('../../main/utils/shell-resolver', () => ({
   getDefaultShell: () => '/bin/bash',
 }));
 
-// Mock child_process to return a controlled environment
+// Simulate a login shell 'env' output with only safe vars
+const SAFE_SHELL_OUTPUT = [
+  'HOME=/home/testuser',
+  'SHELL=/bin/bash',
+  'USER=testuser',
+  'LOGNAME=testuser',
+  'TERM=xterm-256color',
+  'PATH=/usr/local/bin:/usr/bin:/bin',
+  'LANG=en_US.UTF-8',
+  '',
+].join('\n');
+
+// Mock child_process.execFile with correct Node.js callback signature
+// Actual execFile callback: (error, stdout: string, stderr: string)
 vi.mock('child_process', () => {
   const execFile = vi.fn(
     (
       _cmd: string,
       _args: string[],
       _opts: unknown,
-      cb: (err: null, result: { stdout: string; stderr: string }) => void
+      callback: (error: Error | null, stdout: string, stderr: string) => void
     ) => {
-      // Simulate a login shell 'env' output with only safe vars
-      const safeOutput = [
-        'HOME=/home/testuser',
-        'SHELL=/bin/bash',
-        'USER=testuser',
-        'LOGNAME=testuser',
-        'TERM=xterm-256color',
-        'PATH=/usr/local/bin:/usr/bin:/bin',
-        'LANG=en_US.UTF-8',
-        '',
-      ].join('\n');
-
-      cb(null, { stdout: safeOutput, stderr: '' });
+      callback(null, SAFE_SHELL_OUTPUT, '');
     }
   );
 
@@ -81,6 +82,17 @@ const SENSITIVE_PATTERNS = [
   /JWT_SECRET/i,
   /ENCRYPTION_KEY/i,
 ];
+
+/**
+ * Helper: call private resolveBaseEnv via type-cast.
+ * The method is private because it's an internal implementation detail.
+ * If it's renamed or removed, TypeScript will error at compile time
+ * during `npm run typecheck`, so this access is not silently broken.
+ */
+async function getResolvedEnv(manager: MCPManager): Promise<Record<string, string>> {
+  // @ts-expect-error — private method, but we need to test its security property
+  return manager.resolveBaseEnv();
+}
 
 describe('MCPManager Environment Security', () => {
   const originalEnv = { ...process.env };
@@ -109,14 +121,8 @@ describe('MCPManager Environment Security', () => {
 
   it('resolveBaseEnv does not contain sensitive API keys from process.env', async () => {
     const manager = new MCPManager();
+    const env = await getResolvedEnv(manager);
 
-    // Access private resolveBaseEnv via cast
-    const resolveBaseEnv = (
-      manager as unknown as { resolveBaseEnv: () => Promise<Record<string, string>> }
-    ).resolveBaseEnv;
-    const env = await resolveBaseEnv.call(manager);
-
-    // Check each sensitive pattern is NOT in the resolved env keys
     for (const pattern of SENSITIVE_PATTERNS) {
       const matchedKeys = Object.keys(env).filter((key) => pattern.test(key));
       expect(matchedKeys).toEqual([]);
@@ -125,10 +131,7 @@ describe('MCPManager Environment Security', () => {
 
   it('resolveBaseEnv does not leak specific sensitive variable values', async () => {
     const manager = new MCPManager();
-    const resolveBaseEnv = (
-      manager as unknown as { resolveBaseEnv: () => Promise<Record<string, string>> }
-    ).resolveBaseEnv;
-    const env = await resolveBaseEnv.call(manager);
+    const env = await getResolvedEnv(manager);
 
     const sensitiveValues = [
       process.env.OPENAI_API_KEY!,
@@ -148,10 +151,7 @@ describe('MCPManager Environment Security', () => {
 
   it('resolveBaseEnv contains expected safe base variables', async () => {
     const manager = new MCPManager();
-    const resolveBaseEnv = (
-      manager as unknown as { resolveBaseEnv: () => Promise<Record<string, string>> }
-    ).resolveBaseEnv;
-    const env = await resolveBaseEnv.call(manager);
+    const env = await getResolvedEnv(manager);
 
     // PATH must always be present (critical for MCP server discovery)
     expect(env).toHaveProperty('PATH');
@@ -163,10 +163,7 @@ describe('MCPManager Environment Security', () => {
 
   it('resolveBaseEnv total variable count stays minimal (not full process.env)', async () => {
     const manager = new MCPManager();
-    const resolveBaseEnv = (
-      manager as unknown as { resolveBaseEnv: () => Promise<Record<string, string>> }
-    ).resolveBaseEnv;
-    const env = await resolveBaseEnv.call(manager);
+    const env = await getResolvedEnv(manager);
 
     // process.env has 50+ vars on most systems; our safe env should have far fewer
     const envKeyCount = Object.keys(env).length;
