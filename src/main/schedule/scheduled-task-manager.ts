@@ -15,6 +15,12 @@ import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
 } from '../../shared/schedule/task-title';
+import {
+  areHttpWatchConfigsEqual,
+  normalizeWatchConfig,
+  type HttpWatchConfig,
+  type HttpWatchConfigInput,
+} from '../../shared/schedule/watch-task';
 import { log, logError } from '../utils/logger';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
@@ -49,6 +55,11 @@ export interface ScheduledTask {
   lastRunAt: number | null;
   lastRunSessionId: string | null;
   lastError: string | null;
+  watchConfig: HttpWatchConfig | null;
+  watchConfigError: string | null;
+  lastState: string | null;
+  lastCheckedAt: number | null;
+  consecutiveUnchanged: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -60,6 +71,7 @@ export interface ScheduledTaskCreateInput {
   runAt: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduledTaskScheduleConfig | null;
+  watchConfig?: HttpWatchConfigInput | null;
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
@@ -72,6 +84,7 @@ export interface ScheduledTaskUpdateInput {
   runAt?: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduledTaskScheduleConfig | null;
+  watchConfig?: HttpWatchConfigInput | null;
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
@@ -80,11 +93,19 @@ export interface ScheduledTaskUpdateInput {
   lastError?: string | null;
 }
 
+export type ScheduledTaskStoreCreateInput = ScheduledTaskCreateInput;
+
+export interface ScheduledTaskStoreUpdateInput extends ScheduledTaskUpdateInput {
+  lastState?: string | null;
+  lastCheckedAt?: number | null;
+  consecutiveUnchanged?: number;
+}
+
 export interface ScheduledTaskStore {
   list(): ScheduledTask[];
   get(id: string): ScheduledTask | null;
-  create(input: ScheduledTaskCreateInput): ScheduledTask;
-  update(id: string, updates: ScheduledTaskUpdateInput): ScheduledTask | null;
+  create(input: ScheduledTaskStoreCreateInput): ScheduledTask;
+  update(id: string, updates: ScheduledTaskStoreUpdateInput): ScheduledTask | null;
   delete(id: string): boolean;
 }
 
@@ -93,6 +114,7 @@ export interface ScheduledTaskRunResult {
 }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
+const MIN_WATCH_TASK_INTERVAL_MS = 60_000;
 
 interface ScheduledTaskExecutionRecord {
   success: boolean;
@@ -102,6 +124,7 @@ interface ScheduledTaskExecutionRecord {
 
 interface ScheduledTaskManagerOptions {
   store: ScheduledTaskStore;
+  checkCondition?: (config: HttpWatchConfig) => Promise<string>;
   executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
   onTaskError?: (taskId: string, error: string) => void;
   now?: () => number;
@@ -109,6 +132,7 @@ interface ScheduledTaskManagerOptions {
 
 export class ScheduledTaskManager {
   private readonly store: ScheduledTaskStore;
+  private readonly checkCondition?: (config: HttpWatchConfig) => Promise<string>;
   private readonly executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
   private readonly onTaskError?: (taskId: string, error: string) => void;
   private readonly now: () => number;
@@ -118,6 +142,7 @@ export class ScheduledTaskManager {
 
   constructor(options: ScheduledTaskManagerOptions) {
     this.store = options.store;
+    this.checkCondition = options.checkCondition;
     this.executeTask = options.executeTask;
     this.onTaskError = options.onTaskError;
     this.now = options.now ?? (() => Date.now());
@@ -171,13 +196,23 @@ export class ScheduledTaskManager {
       normalizedScheduleConfig || normalizedRepeatEvery === null
         ? null
         : normalizeRepeatUnit(input.repeatUnit);
+    const normalizedWatchConfig = normalizeWatchConfigInput(input.watchConfig);
+    if (normalizedWatchConfig !== null && normalizedWatchConfig !== undefined) {
+      assertValidWatchTaskSchedule(
+        normalizedScheduleConfig,
+        normalizedRepeatEvery,
+        normalizedRepeatUnit
+      );
+    }
     const created = this.store.create({
-      ...input,
       title: normalizedTitle,
       prompt: normalizedPrompt,
+      cwd: input.cwd,
+      runAt: input.runAt,
       scheduleConfig: normalizedScheduleConfig,
       nextRunAt: input.nextRunAt ?? input.runAt,
       enabled: input.enabled ?? true,
+      watchConfig: normalizedWatchConfig,
       repeatEvery: normalizedRepeatEvery,
       repeatUnit: normalizedRepeatUnit,
     });
@@ -193,34 +228,82 @@ export class ScheduledTaskManager {
       updates.title === undefined
         ? current.title
         : buildScheduledTaskTitle(updates.title || nextPrompt);
-    const nextScheduleConfig =
+    const normalizedScheduleConfig =
       updates.scheduleConfig === undefined
         ? undefined
         : normalizeScheduleConfig(updates.scheduleConfig);
-    const usesScheduleConfig =
-      nextScheduleConfig !== undefined
-        ? nextScheduleConfig !== null
-        : current.scheduleConfig !== null;
-    const nextRepeatEvery = usesScheduleConfig
+    const nextScheduleConfig =
+      normalizedScheduleConfig === undefined ? current.scheduleConfig : normalizedScheduleConfig;
+    const usesScheduleConfig = nextScheduleConfig !== null;
+    const normalizedRepeatEvery = usesScheduleConfig
       ? null
       : updates.repeatEvery === undefined
         ? undefined
         : normalizeRepeatEvery(updates.repeatEvery);
-    let nextRepeatUnit = usesScheduleConfig
+    let normalizedRepeatUnit = usesScheduleConfig
       ? null
       : updates.repeatUnit === undefined
         ? undefined
         : normalizeRepeatUnit(updates.repeatUnit);
-    if (!usesScheduleConfig && nextRepeatEvery !== undefined && nextRepeatEvery === null) {
+    if (
+      !usesScheduleConfig &&
+      normalizedRepeatEvery !== undefined &&
+      normalizedRepeatEvery === null
+    ) {
+      normalizedRepeatUnit = null;
+    }
+    const nextRepeatEvery = usesScheduleConfig
+      ? null
+      : normalizedRepeatEvery === undefined
+        ? current.repeatEvery
+        : normalizedRepeatEvery;
+    let nextRepeatUnit = usesScheduleConfig
+      ? null
+      : normalizedRepeatUnit === undefined
+        ? current.repeatUnit
+        : normalizedRepeatUnit;
+    if (!usesScheduleConfig && nextRepeatEvery === null) {
       nextRepeatUnit = null;
     }
+    const normalizedWatchConfig = normalizeWatchConfigInput(updates.watchConfig);
+    const nextWatchConfig =
+      normalizedWatchConfig === undefined ? current.watchConfig : normalizedWatchConfig;
+    if (nextWatchConfig !== null) {
+      assertValidWatchTaskSchedule(nextScheduleConfig, nextRepeatEvery, nextRepeatUnit);
+    }
+    const resetWatchRuntimeState =
+      normalizedWatchConfig === null
+        ? current.watchConfig !== null || current.watchConfigError !== null
+        : normalizedWatchConfig !== undefined &&
+          (current.watchConfig === null ||
+            !areHttpWatchConfigsEqual(current.watchConfig, normalizedWatchConfig));
     const updated = this.store.update(id, {
-      ...updates,
-      prompt: nextPrompt,
       title: nextTitle,
-      scheduleConfig: nextScheduleConfig,
-      repeatEvery: nextRepeatEvery,
-      repeatUnit: nextRepeatUnit,
+      prompt: nextPrompt,
+      scheduleConfig: normalizedScheduleConfig,
+      repeatEvery: normalizedRepeatEvery,
+      repeatUnit: normalizedRepeatUnit,
+      ...(updates.cwd === undefined ? {} : { cwd: updates.cwd }),
+      ...(updates.runAt === undefined ? {} : { runAt: updates.runAt }),
+      ...(updates.nextRunAt === undefined ? {} : { nextRunAt: updates.nextRunAt }),
+      ...(normalizedWatchConfig === undefined ? {} : { watchConfig: normalizedWatchConfig }),
+      ...(updates.enabled === undefined ? {} : { enabled: updates.enabled }),
+      ...(updates.lastRunAt === undefined ? {} : { lastRunAt: updates.lastRunAt }),
+      ...(updates.lastRunSessionId === undefined
+        ? {}
+        : { lastRunSessionId: updates.lastRunSessionId }),
+      ...(resetWatchRuntimeState
+        ? { lastError: null }
+        : updates.lastError === undefined
+          ? {}
+          : { lastError: updates.lastError }),
+      ...(resetWatchRuntimeState
+        ? {
+            lastState: null,
+            lastCheckedAt: null,
+            consecutiveUnchanged: 0,
+          }
+        : {}),
     });
     if (!updated) return null;
     this.scheduleTask(updated);
@@ -257,7 +340,7 @@ export class ScheduledTaskManager {
     this.executingTasks.add(id);
     const taskToExecute = this.prepareExecution(task);
     try {
-      const execution = await this.executeAndRecord(taskToExecute);
+      const execution = await this.executeTaskPipeline(taskToExecute);
       if (!execution.success) {
         throw new Error(execution.error ?? 'Scheduled task execution failed');
       }
@@ -293,11 +376,20 @@ export class ScheduledTaskManager {
       return;
     }
     if (this.executingTasks.has(taskId)) {
+      if (task.watchConfig !== null || task.watchConfigError !== null) {
+        const nextRunAt = computeNextRunAt(task, this.now());
+        if (nextRunAt !== null) {
+          const updated = this.store.update(task.id, { nextRunAt, enabled: true });
+          if (updated) {
+            this.scheduleTask(updated);
+          }
+        }
+      }
       return;
     }
     this.executingTasks.add(taskId);
     const taskToExecute = this.prepareExecution(task);
-    this.executeAndRecord(taskToExecute)
+    this.executeTaskPipeline(taskToExecute)
       .catch((err) => {
         const errorMessage = err instanceof Error ? err.message : String(err);
         try {
@@ -359,6 +451,126 @@ export class ScheduledTaskManager {
     }
     const base = task.nextRunAt ?? task.runAt ?? now;
     return Math.max(base, now);
+  }
+
+  private async executeTaskPipeline(task: ScheduledTask): Promise<ScheduledTaskExecutionRecord> {
+    if (task.watchConfig !== null) {
+      return this.checkAndExecuteWatchTask(task, task.watchConfig, this.now());
+    }
+    if (task.watchConfigError !== null) {
+      return this.recordWatchTaskCheckFailure(task, this.now(), task.watchConfigError);
+    }
+    return this.executeAndRecord(task);
+  }
+
+  private async checkAndExecuteWatchTask(
+    task: ScheduledTask,
+    config: HttpWatchConfig,
+    checkedAt: number
+  ): Promise<ScheduledTaskExecutionRecord> {
+    if (this.checkCondition === undefined) {
+      return this.recordWatchTaskCheckFailure(
+        task,
+        checkedAt,
+        'WatchTask condition checker is unavailable.'
+      );
+    }
+
+    let currentState: string;
+    try {
+      currentState = await this.checkCondition(config);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return this.recordWatchTaskCheckFailure(task, checkedAt, errorMessage);
+    }
+
+    const stateUpdate = this.buildWatchTaskStateUpdate(task, currentState, checkedAt);
+    const updatedTask = this.persistWatchTaskState(task, stateUpdate.updates);
+    if (updatedTask === null) {
+      return { success: false, error: 'WatchTask state update could not be persisted.' };
+    }
+    if (!stateUpdate.shouldExecute) {
+      return { success: true };
+    }
+    return this.executeAndRecord(updatedTask);
+  }
+
+  private buildWatchTaskStateUpdate(
+    task: ScheduledTask,
+    currentState: string,
+    checkedAt: number
+  ): {
+    readonly shouldExecute: boolean;
+    readonly updates: ScheduledTaskStoreUpdateInput;
+  } {
+    if (task.lastState === null) {
+      return {
+        shouldExecute: false,
+        updates: {
+          lastState: currentState,
+          lastCheckedAt: checkedAt,
+          consecutiveUnchanged: 0,
+          lastError: null,
+        },
+      };
+    }
+    if (task.lastState === currentState) {
+      return {
+        shouldExecute: false,
+        updates: {
+          lastCheckedAt: checkedAt,
+          consecutiveUnchanged: task.consecutiveUnchanged + 1,
+          lastError: null,
+        },
+      };
+    }
+    return {
+      shouldExecute: true,
+      updates: {
+        lastState: currentState,
+        lastCheckedAt: checkedAt,
+        consecutiveUnchanged: 0,
+        lastError: null,
+      },
+    };
+  }
+
+  private recordWatchTaskCheckFailure(
+    task: ScheduledTask,
+    checkedAt: number,
+    error: string
+  ): ScheduledTaskExecutionRecord {
+    const updatedTask = this.persistWatchTaskState(task, {
+      lastCheckedAt: checkedAt,
+      lastError: error,
+    });
+    if (updatedTask === null) {
+      return { success: false, error: 'WatchTask state update could not be persisted.' };
+    }
+    this.reportWatchTaskError(task.id, error);
+    return { success: false, error };
+  }
+
+  private persistWatchTaskState(
+    task: ScheduledTask,
+    updates: ScheduledTaskStoreUpdateInput
+  ): ScheduledTask | null {
+    try {
+      const updatedTask = this.store.update(task.id, updates);
+      if (updatedTask !== null) {
+        return updatedTask;
+      }
+      this.reportWatchTaskError(task.id, 'WatchTask state update returned no task.');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.reportWatchTaskError(task.id, `WatchTask state update failed: ${errorMessage}`);
+    }
+    return null;
+  }
+
+  private reportWatchTaskError(taskId: string, error: string): void {
+    this.onTaskError?.(taskId, error);
+    logError(`[ScheduledTask] WatchTask check failed for ${taskId}:`, error);
   }
 
   private async executeAndRecord(task: ScheduledTask): Promise<ScheduledTaskExecutionRecord> {
@@ -438,6 +650,32 @@ function normalizeScheduleConfig(
     return { kind: 'weekly', weekdays, times };
   }
   return null;
+}
+
+function normalizeWatchConfigInput(
+  value: HttpWatchConfigInput | null | undefined
+): HttpWatchConfig | null | undefined {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return normalizeWatchConfig(value);
+}
+
+function assertValidWatchTaskSchedule(
+  scheduleConfig: ScheduledTaskScheduleConfig | null,
+  repeatEvery: number | null,
+  repeatUnit: ScheduleRepeatUnit | null
+): void {
+  if (scheduleConfig !== null) {
+    return;
+  }
+  const intervalMs = getIntervalMs(repeatEvery, repeatUnit);
+  if (intervalMs === null) {
+    throw new Error('WatchTasks require a repeating interval, daily, or weekly schedule.');
+  }
+  if (intervalMs < MIN_WATCH_TASK_INTERVAL_MS) {
+    throw new Error('WatchTask automatic intervals must be at least 60000 ms.');
+  }
 }
 
 function isRepeatingTask(task: ScheduledTask): boolean {

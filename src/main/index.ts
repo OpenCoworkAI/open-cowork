@@ -68,6 +68,8 @@ import {
   type ScheduledTaskUpdateInput,
 } from './schedule/scheduled-task-manager';
 import { createScheduledTaskStore } from './schedule/scheduled-task-store';
+import { HttpConditionChecker } from './schedule/http-condition-checker';
+import type { HttpWatchConfig } from '../shared/schedule/watch-task';
 import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
@@ -133,6 +135,9 @@ let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
 let memoryService: MemoryService | null = null;
 let scheduledTaskManager: ScheduledTaskManager | null = null;
+const httpConditionChecker = new HttpConditionChecker();
+const checkHttpCondition = (config: HttpWatchConfig): Promise<string> =>
+  httpConditionChecker.check(config);
 
 /**
  * Tool names that a spawned subagent may never invoke, regardless of what
@@ -996,6 +1001,7 @@ app
       const headlessScheduledTaskStore = createScheduledTaskStore(db);
       scheduledTaskManager = new ScheduledTaskManager({
         store: headlessScheduledTaskStore,
+        checkCondition: checkHttpCondition,
         executeTask: async (task) => {
           if (!sessionManager) {
             throw new Error('Session manager not initialized');
@@ -1409,6 +1415,7 @@ app
     const scheduledTaskStore = createScheduledTaskStore(db);
     scheduledTaskManager = new ScheduledTaskManager({
       store: scheduledTaskStore,
+      checkCondition: checkHttpCondition,
       executeTask: async (task) => {
         if (!sessionManager) {
           throw new Error('Session manager not initialized');
