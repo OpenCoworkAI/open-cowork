@@ -4697,7 +4697,7 @@ function GeneralTab() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+  const currentLang = i18n.resolvedLanguage || i18n.language;
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
@@ -4712,6 +4712,21 @@ function GeneralTab() {
   const languages = [
     { code: 'en', nativeName: 'English' },
     { code: 'zh', nativeName: '中文' },
+    { code: 'ar', nativeName: 'العربية' },
+    { code: 'pt-BR', nativeName: 'Português (BR)' },
+    { code: 'bs', nativeName: 'Bosanski' },
+    { code: 'da', nativeName: 'Dansk' },
+    { code: 'de', nativeName: 'Deutsch' },
+    { code: 'es', nativeName: 'Español' },
+    { code: 'fr', nativeName: 'Français' },
+    { code: 'ja', nativeName: '日本語' },
+    { code: 'ko', nativeName: '한국어' },
+    { code: 'nb', nativeName: 'Norsk' },
+    { code: 'pl', nativeName: 'Polski' },
+    { code: 'ru', nativeName: 'Русский' },
+    { code: 'th', nativeName: 'ไทย' },
+    { code: 'tr', nativeName: 'Türkçe' },
+    { code: 'zh-TW', nativeName: '繁體中文' },
   ];
 
   const themeOptions = [
@@ -4745,13 +4760,15 @@ function GeneralTab() {
       {/* Language */}
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-text-primary">{t('general.language')}</h4>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {languages.map((lang) => (
             <button
               key={lang.code}
               onClick={() => i18n.changeLanguage(lang.code)}
-              className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                currentLang === lang.code
+              dir={lang.code === 'ar' ? 'rtl' : 'ltr'}
+              lang={lang.code}
+              className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                currentLang === lang.code || (lang.code === 'zh' && currentLang.startsWith('zh'))
                   ? 'border-accent bg-accent/5 text-text-primary'
                   : 'border-border bg-surface hover:border-accent/50 text-text-secondary'
               }`}
