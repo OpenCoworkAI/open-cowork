@@ -99,3 +99,6 @@ DEV_LOG.md
 
 # Screenshots (debug/review)
 *.png
+
+# i18n working directory (translation batches, drafts)
+.i18n-work/

@@ -4,30 +4,59 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import enTranslations from './locales/en.json';
 import zhTranslations from './locales/zh.json';
+import arTranslations from './locales/ar.json';
+import ptBRTranslations from './locales/pt-BR.json';
+import bsTranslations from './locales/bs.json';
+import daTranslations from './locales/da.json';
+import deTranslations from './locales/de.json';
+import esTranslations from './locales/es.json';
+import frTranslations from './locales/fr.json';
+import jaTranslations from './locales/ja.json';
+import koTranslations from './locales/ko.json';
+import nbTranslations from './locales/nb.json';
+import plTranslations from './locales/pl.json';
+import ruTranslations from './locales/ru.json';
+import thTranslations from './locales/th.json';
+import trTranslations from './locales/tr.json';
+import zhTWTranslations from './locales/zh-TW.json';
 
 i18n
-  .use(LanguageDetector) // 自动检测浏览器语言
-  .use(initReactI18next) // 初始化 react-i18next
+  .use(LanguageDetector)
+  .use(initReactI18next)
   .init({
     resources: {
-      en: {
-        translation: enTranslations,
-      },
-      zh: {
-        translation: zhTranslations,
-      },
+      en: { translation: enTranslations },
+      zh: { translation: zhTranslations },
+      ar: { translation: arTranslations },
+      'pt-BR': { translation: ptBRTranslations },
+      bs: { translation: bsTranslations },
+      da: { translation: daTranslations },
+      de: { translation: deTranslations },
+      es: { translation: esTranslations },
+      fr: { translation: frTranslations },
+      ja: { translation: jaTranslations },
+      ko: { translation: koTranslations },
+      nb: { translation: nbTranslations },
+      pl: { translation: plTranslations },
+      ru: { translation: ruTranslations },
+      th: { translation: thTranslations },
+      tr: { translation: trTranslations },
+      'zh-TW': { translation: zhTWTranslations },
     },
-    fallbackLng: 'en', // 默认语言
-    supportedLngs: ['en', 'zh'], // 支持的语言
+    fallbackLng: 'en',
+    supportedLngs: [
+      'en', 'zh', 'ar', 'pt-BR', 'bs', 'da', 'de', 'es', 'fr',
+      'ja', 'ko', 'nb', 'pl', 'ru', 'th', 'tr', 'zh-TW',
+    ],
     interpolation: {
-      escapeValue: false, // React 已经处理了 XSS
+      escapeValue: false,
     },
-    pluralSeparator: '_', // 复数分隔符
-    contextSeparator: '_', // 上下文分隔符
+    pluralSeparator: '_',
+    contextSeparator: '_',
     detection: {
-      order: ['localStorage', 'navigator'], // 先检查 localStorage，再检查浏览器语言
-      caches: ['localStorage'], // 将语言选择保存到 localStorage
-      lookupLocalStorage: 'i18nextLng', // localStorage key
+      order: ['localStorage', 'navigator'],
+      caches: ['localStorage'],
+      lookupLocalStorage: 'i18nextLng',
     },
   });
 
