@@ -14,6 +14,13 @@ interface EncryptedStoreRotationOptions<T extends Record<string, unknown>> {
   logPrefix: string;
   log?: Logger;
   warn?: Logger;
+  /**
+   * Adopt a valid-JSON plaintext store file as legacy data and re-write it
+   * encrypted. Only for stores that historically shipped WITHOUT encryption
+   * (e.g. mcp-config) — for always-encrypted stores, plaintext on disk means
+   * corruption and must fall through to backup-and-reset instead.
+   */
+  adoptPlaintext?: boolean;
 }
 
 interface KeyMaterialOptions {
@@ -219,7 +226,7 @@ export function createEncryptedStoreWithKeyRotation<T extends Record<string, unk
     // A store that was previously written WITHOUT an encryptionKey is plain
     // JSON on disk — adopt its contents and re-write encrypted, instead of
     // treating it as an unreadable store and resetting it.
-    const plainPath = resolveStorePath(options.storeOptions);
+    const plainPath = options.adoptPlaintext ? resolveStorePath(options.storeOptions) : null;
     if (plainPath && fs.existsSync(plainPath)) {
       try {
         const snapshot = JSON.parse(fs.readFileSync(plainPath, 'utf-8')) as T;

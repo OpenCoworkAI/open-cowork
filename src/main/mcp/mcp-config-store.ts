@@ -87,6 +87,8 @@ class MCPConfigStore {
       logPrefix: '[MCPConfigStore]',
       log,
       warn: logWarn,
+      // This store shipped unencrypted historically — adopt existing files.
+      adoptPlaintext: true,
     });
   }
 
