@@ -183,9 +183,23 @@ export default defineConfig({
 
     nav: [
       { text: 'Home', link: '/' },
+      { text: 'Getting Started', link: '/guide/getting-started' },
+      { text: 'Troubleshooting', link: '/guide/troubleshooting' },
       { text: 'Download', link: 'https://github.com/OpenCoworkAI/open-cowork/releases' },
       { text: 'GitHub', link: 'https://github.com/OpenCoworkAI/open-cowork' },
     ],
+
+    sidebar: {
+      '/guide/': [
+        {
+          text: 'Guide',
+          items: [
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Troubleshooting', link: '/guide/troubleshooting' },
+          ],
+        },
+      ],
+    },
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/OpenCoworkAI/open-cowork' },
@@ -212,9 +226,22 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/zh/' },
+          { text: '快速上手', link: '/zh/guide/getting-started' },
+          { text: '故障排查', link: '/zh/guide/troubleshooting' },
           { text: '下载', link: 'https://github.com/OpenCoworkAI/open-cowork/releases' },
           { text: 'GitHub', link: 'https://github.com/OpenCoworkAI/open-cowork' },
         ],
+        sidebar: {
+          '/zh/guide/': [
+            {
+              text: '指南',
+              items: [
+                { text: '快速上手', link: '/zh/guide/getting-started' },
+                { text: '故障排查', link: '/zh/guide/troubleshooting' },
+              ],
+            },
+          ],
+        },
         footer: {
           message: '基于 MIT 协议开源。',
           copyright: '© 2025-present OpenCoworkAI',
