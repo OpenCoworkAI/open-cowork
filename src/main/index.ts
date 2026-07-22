@@ -26,6 +26,7 @@ import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
+import { resolvePiRegistryModel, resolvePiRouteProtocol } from './agent/pi-model-resolution';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
 import {
   configStore,
@@ -1892,6 +1893,32 @@ ipcMain.handle('config.get', () => {
   } catch (error) {
     logError('[Config] Error getting config:', error);
     return {};
+  }
+});
+
+ipcMain.handle('config.getModelPricing', () => {
+  try {
+    const cfg = configStore.getAll();
+    const modelString = cfg.model?.trim() || 'anthropic/claude-sonnet-4-6';
+    const piModel = resolvePiRegistryModel(modelString, {
+      configProvider: resolvePiRouteProtocol(cfg.provider, cfg.customProtocol),
+      rawProvider: cfg.provider,
+      customProtocol: cfg.customProtocol,
+    });
+    const cost = piModel?.cost;
+    // Only report real registry pricing; synthetic models carry zeros and
+    // must not render as a fake "$0.00" in the UI.
+    if (!cost || (!cost.input && !cost.output)) {
+      return null;
+    }
+    return {
+      input: cost.input ?? 0,
+      output: cost.output ?? 0,
+      cacheRead: cost.cacheRead ?? 0,
+    };
+  } catch (error) {
+    logError('[Config] Error resolving model pricing:', error);
+    return null;
   }
 });
 

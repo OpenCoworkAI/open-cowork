@@ -690,6 +690,7 @@
     "output": "Output:",
     "tokenUsage": "Token Usage",
     "inputTokens": "Input",
+    "estimatedCostHint": "Estimated session cost from the model's public per-token pricing (cache reads included)",
     "outputTokens": "Output",
     "totalTokens": "Total",
     "changeDir": "Change directory",

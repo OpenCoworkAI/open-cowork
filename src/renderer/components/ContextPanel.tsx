@@ -105,14 +105,49 @@ export function ContextPanel() {
   const tokenUsage = useMemo(() => {
     let input = 0;
     let output = 0;
+    let cacheRead = 0;
     for (const msg of messages) {
       if (msg.tokenUsage) {
         input += msg.tokenUsage.input || 0;
         output += msg.tokenUsage.output || 0;
+        cacheRead += msg.tokenUsage.cacheRead || 0;
       }
     }
-    return { input, output, total: input + output };
+    return { input, output, cacheRead, total: input + output + cacheRead };
   }, [messages]);
+
+  // Per-MTok pricing for the current model (null for unknown/synthetic models
+  // — we never show a fabricated $0.00).
+  const [modelPricing, setModelPricing] = useState<{
+    input: number;
+    output: number;
+    cacheRead: number;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pricing = await window.electronAPI?.config?.getModelPricing?.();
+        if (!cancelled) setModelPricing(pricing ?? null);
+      } catch {
+        if (!cancelled) setModelPricing(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appConfig?.model]);
+
+  const estimatedCost = useMemo(() => {
+    if (!modelPricing || tokenUsage.total === 0) return null;
+    const usd =
+      (tokenUsage.input * modelPricing.input +
+        tokenUsage.output * modelPricing.output +
+        tokenUsage.cacheRead * modelPricing.cacheRead) /
+      1_000_000;
+    if (usd <= 0) return null;
+    return usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
+  }, [modelPricing, tokenUsage]);
 
   // Context usage: last message's input tokens ≈ current context occupation
   const contextUsage = useMemo(() => {
@@ -319,8 +354,11 @@ export function ContextPanel() {
             </span>
             {tokenUsage.total > 0 && (
               <span className="ml-auto text-text-muted/70">
-                {t('context.inputTokens')} {formatTokenCount(tokenUsage.input)} ·{' '}
-                {t('context.outputTokens')} {formatTokenCount(tokenUsage.output)}
+                {t('context.inputTokens')} {formatTokenCount(tokenUsage.input + tokenUsage.cacheRead)}{' '}
+                · {t('context.outputTokens')} {formatTokenCount(tokenUsage.output)}
+                {estimatedCost && (
+                  <span title={t('context.estimatedCostHint')}> · ≈{estimatedCost}</span>
+                )}
               </span>
             )}
           </div>

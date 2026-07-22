@@ -690,6 +690,7 @@
     "output": "输出：",
     "tokenUsage": "Token 用量",
     "inputTokens": "输入",
+    "estimatedCostHint": "按当前模型公开单价估算的本会话累计花费(含缓存读取)",
     "outputTokens": "输出",
     "totalTokens": "总计",
     "changeDir": "更改目录",
