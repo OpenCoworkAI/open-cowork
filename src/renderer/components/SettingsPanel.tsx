@@ -9,11 +9,11 @@ import {
   Wifi,
   AlertCircle,
   Globe,
-  ChevronRight,
   BrainCircuit,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
+import { Button, IconButton } from './ui';
 import { RemoteControlPanel } from './RemoteControlPanel';
 import { useAppStore } from '../store';
 import { SettingsAPI } from './settings/SettingsAPI';
@@ -167,53 +167,52 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
         className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}
       >
         {!compactSidebar && (
-          <div className="px-4 pt-5 pb-4 border-b border-border-muted">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+          <div className="px-6 pt-6 pb-3">
+            <h2 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-text-primary">
               {t('settings.title')}
-            </p>
-            <h2 className="mt-1 text-[1.24rem] font-semibold tracking-[-0.03em] text-text-primary">
-              Open Cowork
             </h2>
-            <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
           </div>
         )}
-        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
+        {/* Nav rows: single-line, uniform height — descriptions live in the content header */}
+        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'px-3 py-1 space-y-0.5'}`}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               title={compactSidebar ? tab.label : undefined}
-              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
+              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-2.5 px-3 h-9'} rounded-lg text-left transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
-                  : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
+                  ? 'bg-surface-active text-text-primary'
+                  : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
               }`}
             >
-              <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
+              <tab.icon
+                className={`w-4 h-4 flex-shrink-0 ${
+                  activeTab === tab.id ? 'text-accent' : 'text-text-muted'
+                }`}
+              />
               {!compactSidebar && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{tab.label}</p>
-                  <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
-                    {tab.description}
-                  </p>
-                </div>
-              )}
-              {!compactSidebar && activeTab === tab.id && (
-                <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                <span
+                  className={`text-[13px] truncate ${activeTab === tab.id ? 'font-medium' : ''}`}
+                >
+                  {tab.label}
+                </span>
               )}
             </button>
           ))}
         </div>
-        <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
-          <button
+        <div className={`${compactSidebar ? 'p-1.5' : 'p-3'} border-t border-border-muted`}>
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
             onClick={onClose}
-            className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-background transition-colors text-text-secondary text-sm`}
             title={compactSidebar ? t('common.close') : undefined}
           >
-            {compactSidebar ? <X className="w-4 h-4 mx-auto" /> : t('common.close')}
-          </button>
+            {compactSidebar ? <X className="w-4 h-4" /> : t('common.close')}
+          </Button>
           {!compactSidebar && (
-            <p className="text-[10px] text-text-muted text-center mt-2 select-text">
+            <p className="text-[10px] text-text-muted text-center mt-1.5 select-text">
               v{appVersion}
             </p>
           )}
@@ -224,24 +223,18 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <div className="flex items-center justify-between px-4 lg:px-8 py-4 border-b border-border-muted flex-shrink-0 bg-background/88 backdrop-blur-sm">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-              {t('settings.title')}
-            </p>
-            <h3 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
+            <h3 className="text-[1.15rem] font-semibold tracking-[-0.02em] text-text-primary">
               {activeTabMeta?.label}
             </h3>
             {activeTabMeta?.description && (
-              <p className="mt-1 text-sm text-text-muted max-w-[36rem]">
+              <p className="mt-0.5 text-sm text-text-muted max-w-[36rem]">
                 {activeTabMeta.description}
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
-          >
+          <IconButton variant="ghost" onClick={onClose}>
             <X className="w-5 h-5 text-text-secondary" />
-          </button>
+          </IconButton>
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
           <div className="max-w-[860px] w-full min-w-0 mx-auto">

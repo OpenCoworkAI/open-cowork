@@ -11,6 +11,7 @@ import type {
   MemorySearchScope,
 } from '../../types';
 import { useAppStore } from '../../store';
+import { Button } from '../ui';
 import { SettingsContentSection } from './shared';
 
 type SearchMode = 'workspace' | 'all' | 'global';
@@ -354,19 +355,15 @@ export function SettingsMemory() {
               </p>
               <p className="mt-1 text-xs text-text-muted">{t('memory.toggleHint')}</p>
             </div>
-            <button
+            <Button
+              variant={enabled ? 'secondary' : 'primary'}
               onClick={() => {
                 void handleToggle();
               }}
               disabled={isBusy}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                enabled
-                  ? 'bg-accent text-white hover:opacity-90'
-                  : 'bg-surface hover:bg-surface-hover text-text-primary border border-border'
-              } disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {enabled ? t('memory.disableAction') : t('memory.enableAction')}
-            </button>
+            </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard label={t('memory.coreCount')} value={overview?.coreCount ?? 0} />
@@ -394,16 +391,19 @@ export function SettingsMemory() {
                   : t('memory.healthy')
               }
               secondary={overview?.latestError || undefined}
+              secondaryTone="error"
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <InfoCard
               label={t('memory.storageRoot', '存储根目录')}
               value={overview?.storageRoot || runtimeDraft.storageRoot || 'Default userData/memory'}
+              mono
             />
             <InfoCard
               label={t('memory.currentWorkspace', '当前工作区')}
               value={currentWorkspace || t('memory.noWorkspace', '暂无工作区')}
+              mono
               secondary={
                 overview?.topSourceWorkspaces?.length
                   ? `Top sources: ${overview.topSourceWorkspaces
@@ -976,9 +976,9 @@ export function SettingsMemory() {
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-border-muted bg-background/80 p-3">
+    <div className="rounded-xl border border-border-muted bg-background/80 p-3">
       <p className="text-xs text-text-muted">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-text-primary">{value}</p>
+      <p className="mt-1 text-lg font-semibold text-text-primary tabular-nums">{value}</p>
     </div>
   );
 }
@@ -987,16 +987,30 @@ function InfoCard({
   label,
   value,
   secondary,
+  secondaryTone = 'muted',
+  mono,
 }: {
   label: string;
   value: string;
   secondary?: string;
+  /** 'error' only for genuine failures; informational footnotes stay muted. */
+  secondaryTone?: 'muted' | 'error';
+  /** Render the value in mono — for file paths. */
+  mono?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-border-muted bg-background/80 p-3 text-xs text-text-muted">
+    <div className="rounded-xl border border-border-muted bg-background/80 p-3 text-xs text-text-muted">
       <p className="font-medium text-text-secondary">{label}</p>
-      <p className="mt-1 break-all">{value}</p>
-      {secondary ? <p className="mt-2 break-all text-rose-500">{secondary}</p> : null}
+      <p className={`mt-1 break-all ${mono ? 'font-mono text-[11px] leading-4' : ''}`}>{value}</p>
+      {secondary ? (
+        <p
+          className={`mt-2 break-all ${
+            secondaryTone === 'error' ? 'text-error' : 'text-text-muted/80'
+          }`}
+        >
+          {secondary}
+        </p>
+      ) : null}
     </div>
   );
 }
