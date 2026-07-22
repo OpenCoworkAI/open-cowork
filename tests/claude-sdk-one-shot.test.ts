@@ -44,7 +44,7 @@ vi.mock('electron-store', () => {
   };
 });
 
-vi.mock('@mariozechner/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai/compat', () => ({
   completeSimple: mocks.completeSimple,
 }));
 
@@ -55,7 +55,19 @@ vi.mock('../src/main/agent/shared-auth', () => ({
 }));
 
 vi.mock('../src/main/agent/pi-model-resolution', () => ({
-  resolvePiRouteProtocol: (provider?: string, customProtocol?: string) => {
+  resolvePiRouteProtocol: (
+    provider?: string,
+    customProtocol?: string,
+    baseUrl?: string,
+    model?: string
+  ) => {
+    const modelId = model?.includes('/') ? model.split('/').slice(1).join('/') : model;
+    if (
+      baseUrl?.includes('api.deepseek.com') &&
+      (!modelId || modelId.toLowerCase().startsWith('deepseek') || provider === 'custom')
+    ) {
+      return 'openai';
+    }
     if (provider === 'custom') {
       if (customProtocol === 'openai' || customProtocol === 'gemini') {
         return customProtocol;
@@ -107,6 +119,13 @@ vi.mock('../src/main/agent/pi-model-resolution', () => ({
     const strippedModelId = parts.length >= 2 ? parts.slice(1).join('/') : resolved;
     const preserve =
       rawProvider === 'openrouter' && routeProtocol === 'openai' && raw.includes('/');
+    if (baseUrl?.includes('api.deepseek.com')) {
+      return {
+        provider: 'deepseek',
+        modelId: strippedModelId,
+        baseUrl,
+      };
+    }
     return {
       provider:
         rawProvider === 'openrouter' ? 'openrouter' : parts[0] || rawProvider || routeProtocol,
@@ -424,6 +443,43 @@ describe('probeWithSdk', () => {
       'openrouter',
       'openai',
       'https://openrouter.ai/api/v1',
+      'openai-completions'
+    );
+  });
+
+  it('routes DeepSeek official custom probes through openai-compatible synthetic models', async () => {
+    mocks.resolvePiRegistryModel.mockReturnValue(undefined);
+    mocks.buildSyntheticPiModel.mockReturnValue({
+      id: 'deepseek-v4-pro',
+      provider: 'deepseek',
+      api: 'openai-completions',
+      baseUrl: 'https://api.deepseek.com/v1',
+    });
+
+    const result = await probeWithSdk(
+      {
+        provider: 'custom',
+        customProtocol: 'anthropic',
+        apiKey: 'sk-deepseek-test',
+        model: 'anthropic/deepseek-v4-pro',
+        baseUrl: 'https://api.deepseek.com/anthropic',
+      },
+      createConfig({
+        provider: 'custom',
+        customProtocol: 'anthropic',
+        apiKey: 'sk-deepseek-test',
+        baseUrl: 'https://api.deepseek.com/anthropic',
+        model: 'anthropic/deepseek-v4-pro',
+        activeProfileKey: 'custom:anthropic',
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.buildSyntheticPiModel).toHaveBeenCalledWith(
+      'deepseek-v4-pro',
+      'deepseek',
+      'openai',
+      'https://api.deepseek.com/v1',
       'openai-completions'
     );
   });

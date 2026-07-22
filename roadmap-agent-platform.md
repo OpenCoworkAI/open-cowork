@@ -453,10 +453,10 @@ New:      timer fires → checkCondition() → changed? → yes: startSession()
 
 ## References
 
-- SDK subagent example: `node_modules/@mariozechner/pi-coding-agent/examples/extensions/subagent/`
-- SDK compaction internals: `node_modules/@mariozechner/pi-coding-agent/dist/core/compaction/`
+- SDK subagent example: `node_modules/@earendil-works/pi-coding-agent/examples/extensions/subagent/`
+- SDK compaction internals: `node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/`
 - hermes-agent 4-phase compaction (external reference): `NousResearch/hermes-agent` `agent/context_compressor.py`
 - Current extension pattern: `src/main/memory/memory-extension.ts` + `src/main/extensions/agent-runtime-extension-manager.ts`
 - Electron shim (headless proof): `tests/mocks/electron.ts` + `vitest.config.mts:10-12`
 - Remote gateway (headless session handling): `src/main/remote/gateway.ts` + `remote-manager.ts`
-- pi CLI headless modes: `node_modules/@mariozechner/pi-coding-agent/docs/{json,rpc,sdk}.md`
+- pi CLI headless modes: `node_modules/@earendil-works/pi-coding-agent/docs/{json,rpc,sdk}.md`

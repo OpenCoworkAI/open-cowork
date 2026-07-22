@@ -134,7 +134,7 @@ Open Cowork uses **Dependabot** (`.github/dependabot.yml`) to keep dependencies 
 These packages are deeply integrated — any update (including patch) should be tested locally before merge:
 
 - `electron` — major upgrades need a dedicated migration branch; skip Dependabot for major versions
-- `@mariozechner/pi-coding-agent` — core AI SDK; read release notes carefully
+- `@earendil-works/pi-coding-agent` — core AI SDK; read release notes carefully
 - `better-sqlite3` — native module; rebuild required, test on both platforms
 - `vite` / `@vitejs/plugin-react` — build toolchain; verify `npm run build` succeeds
 

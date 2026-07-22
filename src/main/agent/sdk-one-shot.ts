@@ -1,4 +1,4 @@
-import { completeSimple, type UserMessage as PiUserMessage } from '@mariozechner/pi-ai';
+import { completeSimple, type UserMessage as PiUserMessage } from '@earendil-works/pi-ai/compat';
 import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
 import { PROVIDER_PRESETS, type AppConfig, type CustomProtocolType } from '../config/config-store';
 import {
@@ -106,11 +106,14 @@ function resolveProbeApiKey(
 function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
   const resolvedBaseUrl = resolveProbeBaseUrl(input);
   const normalizedInputApiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : undefined;
+  const effectiveRawBaseUrl = resolvedBaseUrl || '';
+  const requestedModel = typeof input.model === 'string' ? input.model.trim() : config.model;
   const resolvedCustomProtocol = resolvePiRouteProtocol(
     input.provider,
-    input.customProtocol
+    input.customProtocol,
+    resolvedBaseUrl,
+    requestedModel
   ) as CustomProtocolType;
-  const effectiveRawBaseUrl = resolvedBaseUrl || '';
   const effectiveBaseUrl =
     input.provider === 'ollama'
       ? normalizeOllamaBaseUrl(effectiveRawBaseUrl) || effectiveRawBaseUrl
@@ -132,7 +135,7 @@ function buildProbeConfig(input: ApiTestInput, config: AppConfig): AppConfig {
     customProtocol: resolvedCustomProtocol,
     apiKey: effectiveApiKey,
     baseUrl: effectiveBaseUrl,
-    model: typeof input.model === 'string' ? input.model.trim() : config.model,
+    model: requestedModel,
   };
 }
 
@@ -177,8 +180,13 @@ export async function runPiAiOneShot(
   const provider = parts.length >= 2 ? parts[0] : keyProvider || 'anthropic';
 
   // Normalize base URL for OpenAI-compatible providers (strips copy-pasted endpoint suffixes)
-  const routeProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
   const rawBaseUrl = config.baseUrl?.trim() || undefined;
+  const routeProtocol = resolvePiRouteProtocol(
+    config.provider,
+    config.customProtocol,
+    rawBaseUrl,
+    config.model
+  );
   const effectiveBaseUrl =
     routeProtocol === 'openai' && config.provider !== 'ollama'
       ? normalizeOpenAICompatibleBaseUrl(rawBaseUrl) || rawBaseUrl
@@ -193,10 +201,7 @@ export async function runPiAiOneShot(
 
   if (!piModel) {
     // Synthetic fallback for unknown/custom models
-    const effectiveProtocol = resolvePiRouteProtocol(
-      config.provider,
-      config.customProtocol
-    ) as CustomProtocolType;
+    const effectiveProtocol = routeProtocol as CustomProtocolType;
     const api = effectiveBaseUrl ? inferPiApi(effectiveProtocol) : undefined;
     const synthetic = resolveSyntheticPiModelFallback({
       rawModel: config.model,
@@ -224,15 +229,15 @@ export async function runPiAiOneShot(
   // piModel is guaranteed non-undefined after synthetic fallback
   const resolvedModel = piModel!;
 
-  // Set API key via AuthStorage (for agent sessions) AND env vars (for pi-ai completeSimple)
+  // Set API key via shared ModelRuntime (for agent sessions) AND env vars (for pi-ai completeSimple)
   const apiKey = config.apiKey?.trim();
   if (apiKey) {
-    const authStorage = getSharedAuthStorage();
+    const authStorage = await getSharedAuthStorage();
     // Set for the config provider
-    authStorage.setRuntimeApiKey(provider, apiKey);
+    await authStorage.setRuntimeApiKey(provider, apiKey);
     // Also set for the model's native provider if different
     if (resolvedModel.provider !== provider) {
-      authStorage.setRuntimeApiKey(resolvedModel.provider, apiKey);
+      await authStorage.setRuntimeApiKey(resolvedModel.provider, apiKey);
     }
   }
 

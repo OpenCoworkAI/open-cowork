@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
+import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { TSchema } from '@sinclair/typebox';
 import type { Message, Session } from '../../renderer/types';
 

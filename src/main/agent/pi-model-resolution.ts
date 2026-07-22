@@ -1,5 +1,5 @@
-import { getModel, type Api, type Model } from '@mariozechner/pi-ai';
-import { isOfficialOpenAIBaseUrl } from '../config/auth-utils';
+import { getModel, type Api, type Model } from '@earendil-works/pi-ai/compat';
+import { isDeepSeekBaseUrl, isOfficialOpenAIBaseUrl } from '../config/auth-utils';
 
 const COMMON_FALLBACK_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 const INVALID_REGISTRY_PROVIDERS = new Set(['', 'custom']);
@@ -40,7 +40,29 @@ export interface SyntheticPiModelFallback {
   modelId: string;
 }
 
-export function resolvePiRouteProtocol(provider?: string, customProtocol?: string): string {
+function stripProviderPrefix(model: string): string {
+  const parts = model.trim().split('/');
+  return parts.length >= 2 ? parts.slice(1).join('/') : model.trim();
+}
+
+function isDeepSeekModelId(model?: string): boolean {
+  const modelId = stripProviderPrefix(model || '').toLowerCase();
+  return /^deepseek(?:[-_.]|$)/.test(modelId);
+}
+
+function shouldPreferDeepSeekRegistry(options: PiModelLookupOptions, model?: string): boolean {
+  return isDeepSeekBaseUrl(options.customBaseUrl) && isDeepSeekModelId(model);
+}
+
+export function resolvePiRouteProtocol(
+  provider?: string,
+  customProtocol?: string,
+  baseUrl?: string,
+  model?: string
+): string {
+  if (isDeepSeekBaseUrl(baseUrl) && (!model || isDeepSeekModelId(model) || provider === 'custom')) {
+    return 'openai';
+  }
   if (provider === 'custom') {
     if (customProtocol === 'openai' || customProtocol === 'gemini') {
       return customProtocol;
@@ -169,6 +191,12 @@ export function resolveSyntheticPiModelFallback(
   const parsedProvider = parts.length >= 2 ? parts[0] : '';
   const strippedModelId = parts.length >= 2 ? parts.slice(1).join('/') : modelString;
   const baseUrl = input.baseUrl?.trim() || '';
+  if (isDeepSeekBaseUrl(baseUrl)) {
+    return {
+      provider: 'deepseek',
+      modelId: strippedModelId,
+    };
+  }
   const preservesExplicitPrefixedId =
     rawModel.includes('/') &&
     (input.rawProvider === 'openrouter' ||
@@ -233,7 +261,7 @@ function addLookupCandidate(
 
 export function buildPiModelLookupCandidates(
   modelString: string,
-  options: Pick<PiModelLookupOptions, 'configProvider' | 'rawProvider'> = {}
+  options: PiModelLookupOptions = {}
 ): PiModelLookupCandidate[] {
   const keyProvider =
     options.configProvider === 'custom' ? 'anthropic' : options.configProvider || 'anthropic';
@@ -253,6 +281,9 @@ export function buildPiModelLookupCandidates(
     if (keyProvider !== parsedProvider) {
       addLookupCandidate(candidates, seen, keyProvider, trimmedModel);
     }
+    if (shouldPreferDeepSeekRegistry(options, parsedModelId)) {
+      addLookupCandidate(candidates, seen, 'deepseek', parsedModelId);
+    }
     addLookupCandidate(candidates, seen, parsedProvider, parsedModelId);
     for (const fallbackProvider of COMMON_FALLBACK_PROVIDERS) {
       addLookupCandidate(candidates, seen, fallbackProvider, parsedModelId);
@@ -261,6 +292,9 @@ export function buildPiModelLookupCandidates(
   }
 
   addLookupCandidate(candidates, seen, keyProvider, trimmedModel);
+  if (shouldPreferDeepSeekRegistry(options, trimmedModel)) {
+    addLookupCandidate(candidates, seen, 'deepseek', stripProviderPrefix(trimmedModel));
+  }
   for (const fallbackProvider of COMMON_FALLBACK_PROVIDERS) {
     addLookupCandidate(candidates, seen, fallbackProvider, trimmedModel);
   }
@@ -344,7 +378,13 @@ export function applyPiModelRuntimeOverrides(
 
   // Handle custom provider with explicit protocol override
   if (isCustomProvider && options.customProtocol) {
-    const targetApi = inferPiApi(options.customProtocol);
+    const targetProtocol = resolvePiRouteProtocol(
+      options.rawProvider || options.configProvider,
+      options.customProtocol,
+      options.customBaseUrl,
+      nextModel.id
+    );
+    const targetApi = inferPiApi(targetProtocol);
     if (nextModel.api !== targetApi && !shouldPreserveOpenAIResponsesApi(nextModel, options)) {
       nextModel = { ...nextModel, api: targetApi } as typeof nextModel;
     }

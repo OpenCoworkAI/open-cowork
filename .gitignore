@@ -51,7 +51,7 @@ coverage/
 *.pem
 *.p12
 
-# Claude 
+# Claude
 .claude/*
 !.claude/skills/
 CLAUDE.md
@@ -68,6 +68,7 @@ docs/
 /.mcp.json
 /eng.traineddata
 /jpn.traineddata
+package-lock.json
 
 # Worktrees
 .worktrees/

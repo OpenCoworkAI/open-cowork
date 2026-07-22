@@ -39,7 +39,7 @@ export default defineConfig({
                 'utf-8-validate',
                 'electron',
                 // Externalize large CJS-compatible main-process dependencies
-                // NOTE: ESM-only packages (@mariozechner/pi-coding-agent, pi-ai, electron-store, uuid)
+                // NOTE: ESM-only packages (@earendil-works/pi-coding-agent, pi-ai, electron-store, uuid)
                 // must stay bundled — CJS require() can't load them
                 '@anthropic-ai/sdk',
                 '@larksuiteoapi/node-sdk',

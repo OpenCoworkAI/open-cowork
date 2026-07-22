@@ -5,6 +5,7 @@ import { normalizeOllamaBaseUrl as sharedNormalizeOllamaBaseUrl } from '../../sh
 const API_KEY_PREFIX_RE = /^sk-/i;
 const CHATGPT_ACCOUNT_ID_RE = /^[-_a-zA-Z0-9]{6,}$/;
 const OFFICIAL_OPENAI_HOSTS = new Set(['api.openai.com', 'chatgpt.com']);
+const DEEPSEEK_OPENAI_HOST = 'api.deepseek.com';
 
 export const OPENAI_PLATFORM_BASE_URL = 'https://api.openai.com/v1';
 export const LOCAL_OPENAI_PLACEHOLDER_KEY = 'sk-openai-local-proxy';
@@ -95,6 +96,28 @@ export function normalizeOpenAICompatibleBaseUrl(baseUrl: string | undefined): s
       return parsed.toString().replace(/\/+$/, '');
     }
 
+    if (host === DEEPSEEK_OPENAI_HOST) {
+      let pathname = parsed.pathname.replace(/\/+$/, '');
+      pathname = pathname
+        .replace(/\/chat\/completions$/i, '')
+        .replace(/\/completions$/i, '')
+        .replace(/\/responses$/i, '')
+        .replace(/\/+$/, '');
+
+      if (
+        !pathname ||
+        pathname === '/' ||
+        /^\/anthropic(?:\/v1)?$/i.test(pathname) ||
+        /^\/api(?:\/v1)?$/i.test(pathname)
+      ) {
+        parsed.pathname = '/v1';
+        return parsed.toString().replace(/\/+$/, '');
+      }
+
+      parsed.pathname = pathname;
+      return parsed.toString().replace(/\/+$/, '');
+    }
+
     // Generic OpenAI-compatible provider normalization:
     // Strip trailing endpoint suffixes that users may have copy-pasted from docs.
     // Do NOT auto-append /v1 — some APIs use /v2, no version path, or custom paths.
@@ -126,6 +149,10 @@ function extractHostname(baseUrl: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function isDeepSeekBaseUrl(baseUrl: string | undefined): boolean {
+  return extractHostname(baseUrl) === DEEPSEEK_OPENAI_HOST;
 }
 
 export function isOfficialOpenAIBaseUrl(baseUrl: string | undefined): boolean {

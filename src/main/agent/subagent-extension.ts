@@ -5,17 +5,19 @@ import {
   SettingsManager as PiSettingsManager,
   createCodingTools,
   DefaultResourceLoader,
+  getAgentDir,
   type ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
   BeforeSessionRunContext,
   AgentRuntimeCustomTool,
 } from '../extensions/agent-runtime-extension';
-import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { getSharedAuthStorage } from './shared-auth';
 import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
+import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { log, logError } from '../utils/logger';
 import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
 import type { ServerEvent } from '../../renderer/types';
@@ -182,14 +184,23 @@ function createSpawnSubagentTool(
 
       try {
         const config = configStore.getAll();
-        const authStorage = getSharedAuthStorage();
-        const modelRegistry = new ModelRegistry(authStorage);
+        const modelRuntime = await getSharedAuthStorage();
 
         const modelString = config.model?.trim() || 'anthropic/claude-sonnet-4-6';
-        const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
+        const rawBaseUrl = config.baseUrl?.trim() || undefined;
+        const configProtocol = resolvePiRouteProtocol(
+          config.provider,
+          config.customProtocol,
+          rawBaseUrl,
+          config.model
+        );
+        const effectiveBaseUrl =
+          configProtocol === 'openai' && config.provider !== 'ollama'
+            ? normalizeOpenAICompatibleBaseUrl(rawBaseUrl) || rawBaseUrl
+            : rawBaseUrl;
         const piModel = resolvePiRegistryModel(modelString, {
           configProvider: configProtocol,
-          customBaseUrl: config.baseUrl?.trim() || undefined,
+          customBaseUrl: effectiveBaseUrl,
           rawProvider: config.provider,
           customProtocol: config.customProtocol,
         });
@@ -241,20 +252,21 @@ function createSpawnSubagentTool(
 
         const cwd = config.defaultWorkdir || process.cwd();
         const codingTools = createCodingTools(cwd);
+        const sdkCustomTools = [...(codingTools as unknown as ToolDefinition[]), ...mcpCustomTools];
 
         const childSystemPrompt = buildChildSystemPrompt(task, result_format);
         const resourceLoader = new DefaultResourceLoader({
           cwd,
-          appendSystemPrompt: childSystemPrompt,
+          agentDir: getAgentDir(),
+          appendSystemPrompt: [childSystemPrompt],
         });
         await resourceLoader.reload();
 
         const { session: childSession } = await createAgentSession({
           model: piModel,
-          authStorage,
-          modelRegistry,
-          tools: codingTools,
-          customTools: mcpCustomTools,
+          modelRuntime,
+          noTools: 'builtin',
+          customTools: sdkCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
             compaction: { enabled: false },

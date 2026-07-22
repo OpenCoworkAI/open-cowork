@@ -1,0 +1,66 @@
+diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+index a7718b4..e6cd24e 100644
+--- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
++++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+@@ -787,7 +787,15 @@ export function convertMessages(model, context, compat) {
+                 .filter(isThinkingContentBlock)
+                 .filter((block) => block.thinking.trim().length > 0);
+             if (nonEmptyThinkingBlocks.length > 0) {
+-                if (compat.requiresThinkingAsText) {
++                if (compat.requiresThinkingInContent) {
++                    // DeepSeek V4 Pro requires thinking blocks in content[] array, not as a top-level field.
++                    const thinkingContent = nonEmptyThinkingBlocks.map((block) => ({
++                        type: "thinking",
++                        thinking: sanitizeSurrogates(block.thinking),
++                    }));
++                    assistantMsg.content = [...thinkingContent, ...assistantTextParts];
++                }
++                else if (compat.requiresThinkingAsText) {
+                     // Convert thinking blocks to plain text (no tags to avoid model mimicking them)
+                     const thinkingText = nonEmptyThinkingBlocks
+                         .map((block) => sanitizeSurrogates(block.thinking))
+@@ -847,6 +855,7 @@ export function convertMessages(model, context, compat) {
+                 }
+             }
+             if (compat.requiresReasoningContentOnAssistantMessages &&
++                !compat.requiresThinkingInContent &&
+                 model.reasoning &&
+                 assistantMsg.reasoning_content === undefined) {
+                 assistantMsg.reasoning_content = "";
+@@ -1046,6 +1055,7 @@ function detectCompat(model) {
+     const useMaxTokens = baseUrl.includes("chutes.ai") || isMoonshot || isCloudflareAiGateway || isTogether || isNvidia || isAntLing;
+     const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
+     const isDeepSeek = provider === "deepseek" || baseUrl.includes("deepseek.com");
++    const isDeepSeekV4 = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i.test(model.id);
+     const isOpenRouterDeveloperRoleModel = isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
+     const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;
+     return {
+@@ -1057,6 +1067,7 @@ function detectCompat(model) {
+         requiresToolResultName: false,
+         requiresAssistantAfterToolResult: false,
+         requiresThinkingAsText: false,
++        requiresThinkingInContent: isDeepSeekV4,
+         requiresReasoningContentOnAssistantMessages: isDeepSeek,
+         thinkingFormat: isDeepSeek
+             ? "deepseek"
+@@ -1102,6 +1113,7 @@ function getCompat(model) {
+         requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
+         requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
+         requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
++        requiresThinkingInContent: model.compat.requiresThinkingInContent ?? detected.requiresThinkingInContent,
+         requiresReasoningContentOnAssistantMessages: model.compat.requiresReasoningContentOnAssistantMessages ??
+             detected.requiresReasoningContentOnAssistantMessages,
+         thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
+diff --git a/node_modules/@earendil-works/pi-ai/dist/types.d.ts b/node_modules/@earendil-works/pi-ai/dist/types.d.ts
+index 17db824..0557762 100644
+--- a/node_modules/@earendil-works/pi-ai/dist/types.d.ts
++++ b/node_modules/@earendil-works/pi-ai/dist/types.d.ts
+@@ -419,6 +419,8 @@ export interface OpenAICompletionsCompat {
+     requiresAssistantAfterToolResult?: boolean;
+     /** Whether thinking blocks must be converted to text blocks with <thinking> delimiters. Default: auto-detected from URL. */
+     requiresThinkingAsText?: boolean;
++    /** Whether replayed assistant thinking blocks must be sent in content[] instead of a top-level reasoning field. Default: auto-detected from model id. */
++    requiresThinkingInContent?: boolean;
+     /** Whether all replayed assistant messages must include an empty reasoning_content field when reasoning is enabled. Default: auto-detected from URL. */
+     requiresReasoningContentOnAssistantMessages?: boolean;
+     /** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "openrouter" uses reasoning: { effort }, "deepseek" uses thinking: { type } plus reasoning_effort when supported, "together" uses reasoning: { enabled } plus reasoning_effort when supported, "zai" uses thinking: { type }, "qwen" uses top-level enable_thinking: boolean, "qwen-chat-template" uses chat_template_kwargs.enable_thinking and preserve_thinking, "chat-template" uses configurable chat_template_kwargs, "string-thinking" uses top-level thinking: string, and "ant-ling" uses reasoning: { effort } only when the mapped effort is non-null. Default: "openai". */

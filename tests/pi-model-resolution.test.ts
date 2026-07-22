@@ -37,6 +37,22 @@ describe('pi model resolution helpers', () => {
     ]);
   });
 
+  it('prefers DeepSeek registry models for DeepSeek official endpoints', () => {
+    const candidates = buildPiModelLookupCandidates('anthropic/deepseek-v4-pro', {
+      configProvider: 'anthropic',
+      rawProvider: 'custom',
+      customBaseUrl: 'https://api.deepseek.com/v1',
+    });
+
+    expect(candidates).toContainEqual({
+      provider: 'deepseek',
+      model: 'deepseek-v4-pro',
+    });
+    expect(candidates.findIndex((c) => c.provider === 'deepseek')).toBeLessThan(
+      candidates.findIndex((c) => c.provider === 'anthropic')
+    );
+  });
+
   it('builds provider-prefixed model ids from config-like input', () => {
     expect(
       resolvePiModelString({ provider: 'openai', customProtocol: 'openai', model: 'gpt-5.4' })
@@ -62,6 +78,17 @@ describe('pi model resolution helpers', () => {
     expect(resolvePiRouteProtocol('ollama', 'openai')).toBe('openai');
     expect(resolvePiRouteProtocol('custom', 'gemini')).toBe('gemini');
     expect(resolvePiRouteProtocol('custom', 'anthropic')).toBe('anthropic');
+  });
+
+  it('routes DeepSeek official endpoints through the openai-compatible protocol', () => {
+    expect(
+      resolvePiRouteProtocol(
+        'custom',
+        'anthropic',
+        'https://api.deepseek.com/anthropic',
+        'anthropic/deepseek-v4-pro'
+      )
+    ).toBe('openai');
   });
 
   it('builds synthetic models with protocol-specific api defaults', () => {
@@ -118,6 +145,21 @@ describe('pi model resolution helpers', () => {
     expect(fallback).toEqual({
       provider: 'openai',
       modelId: 'qwen3.5:0.8b',
+    });
+  });
+
+  it('maps DeepSeek official synthetic fallbacks onto the deepseek provider', () => {
+    const fallback = resolveSyntheticPiModelFallback({
+      rawModel: 'anthropic/deepseek-v4-pro',
+      resolvedModelString: 'anthropic/deepseek-v4-pro',
+      rawProvider: 'custom',
+      routeProtocol: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+    });
+
+    expect(fallback).toEqual({
+      provider: 'deepseek',
+      modelId: 'deepseek-v4-pro',
     });
   });
 
@@ -468,6 +510,33 @@ describe('pi model resolution helpers', () => {
       }
     );
 
+    expect(model.compat?.requiresThinkingInContent).toBe(true);
+  });
+
+  it('keeps DeepSeek official custom configs on the openai-completions api', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'deepseek-v4-pro',
+        name: 'deepseek-v4-pro',
+        api: 'openai-completions',
+        provider: 'deepseek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+      {
+        configProvider: 'anthropic',
+        rawProvider: 'custom',
+        customProtocol: 'anthropic',
+        customBaseUrl: 'https://api.deepseek.com/v1',
+      }
+    );
+
+    expect(model.api).toBe('openai-completions');
+    expect(model.baseUrl).toBe('https://api.deepseek.com/v1');
     expect(model.compat?.requiresThinkingInContent).toBe(true);
   });
 
