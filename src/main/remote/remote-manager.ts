@@ -181,6 +181,16 @@ export class RemoteManager extends EventEmitter {
       // Create gateway
       this.gateway = new RemoteGateway(config.gateway, this.messageRouter);
 
+      // Scope the global 'open' auth mode to channels that explicitly opted
+      // in via their own DM policy (prevents one channel's open policy from
+      // authorizing strangers on every other channel).
+      this.gateway.setChannelDmPolicyResolver((channelType) => {
+        const channels = remoteConfigStore.getAll().channels as
+          | Record<string, { dm?: { policy?: string } } | undefined>
+          | undefined;
+        return channels?.[channelType]?.dm?.policy;
+      });
+
       // 设置远程默认工作目录（优先使用配置，其次使用全局默认）
       const configuredDefaultWorkingDir =
         config.gateway.defaultWorkingDirectory || this.defaultWorkingDirectory;

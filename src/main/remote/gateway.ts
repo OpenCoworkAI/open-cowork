@@ -55,6 +55,8 @@ export class RemoteGateway extends EventEmitter {
   // Rate limiting for WebSocket auth
   private authAttempts: Map<string, { count: number; resetTime: number }> = new Map();
 
+  private channelDmPolicyResolver?: (channelType: string) => string | undefined;
+
   constructor(config: GatewayConfig, messageRouter: MessageRouter) {
     super();
     this.config = config;
@@ -62,6 +64,15 @@ export class RemoteGateway extends EventEmitter {
 
     // Set up message router callback
     this.messageRouter.onResponse(this.handleAgentResponse.bind(this));
+  }
+
+  /**
+   * Provide a lookup for each channel's own DM policy. The global 'open'
+   * auth mode is only honored for channels that explicitly opted in — see
+   * checkAuthorization.
+   */
+  setChannelDmPolicyResolver(resolver: (channelType: string) => string | undefined): void {
+    this.channelDmPolicyResolver = resolver;
   }
 
   get running(): boolean {
@@ -359,8 +370,23 @@ export class RemoteGateway extends EventEmitter {
         return this.pairedUsers.has(pairedKey);
       }
 
-      case 'open':
-        return true;
+      case 'open': {
+        // A channel-scoped opt-in ('open' DM policy on one channel) must not
+        // widen into a global anyone-can-command grant across every connected
+        // channel. Only honor 'open' for messages from a channel whose own DM
+        // policy is explicitly 'open'.
+        const channelPolicy = this.channelDmPolicyResolver?.(message.channelType);
+        if (channelPolicy === 'open') {
+          return true;
+        }
+        logWarn(
+          '[Gateway] Rejected message under global open mode: channel',
+          message.channelType,
+          'has DM policy',
+          channelPolicy ?? 'unknown'
+        );
+        return false;
+      }
 
       default:
         return false;

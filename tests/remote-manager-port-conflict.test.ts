@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     stop = gatewayStop;
     on = vi.fn();
     setMessageInterceptor = vi.fn();
+    setChannelDmPolicyResolver = vi.fn();
     registerChannel = vi.fn();
     getStatus = vi.fn(() => ({
       running: false,
