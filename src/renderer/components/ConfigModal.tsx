@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { AppConfig, ApiTestResult } from '../types';
 import { useApiConfigState } from '../hooks/useApiConfigState';
+import { Button, IconButton, Input, DialogOverlay } from './ui';
 import { ApiConfigSetManager } from './ApiConfigSetManager';
 import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
 
@@ -143,8 +144,8 @@ export function ConfigModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
-      <div className="bg-background rounded-[2rem] shadow-elevated w-full max-w-[880px] mx-4 max-h-[88vh] overflow-hidden border border-border-subtle flex flex-col">
+    <DialogOverlay closeOnScrim={false}>
+      <div className="bg-background rounded-4xl shadow-elevated w-full max-w-[880px] max-h-[88vh] overflow-hidden border border-border-subtle flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-border-muted bg-background/88">
           <div className="flex items-center gap-3">
@@ -163,12 +164,9 @@ export function ConfigModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
-          >
+          <IconButton variant="ghost" onClick={onClose}>
             <X className="w-5 h-5 text-text-secondary" />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content */}
@@ -227,12 +225,11 @@ export function ConfigModal({
               <Key className="w-4 h-4" />
               {t('api.apiKey')}
             </label>
-            <input
+            <Input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-              className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
             />
             {currentPreset?.keyHint && (
               <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
@@ -296,7 +293,7 @@ export function ConfigModal({
                   </button>
                 )}
               </div>
-              <input
+              <Input
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
@@ -309,7 +306,6 @@ export function ConfigModal({
                         ? 'https://generativelanguage.googleapis.com'
                         : currentPreset?.baseUrl || 'https://api.anthropic.com'
                 }
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
               <p className="text-xs text-text-muted">
                 {provider === 'ollama'
@@ -367,12 +363,11 @@ export function ConfigModal({
               </div>
             </div>
             {useCustomModel ? (
-              <input
+              <Input
                 type="text"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder={modelInputPlaceholder}
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
             ) : (
               <select
@@ -450,10 +445,11 @@ export function ConfigModal({
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">
-            <button
+            <Button
+              variant="secondary"
+              fullWidth
               onClick={handleTest}
               disabled={isTesting || (requiresApiKey && !apiKey.trim())}
-              className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isTesting ? (
                 <>
@@ -466,13 +462,14 @@ export function ConfigModal({
                   {t('api.testConnection')}
                 </>
               )}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
+              fullWidth
               onClick={() => {
                 void handleSave();
               }}
               disabled={isSaving || (requiresApiKey && !apiKey.trim())}
-              className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isSaving ? (
                 <>
@@ -485,10 +482,10 @@ export function ConfigModal({
                   {isFirstRun ? t('api.getStarted') : t('api.saveSettings')}
                 </>
               )}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </DialogOverlay>
   );
 }

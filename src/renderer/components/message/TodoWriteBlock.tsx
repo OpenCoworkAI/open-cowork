@@ -58,7 +58,7 @@ export const TodoWriteBlock = memo(function TodoWriteBlock({ block }: TodoWriteB
   }
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden bg-surface">
+    <div className="rounded-2xl border border-border overflow-hidden bg-surface">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import type { PermissionRequest } from '../types';
 import { Shield, X, Check, AlertTriangle } from 'lucide-react';
+import { Button, DialogOverlay, DialogPanel } from './ui';
 
 interface PermissionDialogProps {
   permission: PermissionRequest;
@@ -34,8 +35,8 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   ].includes(permission.toolName);
 
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card w-full max-w-md p-6 m-4 shadow-elevated animate-slide-up">
+    <DialogOverlay>
+      <DialogPanel size="sm" className="max-w-md p-6">
         {/* Header */}
         <div className="flex items-start gap-4">
           <div
@@ -87,26 +88,31 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
 
         {/* Actions */}
         <div className="mt-6 flex items-center gap-3">
-          <button
+          <Button
+            variant="secondary"
+            className="flex-1"
             onClick={() => respondToPermission(permission.toolUseId, 'deny')}
-            className="flex-1 btn btn-secondary"
           >
             <X className="w-4 h-4" />
             {t('permission.deny')}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            variant="primary"
+            className="flex-1"
             onClick={() => respondToPermission(permission.toolUseId, 'allow')}
-            className="flex-1 btn btn-primary"
           >
             <Check className="w-4 h-4" />
             {t('permission.allow')}
-          </button>
+          </Button>
         </div>
 
         {/* Always Allow option */}
         {!pendingAlwaysAllow ? (
-          <button
+          <Button
+            variant="ghost"
+            fullWidth
+            className="mt-2"
             onClick={() => {
               const dangerousTools = ['bash', 'write', 'edit', 'execute_command'];
               const isDangerous = dangerousTools.some((tool) =>
@@ -118,35 +124,36 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
                 respondToPermission(permission.toolUseId, 'allow_always');
               }
             }}
-            className="w-full mt-2 btn btn-ghost text-sm"
           >
             {t('permission.alwaysAllow')}
-          </button>
+          </Button>
         ) : (
           <div className="mt-2 p-3 bg-warning/10 border border-warning/20 rounded-xl">
             <p className="text-sm text-warning mb-2">
               {`Are you sure you want to always allow "${permission.toolName}"? This tool can modify your system.`}
             </p>
             <div className="flex gap-2">
-              <button
+              <Button
+                variant="secondary"
+                className="flex-1"
                 onClick={() => setPendingAlwaysAllow(false)}
-                className="flex-1 btn btn-secondary text-sm"
               >
                 {t('permission.deny')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
                 onClick={() => {
                   setPendingAlwaysAllow(false);
                   respondToPermission(permission.toolUseId, 'allow_always');
                 }}
-                className="flex-1 btn btn-primary text-sm"
               >
                 {t('permission.alwaysAllow')}
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogPanel>
+    </DialogOverlay>
   );
 }

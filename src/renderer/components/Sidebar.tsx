@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import type { Session } from '../types';
+import { Button, IconButton, Input } from './ui';
 
 import sidebarLogoSrc from '../assets/logo.png';
 
@@ -225,20 +226,12 @@ export function Sidebar() {
     return (
       <aside className="w-[4.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
         <div className="px-3 pt-4 pb-3 flex flex-col items-center gap-2 border-b border-border-muted">
-          <button
-            onClick={toggleSidebar}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
-            title={t('context.expandPanel')}
-          >
+          <IconButton onClick={toggleSidebar} title={t('context.expandPanel')}>
             <ChevronRight className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleNewSession}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center bg-background hover:bg-surface-hover transition-colors text-text-primary border border-border-subtle"
-            title={t('sidebar.newTask')}
-          >
+          </IconButton>
+          <IconButton variant="solid" onClick={handleNewSession} title={t('sidebar.newTask')}>
             <Plus className="w-4 h-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-3 py-4">
@@ -252,23 +245,19 @@ export function Sidebar() {
         </div>
 
         <div className="px-3 py-3 border-t border-border-muted flex flex-col items-center gap-2">
-          <button
-            onClick={toggleTheme}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary"
-            title={t('sidebar.themeToggle')}
-          >
+          <IconButton onClick={toggleTheme} title={t('sidebar.themeToggle')}>
             {themeIcon}
-          </button>
-          <button
+          </IconButton>
+          <IconButton
             onClick={() => setShowSettings(true)}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary relative"
             title={t('sidebar.settings')}
+            className="relative"
           >
             <Settings className="w-4 h-4" />
             {!isConfigured && (
               <span className="absolute right-2 top-2 w-1.5 h-1.5 rounded-full bg-accent" />
             )}
-          </button>
+          </IconButton>
         </div>
       </aside>
     );
@@ -290,13 +279,14 @@ export function Sidebar() {
               </h1>
             </div>
           </div>
-          <button
+          <IconButton
+            size="sm"
             onClick={toggleSidebar}
-            className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-hover transition-colors text-text-secondary flex-shrink-0"
             title={t('context.collapsePanel')}
+            className="rounded-xl"
           >
             <ChevronLeft className="w-4 h-4" />
-          </button>
+          </IconButton>
         </div>
 
         <button
@@ -309,17 +299,17 @@ export function Sidebar() {
 
         {sessions.length > 0 && (
           <div className="mt-2 flex items-center gap-2">
-            <div className="relative flex-1 min-w-0">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('sidebar.search')}
-                className="w-full rounded-xl border border-transparent bg-background/50 pl-9 pr-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border focus:bg-background transition-colors"
-              />
-            </div>
-            <button
+            <Input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('sidebar.search')}
+              leftIcon={<SearchIcon className="w-3.5 h-3.5" />}
+              className="bg-background/50 border-transparent focus:bg-background text-[13px]"
+            />
+            <IconButton
+              size="sm"
+              variant={isSelectMode ? 'accent' : 'ghost'}
               onClick={() => {
                 if (isSelectMode) {
                   exitSelectMode();
@@ -327,15 +317,11 @@ export function Sidebar() {
                   setIsSelectMode(true);
                 }
               }}
-              className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
-                isSelectMode
-                  ? 'bg-accent text-white'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
-              }`}
               title={t('sidebar.manage')}
+              className="rounded-xl"
             >
               <ListChecks className="w-3.5 h-3.5" />
-            </button>
+            </IconButton>
           </div>
         )}
       </div>
@@ -397,13 +383,15 @@ export function Sidebar() {
                         </div>
 
                         {!isSelectMode && hoveredSession === session.id && (
-                          <button
+                          <IconButton
+                            size="xs"
+                            variant="danger"
                             onClick={(e) => handleDeleteSession(e, session.id)}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
                             title={t('common.delete')}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2"
                           >
                             <Trash2 className="w-3 h-3" />
-                          </button>
+                          </IconButton>
                         )}
                       </div>
                     );
@@ -423,18 +411,17 @@ export function Sidebar() {
                 {t('sidebar.batchDeleteConfirm', { count: selectedIds.size })}
               </p>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium text-text-secondary hover:bg-surface-hover transition-colors"
-                >
+                <Button size="sm" variant="ghost" fullWidth onClick={() => setShowDeleteConfirm(false)}>
                   {t('sidebar.cancel')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  size="sm"
+                  fullWidth
                   onClick={handleBatchDelete}
-                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium bg-error text-white hover:bg-error/90 transition-colors"
+                  className="bg-error text-white hover:bg-error/90"
                 >
                   {t('sidebar.confirmDelete')}
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -451,20 +438,18 @@ export function Sidebar() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={exitSelectMode}
-                  className="flex-1 px-3 py-2 rounded-xl text-[13px] font-medium text-text-secondary hover:bg-surface-hover transition-colors"
-                >
+                <Button variant="ghost" fullWidth onClick={exitSelectMode}>
                   {t('sidebar.cancel')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  fullWidth
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={selectedIds.size === 0}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-error text-white hover:bg-error/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="bg-error text-white hover:bg-error/90"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   {t('common.delete')}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -487,13 +472,14 @@ export function Sidebar() {
               </div>
             </button>
 
-            <button
+            <IconButton
+              size="sm"
               onClick={toggleTheme}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
               title={t('sidebar.themeToggle')}
+              className="rounded-xl"
             >
               {themeIcon}
-            </button>
+            </IconButton>
           </div>
         </div>
       )}

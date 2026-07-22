@@ -17,6 +17,7 @@ import { SubagentTracker } from './SubagentTracker';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
+import { IconButton } from './ui';
 import { isScrollNearBottom, resolveSessionScrollTop } from '../utils/chat-scroll-position';
 
 type AttachedFile = {
@@ -730,7 +731,7 @@ export function ChatView() {
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         <div
           ref={messagesContainerRef}
-          className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5"
+          className="w-full max-w-[800px] mx-auto py-10 px-5 lg:px-8 space-y-6"
         >
           {displayedMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
@@ -782,7 +783,7 @@ export function ChatView() {
 
       {/* Input */}
       <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
-        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
+        <div className="max-w-[800px] mx-auto px-5 lg:px-8 py-4">
           <form
             onSubmit={handleSubmit}
             onDragOver={handleDragOver}
@@ -835,20 +836,12 @@ export function ChatView() {
               </div>
             )}
 
+            {/* Two-row composer: text on top, actions below (Claude-style) */}
             <div
-              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
+              className={`rounded-4xl bg-background/88 border border-border-muted shadow-soft px-4 pt-3 pb-2.5 transition-colors ${
                 isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
               }`}
             >
-              <button
-                type="button"
-                onClick={handleFileSelect}
-                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                title={t('welcome.attachFiles')}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-
               <textarea
                 ref={textareaRef}
                 value={prompt}
@@ -873,39 +866,55 @@ export function ChatView() {
                 placeholder={t('chat.typeMessage')}
                 disabled={isSubmitting}
                 rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
+                className="w-full resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-1.5"
               />
 
-              <div className="flex items-center gap-2">
-                {/* Model display */}
-                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
-                  {appConfig?.model || t('chat.noModel')}
-                </span>
-
-                {canStop && (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
-                    title={t('chat.stop')}
+              <div className="flex items-center justify-between mt-1">
+                <div className="flex items-center gap-1.5">
+                  <IconButton
+                    size="sm"
+                    onClick={handleFileSelect}
+                    title={t('welcome.attachFiles')}
+                    round
+                    className="text-text-muted"
                   >
-                    <Square className="w-4 h-4" />
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={
-                    (!prompt.trim() &&
-                      !textareaRef.current?.value.trim() &&
-                      pastedImages.length === 0 &&
-                      attachedFiles.length === 0) ||
-                    isSubmitting
-                  }
-                  className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
-                  title={t('chat.sendMessage')}
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+                    <Plus className="w-5 h-5" />
+                  </IconButton>
+                  {/* Model display */}
+                  <span className="hidden sm:inline text-xs text-text-muted px-1">
+                    {appConfig?.model || t('chat.noModel')}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {canStop && (
+                    <IconButton
+                      size="sm"
+                      round
+                      onClick={handleStop}
+                      title={t('chat.stop')}
+                      className="bg-error/10 text-error hover:bg-error/20"
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    size="sm"
+                    round
+                    type="submit"
+                    variant="accent"
+                    disabled={
+                      (!prompt.trim() &&
+                        !textareaRef.current?.value.trim() &&
+                        pastedImages.length === 0 &&
+                        attachedFiles.length === 0) ||
+                      isSubmitting
+                    }
+                    title={t('chat.sendMessage')}
+                  >
+                    <Send className="w-4 h-4" />
+                  </IconButton>
+                </div>
               </div>
             </div>
 

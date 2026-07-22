@@ -24,6 +24,8 @@ type AttachedFile = {
   inlineDataBase64?: string;
 };
 
+import { Button, Chip, Badge, cn } from './ui';
+
 import welcomeLogoSrc from '../assets/logo.png';
 
 export function WelcomeView() {
@@ -440,23 +442,22 @@ export function WelcomeView() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-5 py-10 md:px-8 md:py-14">
-      <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
-        <div className="space-y-4 text-center">
-          <div className="flex items-center justify-center gap-4">
+      <div className="max-w-[760px] w-full space-y-8 animate-fade-in">
+        {/* Greeting is the hero — brand recedes to an eyebrow, Claude-style */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-center gap-2.5">
             <img
               src={welcomeLogoSrc}
               alt={t('welcome.logoAlt')}
-              className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
+              className="w-7 h-7 rounded-lg object-cover"
             />
-            <div className="text-left">
-              <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
-                Open Cowork
-              </h1>
-            </div>
+            <span className="text-[13px] font-medium tracking-[0.02em] text-text-muted">
+              Open Cowork
+            </span>
           </div>
-          <p className="heading-serif text-[1.15rem] md:text-[1.45rem] font-medium tracking-[-0.02em] text-text-secondary text-center">
+          <h1 className="heading-serif text-center text-[1.9rem] md:text-[2.4rem] leading-tight font-medium tracking-[-0.02em] text-text-primary">
             {t('welcome.title')}
-          </p>
+          </h1>
         </div>
 
         {/* API Not Configured Hint */}
@@ -477,48 +478,13 @@ export function WelcomeView() {
           </p>
         )}
 
-        {/* Quick Action Tags */}
-        <div className="flex flex-wrap gap-2 justify-center px-3">
-          {quickTags.map((tag) => (
-            <button
-              key={tag.id}
-              onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
-                selectedTag === tag.id
-                  ? 'border-accent/30 bg-accent-muted text-accent'
-                  : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
-              } ${
-                ('requiresChrome' in tag && tag.requiresChrome) ||
-                ('requiresNotion' in tag && tag.requiresNotion)
-                  ? 'relative'
-                  : ''
-              }`}
-            >
-              <tag.icon
-                className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`}
-              />
-              <span>{tag.label}</span>
-              {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
-                  {t('welcome.chromeRequired')}
-                </span>
-              )}
-              {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
-                  {t('welcome.notionRequired')}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
         {/* Main Input Card - Right aligned */}
         <form
           onSubmit={handleSubmit}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`rounded-[1.9rem] border border-border-muted bg-background/85 shadow-soft px-5 py-5 space-y-4 transition-colors ${
+          className={`rounded-4xl border border-border-muted bg-background/85 shadow-soft px-5 py-5 space-y-4 transition-colors ${
             isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
           }`}
         >
@@ -598,8 +564,8 @@ export function WelcomeView() {
             }}
           />
 
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-border-muted">
+          {/* Bottom Actions — whitespace separation, no divider */}
+          <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -629,16 +595,43 @@ export function WelcomeView() {
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={!canSubmit || isSubmitting}
-              className="btn btn-primary px-5 py-2.5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button type="submit" variant="primary" size="lg" disabled={!canSubmit || isSubmitting}>
               <span>{isSubmitting ? t('welcome.starting') : t('welcome.letsGo')}</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </form>
+
+        {/* Quick Action Tags — suggestions live below the composer */}
+        <div className="flex flex-wrap gap-2 justify-center px-3">
+          {quickTags.map((tag) => {
+            const isSelected = selectedTag === tag.id;
+            return (
+              <Chip
+                key={tag.id}
+                selected={isSelected}
+                onClick={() => handleTagClick(tag.id, tag.prompt)}
+                icon={
+                  <tag.icon
+                    className={cn('w-4 h-4', isSelected ? 'text-accent' : 'text-text-muted')}
+                  />
+                }
+              >
+                <span>{tag.label}</span>
+                {'requiresChrome' in tag && tag.requiresChrome && (
+                  <Badge className="ml-1 text-[9px] px-1.5 py-px">
+                    {t('welcome.chromeRequired')}
+                  </Badge>
+                )}
+                {'requiresNotion' in tag && tag.requiresNotion && (
+                  <Badge className="ml-1 text-[9px] px-1.5 py-px">
+                    {t('welcome.notionRequired')}
+                  </Badge>
+                )}
+              </Chip>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -66,7 +66,7 @@ export function SandboxSyncToast({ status }: Props) {
         fadeOut ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
       }`}
     >
-      <div className="bg-background/92 backdrop-blur-md border border-border-subtle rounded-[1.6rem] shadow-elevated max-w-sm overflow-hidden">
+      <div className="bg-background/92 backdrop-blur-md border border-border-subtle rounded-4xl shadow-elevated max-w-sm overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3">
           <div className={`text-xl ${isComplete ? '' : 'animate-pulse'}`}>{config.icon}</div>

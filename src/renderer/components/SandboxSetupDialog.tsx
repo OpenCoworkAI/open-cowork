@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SandboxSetupProgress, SandboxSetupPhase } from '../types';
 import { getSandboxSetupDisplayText } from '../utils/sandbox-i18n';
+import { Button } from './ui';
 
 interface Props {
   progress: SandboxSetupProgress | null;
@@ -96,7 +97,7 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
     <div
       className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-500 ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
     >
-      <div className="bg-background border border-border-subtle rounded-[2rem] shadow-elevated max-w-md w-full mx-4 overflow-hidden">
+      <div className="bg-background border border-border-subtle rounded-4xl shadow-elevated max-w-md w-full mx-4 overflow-hidden">
         {/* Header */}
         <div className="bg-background-secondary/88 px-6 py-5 border-b border-border-muted">
           <div className="flex items-center gap-3">
@@ -163,24 +164,22 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           {isError && (
             <div className="mt-4 flex flex-col gap-3">
               {isMac && (
-                <button
+                <Button
+                  variant="primary"
+                  fullWidth
                   onClick={handleRetryLima}
                   disabled={isRetrying}
-                  className="w-full py-2.5 px-4 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isRetrying ? t('sandbox.retryingLima') : t('sandbox.retryLima')}
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                variant={isMac ? 'secondary' : 'primary'}
+                fullWidth
                 onClick={handleClose}
-                className={`w-full py-2.5 px-4 rounded-xl font-medium transition-colors ${
-                  isMac
-                    ? 'bg-surface hover:bg-surface-muted text-text-primary border border-border'
-                    : 'bg-accent hover:bg-accent/90 text-white'
-                }`}
               >
                 {t('sandbox.continueNative')}
-              </button>
+              </Button>
             </div>
           )}
 

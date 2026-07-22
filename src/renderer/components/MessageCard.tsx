@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Clock, XCircle } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
+import { IconButton } from './ui';
 
 interface MessageCardProps {
   message: Message;
@@ -63,7 +64,7 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
         // User message - compact styling with smaller padding and radius
         <div className="flex items-start gap-2 justify-end group">
           <div
-            className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
+            className={`message-user px-4 py-3 rounded-4xl max-w-[80%] min-w-0 break-words ${
               isQueued ? 'opacity-70 border-dashed' : ''
             } ${isCancelled ? 'opacity-60' : ''}`}
           >
@@ -94,17 +95,18 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
               ))
             )}
           </div>
-          <button
+          <IconButton
+            size="xs"
             onClick={handleCopy}
-            className="mt-1 w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
             title={t('messageCard.copyMessage')}
+            className="mt-1 rounded-md bg-surface-muted hover:bg-surface-active opacity-0 group-hover:opacity-100"
           >
             {copied ? (
               <Check className="w-3 h-3 text-success" />
             ) : (
               <Copy className="w-3 h-3 text-text-muted" />
             )}
-          </button>
+          </IconButton>
         </div>
       ) : (
         // Assistant message — no bubble, direct content (Claude style)

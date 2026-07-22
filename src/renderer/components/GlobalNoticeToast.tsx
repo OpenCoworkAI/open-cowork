@@ -43,7 +43,7 @@ export function GlobalNoticeToast({ notice, onDismiss, onAction }: Props) {
   return (
     <div className="fixed top-4 right-4 left-4 sm:left-auto z-50">
       <div
-        className={`max-w-sm rounded-[1.4rem] border bg-background/92 backdrop-blur-md shadow-elevated ${tone.border}`}
+        className={`max-w-sm rounded-2xl border bg-background/92 backdrop-blur-md shadow-elevated ${tone.border}`}
       >
         <div className="flex items-start gap-3 px-4 py-3">
           <div className={`flex-1 text-sm leading-relaxed ${tone.text}`}>{message}</div>

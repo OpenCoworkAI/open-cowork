@@ -1,6 +1,7 @@
 // Fenced code block with syntax highlighting (highlight.js) and copy button
 import { useState, useMemo, memo } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { IconButton } from '../ui';
 import hljs from 'highlight.js';
 
 // Sanitize highlight.js output - only allow highlight span tags
@@ -46,16 +47,18 @@ export const CodeBlock = memo(function CodeBlock({ language, children }: CodeBlo
     <div className="relative group my-3">
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <span className="text-xs text-text-muted px-2 py-1 rounded bg-surface">{language}</span>
-        <button
+        <IconButton
+          size="sm"
           onClick={handleCopy}
-          className="w-7 h-7 flex items-center justify-center rounded bg-surface hover:bg-surface-hover transition-colors"
+          className="bg-surface hover:bg-surface-hover"
+          title={copied ? undefined : 'Copy'}
         >
           {copied ? (
             <Check className="w-3.5 h-3.5 text-success" />
           ) : (
             <Copy className="w-3.5 h-3.5 text-text-muted" />
           )}
-        </button>
+        </IconButton>
       </div>
       <pre className="code-block">
         {highlightedHtml ? (

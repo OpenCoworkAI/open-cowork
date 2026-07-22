@@ -57,10 +57,14 @@ export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBloc
   const previewNodes = renderThinkingPreview(preview);
 
   return (
-    <div className="rounded-2xl border border-border-subtle bg-background/40 overflow-hidden">
+    <div
+      className={`rounded-2xl border overflow-hidden ${
+        expanded ? 'border-border-subtle bg-background/40' : 'border-transparent'
+      }`}
+    >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover/50 transition-colors"
+        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover/50 rounded-2xl transition-colors"
       >
         <Brain className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
         <span className="text-xs font-medium text-text-muted flex-shrink-0">

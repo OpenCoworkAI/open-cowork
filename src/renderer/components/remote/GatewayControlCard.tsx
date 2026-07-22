@@ -26,7 +26,7 @@ export function GatewayControlCard({
   const { t } = useTranslation();
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-border-subtle bg-gradient-to-br from-background/80 to-background-secondary/80">
+    <div className="relative overflow-hidden rounded-4xl border border-border-subtle bg-gradient-to-br from-background/80 to-background-secondary/80">
       <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
       <div className="relative p-6">
         <div className="flex items-start justify-between">

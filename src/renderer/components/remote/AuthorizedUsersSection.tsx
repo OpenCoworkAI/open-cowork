@@ -18,7 +18,7 @@ export function AuthorizedUsersSection({ pairedUsers, onRevoke }: Props) {
   if (pairedUsers.length === 0) return null;
 
   return (
-    <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60">
+    <div className="p-6 rounded-4xl border border-border-subtle bg-background/60">
       <h3 className="font-medium text-text-primary mb-4 flex items-center gap-2">
         <Users className="w-5 h-5" />
         {t('remote.authorizedUsersTitle', { count: pairedUsers.length })}

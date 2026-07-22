@@ -51,7 +51,7 @@ export function CommonProviderSetupsCard({
   }
 
   return (
-    <details className="rounded-[1.5rem] border border-border-subtle bg-background/40 px-4 py-4">
+    <details className="rounded-4xl border border-border-subtle bg-background/40 px-4 py-4">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-text-primary">
         <span className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-accent" />

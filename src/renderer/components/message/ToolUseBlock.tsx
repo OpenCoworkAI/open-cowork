@@ -118,18 +118,20 @@ export const ToolUseBlock = memo(function ToolUseBlock({
 
   return (
     <div
-      className={`rounded-2xl border overflow-hidden transition-colors ${
+      className={`rounded-2xl overflow-hidden transition-colors ${
         isError
-          ? 'border-error/25 bg-error/5'
+          ? 'border border-error/25 bg-error/5'
           : isRunning
-            ? 'border-accent/15 bg-accent/5'
-            : 'border-border-subtle bg-background/40'
+            ? 'border border-accent/15 bg-accent/5'
+            : expanded
+              ? 'border border-border-subtle bg-background/40'
+              : 'border border-transparent'
       }`}
     >
-      {/* Header — always visible */}
+      {/* Header — always visible. Collapsed success rows stay light: no box, whitespace grouping. */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-surface-hover/50 transition-colors"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-surface-hover/50 rounded-2xl transition-colors"
       >
         {/* Status icon */}
         <div

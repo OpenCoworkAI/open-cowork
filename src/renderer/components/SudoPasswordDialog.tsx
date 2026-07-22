@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import type { SudoPasswordRequest } from '../types';
 import { Shield, X, Play } from 'lucide-react';
+import { Button, Input, DialogOverlay, DialogPanel } from './ui';
 
 interface SudoPasswordDialogProps {
   request: SudoPasswordRequest;
@@ -57,8 +58,8 @@ export function SudoPasswordDialog({ request }: SudoPasswordDialogProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-      <div className="card w-full max-w-md p-6 m-4 shadow-elevated animate-slide-up">
+    <DialogOverlay closeOnScrim={false}>
+      <DialogPanel size="sm" className="max-w-md p-6">
         {/* Header */}
         <div className="flex items-start gap-4">
           <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/10">
@@ -83,7 +84,7 @@ export function SudoPasswordDialog({ request }: SudoPasswordDialogProps) {
           <label className="block text-sm font-medium text-text-primary mb-1">
             {t('sudo.passwordLabel')}
           </label>
-          <input
+          <Input
             ref={inputRef}
             type="password"
             onChange={(e) => {
@@ -91,7 +92,6 @@ export function SudoPasswordDialog({ request }: SudoPasswordDialogProps) {
             }}
             onKeyDown={handleKeyDown}
             placeholder={t('sudo.passwordPlaceholder')}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
             autoComplete="new-password"
           />
         </div>
@@ -103,17 +103,17 @@ export function SudoPasswordDialog({ request }: SudoPasswordDialogProps) {
 
         {/* Actions */}
         <div className="mt-6 flex items-center gap-3">
-          <button onClick={handleCancel} className="flex-1 btn btn-secondary">
+          <Button variant="secondary" className="flex-1" onClick={handleCancel}>
             <X className="w-4 h-4" />
             {t('sudo.cancel')}
-          </button>
+          </Button>
 
-          <button onClick={handleSubmit} className="flex-1 btn btn-primary">
+          <Button variant="primary" className="flex-1" onClick={handleSubmit}>
             <Play className="w-4 h-4" />
             {t('sudo.execute')}
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogPanel>
+    </DialogOverlay>
   );
 }
