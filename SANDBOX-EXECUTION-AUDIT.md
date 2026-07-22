@@ -1,6 +1,6 @@
 # Sandbox Execution-Path Audit
 
-> Status: **static analysis, high confidence** — runtime probe pending (requires a machine with a provisioned Lima instance). Written 2026-07 during the goal-oriented review.
+> Status: **runtime-verified 2026-07-22** on a provisioned Lima instance (limactl 2.2.0, template:ubuntu, --mount-writable). Original static analysis below; verification results and the shipped fix at the end.
 
 ## Question
 
@@ -52,3 +52,25 @@ Same shape for WSL via `wsl -d <distro> -- sh -c ...`. Requirements before shipp
 
 - README wording corrected (opt-in; GUI/sudo on host by design).
 - Persistent isolation-status badge in the UI (`SandboxStatusBadge`), so the actual mode is always visible.
+
+## Runtime verification (2026-07-22) — PASSED
+
+Probes run against a real `claude-sandbox` instance created with the app's own
+parameters (`limactl create --name=claude-sandbox --mount-writable template:ubuntu`):
+
+1. Host-created `~/.claude/sandbox/<dir>` is visible at the identical path inside
+   the VM, and the VM can write into it (writable mount) — confirms the
+   host-side copy-path fix (`lima-sync.ts`).
+2. The exact command produced by `buildLimaShellCommand` (see
+   `src/main/sandbox/lima-spawn-hook.ts`), executed through the host shell the
+   same way pi's bash tool spawns it, runs **inside the VM**: `uname -s` →
+   `Linux`, `pwd` → the sandbox cwd, and files it writes appear on the host.
+3. Single-quote-containing commands survive the double quoting layer intact.
+
+## Shipped fix
+
+`buildLimaSpawnHook` is wired into `createCodingTools` whenever Lima isolation
+is active on macOS (`agent-runner.ts` bashOptions): the host process is only
+the limactl client; bash commands execute in the VM against the host-visible
+sandbox copy, so sync-back semantics are unchanged. Windows/WSL routing
+remains future work (same pattern applies via `wsl -d`).

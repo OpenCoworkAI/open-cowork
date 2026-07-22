@@ -51,6 +51,8 @@ import { setMaxListeners } from 'node:events';
 import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
+import { LIMA_INSTANCE_NAME } from '../sandbox/lima-bridge';
+import { buildLimaSpawnHook } from '../sandbox/lima-spawn-hook';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
@@ -2197,8 +2199,16 @@ Tool routing:
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
       await enrichProcessPathForBuild();
 
+      // With Lima isolation active, route bash execution INTO the VM via a
+      // spawnHook (host process = limactl client only). Without isolation —
+      // or on Windows, which has its own operations backend — leave pi's
+      // default host execution untouched. See SANDBOX-EXECUTION-AUDIT.md.
       const bashOptions: BashToolOptions | undefined =
-        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
+        process.platform === 'win32'
+          ? { operations: createWindowsBashOperations() }
+          : useSandboxIsolation && process.platform === 'darwin'
+            ? { spawnHook: buildLimaSpawnHook(LIMA_INSTANCE_NAME) }
+            : undefined;
       const codingTools = createCodingTools(
         effectiveCwd,
         bashOptions ? { bash: bashOptions } : undefined

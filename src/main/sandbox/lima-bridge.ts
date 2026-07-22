@@ -39,7 +39,7 @@ async function loadBootstrap() {
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
-const LIMA_INSTANCE_NAME = 'claude-sandbox';
+export const LIMA_INSTANCE_NAME = 'claude-sandbox';
 const LIMA_SHELL_RETRY_DELAY_MS = 1000;
 const LIMA_SHELL_RETRY_COUNT = 12;
 
