@@ -5,7 +5,6 @@ import {
   useSettings,
   useSystemDarkMode,
   useSettingsState,
-  useConfigModalState,
   useGlobalNotice,
   useSandboxSetupState,
   useSandboxSyncStatus,
@@ -23,7 +22,6 @@ import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
 import { DialogOverlay } from './components/ui';
-import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
 const ChatView = lazy(() =>
@@ -31,9 +29,6 @@ const ChatView = lazy(() =>
 );
 const ContextPanel = lazy(() =>
   import('./components/ContextPanel').then((module) => ({ default: module.ContextPanel }))
-);
-const ConfigModal = lazy(() =>
-  import('./components/ConfigModal').then((module) => ({ default: module.ConfigModal }))
 );
 const SettingsPanel = lazy(() =>
   import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
@@ -62,7 +57,6 @@ function App() {
   const settings = useSettings();
   const systemDarkMode = useSystemDarkMode();
   const { showSettings } = useSettingsState();
-  const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
   const globalNotice = useGlobalNotice();
   const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } =
     useSandboxSetupState();
@@ -70,12 +64,10 @@ function App() {
   const { pendingPermission, pendingSudoPassword } = usePendingDialogs();
 
   // Actions are still pulled directly from the store
-  const setShowConfigModal = useAppStore((s) => s.setShowConfigModal);
-  const setIsConfigured = useAppStore((s) => s.setIsConfigured);
-  const setAppConfig = useAppStore((s) => s.setAppConfig);
   const clearGlobalNotice = useAppStore((s) => s.clearGlobalNotice);
   const setSandboxSetupComplete = useAppStore((s) => s.setSandboxSetupComplete);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setContextPanelCollapsed = useAppStore((s) => s.setContextPanelCollapsed);
 
@@ -111,41 +103,22 @@ function App() {
     setSidebarCollapsed(width < 800);
   }, [width, setContextPanelCollapsed, setSidebarCollapsed]);
 
-  // Handle config save
-  const handleConfigSave = useCallback(
-    async (newConfig: Partial<AppConfig>) => {
-      if (!isElectron) {
-        console.log('[App] Browser mode - config save simulated');
-        return;
-      }
-
-      const result = await window.electronAPI.config.save(newConfig);
-      if (result.success) {
-        setIsConfigured(Boolean(result.config?.isConfigured));
-        setAppConfig(result.config);
-      }
-    },
-    [setIsConfigured, setAppConfig]
-  );
-
-  // Handle config modal close
-  const handleConfigClose = useCallback(() => {
-    setShowConfigModal(false);
-  }, [setShowConfigModal]);
-
   // Handle sandbox setup complete
   const handleSandboxSetupComplete = useCallback(() => {
     setSandboxSetupComplete(true);
   }, [setSandboxSetupComplete]);
 
+  // Single surface for API config: notices route to the settings modal's API
+  // tab instead of the legacy standalone ConfigModal.
   const handleGlobalNoticeAction = useCallback(
     (action: GlobalNoticeAction) => {
       if (action === 'open_api_settings') {
-        setShowConfigModal(true);
+        setSettingsTab('api');
+        setShowSettings(true);
       }
       clearGlobalNotice();
     },
-    [clearGlobalNotice, setShowConfigModal]
+    [clearGlobalNotice, setSettingsTab, setShowSettings]
   );
 
   // Determine if we should show the sandbox setup dialog
@@ -222,19 +195,6 @@ function App() {
 
       {/* Sudo Password Dialog */}
       {pendingSudoPassword && <SudoPasswordDialog request={pendingSudoPassword} />}
-
-      {/* Config Modal */}
-      <PanelErrorBoundary name="ConfigModal" fallback={null}>
-        <Suspense fallback={null}>
-          <ConfigModal
-            isOpen={showConfigModal}
-            onClose={handleConfigClose}
-            onSave={handleConfigSave}
-            initialConfig={appConfig}
-            isFirstRun={!isConfigured}
-          />
-        </Suspense>
-      </PanelErrorBoundary>
 
       {/* Sandbox Setup Dialog */}
       {showSandboxSetup && (
