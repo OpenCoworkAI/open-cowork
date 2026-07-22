@@ -674,7 +674,8 @@
     "disclaimer": "Open Cowork 由 AI 驱动，可能会出错，请务必自行复核结果。",
     "noModel": "无模型",
     "connectorCount_one": "{{count}} 个连接器",
-    "connectorCount_other": "{{count}} 个连接器"
+    "connectorCount_other": "{{count}} 个连接器",
+    "unknownModelNotice": "当前模型 {{model}} 不在已知能力目录中,工具调用能力未经验证——复杂任务可能反复失败。如遇问题,建议换用目录内模型(如 claude/gpt/gemini 系列)。"
   },
   "context": {
     "progress": "进度",

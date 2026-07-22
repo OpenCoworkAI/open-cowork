@@ -674,7 +674,8 @@
     "disclaimer": "Open Cowork is AI-powered and may make mistakes. Please double-check responses.",
     "noModel": "No model",
     "connectorCount_one": "{{count}} connector",
-    "connectorCount_other": "{{count}} connectors"
+    "connectorCount_other": "{{count}} connectors",
+    "unknownModelNotice": "Model {{model}} is not in the capability catalog — its tool-calling ability is unverified and complex tasks may repeatedly fail. If you hit problems, switch to a cataloged model (e.g. claude/gpt/gemini families)."
   },
   "context": {
     "progress": "Progress",

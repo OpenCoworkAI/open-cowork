@@ -286,6 +286,17 @@ export function useIPC() {
             store.setSessionContextWindow(event.payload.sessionId, event.payload.contextWindow);
             break;
 
+          case 'model.capabilityNotice':
+            // Unknown/custom model: tool-calling ability is unverified, so
+            // set expectations before the user watches a task flounder.
+            store.setGlobalNotice({
+              id: `notice-model-capability-${event.payload.sessionId}`,
+              type: 'warning',
+              message: i18n.t('chat.unknownModelNotice', { model: event.payload.model }),
+              messageKey: 'chat.unknownModelNotice',
+            });
+            break;
+
           case 'error':
             console.error('[useIPC] Server error:', event.payload.message);
             store.setLoading(false);

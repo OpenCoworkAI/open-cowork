@@ -365,7 +365,11 @@ export class ToolExecutor {
       }
     }
 
-    // Block dangerous patterns
+    // UX guardrail against obvious accidents — NOT a security boundary.
+    // A blacklist is trivially bypassed via interpreters (python -c, node -e)
+    // or novel spellings; real protection comes from the VM sandbox and the
+    // permission prompts. See SECURITY.md "Threat Model". Do not extend this
+    // list expecting it to contain a motivated adversary.
     const dangerousPatterns = [
       // eslint-disable-next-line no-useless-escape
       /rm\s+-rf?\s+[\/~]/i,

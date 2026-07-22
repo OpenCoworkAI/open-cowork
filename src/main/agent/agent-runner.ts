@@ -575,6 +575,8 @@ export class CoworkAgentRunner {
   private saveMessage?: (message: Message) => void;
   private savePartialSnapshot?: (sessionId: string, snapshotId: string, text: string) => void;
   private clearPartialSnapshot?: (snapshotId: string) => void;
+  /** session:model pairs already warned about unknown tool capability. */
+  private syntheticModelNotices = new Set<string>();
   private requestSudoPassword?: (
     sessionId: string,
     toolUseId: string,
@@ -1665,6 +1667,17 @@ ${hints.join('\n')}
 
       if (!piModel) {
         usedSyntheticModel = true;
+        // Unknown model: tool-calling capability is unverified. Warn once per
+        // session+model so weak models don't silently flounder through dozens
+        // of failed tool calls before the loop guard finally gives up.
+        const noticeKey = `${session.id}:${modelString}`;
+        if (!this.syntheticModelNotices.has(noticeKey)) {
+          this.syntheticModelNotices.add(noticeKey);
+          this.sendToRenderer({
+            type: 'model.capabilityNotice',
+            payload: { sessionId: session.id, model: modelString },
+          });
+        }
         // Synthetic fallback: construct a Model for unknown/custom models
         const synthetic = resolveSyntheticPiModelFallback({
           rawModel: runtimeConfig.model,

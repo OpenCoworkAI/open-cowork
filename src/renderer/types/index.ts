@@ -592,6 +592,7 @@ export type ServerEvent =
   | { type: 'new-session' }
   | { type: 'navigate'; payload: string }
   | { type: 'scheduled-task.error'; payload: { taskId: string; error: string } }
+  | { type: 'model.capabilityNotice'; payload: { sessionId: string; model: string } }
   | {
       type: 'error';
       payload: {
