@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
-import { Button, IconButton } from './ui';
+import { IconButton } from './ui';
 import { RemoteControlPanel } from './RemoteControlPanel';
 import { useAppStore } from '../store';
 import { SettingsAPI } from './settings/SettingsAPI';
@@ -201,22 +201,11 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             </button>
           ))}
         </div>
-        <div className={`${compactSidebar ? 'p-1.5' : 'p-3'} border-t border-border-muted`}>
-          <Button
-            variant="ghost"
-            size="sm"
-            fullWidth
-            onClick={onClose}
-            title={compactSidebar ? t('common.close') : undefined}
-          >
-            {compactSidebar ? <X className="w-4 h-4" /> : t('common.close')}
-          </Button>
-          {!compactSidebar && (
-            <p className="text-[10px] text-text-muted text-center mt-1.5 select-text">
-              v{appVersion}
-            </p>
-          )}
-        </div>
+        {!compactSidebar && (
+          <div className="px-6 py-3 border-t border-border-muted">
+            <p className="text-[10px] text-text-muted select-text">v{appVersion}</p>
+          </div>
+        )}
       </div>
 
       {/* Content */}

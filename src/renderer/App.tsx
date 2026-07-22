@@ -5,7 +5,6 @@ import {
   useSettings,
   useSystemDarkMode,
   useSettingsState,
-  useLayoutState,
   useConfigModalState,
   useGlobalNotice,
   useSandboxSetupState,
@@ -23,6 +22,7 @@ import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
+import { DialogOverlay } from './components/ui';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -62,7 +62,6 @@ function App() {
   const settings = useSettings();
   const systemDarkMode = useSystemDarkMode();
   const { showSettings } = useSettingsState();
-  const { sidebarCollapsed } = useLayoutState();
   const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
   const globalNotice = useGlobalNotice();
   const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } =
@@ -83,7 +82,6 @@ function App() {
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
   const initialized = useRef(false);
-  const sidebarBeforeSettings = useRef(false);
 
   useEffect(() => {
     // Only run once on mount
@@ -112,18 +110,6 @@ function App() {
     setContextPanelCollapsed(width < 1100);
     setSidebarCollapsed(width < 800);
   }, [width, setContextPanelCollapsed, setSidebarCollapsed]);
-
-  // Auto-collapse sidebar when Settings is open, restore on close
-  useEffect(() => {
-    if (showSettings) {
-      sidebarBeforeSettings.current = !sidebarCollapsed;
-      setSidebarCollapsed(true);
-    } else if (sidebarBeforeSettings.current) {
-      setSidebarCollapsed(false);
-      sidebarBeforeSettings.current = false;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSettings]);
 
   // Handle config save
   const handleConfigSave = useCallback(
@@ -180,17 +166,7 @@ function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
-          {showSettings ? (
-            <PanelErrorBoundary
-              name="SettingsPanel"
-              resetKey="settings"
-              fallback={<MainPanelFallback />}
-            >
-              <Suspense fallback={<MainPanelFallback />}>
-                <SettingsPanel onClose={() => setShowSettings(false)} />
-              </Suspense>
-            </PanelErrorBoundary>
-          ) : activeSessionId ? (
+          {activeSessionId ? (
             <PanelErrorBoundary
               name="ChatView"
               resetKey={activeSessionId}
@@ -205,8 +181,8 @@ function App() {
           )}
         </main>
 
-        {/* Context Panel - only show when in session and not in settings */}
-        {activeSessionId && !showSettings && (
+        {/* Context Panel */}
+        {activeSessionId && (
           <PanelErrorBoundary
             name="ContextPanel"
             resetKey={activeSessionId}
@@ -218,6 +194,28 @@ function App() {
           </PanelErrorBoundary>
         )}
       </div>
+
+      {/* Settings Modal — a temporary layer over the intact app layout */}
+      {showSettings && (
+        <DialogOverlay onClose={() => setShowSettings(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-5xl h-[85vh] rounded-2xl border border-border bg-background shadow-elevated overflow-hidden animate-slide-up"
+          >
+            <PanelErrorBoundary
+              name="SettingsPanel"
+              resetKey="settings"
+              fallback={<div className="h-full bg-background" />}
+            >
+              <Suspense fallback={<div className="h-full bg-background" />}>
+                <SettingsPanel onClose={() => setShowSettings(false)} />
+              </Suspense>
+            </PanelErrorBoundary>
+          </div>
+        </DialogOverlay>
+      )}
 
       {/* Permission Dialog */}
       {pendingPermission && <PermissionDialog permission={pendingPermission} />}
