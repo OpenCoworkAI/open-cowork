@@ -10,12 +10,12 @@ describe('App startup lazy loading', () => {
 
     expect(source).not.toContain("import { ChatView } from './components/ChatView';");
     expect(source).not.toContain("import { ContextPanel } from './components/ContextPanel';");
-    expect(source).not.toContain("import { ConfigModal } from './components/ConfigModal';");
     expect(source).not.toContain("import { SettingsPanel } from './components/SettingsPanel';");
+    // ConfigModal was retired: API-config notices route to the settings modal.
+    expect(source).not.toContain("components/ConfigModal");
 
     expect(source).toContain('const ChatView = lazy(() =>');
     expect(source).toContain('const ContextPanel = lazy(() =>');
-    expect(source).toContain('const ConfigModal = lazy(() =>');
     expect(source).toContain('const SettingsPanel = lazy(() =>');
   });
 

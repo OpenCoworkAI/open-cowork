@@ -7,8 +7,8 @@ const configModalPath = path.resolve(process.cwd(), 'src/renderer/components/Con
 describe('ConfigModal Claude-style layout', () => {
   it('uses a quieter editorial shell with softer modal framing', () => {
     const source = fs.readFileSync(configModalPath, 'utf8');
-    expect(source).toContain('bg-black/40');
-    expect(source).toContain('rounded-[2rem]');
+    expect(source).toContain('DialogOverlay');
+    expect(source).toContain('rounded-4xl');
     expect(source).toContain('max-w-[880px]');
   });
 

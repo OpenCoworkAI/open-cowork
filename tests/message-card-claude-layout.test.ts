@@ -17,12 +17,12 @@ describe('MessageCard Claude-style layout', () => {
   it('uses a softer user bubble treatment', () => {
     const source = readAllMessageContent();
     expect(source).toContain('message-user px-4 py-3');
-    expect(source).toContain('rounded-[1.65rem]');
+    expect(source).toContain('rounded-4xl');
   });
 
   it('uses quieter rounded shells for tool and thinking cards', () => {
     const source = readAllMessageContent();
     expect(source).toContain('rounded-2xl border overflow-hidden');
-    expect(source).toContain('rounded-2xl border border-border-subtle bg-background/40 overflow-hidden');
+    expect(source).toContain('border-border-subtle bg-background/40');
   });
 });

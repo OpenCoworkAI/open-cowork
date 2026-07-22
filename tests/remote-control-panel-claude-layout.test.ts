@@ -7,7 +7,7 @@ const remotePanelPath = path.resolve(process.cwd(), 'src/renderer/components/Rem
 describe('RemoteControlPanel Claude-style layout', () => {
   it('uses softer shell treatments instead of dashboard-heavy panels', () => {
     const source = fs.readFileSync(remotePanelPath, 'utf8');
-    expect(source).toContain('rounded-[2rem]');
+    expect(source).toContain('rounded-4xl');
     expect(source).toContain('border-border-subtle');
   });
 });
