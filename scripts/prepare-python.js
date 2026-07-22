@@ -43,7 +43,17 @@ const BUNDLED_GUI_PACKAGES = [
   'pillow',
   'pyobjc-framework-Quartz',
 ];
-const BUNDLED_RUNTIME_FINGERPRINT = BUNDLED_GUI_PACKAGES.join('|');
+// Document-generation skills (pptx/docx/xlsx) hard-import these at runtime.
+// The bundled python shadows the system one on PATH, so anything the skills
+// need MUST ship in the bundle — otherwise packaged builds fail with
+// ModuleNotFoundError even on machines that have the libs installed.
+const BUNDLED_DOC_PACKAGES = [
+  'python-pptx',
+  'python-docx',
+  'openpyxl',
+  'defusedxml',
+];
+const BUNDLED_RUNTIME_FINGERPRINT = [...BUNDLED_GUI_PACKAGES, ...BUNDLED_DOC_PACKAGES].join('|');
 // Use the correct GitHub API endpoint (v3, no trailing slash)
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=30`;
 
@@ -327,7 +337,7 @@ function installPackages(siteDir, platformTag, pythonBin) {
   ensureDir(siteDir);
 
   const pipPython = process.env.OPEN_COWORK_PIP_PYTHON || pythonBin;
-  const packageSpecs = [...BUNDLED_GUI_PACKAGES];
+  const packageSpecs = [...BUNDLED_GUI_PACKAGES, ...BUNDLED_DOC_PACKAGES];
   const pythonRoot = path.resolve(siteDir, '..');
   const runtimeMarkerFile = resolveRuntimeVersionFile(pythonRoot);
   const runtimeMarker = exists(runtimeMarkerFile)
@@ -337,7 +347,11 @@ function installPackages(siteDir, platformTag, pythonBin) {
   // Avoid re-install if already present
   const hasPillow = exists(path.join(siteDir, 'PIL'));
   const hasQuartz = exists(path.join(siteDir, 'Quartz'));
-  if (hasPillow && hasQuartz && runtimeMarker === BUNDLED_RUNTIME_FINGERPRINT) {
+  const hasDocPackages =
+    exists(path.join(siteDir, 'pptx')) &&
+    exists(path.join(siteDir, 'docx')) &&
+    exists(path.join(siteDir, 'openpyxl'));
+  if (hasPillow && hasQuartz && hasDocPackages && runtimeMarker === BUNDLED_RUNTIME_FINGERPRINT) {
     console.log(`✓ Python packages already present in ${siteDir}`);
     return;
   }
@@ -373,6 +387,12 @@ function cleanPythonRuntime(destDir, siteDir) {
     'Quartz', 'AppKit', 'Foundation', 'CoreFoundation',
     'objc', 'PyObjCTools',
     'pyobjc_core', 'pyobjc_framework_Cocoa', 'pyobjc_framework_Quartz',
+    // Document-generation skills (pptx/docx/xlsx) + transitive deps
+    'pptx', 'python_pptx',
+    'docx', 'python_docx',
+    'openpyxl', 'defusedxml',
+    'lxml', 'et_xmlfile', 'typing_extensions.py', 'typing_extensions',
+    'XlsxWriter', 'xlsxwriter',
   ]);
 
   // Match package dirs and their .dist-info counterparts
