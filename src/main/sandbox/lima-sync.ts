@@ -14,6 +14,7 @@
  *   - App is closed/shutdown
  */
 
+import * as os from 'os';
 import { log, logError } from '../utils/logger';
 import { isPathWithinRoot } from '../tools/path-containment';
 
@@ -115,11 +116,14 @@ export class LimaSync {
     log(`[LimaSync] Initializing sync for session ${sessionId}`);
     log(`[LimaSync]   macOS path: ${macPath}`);
 
-    // Get the actual home directory path from Lima
-    const homeResult = await this.limaExec('cd ~ && pwd');
-    const homeDir = homeResult.stdout.trim() || '/home/user';
-    const sandboxPath = `${homeDir}/.claude/sandbox/${sessionId}`;
-    log(`[LimaSync]   Sandbox path: ${sandboxPath}`);
+    // The sandbox copy lives on the HOST (see SANDBOX-EXECUTION-AUDIT.md):
+    // coding tools spawn on the host, so their cwd must exist there. Lima
+    // mounts /Users writable, so this exact path is also visible inside the
+    // VM and every limaExec below keeps working unchanged. The previous
+    // VM-home path (`limaExec('cd ~ && pwd')`) did not exist on the host,
+    // which broke every bash command whenever the sandbox was enabled.
+    const sandboxPath = `${os.homedir()}/.claude/sandbox/${sessionId}`;
+    log(`[LimaSync]   Sandbox path (host-visible): ${sandboxPath}`);
 
     try {
       // Create sandbox directory (single-quote escaping prevents shell injection)
