@@ -124,6 +124,29 @@ export class SessionManager {
     this.pluginRuntimeService = pluginRuntimeService;
     this.extensionManager = extensionManager;
 
+    // Reconcile sessions orphaned by a crash or force-quit: any session
+    // persisted as 'running' has no live runner after restart, so it would
+    // otherwise spin forever in the sidebar with no way to recover.
+    try {
+      const stale = this.db.raw
+        .prepare(`UPDATE sessions SET status = 'idle', updated_at = ? WHERE status = 'running'`)
+        .run(Date.now());
+      const staleSteps = this.db.raw
+        .prepare(`UPDATE trace_steps SET status = 'error' WHERE status = 'running'`)
+        .run();
+      if (stale.changes > 0 || staleSteps.changes > 0) {
+        log(
+          '[SessionManager] Reconciled stale state after restart:',
+          stale.changes,
+          'sessions,',
+          staleSteps.changes,
+          'trace steps'
+        );
+      }
+    } catch (error) {
+      logWarn('[SessionManager] Stale-session reconciliation failed:', error);
+    }
+
     // Initialize MCP Manager
     this.mcpManager = new MCPManager();
     this.initializeMCP();
