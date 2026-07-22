@@ -153,9 +153,9 @@ export function SandboxSetupDialog({ progress, onComplete }: Props) {
           )}
 
           {/* Error Display */}
-          {isError && progress.error && (
+          {isError && displayText.error && (
             <div className="mt-4 p-3 bg-error/10 border border-error/30 rounded-xl">
-              <p className="text-sm text-error">{progress.error}</p>
+              <p className="text-sm text-error leading-6">{displayText.error}</p>
               <p className="text-xs text-text-muted mt-2">{t('sandbox.continuingNative')}</p>
             </div>
           )}

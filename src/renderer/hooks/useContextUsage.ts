@@ -39,7 +39,8 @@ export function useContextUsage(): ContextUsageInfo | null {
         break;
       }
     }
-    if (lastInput === 0) return null;
+    // Before the first usage report, show an honest 0% instead of hiding the
+    // bar — users judging "how much room is left" need it from turn one.
 
     const percent = Math.min((lastInput / contextWindow) * 100, 100);
 

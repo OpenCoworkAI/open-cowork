@@ -86,13 +86,28 @@ function translateSyncDetail(t: TFunction, detail?: string): string | undefined 
   return key ? t(key) : detail;
 }
 
+// Failure-stage errors from sandbox-bootstrap are bare English constants
+// (the underlying stderr is not propagated), so each maps to an actionable
+// bilingual explanation of what to try. Unknown errors pass through raw.
+function translateSetupError(t: TFunction, error?: string): string | undefined {
+  if (!error) return undefined;
+  const map: Record<string, string> = {
+    'Failed to install Node.js in WSL': 'sandbox.errorNodeWsl',
+    'Failed to create Lima instance': 'sandbox.errorLimaCreate',
+    'Failed to start Lima instance': 'sandbox.errorLimaStart',
+  };
+  const key = map[error];
+  return key ? t(key) : error;
+}
+
 export function getSandboxSetupDisplayText(
   t: TFunction,
   progress: SandboxSetupProgress
-): { message: string; detail?: string } {
+): { message: string; detail?: string; error?: string } {
   return {
     message: translateSetupMessage(t, progress.message),
     detail: translateSetupDetail(t, progress.detail),
+    error: translateSetupError(t, progress.error),
   };
 }
 

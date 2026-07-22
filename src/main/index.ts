@@ -1499,7 +1499,15 @@ app
   .catch((error) => {
     logError('[App] Startup failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown startup error';
-    dialog.showErrorBox('Open Cowork 启动失败', `${message}\n\n请查看日志获取更多信息。`);
+    // Renderer i18n is not up yet in this path — pick the language from the
+    // OS locale so the very first thing a user ever sees is readable.
+    const isChinese = app.getLocale?.().toLowerCase().startsWith('zh') ?? false;
+    dialog.showErrorBox(
+      isChinese ? 'Open Cowork 启动失败' : 'Open Cowork failed to start',
+      isChinese
+        ? `${message}\n\n请查看日志获取更多信息。`
+        : `${message}\n\nSee the logs for more information.`
+    );
     app.quit();
   });
 

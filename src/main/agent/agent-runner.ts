@@ -2493,9 +2493,21 @@ Tool routing:
       // Activity-based timeout: reset the 5-min timer whenever the SDK sends events
       const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
       let activityTimeoutId: ReturnType<typeof setTimeout> | undefined;
+      // Long-running tools (builds, downloads) can legitimately stay silent
+      // past the idle window; only abort when nothing is executing either.
+      let toolsInFlight = 0;
       const resetActivityTimeout = () => {
         if (activityTimeoutId) clearTimeout(activityTimeoutId);
         activityTimeoutId = setTimeout(() => {
+          if (toolsInFlight > 0) {
+            log(
+              '[CoworkAgentRunner] Idle window elapsed but',
+              toolsInFlight,
+              'tool(s) still executing; extending timeout'
+            );
+            resetActivityTimeout();
+            return;
+          }
           logWarn('[CoworkAgentRunner] Prompt timed out (no activity for 5 min), aborting');
           abortedByTimeout = true;
           controller.abort();
@@ -2770,6 +2782,7 @@ Tool routing:
             }
 
             case 'tool_execution_start': {
+              toolsInFlight += 1;
               logCtx(`[CoworkAgentRunner] Tool execution start: ${event.toolName}`);
               // ── Loop guard layer 2: per-tool cumulative frequency ──
               handleLoopGuardDecision(
@@ -2780,6 +2793,7 @@ Tool routing:
             }
 
             case 'tool_execution_end': {
+              toolsInFlight = Math.max(0, toolsInFlight - 1);
               if (controller.signal.aborted) break;
               const toolCallId = event.toolCallId;
               const isError = event.isError;
