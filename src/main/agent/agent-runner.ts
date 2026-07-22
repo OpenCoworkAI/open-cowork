@@ -25,7 +25,11 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
-import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
+import {
+  decidePermission,
+  isGuiOperateTool,
+  rememberAlwaysAllow,
+} from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
@@ -539,7 +543,8 @@ interface AgentRunnerOptions {
     sessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    highRisk?: 'gui'
   ) => Promise<'allow' | 'deny' | 'allow_always'>;
 }
 
@@ -572,7 +577,8 @@ export class CoworkAgentRunner {
     sessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    highRisk?: 'gui'
   ) => Promise<'allow' | 'deny' | 'allow_always'>;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
@@ -988,7 +994,13 @@ ${hints.join('\n')}
             // Send the display name to the renderer so the dialog shows a
             // human-readable tool name; canonical `toolName` is still used
             // for rule matching above and "always allow" memory below.
-            result = await requestPermission(sessionId, toolUseId, displayName, input);
+            result = await requestPermission(
+              sessionId,
+              toolUseId,
+              displayName,
+              input,
+              isGuiOperateTool(toolName) ? 'gui' : undefined
+            );
           } catch (permErr) {
             logError(
               `[CoworkAgentRunner] Permission request failed for '${toolName}' — failing closed`,
@@ -1059,7 +1071,8 @@ ${hints.join('\n')}
   private wrapBashToolForSudo(
     tools: ToolDefinition[],
     sessionId: string,
-    effectiveCwd: string
+    effectiveCwd: string,
+    sandboxIsolated = false
   ): ToolDefinition[] {
     if (!this.requestSudoPassword) return tools;
 
@@ -1080,6 +1093,23 @@ ${hints.join('\n')}
           ctx: any
         ) => {
           const command = params.command;
+
+          // The sudo path always executes on the HOST as root — the one thing
+          // a sandboxed session promises not to do. Refuse instead of
+          // silently punching through the isolation boundary.
+          if (sandboxIsolated && CoworkAgentRunner.isSudoCommand(command)) {
+            log('[CoworkAgentRunner] Refusing sudo in sandboxed session');
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'sudo is not available in sandboxed sessions: it would execute on the host as root, outside the sandbox. Run the command without sudo, or disable the sandbox in Settings if host root access is genuinely required.',
+                },
+              ],
+              details: undefined as unknown,
+              isError: true,
+            };
+          }
 
           if (CoworkAgentRunner.isSudoCommand(command)) {
             log('[CoworkAgentRunner] Sudo command detected, requesting password');
@@ -2183,7 +2213,12 @@ Tool routing:
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const wrappedTools = this.wrapBashToolForSudo(
+        withTimeout,
+        session.id,
+        effectiveCwd,
+        useSandboxIsolation
+      );
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
