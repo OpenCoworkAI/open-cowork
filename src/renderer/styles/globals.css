@@ -7,52 +7,58 @@
 @layer base {
   /* Define CSS variables for theming */
   :root {
-    /* Dark theme (default) — Claude warm palette */
-    --color-background: #171614;
-    --color-background-secondary: #1d1b18;
-    --color-surface: #22201d;
-    --color-surface-hover: #2a2723;
-    --color-surface-active: #33302b;
-    --color-surface-muted: #1b1916;
-    --color-border: #34302a;
-    --color-border-muted: #2a2722;
-    --color-border-subtle: rgba(255, 245, 232, 0.07);
-    --color-mcp: #9d8abc;
-    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.24);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 245, 232, 0.03);
-    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 245, 232, 0.04);
-    --color-accent: #d67a52;
-    --color-accent-hover: #c56c46;
-    --color-accent-muted: rgba(214, 122, 82, 0.14);
-    --color-text-primary: #f1ece4;
-    --color-text-secondary: #b6ada2;
-    --color-text-muted: #8c8378;
-    --color-success: #22c55e;
-    --color-warning: #eab308;
-    --color-error: #ef4444;
+    /* Dark theme (default) — Claude warm charcoal.
+       The Claude desktop client's dark ground is a warm charcoal (~#262624
+       family), never near-black. Surfaces sit a step above the canvas; the
+       composer/elevated layer is warmer still. */
+    --color-background: #1f1e1c;
+    --color-background-secondary: #191816;
+    --color-surface: #292724;
+    --color-surface-hover: #322f2b;
+    --color-surface-active: #3b3833;
+    --color-surface-muted: #232220;
+    --color-border: #383430;
+    --color-border-muted: #2d2a27;
+    --color-border-subtle: rgba(255, 247, 237, 0.06);
+    --color-mcp: #a595bf;
+    --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255, 247, 237, 0.03);
+    --shadow-elevated: 0 14px 34px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 247, 237, 0.05);
+    --color-accent: #d97757;
+    --color-accent-hover: #c96442;
+    --color-accent-muted: rgba(217, 119, 87, 0.16);
+    --color-text-primary: #f3f0ea;
+    --color-text-secondary: #b9b2a6;
+    --color-text-muted: #8b8578;
+    --color-success: #4ade80;
+    --color-warning: #facc15;
+    --color-error: #f87171;
   }
 
-  /* Light theme override — Claude warm cream */
+  /* Light theme override — Claude warm paper.
+       Canvas is the lightest tone; the sidebar, user bubbles, and cards sit a
+       step BELOW it as a warm greige — matching how the real Claude client
+       recesses those surfaces rather than floating them white-on-cream. */
   .light {
-    --color-background: #f5f3ed;
-    --color-background-secondary: #f0eee8;
-    --color-surface: #faf9f4;
-    --color-surface-hover: #f5f3ed;
-    --color-surface-active: #eceae4;
-    --color-surface-muted: #f2f0eb;
-    --color-border: #e2dfd9;
-    --color-border-muted: #e8e6e0;
-    --color-border-subtle: rgba(0, 0, 0, 0.05);
+    --color-background: #faf8f3;
+    --color-background-secondary: #f1efe7;
+    --color-surface: #f4f2ea;
+    --color-surface-hover: #ece9e0;
+    --color-surface-active: #e3e0d5;
+    --color-surface-muted: #f0eee6;
+    --color-border: #e5e1d6;
+    --color-border-muted: #ebe8df;
+    --color-border-subtle: rgba(60, 50, 38, 0.06);
     --color-mcp: #8570a6;
-    --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.04);
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-    --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-soft: 0 1px 3px rgba(50, 40, 28, 0.05);
+    --shadow-card: 0 1px 3px rgba(50, 40, 28, 0.06), 0 1px 2px rgba(50, 40, 28, 0.04);
+    --shadow-elevated: 0 8px 24px rgba(50, 40, 28, 0.1);
     --color-accent: #d97757;
-    --color-accent-hover: #c46849;
-    --color-accent-muted: #fef3ee;
-    --color-text-primary: #1a1a1a;
-    --color-text-secondary: #5c5c5c;
-    --color-text-muted: #8c8c8c;
+    --color-accent-hover: #bf5c3c;
+    --color-accent-muted: #f8ede6;
+    --color-text-primary: #201d1a;
+    --color-text-secondary: #57534b;
+    --color-text-muted: #8a847a;
     --color-success: #16a34a;
     --color-warning: #ca8a04;
     --color-error: #dc2626;
