@@ -6,6 +6,7 @@ import {
   type BashOperations,
 } from '@mariozechner/pi-coding-agent';
 import { getDefaultShell } from '../utils/shell-resolver';
+import { buildWslBashInvocation } from '../sandbox/wsl-spawn';
 
 const DEFAULT_TERMINATION_GRACE_MS = 5000;
 const DEFAULT_TASKKILL_WAIT_MS = 3000;
@@ -22,6 +23,13 @@ export interface WindowsBashOperationsOptions {
   shellResolver?: (cwd: string) => string;
   terminationGraceMs?: number;
   taskkillWaitMs?: number;
+  /**
+   * When set, commands execute INSIDE this WSL distro (true sandbox
+   * isolation) instead of on the Windows host. The cwd may be a
+   * `\\wsl$\<distro>` UNC path (host file-tool form) — it is translated to
+   * the Linux path for bash. See SANDBOX-EXECUTION-AUDIT.md.
+   */
+  wslDistro?: string;
 }
 
 function normalizeShellPath(shellPath: string): string {
@@ -132,11 +140,14 @@ export function createWindowsBashOperations(
   const shellResolver = options.shellResolver ?? defaultShellResolver;
   const terminationGraceMs = options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS;
   const taskkillWaitMs = options.taskkillWaitMs ?? DEFAULT_TASKKILL_WAIT_MS;
+  const wslDistro = options.wslDistro;
 
   return {
     exec: (command, cwd, { onData, signal, timeout, env }) =>
       new Promise((resolve, reject) => {
-        if (!existsSync(cwd)) {
+        // In WSL mode the cwd may be a Linux-internal path the host cannot
+        // stat; bash's own `cd` failure is the meaningful error there.
+        if (!wslDistro && !existsSync(cwd)) {
           reject(
             new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`)
           );
@@ -148,9 +159,13 @@ export function createWindowsBashOperations(
           return;
         }
 
-        const { shell, args } = buildWindowsShellInvocation(command, shellResolver(cwd));
+        const { shell, args } = wslDistro
+          ? buildWslBashInvocation(wslDistro, cwd, command)
+          : buildWindowsShellInvocation(command, shellResolver(cwd));
         const child = spawnProcess(shell, args, {
-          cwd,
+          // wsl.exe resolves its own cwd from the -lc payload; a UNC/Linux
+          // cwd on the host spawn would fail for cmd-based shells.
+          cwd: wslDistro ? undefined : cwd,
           detached: false,
           env: env ?? process.env,
           stdio: ['ignore', 'pipe', 'pipe'],

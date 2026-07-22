@@ -53,6 +53,7 @@ import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { LIMA_INSTANCE_NAME } from '../sandbox/lima-bridge';
 import { buildLimaSpawnHook } from '../sandbox/lima-spawn-hook';
+import { toWslUncPath } from '../sandbox/wsl-spawn';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
@@ -1245,6 +1246,7 @@ ${hints.join('\n')}
     // Sandbox isolation state (defined outside try for finally access)
     let sandboxPath: string | null = null;
     let useSandboxIsolation = false;
+    let wslDistro: string | null = null;
 
     // Helper to convert real sandbox paths back to virtual workspace paths in output
     // Cache the compiled regex to avoid recompilation on every call
@@ -1321,6 +1323,7 @@ ${hints.join('\n')}
         if (syncResult.success) {
           sandboxPath = syncResult.sandboxPath;
           useSandboxIsolation = true;
+          wslDistro = sandbox.wslStatus.distro;
           log(`[CoworkAgentRunner] Sandbox initialized: ${sandboxPath}`);
           log(
             `[CoworkAgentRunner]   Files: ${syncResult.fileCount}, Size: ${syncResult.totalSize} bytes`
@@ -1757,8 +1760,15 @@ ${hints.join('\n')}
 
       // the agent SDK handles path sandboxing via its own tools
       const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      // On Windows the sandbox copy is WSL-internal; host file tools reach it
+      // through the \\wsl$ UNC bridge while bash (wsl mode) translates the
+      // UNC cwd back to the Linux path. See wsl-spawn.ts.
       const effectiveCwd =
-        useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
+        useSandboxIsolation && sandboxPath
+          ? process.platform === 'win32' && wslDistro
+            ? toWslUncPath(wslDistro, sandboxPath)
+            : sandboxPath
+          : workingDir || process.cwd();
 
       // Use app-specific Claude config directory to avoid conflicts with user settings
       // SDK uses CLAUDE_CONFIG_DIR to locate skills
@@ -2205,7 +2215,11 @@ Tool routing:
       // default host execution untouched. See SANDBOX-EXECUTION-AUDIT.md.
       const bashOptions: BashToolOptions | undefined =
         process.platform === 'win32'
-          ? { operations: createWindowsBashOperations() }
+          ? {
+              operations: createWindowsBashOperations(
+                useSandboxIsolation && wslDistro ? { wslDistro } : {}
+              ),
+            }
           : useSandboxIsolation && process.platform === 'darwin'
             ? { spawnHook: buildLimaSpawnHook(LIMA_INSTANCE_NAME) }
             : undefined;

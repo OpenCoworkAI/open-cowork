@@ -72,5 +72,16 @@ parameters (`limactl create --name=claude-sandbox --mount-writable template:ubun
 `buildLimaSpawnHook` is wired into `createCodingTools` whenever Lima isolation
 is active on macOS (`agent-runner.ts` bashOptions): the host process is only
 the limactl client; bash commands execute in the VM against the host-visible
-sandbox copy, so sync-back semantics are unchanged. Windows/WSL routing
-remains future work (same pattern applies via `wsl -d`).
+sandbox copy, so sync-back semantics are unchanged.
+
+**Windows/WSL routing (implemented, pending Windows runtime verification):**
+the WSL sandbox copy is distro-internal, so the routing is inverted relative
+to Lima — bash executes inside the distro (`wsl.exe -d <distro> -- bash -lc
+…`, argv-based so no cmd.exe quoting layer; `wsl-spawn.ts` +
+`windows-bash-operations.ts` wsl mode), while host-side file tools reach the
+same directory through the `\\wsl$\<distro>` UNC bridge (`effectiveCwd` is
+the UNC form; bash translates it back). Quoting and path translation are
+unit-tested. Verification checklist for a Windows machine: enable sandbox,
+run `uname -s` (expect Linux) and `touch marker` through the agent, confirm
+the marker via `\\wsl$` and after sync-back; confirm taskkill terminates the
+wsl.exe client on timeout.
