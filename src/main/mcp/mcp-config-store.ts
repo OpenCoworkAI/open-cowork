@@ -4,7 +4,11 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
+import {
+  createEncryptedStoreWithKeyRotation,
+  resolveSecureStableKey,
+} from '../utils/store-encryption';
 
 /**
  * Preset MCP Server Configurations
@@ -73,7 +77,17 @@ class MCPConfigStore {
       },
     };
 
-    this.store = new Store<{ servers: MCPServerConfig[] }>(storeOptions);
+    // MCP server env blocks may carry third-party tokens — encrypt at rest.
+    // The plaintext-migration path inside the rotation helper adopts an
+    // existing unencrypted mcp-config.json without losing data.
+    this.store = createEncryptedStoreWithKeyRotation<{ servers: MCPServerConfig[] }>({
+      stableKey: resolveSecureStableKey('open-cowork-mcp-stable-v1', logWarn),
+      legacyKeys: ['open-cowork-mcp-stable-v1'],
+      storeOptions,
+      logPrefix: '[MCPConfigStore]',
+      log,
+      warn: logWarn,
+    });
   }
 
   /**

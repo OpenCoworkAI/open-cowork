@@ -18,6 +18,7 @@ import { log, logWarn } from '../utils/logger';
 import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
+  resolveSecureStableKey,
 } from '../utils/store-encryption';
 import {
   isOpenAIProvider,
@@ -563,8 +564,11 @@ export class ConfigStore {
     // AppConfig is a structurally compatible object type at runtime.
     type AppConfigRecord = AppConfig & Record<string, unknown>;
     this.store = createEncryptedStoreWithKeyRotation<AppConfigRecord>({
-      stableKey: 'open-cowork-config-stable-v1',
+      // OS-keychain-bound key; the previous static key drops to the legacy
+      // list so existing installs migrate automatically (with backup).
+      stableKey: resolveSecureStableKey('open-cowork-config-stable-v1', logWarn),
       legacyKeys: [
+        'open-cowork-config-stable-v1',
         'open-cowork-config-v1',
         ...getLegacyDerivedKeyHexes({
           moduleDirname: __dirname,

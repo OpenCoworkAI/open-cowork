@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import Store, { type Options as StoreOptions } from 'electron-store';
 
 type Logger = (...args: unknown[]) => void;
@@ -145,6 +145,57 @@ export function getLegacyDerivedKeyBuffers(options: KeyMaterialOptions): Buffer[
   );
 }
 
+const SECURE_KEY_FILENAME = 'secure-store.key';
+let cachedSecureKey: string | null = null;
+
+/**
+ * Resolve the primary store-encryption key from the OS keychain (Electron
+ * safeStorage): a random 32-byte key is generated once, encrypted by the OS
+ * (Keychain on macOS, DPAPI on Windows), and persisted beside userData.
+ *
+ * electron-store's encryptionKey is only obfuscation when the key ships
+ * inside the app binary; binding it to the OS keychain makes config files
+ * unreadable without the user's OS session. Falls back to `fallbackKey`
+ * (the previous static key) when safeStorage is unavailable — e.g. some
+ * Linux setups or unit tests — so behavior never regresses.
+ */
+export function resolveSecureStableKey(fallbackKey: string, warn?: Logger): string {
+  if (cachedSecureKey) return cachedSecureKey;
+
+  try {
+    if (!safeStorage?.isEncryptionAvailable?.()) {
+      return fallbackKey;
+    }
+
+    const keyPath = path.join(app.getPath('userData'), SECURE_KEY_FILENAME);
+
+    if (fs.existsSync(keyPath)) {
+      try {
+        const encrypted = Buffer.from(fs.readFileSync(keyPath, 'utf-8').trim(), 'base64');
+        const decrypted = safeStorage.decryptString(encrypted);
+        if (/^[0-9a-f]{64}$/.test(decrypted)) {
+          cachedSecureKey = decrypted;
+          return decrypted;
+        }
+        warn?.('[StoreEncryption] Secure key file held unexpected content; regenerating');
+      } catch (error) {
+        // Keychain reset or corrupted file: regenerate. Existing stores still
+        // open via the legacy-key rotation path and re-encrypt with the new key.
+        warn?.('[StoreEncryption] Failed to decrypt secure key; regenerating:', error);
+      }
+    }
+
+    const freshKey = crypto.randomBytes(32).toString('hex');
+    const payload = safeStorage.encryptString(freshKey).toString('base64');
+    fs.writeFileSync(keyPath, payload, { encoding: 'utf-8', mode: 0o600 });
+    cachedSecureKey = freshKey;
+    return freshKey;
+  } catch (error) {
+    warn?.('[StoreEncryption] safeStorage unavailable, using fallback key:', error);
+    return fallbackKey;
+  }
+}
+
 export function createEncryptedStoreWithKeyRotation<T extends Record<string, unknown>>(
   options: EncryptedStoreRotationOptions<T>
 ): Store<T> {
@@ -164,6 +215,31 @@ export function createEncryptedStoreWithKeyRotation<T extends Record<string, unk
     const failedAttempts: string[] = [
       `stable key: ${error instanceof Error ? error.message : String(error)}`,
     ];
+
+    // A store that was previously written WITHOUT an encryptionKey is plain
+    // JSON on disk — adopt its contents and re-write encrypted, instead of
+    // treating it as an unreadable store and resetting it.
+    const plainPath = resolveStorePath(options.storeOptions);
+    if (plainPath && fs.existsSync(plainPath)) {
+      try {
+        const snapshot = JSON.parse(fs.readFileSync(plainPath, 'utf-8')) as T;
+        const backupPath = buildBackupPath(plainPath, 'pre-encryption');
+        fs.copyFileSync(plainPath, backupPath);
+        fs.unlinkSync(plainPath);
+        const stableStore = new Store<T>({
+          ...(options.storeOptions as StoreOptions<T>),
+          encryptionKey: stableKey,
+        });
+        stableStore.store = snapshot;
+        options.log?.(`${options.logPrefix} Migrated plaintext store to encrypted storage`, {
+          storePath: plainPath,
+          backupPath,
+        });
+        return stableStore;
+      } catch {
+        // Not plaintext JSON — fall through to legacy-key rotation.
+      }
+    }
 
     for (const legacyKey of legacyKeys) {
       try {

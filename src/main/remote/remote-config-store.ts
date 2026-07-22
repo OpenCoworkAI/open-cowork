@@ -8,6 +8,7 @@ import { log, logWarn } from '../utils/logger';
 import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
+  resolveSecureStableKey,
 } from '../utils/store-encryption';
 import type {
   RemoteConfig,
@@ -32,8 +33,9 @@ class RemoteConfigStore {
         unknown
       >;
     this.store = createEncryptedStoreWithKeyRotation<RemoteConfigRecord>({
-      stableKey: 'open-cowork-remote-stable-v1',
+      stableKey: resolveSecureStableKey('open-cowork-remote-stable-v1', logWarn),
       legacyKeys: [
+        'open-cowork-remote-stable-v1',
         'open-cowork-remote-v1',
         ...getLegacyDerivedKeyHexes({
           moduleDirname: __dirname,
