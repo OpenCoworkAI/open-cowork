@@ -30,3 +30,15 @@ export function formatAppDate(
 export function joinAppList(values: string[]): string {
   return values.join(getAppLocale().startsWith('zh') ? '、' : ', ');
 }
+
+export function formatRelativeTime(value: number | string | Date): string {
+  const then = new Date(value).getTime();
+  const diffSec = Math.round((then - Date.now()) / 1000);
+  const abs = Math.abs(diffSec);
+  const rtf = new Intl.RelativeTimeFormat(getAppLocale(), { numeric: 'auto' });
+  if (abs < 60) return rtf.format(Math.trunc(diffSec / 1), 'second');
+  if (abs < 3600) return rtf.format(Math.trunc(diffSec / 60), 'minute');
+  if (abs < 86400) return rtf.format(Math.trunc(diffSec / 3600), 'hour');
+  if (abs < 86400 * 30) return rtf.format(Math.trunc(diffSec / 86400), 'day');
+  return formatAppDate(value);
+}
