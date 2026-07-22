@@ -32,8 +32,10 @@ export function DialogOverlay({
   return (
     <div
       className={cn(
+        // Plain scrim, no backdrop-blur: blur re-composites the whole viewport
+        // every frame while content underneath repaints (e.g. streaming chat).
         'fixed inset-0 z-50 flex items-center justify-center p-4',
-        'bg-black/40 backdrop-blur-sm animate-fade-in',
+        'bg-black/45 animate-fade-in',
         className
       )}
       onClick={closeOnScrim ? onClose : undefined}

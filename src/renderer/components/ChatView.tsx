@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useActiveSessionId,
@@ -106,36 +106,6 @@ export function ChatView() {
 
     return [...messages.slice(0, insertIndex), streamingMessage, ...messages.slice(insertIndex)];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage, partialThinking]);
-
-  // Format execution time for display
-  const formatExecutionTime = useCallback((ms: number): string => {
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    const minutes = Math.floor(ms / 60000);
-    const seconds = ((ms % 60000) / 1000).toFixed(0);
-    return `${minutes}m ${seconds}s`;
-  }, []);
-
-  // --- Real-time execution timer ---
-  const [clockNow, setClockNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const isActive = Boolean(executionClock?.startAt && executionClock.endAt === null);
-    if (!isActive) {
-      return;
-    }
-    setClockNow(Date.now());
-    const interval = setInterval(() => {
-      setClockNow(Date.now());
-    }, 100);
-    return () => clearInterval(interval);
-  }, [executionClock?.startAt, executionClock?.endAt]);
-
-  const liveElapsed =
-    executionClock?.startAt == null
-      ? 0
-      : Math.max(0, (executionClock.endAt ?? clockNow) - executionClock.startAt);
-  const timerActive = Boolean(executionClock?.startAt && executionClock.endAt === null);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -765,17 +735,12 @@ export function ChatView() {
               </div>
             )}
 
-          {/* Real-time execution timer */}
-          {liveElapsed > 0 && (
-            <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1 ml-0.5">
-              <Clock className="w-3 h-3" />
-              <span>
-                {timerActive
-                  ? formatExecutionTime(liveElapsed)
-                  : t('messageCard.executionTime', { time: formatExecutionTime(liveElapsed) })}
-              </span>
-            </div>
-          )}
+          {/* Real-time execution timer — isolated so its 100ms tick only
+              re-renders this chip, not the whole ChatView tree */}
+          <ExecutionTimer
+            startAt={executionClock?.startAt ?? null}
+            endAt={executionClock?.endAt ?? null}
+          />
 
           <div ref={messagesEndRef} />
         </div>
@@ -924,6 +889,44 @@ export function ChatView() {
           </form>
         </div>
       </div>
+    </div>
+  );
+}
+
+function formatExecutionTime(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = ((ms % 60000) / 1000).toFixed(0);
+  return `${minutes}m ${seconds}s`;
+}
+
+// Self-contained 100ms ticker: keeps the interval-driven state out of
+// ChatView so a running turn doesn't re-render the whole tree at 10Hz.
+function ExecutionTimer({ startAt, endAt }: { startAt: number | null; endAt: number | null }) {
+  const { t } = useTranslation();
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const active = Boolean(startAt && endAt === null);
+
+  useEffect(() => {
+    if (!active) return;
+    setClockNow(Date.now());
+    const interval = setInterval(() => setClockNow(Date.now()), 100);
+    return () => clearInterval(interval);
+  }, [active, startAt]);
+
+  if (startAt == null) return null;
+  const elapsed = Math.max(0, (endAt ?? clockNow) - startAt);
+  if (elapsed <= 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-text-muted mt-1 ml-0.5">
+      <Clock className="w-3 h-3" />
+      <span>
+        {active
+          ? formatExecutionTime(elapsed)
+          : t('messageCard.executionTime', { time: formatExecutionTime(elapsed) })}
+      </span>
     </div>
   );
 }
