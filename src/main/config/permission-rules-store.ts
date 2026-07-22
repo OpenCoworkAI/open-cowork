@@ -57,6 +57,24 @@ export function isGuiOperateTool(toolName: string): boolean {
 }
 
 /**
+ * Remote-origin sessions (Feishu/Slack) get a stricter tier (issue #311
+ * phase 1): read-class tools escalate from silent allow to ask — otherwise a
+ * remote sender could exfiltrate any workspace file into the chat channel
+ * with no approval from the machine owner — and GUI-operate tools are denied
+ * outright (they control a physical desktop the requester cannot see).
+ */
+const remoteSessions = new Set<string>();
+const READ_CLASS_TOOLS = new Set(['read', 'glob', 'grep', 'ls', 'find']);
+
+export function markSessionRemote(sessionId: string): void {
+  remoteSessions.add(sessionId);
+}
+
+export function isRemoteSession(sessionId: string): boolean {
+  return remoteSessions.has(sessionId);
+}
+
+/**
  * Sanitize an untrusted rules payload from IPC. Drops entries with empty
  * tool names, coerces invalid `action` values to `'ask'`, and preserves
  * optional string `pattern` fields. Returns null for non-array input.
@@ -115,6 +133,11 @@ export function decidePermission(
 ): 'allow' | 'deny' | 'ask' {
   const lowered = toolName.toLowerCase();
 
+  const isRemote = remoteSessions.has(sessionId);
+
+  // GUI control is never available to remote senders, even with a grant.
+  if (isRemote && isGuiOperateTool(toolName)) return 'deny';
+
   const session = alwaysAllowBySession.get(sessionId);
   if (session?.has(lowered)) return 'allow';
   if (session?.has(GUI_FAMILY_GRANT) && isGuiOperateTool(toolName)) return 'allow';
@@ -124,7 +147,10 @@ export function decidePermission(
   for (const rule of rules) {
     if (rule.tool.toLowerCase() !== lowered) continue;
     if (rule.pattern && !matchesPattern(rule.pattern, inputStr)) continue;
-    return VALID_ACTIONS.has(rule.action) ? rule.action : 'ask';
+    const action = VALID_ACTIONS.has(rule.action) ? rule.action : 'ask';
+    // Remote tier: silent read access becomes an owner-approval prompt.
+    if (isRemote && action === 'allow' && READ_CLASS_TOOLS.has(lowered)) return 'ask';
+    return action;
   }
   return 'ask';
 }

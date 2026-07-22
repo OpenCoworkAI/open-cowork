@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import { log, logError } from '../utils/logger';
+import { markSessionRemote } from '../config/permission-rules-store';
 import { isUncPath, isWindowsDrivePath } from '../../shared/local-file-path';
 import { resolvePathAgainstWorkspace } from '../../shared/workspace-path';
 import type {
@@ -158,7 +159,9 @@ export class MessageRouter {
    */
   private createSessionMapping(message: RemoteMessage, _key: string): RemoteSessionMapping {
     const sessionId = this.generateSessionId();
-    
+    // Remote-origin sessions get the stricter permission tier (issue #311).
+    markSessionRemote(sessionId);
+
     return {
       channelType: message.channelType,
       channelId: message.channelId,
@@ -183,6 +186,8 @@ export class MessageRouter {
       ...this.createSessionMapping(message, sessionKey),
       sessionId,
     };
+    // createSessionMapping marked its own generated id; mark the actual one.
+    markSessionRemote(sessionId);
     this.sessionMappings.set(sessionKey, created);
     return created;
   }
