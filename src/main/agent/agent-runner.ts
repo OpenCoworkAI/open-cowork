@@ -537,6 +537,8 @@ function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined 
 interface AgentRunnerOptions {
   sendToRenderer: (event: ServerEvent) => void;
   saveMessage?: (message: Message) => void;
+  savePartialSnapshot?: (sessionId: string, snapshotId: string, text: string) => void;
+  clearPartialSnapshot?: (snapshotId: string) => void;
   requestSudoPassword?: (
     sessionId: string,
     toolUseId: string,
@@ -571,6 +573,8 @@ interface CachedPiSession {
 export class CoworkAgentRunner {
   private sendToRenderer: (event: ServerEvent) => void;
   private saveMessage?: (message: Message) => void;
+  private savePartialSnapshot?: (sessionId: string, snapshotId: string, text: string) => void;
+  private clearPartialSnapshot?: (snapshotId: string) => void;
   private requestSudoPassword?: (
     sessionId: string,
     toolUseId: string,
@@ -908,6 +912,8 @@ ${hints.join('\n')}
   ) {
     this.sendToRenderer = options.sendToRenderer;
     this.saveMessage = options.saveMessage;
+    this.savePartialSnapshot = options.savePartialSnapshot;
+    this.clearPartialSnapshot = options.clearPartialSnapshot;
     this.requestSudoPassword = options.requestSudoPassword;
     this.requestPermission = options.requestPermission;
     this.pathResolver = pathResolver;
@@ -1247,6 +1253,9 @@ ${hints.join('\n')}
     let sandboxPath: string | null = null;
     let useSandboxIsolation = false;
     let wslDistro: string | null = null;
+    // Crash-safe streaming snapshot (see savePartialAssistantSnapshot).
+    const partialSnapshotId = `partial-${uuidv4()}`;
+    let lastSnapshotAt = 0;
 
     // Helper to convert real sandbox paths back to virtual workspace paths in output
     // Cache the compiled regex to avoid recompilation on every call
@@ -2671,6 +2680,17 @@ Tool routing:
                 markFirstStreamEvent(ame.type);
                 streamedText += ame.delta;
                 this.sendPartial(session.id, ame.delta);
+                // Crash-safe snapshot (throttled): survives only if the
+                // process dies mid-stream; cleared in the run's finally.
+                const nowMs = Date.now();
+                if (this.savePartialSnapshot && nowMs - lastSnapshotAt > 2000) {
+                  lastSnapshotAt = nowMs;
+                  this.savePartialSnapshot(
+                    session.id,
+                    partialSnapshotId,
+                    `${streamedText}\n\n_⟦i18n:chatError.interrupted⟧_`
+                  );
+                }
               } else if (ame.type === 'thinking_delta') {
                 markFirstStreamEvent(ame.type);
                 // Forward thinking delta to renderer for real-time display
@@ -3120,6 +3140,9 @@ Tool routing:
         }
       }
     } finally {
+      // Clean finish or handled error: the final message (or terminal error
+      // text) is persisted through the normal path — drop the crash snapshot.
+      this.clearPartialSnapshot?.(partialSnapshotId);
       this.activeControllers.delete(session.id);
       this.pathResolver.unregisterSession(session.id);
 

@@ -171,6 +171,10 @@ export class SessionManager {
       {
         sendToRenderer: this.sendToRenderer,
         saveMessage: (message: Message) => this.saveMessage(message),
+        savePartialSnapshot: (sessionId: string, snapshotId: string, text: string) =>
+          this.savePartialAssistantSnapshot(sessionId, snapshotId, text),
+        clearPartialSnapshot: (snapshotId: string) =>
+          this.clearPartialAssistantSnapshot(snapshotId),
         requestSudoPassword: (sessionId: string, toolUseId: string, command: string) =>
           this.requestSudoPassword(sessionId, toolUseId, command),
         requestPermission: (
@@ -1153,6 +1157,36 @@ export class SessionManager {
   }
 
   // Save message to database
+  /**
+   * Crash-safe streaming: throttled snapshots of the in-flight assistant
+   * text. On a clean finish the snapshot is deleted and the final message
+   * saved normally; after a crash the snapshot survives as a regular
+   * assistant message (its text carries an ⟦i18n⟧ interrupted marker), so
+   * the streamed content is not lost. Uses a raw upsert because the same
+   * snapshot id is rewritten repeatedly during one run.
+   */
+  savePartialAssistantSnapshot(sessionId: string, snapshotId: string, text: string): void {
+    try {
+      this.db.raw
+        .prepare(
+          `INSERT INTO messages (id, session_id, role, content, timestamp, token_usage, execution_time_ms)
+           VALUES (?, ?, 'assistant', ?, ?, NULL, NULL)
+           ON CONFLICT(id) DO UPDATE SET content = excluded.content`
+        )
+        .run(snapshotId, sessionId, JSON.stringify([{ type: 'text', text }]), Date.now());
+    } catch (error) {
+      logWarn('[SessionManager] Failed to save partial snapshot:', error);
+    }
+  }
+
+  clearPartialAssistantSnapshot(snapshotId: string): void {
+    try {
+      this.db.raw.prepare(`DELETE FROM messages WHERE id = ?`).run(snapshotId);
+    } catch (error) {
+      logWarn('[SessionManager] Failed to clear partial snapshot:', error);
+    }
+  }
+
   saveMessage(message: Message): void {
     this.db.messages.create({
       id: message.id,

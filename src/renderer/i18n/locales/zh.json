@@ -9,7 +9,8 @@
     "network": "网络连接中断,可能是代理/网关不稳定,正在自动重试。",
     "hintCheckConfig": "请检查配置后重试。",
     "hintAutoRetry": "Agent 正在自动重试,请稍候…",
-    "requestTimeout": "请求超时:长时间未收到响应,操作已中止。"
+    "requestTimeout": "请求超时:长时间未收到响应,操作已中止。",
+    "interrupted": "(回答在此处中断——应用曾意外退出,以上为已生成的内容)"
   },
   "sandboxBadge": {
     "isolated": "沙盒隔离",

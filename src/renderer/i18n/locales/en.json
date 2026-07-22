@@ -9,7 +9,8 @@
     "network": "Network connection interrupted — possibly an unstable proxy or gateway. Retrying automatically.",
     "hintCheckConfig": "Check your configuration and try again.",
     "hintAutoRetry": "The agent is retrying automatically, please wait…",
-    "requestTimeout": "Request timed out: no response was received for a long time, so the operation was stopped."
+    "requestTimeout": "Request timed out: no response was received for a long time, so the operation was stopped.",
+    "interrupted": "(response interrupted here — the app quit unexpectedly; the text above was preserved)"
   },
   "sandboxBadge": {
     "isolated": "Sandboxed",
