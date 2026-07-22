@@ -19,7 +19,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 // agent-runner.ts pulls a wide tree of Electron + native deps via its
 // constructor; we only need a pure helper, so stub the heaviest imports.
-vi.mock('@mariozechner/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai/compat', () => ({
   completeSimple: vi.fn(),
   getModel: vi.fn(() => undefined),
 }));

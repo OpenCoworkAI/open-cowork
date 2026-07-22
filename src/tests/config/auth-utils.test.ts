@@ -146,6 +146,25 @@ describe('normalizeOpenAICompatibleBaseUrl', () => {
     );
   });
 
+  // --- DeepSeek URLs (official OpenAI-compatible endpoint) ---
+  it('normalizes DeepSeek bare host to /v1', () => {
+    expect(normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com')).toBe(
+      'https://api.deepseek.com/v1'
+    );
+  });
+
+  it('normalizes DeepSeek /anthropic URL to /v1', () => {
+    expect(normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com/anthropic')).toBe(
+      'https://api.deepseek.com/v1'
+    );
+  });
+
+  it('strips DeepSeek endpoint suffixes before normalizing to /v1', () => {
+    expect(
+      normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com/anthropic/chat/completions')
+    ).toBe('https://api.deepseek.com/v1');
+  });
+
   // --- Whitespace handling ---
   it('trims leading and trailing whitespace', () => {
     expect(normalizeOpenAICompatibleBaseUrl('  https://api.openai.com/v1  ')).toBe(

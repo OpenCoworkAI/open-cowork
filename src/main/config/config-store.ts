@@ -333,7 +333,7 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
   if (cachedDynamicPresets) return cachedDynamicPresets;
 
   try {
-    const { getModels } = (await import('@mariozechner/pi-ai')) as {
+    const { getModels } = (await import('@earendil-works/pi-ai/compat')) as {
       getModels: (provider: string) => Array<{ id: string; name: string }> | undefined;
     };
 

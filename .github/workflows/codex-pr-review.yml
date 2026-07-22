@@ -60,20 +60,75 @@ jobs:
                   return rightTime - leftTime;
                 }
                 return (right.id || 0) - (left.id || 0);
-              });
+            });
             const latestBotReview = botReviews[0];
-            const hasReviewForCurrentHead = botReviews.some(
-              (review) => review.commit_id === currentHeadSha
-            );
-            const isFollowUpReview = Boolean(
-              latestBotReview?.commit_id && latestBotReview.commit_id !== currentHeadSha
-            );
+            // Only the latest bot review can suppress a new run. If history was
+            // rolled back to an older, previously reviewed SHA, a newer review
+            // may now be stale and must be superseded by a fresh full review.
+            const hasReviewForCurrentHead =
+              latestBotReview?.commit_id === currentHeadSha;
+            let isFollowUpReview = false;
+            let priorContextDiscarded = false;
+            const previousHeadSha = latestBotReview?.commit_id;
+
+            // Reuse an earlier review only when the current head is a linear
+            // extension of the reviewed commit. Comparing diverged heads after a
+            // force-push/rebase mixes newly merged base-branch changes into the
+            // "since previous review" diff and produces stale findings.
+            if (previousHeadSha && previousHeadSha !== currentHeadSha) {
+              try {
+                const comparison = await github.request(
+                  "GET /repos/{owner}/{repo}/compare/{basehead}",
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    basehead: `${previousHeadSha}...${currentHeadSha}`
+                  }
+                );
+                const mergeBaseSha = comparison.data.merge_base_commit?.sha;
+                const comparedCommits = comparison.data.commits || [];
+                const hasCompleteCommitList =
+                  comparison.data.ahead_by === comparedCommits.length;
+                const hasMergeCommit = comparedCommits.some(
+                  (commit) => (commit.parents?.length || 0) > 1
+                );
+                isFollowUpReview =
+                  comparison.data.status === "ahead" &&
+                  comparison.data.behind_by === 0 &&
+                  mergeBaseSha === previousHeadSha &&
+                  hasCompleteCommitList &&
+                  !hasMergeCommit;
+                priorContextDiscarded = !isFollowUpReview;
+                if (priorContextDiscarded) {
+                  core.notice(
+                    `PR history is not a linear extension of ${previousHeadSha}; ` +
+                    "discarding prior review context and running a fresh full review."
+                  );
+                }
+              } catch (error) {
+                priorContextDiscarded = true;
+                core.warning(
+                  `Could not verify prior review ancestry (${error.message}); ` +
+                  "discarding prior context and running a fresh full review."
+                );
+              }
+            }
 
             core.setOutput("current_head_sha", currentHeadSha);
             core.setOutput("has_review_for_current_head", hasReviewForCurrentHead ? "true" : "false");
-            core.setOutput("latest_bot_review_id", latestBotReview ? String(latestBotReview.id) : "");
-            core.setOutput("latest_bot_review_commit", latestBotReview?.commit_id || "");
+            core.setOutput(
+              "latest_bot_review_id",
+              isFollowUpReview && latestBotReview ? String(latestBotReview.id) : ""
+            );
+            core.setOutput(
+              "latest_bot_review_commit",
+              isFollowUpReview ? latestBotReview?.commit_id || "" : ""
+            );
             core.setOutput("is_follow_up_review", isFollowUpReview ? "true" : "false");
+            core.setOutput(
+              "prior_context_discarded",
+              priorContextDiscarded ? "true" : "false"
+            );
         env:
           BOT_LOGINS: ${{ vars.BOT_LOGINS }}
 
@@ -138,7 +193,7 @@ jobs:
         if: steps.check_bot.outputs.has_review_for_current_head != 'true' && steps.review_config.outputs.is_deepseek == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Run DeepSeek for PR Review
         if: steps.check_bot.outputs.has_review_for_current_head != 'true' && steps.review_config.outputs.is_deepseek == 'true'
@@ -149,6 +204,7 @@ jobs:
           LATEST_BOT_REVIEW_ID: ${{ steps.check_bot.outputs.latest_bot_review_id }}
           LATEST_BOT_REVIEW_COMMIT: ${{ steps.check_bot.outputs.latest_bot_review_commit }}
           IS_FOLLOW_UP_REVIEW: ${{ steps.check_bot.outputs.is_follow_up_review }}
+          PRIOR_CONTEXT_DISCARDED: ${{ steps.check_bot.outputs.prior_context_discarded }}
           DEEPSEEK_API_KEY: ${{ steps.review_config.outputs.api_key }}
           DEEPSEEK_BASE_URL: ${{ steps.review_config.outputs.base_url }}
           DEEPSEEK_MODEL: ${{ steps.review_config.outputs.model }}
@@ -166,6 +222,7 @@ jobs:
           LATEST_BOT_REVIEW_ID: ${{ steps.check_bot.outputs.latest_bot_review_id }}
           LATEST_BOT_REVIEW_COMMIT: ${{ steps.check_bot.outputs.latest_bot_review_commit }}
           IS_FOLLOW_UP_REVIEW: ${{ steps.check_bot.outputs.is_follow_up_review }}
+          PRIOR_CONTEXT_DISCARDED: ${{ steps.check_bot.outputs.prior_context_discarded }}
         with:
           openai-api-key: ${{ steps.review_config.outputs.api_key }}
           responses-api-endpoint: ${{ steps.review_config.outputs.base_url }}

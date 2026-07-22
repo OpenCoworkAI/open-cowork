@@ -8,6 +8,7 @@ import {
   isLoopbackBaseUrl,
   isLikelyOAuthAccessToken,
   normalizeAnthropicBaseUrl,
+  normalizeOpenAICompatibleBaseUrl,
   resolveOllamaCredentials,
   resolveOpenAICredentials,
   sanitizeOpenAIAccountId,
@@ -118,6 +119,18 @@ describe('auth-utils', () => {
     expect(normalizeAnthropicBaseUrl('https://proxy.example.com/anthropic')).toBe(
       'https://proxy.example.com/anthropic'
     );
+  });
+
+  it('normalizes DeepSeek official urls to the OpenAI-compatible /v1 endpoint', () => {
+    expect(normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com')).toBe(
+      'https://api.deepseek.com/v1'
+    );
+    expect(normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com/anthropic')).toBe(
+      'https://api.deepseek.com/v1'
+    );
+    expect(
+      normalizeOpenAICompatibleBaseUrl('https://api.deepseek.com/anthropic/chat/completions')
+    ).toBe('https://api.deepseek.com/v1');
   });
 
   it('detects official openai base urls', () => {

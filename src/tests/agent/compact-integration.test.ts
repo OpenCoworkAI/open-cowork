@@ -4,7 +4,7 @@
  * Verifies:
  * - CoworkAgentRunner.compact() delegates to piSession.compact()
  * - CoworkAgentRunner.getContextUsage() delegates to piSession.getContextUsage()
- * - The auto_compaction_end event handler surfaces CompactionResult via
+ * - The compaction_end event handler surfaces CompactionResult via
  *   the 'compaction.result' ServerEvent
  * - SessionManager.compactSession() and getContextUsage() delegate to the runner
  * - The 'compaction.result' ServerEvent has the correct shape
@@ -249,9 +249,9 @@ describe('CoworkAgentRunner compact and getContextUsage', () => {
   });
 });
 
-// ── auto_compaction_end event surfacing tests ──
+// ── compaction_end event surfacing tests ──
 
-describe('auto_compaction_end event surfacing', () => {
+describe('compaction_end event surfacing', () => {
   it('surfaces compaction result when event.result is present', () => {
     const events: ServerEvent[] = [];
     const sendToRenderer = (event: ServerEvent) => events.push(event);
@@ -259,7 +259,7 @@ describe('auto_compaction_end event surfacing', () => {
 
     // Simulate the event handler logic from agent-runner.ts
     const event = {
-      type: 'auto_compaction_end' as const,
+      type: 'compaction_end' as const,
       result: {
         summary: 'User discussed file operations and TypeScript refactoring.',
         firstKeptEntryId: 'entry-99',
@@ -307,7 +307,7 @@ describe('auto_compaction_end event surfacing', () => {
     const sendToRenderer = (event: ServerEvent) => events.push(event);
 
     const event = {
-      type: 'auto_compaction_end' as const,
+      type: 'compaction_end' as const,
       result: undefined as
         | { summary: string; firstKeptEntryId: string; tokensBefore: number; details?: unknown }
         | undefined,
@@ -340,7 +340,7 @@ describe('auto_compaction_end event surfacing', () => {
     const sendToRenderer = (event: ServerEvent) => events.push(event);
 
     const event = {
-      type: 'auto_compaction_end' as const,
+      type: 'compaction_end' as const,
       result: {
         summary: 'Simple conversation.',
         firstKeptEntryId: 'entry-1',

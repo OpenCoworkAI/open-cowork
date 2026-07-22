@@ -20,9 +20,9 @@ import {
   type BashToolOptions,
   type AgentSession as PiAgentSession,
   type ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
-import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { getSharedAuthStorage } from './shared-auth';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
@@ -544,7 +544,7 @@ interface CachedPiSession {
 }
 
 /**
- * CoworkAgentRunner - Uses @mariozechner/pi-coding-agent SDK
+ * CoworkAgentRunner - Uses @earendil-works/pi-coding-agent SDK
  *
  * Environment variables should be set before running:
  *   ANTHROPIC_BASE_URL=https://openrouter.ai/api
@@ -1590,13 +1590,15 @@ ${hints.join('\n')}
       // Resolve model via pi-ai
       const runtimeConfig = configStore.getAll();
       const modelString = this.getCurrentModelString(runtimeConfig.model);
+      const rawBaseUrl = runtimeConfig.baseUrl?.trim() || undefined;
       const configProtocol = resolvePiRouteProtocol(
         runtimeConfig.provider,
-        runtimeConfig.customProtocol
+        runtimeConfig.customProtocol,
+        rawBaseUrl,
+        runtimeConfig.model
       );
 
       // Normalize base URL for OpenAI-compatible providers (strips copy-pasted endpoint suffixes)
-      const rawBaseUrl = runtimeConfig.baseUrl?.trim() || undefined;
       const effectiveBaseUrl =
         configProtocol === 'openai' && runtimeConfig.provider !== 'ollama'
           ? normalizeOpenAICompatibleBaseUrl(rawBaseUrl) || rawBaseUrl
@@ -1678,18 +1680,18 @@ ${hints.join('\n')}
         },
       });
 
-      // Set up API keys via AuthStorage
-      const authStorage = getSharedAuthStorage();
+      // Set up API keys via shared ModelRuntime
+      const modelRuntime = await getSharedAuthStorage();
       const apiKey = runtimeConfig.apiKey?.trim();
       if (apiKey) {
         // Map our config provider to pi-ai provider name
         const piProvider =
           provider === 'custom' ? runtimeConfig.customProtocol || 'anthropic' : provider;
-        authStorage.setRuntimeApiKey(piProvider, apiKey);
+        await modelRuntime.setRuntimeApiKey(piProvider, apiKey);
         // Also set the key for the model's native provider (e.g., when using
         // google/gemini via openrouter, pi-ai looks up "google" not "openrouter")
         if (piModel.provider !== piProvider) {
-          authStorage.setRuntimeApiKey(piModel.provider, apiKey);
+          await modelRuntime.setRuntimeApiKey(piModel.provider, apiKey);
           log('[CoworkAgentRunner] Set runtime API key for model provider:', piModel.provider);
         }
         log('[CoworkAgentRunner] Set runtime API key for config provider:', piProvider);
@@ -2171,10 +2173,10 @@ Tool routing:
       );
 
       // Wrap the bash tool to intercept sudo commands and request passwords
-      // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
-      // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
-      // parameter is simply not passed by the session runner — safe to cast.
+      // The new SDK takes built-in tool names via `tools`, so these customized
+      // built-ins are registered as customTools while SDK defaults are disabled.
       const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const sdkCustomTools = [...wrappedTools, ...customTools];
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
@@ -2225,8 +2227,9 @@ Tool routing:
         logTiming('agent session reused', runStartTime);
       } else {
         // First query in this session — create new agent session
-        // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
-        const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
+        // ResourceLoader only needed for session creation — skip on reuse
+        const { DefaultResourceLoader, getAgentDir } =
+          await import('@earendil-works/pi-coding-agent');
 
         // Per-session compaction instructions (from session metadata if present).
         // Capped at 2000 chars to limit prompt injection surface — this field
@@ -2242,8 +2245,9 @@ Tool routing:
 
         const resourceLoader = new DefaultResourceLoader({
           cwd: effectiveCwd,
+          agentDir: getAgentDir(),
           additionalSkillPaths: skillPaths,
-          appendSystemPrompt: coworkAppendPrompt,
+          appendSystemPrompt: [coworkAppendPrompt],
           extensionFactories: [
             createCompactionExtensionFactory({
               customInstructions: sessionCompactInstructions,
@@ -2253,8 +2257,6 @@ Tool routing:
           ],
         });
         await resourceLoader.reload();
-
-        const modelRegistry = new ModelRegistry(authStorage);
 
         // Ollama-specific compaction tuning based on actual context window
         const contextWindow = piModel.contextWindow || 128000;
@@ -2289,10 +2291,9 @@ Tool routing:
         const { session: newPiSession } = await createAgentSession({
           model: piModel,
           thinkingLevel,
-          authStorage,
-          modelRegistry,
-          tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
-          customTools,
+          modelRuntime,
+          noTools: 'builtin',
+          customTools: sdkCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
             compaction: compactionSettings,
@@ -2811,8 +2812,8 @@ Tool routing:
               break;
             }
 
-            case 'auto_compaction_start': {
-              log('[CoworkAgentRunner] Auto-compaction started, reason:', event.reason);
+            case 'compaction_start': {
+              log('[CoworkAgentRunner] Compaction started, reason:', event.reason);
               compactionStepId = `compaction-${Date.now()}`;
               this.sendTraceStep(session.id, {
                 id: compactionStepId,
@@ -2824,19 +2825,14 @@ Tool routing:
               break;
             }
 
-            case 'auto_compaction_end': {
+            case 'compaction_end': {
               const status = event.aborted ? 'error' : event.errorMessage ? 'error' : 'completed';
               const title = event.aborted
                 ? 'Context compaction aborted'
                 : event.errorMessage
                   ? `Context compaction failed: ${event.errorMessage}`
                   : 'Context compaction completed';
-              log(
-                '[CoworkAgentRunner] Auto-compaction ended:',
-                title,
-                'willRetry:',
-                event.willRetry
-              );
+              log('[CoworkAgentRunner] Compaction ended:', title, 'willRetry:', event.willRetry);
 
               // Surface compaction result details to the renderer (skip if retrying)
               if (event.result && !event.willRetry) {

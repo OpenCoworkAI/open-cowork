@@ -90,6 +90,23 @@ export function runGh(args, options = {}) {
   }
 }
 
+/**
+ * Return true only when a follow-up review is a linear extension of the
+ * previously reviewed head. A force-push/rebase produces a diverged compare;
+ * using that diff as "new commits" would mix changes from the rewritten base
+ * into the PR review context.
+ */
+export function isLinearReviewUpdate(comparison, previousHeadSha) {
+  return Boolean(
+    previousHeadSha &&
+    comparison?.status === 'ahead' &&
+    Number(comparison?.behind_by) === 0 &&
+    comparison?.merge_base_sha === previousHeadSha &&
+    Number(comparison?.ahead_by) === Number(comparison?.commit_count) &&
+    comparison?.has_merge_commit === false
+  );
+}
+
 function buildGitGrepArgsFromRgArgs(args) {
   const gitArgs = ['grep'];
   const pathspecs = [];
@@ -400,8 +417,14 @@ export function loadRepoDocs(relativePaths, maxChars = 6000) {
 }
 
 export function listPullRequestFiles(repo, prNumber) {
-  const raw = runGh(['api', `repos/${repo}/pulls/${prNumber}/files?per_page=100`]);
-  return JSON.parse(raw);
+  const raw = runGh([
+    'api',
+    '--paginate',
+    '--slurp',
+    `repos/${repo}/pulls/${prNumber}/files?per_page=100`,
+  ]);
+  const pages = JSON.parse(raw);
+  return pages.flatMap((page) => (Array.isArray(page) ? page : []));
 }
 
 export function loadPullRequestFileExcerpts(prNumber, filePaths, maxFiles = 6, maxChars = 4000) {
