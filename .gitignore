@@ -109,3 +109,4 @@ website/.vitepress/cache/
 !public/*.png
 !website/public/*.png
 !resources/social-preview.png
+test-results/
