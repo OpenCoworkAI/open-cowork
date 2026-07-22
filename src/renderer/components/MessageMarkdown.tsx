@@ -1,10 +1,12 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import { AUTO_TEXT_DIRECTION_PROPS } from '../utils/text-direction';
+import { translateInlineI18n } from '../utils/inline-i18n';
 
 // Hoisted to module scope to avoid re-creating arrays on every render
 const REMARK_PLUGINS = [remarkMath, [remarkGfm, { singleTilde: false }]] as const;
@@ -42,6 +44,8 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   isStreaming,
   components,
 }: MessageMarkdownProps) {
+  const { t } = useTranslation();
+  const displayText = useMemo(() => translateInlineI18n(normalizedText, t), [normalizedText, t]);
   return (
     <div
       {...AUTO_TEXT_DIRECTION_PROPS}
@@ -56,7 +60,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         }
         components={components}
       >
-        {normalizedText}
+        {displayText}
       </ReactMarkdown>
       {isStreaming && <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />}
     </div>

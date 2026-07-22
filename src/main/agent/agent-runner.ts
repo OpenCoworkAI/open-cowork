@@ -57,6 +57,7 @@ import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
+  i18nSentinel,
   resolveAbortDisposition,
   resolveAssistantStreamErrorText,
   resolveMessageEndPayload,
@@ -506,6 +507,9 @@ function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined 
     output_tokens?: unknown;
     inputTokens?: unknown;
     outputTokens?: unknown;
+    cacheRead?: unknown;
+    cache_read_input_tokens?: unknown;
+    cacheReadInputTokens?: unknown;
   };
 
   const input = raw.input ?? raw.input_tokens ?? raw.inputTokens;
@@ -515,7 +519,12 @@ function normalizeTokenUsage(usage: unknown): Message['tokenUsage'] | undefined 
     return undefined;
   }
 
-  return { input, output };
+  // Cache-served tokens still occupy the context window; without them the
+  // usage bar under-reports badly whenever prompt caching is active.
+  const cacheReadRaw = raw.cacheRead ?? raw.cache_read_input_tokens ?? raw.cacheReadInputTokens;
+  const cacheRead = typeof cacheReadRaw === 'number' && cacheReadRaw > 0 ? cacheReadRaw : undefined;
+
+  return cacheRead !== undefined ? { input, output, cacheRead } : { input, output };
 }
 
 interface AgentRunnerOptions {
@@ -2944,7 +2953,7 @@ Tool routing:
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          content: [{ type: 'text', text: i18nSentinel('chatError.requestTimeout') }],
           timestamp: Date.now(),
         };
         this.sendMessage(session.id, errorMsg);
@@ -2987,7 +2996,7 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            content: [{ type: 'text', text: i18nSentinel('chatError.requestTimeout') }],
             timestamp: Date.now(),
           };
           this.sendMessage(session.id, errorMsg);
