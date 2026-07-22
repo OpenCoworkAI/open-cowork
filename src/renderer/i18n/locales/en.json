@@ -1,4 +1,22 @@
 {
+  "chatError": {
+    "timeout": "The model timed out: nothing was received from upstream for a long time. Try again later, or check the current model/gateway load.",
+    "emptyResult": "The model returned an empty result — likely a model or gateway compatibility issue. Retry, or switch the protocol and try again.",
+    "badRequest": "Upstream rejected the request (400) — likely an incompatible model/protocol configuration. Check the model name, protocol setting, and API endpoint.",
+    "auth": "Authentication failed. Check that your API key is correct, not expired, and has access to this model.",
+    "rateLimit": "Rate limited (429): this model or API endpoint has hit its request limit. Try again later.",
+    "upstream": "Upstream service error — the model service may be overloaded or temporarily down. Retrying automatically.",
+    "network": "Network connection interrupted — possibly an unstable proxy or gateway. Retrying automatically.",
+    "hintCheckConfig": "Check your configuration and try again.",
+    "hintAutoRetry": "The agent is retrying automatically, please wait…",
+    "requestTimeout": "Request timed out: no response was received for a long time, so the operation was stopped."
+  },
+  "sandboxBadge": {
+    "isolated": "Sandboxed",
+    "isolatedTitle": "Commands run inside the {{mode}} virtual machine — your system is protected. Click to view sandbox settings.",
+    "native": "Not isolated",
+    "nativeTitle": "Commands run directly on this machine with no VM protection. Click to set up the sandbox."
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -218,6 +236,7 @@
       "commonSetupsTitle": "Common provider setups",
       "commonSetupsHint": "Review or apply a recommended setup",
       "apply": "Apply",
+      "getKey": "Get API key",
       "detectedBadge": "Detected",
       "preferProviderTab": "Detected {{service}}. This service is usually easier to configure from the dedicated {{provider}} tab.",
       "protocolMismatch": "Detected {{service}}. Recommended protocol: {{recommendedProtocol}}.",

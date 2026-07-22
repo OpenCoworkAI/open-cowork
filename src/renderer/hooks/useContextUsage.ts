@@ -25,11 +25,17 @@ export function useContextUsage(): ContextUsageInfo | null {
   return useMemo(() => {
     if (!activeSessionId || !contextWindow) return null;
 
+    // Context occupation = fresh input + cache-served tokens; cached tokens
+    // still fill the window even though they are billed differently.
+    const occupied = (usage: { input: number; cacheRead?: number } | undefined): number =>
+      usage ? usage.input + (usage.cacheRead ?? 0) : 0;
+
     // Find last message with token usage to get current context occupation
     let lastInput = 0;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].tokenUsage?.input) {
-        lastInput = messages[i].tokenUsage!.input;
+      const value = occupied(messages[i].tokenUsage);
+      if (value > 0) {
+        lastInput = value;
         break;
       }
     }
@@ -39,10 +45,10 @@ export function useContextUsage(): ContextUsageInfo | null {
 
     // Estimate turns remaining based on average token growth per turn
     let projectedTurnsRemaining: number | null = null;
-    const messagesWithTokens = messages.filter((m) => m.tokenUsage?.input);
+    const messagesWithTokens = messages.filter((m) => occupied(m.tokenUsage) > 0);
     if (messagesWithTokens.length >= 2) {
-      const first = messagesWithTokens[0].tokenUsage!.input;
-      const last = messagesWithTokens[messagesWithTokens.length - 1].tokenUsage!.input;
+      const first = occupied(messagesWithTokens[0].tokenUsage);
+      const last = occupied(messagesWithTokens[messagesWithTokens.length - 1].tokenUsage);
       const avgGrowthPerTurn = (last - first) / (messagesWithTokens.length - 1);
       if (avgGrowthPerTurn > 0) {
         const remaining = contextWindow - lastInput;

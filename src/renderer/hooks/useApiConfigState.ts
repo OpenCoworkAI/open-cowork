@@ -1057,6 +1057,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
             baseUrl: setup.recommendedBaseUrl,
             exampleModel: setup.exampleModel,
             notes: t(setup.noteKey),
+            apiKeyUrl: setup.apiKeyUrl,
             isDetected: setup.id === detectedProviderSetup?.id,
           }))
         : [],

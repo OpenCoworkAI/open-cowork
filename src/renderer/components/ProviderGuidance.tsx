@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, Sparkles } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Info, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export interface CommonProviderSetupView {
@@ -8,6 +8,7 @@ export interface CommonProviderSetupView {
   baseUrl: string;
   exampleModel: string;
   notes: string;
+  apiKeyUrl?: string;
   isDetected?: boolean;
 }
 
@@ -100,13 +101,28 @@ export function CommonProviderSetupsCard({
                 </td>
                 <td className="px-2 py-3 leading-5">{setup.notes}</td>
                 <td className="px-2 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onApplySetup(setup.id)}
-                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-hover"
-                  >
-                    {t('api.guidance.apply')}
-                  </button>
+                  <div className="inline-flex items-center gap-1.5">
+                    {setup.apiKeyUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void window.electronAPI?.openExternal?.(setup.apiKeyUrl!);
+                        }}
+                        title={setup.apiKeyUrl}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent-muted whitespace-nowrap"
+                      >
+                        {t('api.guidance.getKey')}
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onApplySetup(setup.id)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-hover whitespace-nowrap"
+                    >
+                      {t('api.guidance.apply')}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

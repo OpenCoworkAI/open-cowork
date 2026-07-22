@@ -19,6 +19,8 @@ export interface CommonProviderSetup {
   recommendedBaseUrl: string;
   exampleModel: string;
   protocolLabel?: string;
+  /** Console page where the user can create an API key for this provider. */
+  apiKeyUrl?: string;
   preferProviderTab?: Exclude<SharedProviderType, 'custom'>;
   matcher?: {
     hosts?: string[];
@@ -45,6 +47,7 @@ export type ProviderGuidanceErrorHintKind =
 export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   {
     id: 'openrouter',
+    apiKeyUrl: 'https://openrouter.ai/keys',
     nameKey: 'api.guidance.setups.openrouter.name',
     noteKey: 'api.guidance.setups.openrouter.note',
     applyProvider: 'openrouter',
@@ -60,6 +63,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   },
   {
     id: 'deepseek',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
     nameKey: 'api.guidance.setups.deepseek.name',
     noteKey: 'api.guidance.setups.deepseek.note',
     applyProvider: 'custom',
@@ -73,6 +77,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   },
   {
     id: 'kimi-coding',
+    apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys',
     nameKey: 'api.guidance.setups.kimi.name',
     noteKey: 'api.guidance.setups.kimi.note',
     applyProvider: 'custom',
@@ -86,6 +91,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   },
   {
     id: 'glm-anthropic',
+    apiKeyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
     nameKey: 'api.guidance.setups.glm.name',
     noteKey: 'api.guidance.setups.glm.note',
     applyProvider: 'custom',
@@ -115,6 +121,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   },
   {
     id: 'gemini-custom',
+    apiKeyUrl: 'https://aistudio.google.com/apikey',
     nameKey: 'api.guidance.setups.gemini.name',
     noteKey: 'api.guidance.setups.gemini.note',
     applyProvider: 'custom',
@@ -127,6 +134,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
   },
   {
     id: 'minimax',
+    apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
     nameKey: 'api.guidance.setups.minimax.name',
     noteKey: 'api.guidance.setups.minimax.note',
     applyProvider: 'custom',

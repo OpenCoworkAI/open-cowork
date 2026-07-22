@@ -96,6 +96,8 @@ export interface ThinkingContent {
 export interface TokenUsage {
   input: number;
   output: number;
+  /** Tokens served from prompt cache — still occupy the context window. */
+  cacheRead?: number;
 }
 
 // Trace types for visualization
