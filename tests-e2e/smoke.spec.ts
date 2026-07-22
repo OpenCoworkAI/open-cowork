@@ -15,15 +15,19 @@ let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
+  // The dev-shell trap: ELECTRON_RUN_AS_NODE forces Electron into plain-Node
+  // mode and crashes the main process. Delete it explicitly — assigning
+  // `undefined` relies on the spawn layer omitting the key, which is fragile
+  // across Node versions (flagged by PR review).
+  const env: Record<string, string> = Object.fromEntries(
+    Object.entries(process.env).filter(([, v]) => v !== undefined)
+  ) as Record<string, string>;
+  delete env.ELECTRON_RUN_AS_NODE;
+  env.NODE_ENV = 'production';
+
   app = await electron.launch({
     args: [path.resolve(__dirname, '..')],
-    env: {
-      ...process.env,
-      // The dev-shell trap: this variable forces Electron into plain-Node
-      // mode and crashes the main process. Never inherit it in E2E.
-      ELECTRON_RUN_AS_NODE: undefined as unknown as string,
-      NODE_ENV: 'production',
-    },
+    env,
   });
   page = await app.firstWindow();
 });
