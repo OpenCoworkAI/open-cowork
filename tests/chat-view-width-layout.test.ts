@@ -10,7 +10,7 @@ function readChatView() {
 describe('chat view width layout', () => {
   it('uses a centered responsive messages container', () => {
     const source = readChatView();
-    expect(source).toContain('max-w-[920px]');
+    expect(source).toContain('max-w-[800px]');
     expect(source).toContain('lg:px-8');
   });
 

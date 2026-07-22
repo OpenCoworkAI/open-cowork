@@ -11,7 +11,7 @@ function readChatView() {
 describe('ChatView Claude-style layout', () => {
   it('uses a narrower conversation column shared by messages and composer', () => {
     const source = readChatView();
-    expect(source).toContain('max-w-[920px]');
+    expect(source).toContain('max-w-[800px]');
   });
 
   it('uses a quieter header treatment with Open Cowork eyebrow and compact connector badge', () => {
@@ -23,7 +23,7 @@ describe('ChatView Claude-style layout', () => {
 
   it('uses a softer rounded composer shell instead of the previous heavy input bar', () => {
     const source = readChatView();
-    expect(source).toContain('rounded-[1.75rem]');
+    expect(source).toContain('rounded-4xl');
     expect(source).toContain('shadow-soft');
   });
 });

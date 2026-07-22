@@ -8,7 +8,10 @@ describe('WelcomeView submit guards', () => {
   it('disables the submit button when there is no text, image, or file to send', () => {
     const source = fs.readFileSync(welcomeViewPath, 'utf8');
 
-    expect(source).toContain('const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;');
+    expect(source).toContain(
+      'prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;'
+    );
+    expect(source).toContain('const canSubmit = hasContent && (isConfigured || !isElectron);');
     expect(source).toContain('disabled={!canSubmit || isSubmitting}');
   });
 

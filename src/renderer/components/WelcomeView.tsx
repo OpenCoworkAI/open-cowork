@@ -25,6 +25,7 @@ type AttachedFile = {
 };
 
 import { Button, Chip, Badge, cn } from './ui';
+import { SandboxStatusBadge } from './SandboxStatusBadge';
 
 import welcomeLogoSrc from '../assets/logo.png';
 
@@ -46,7 +47,11 @@ export function WelcomeView() {
   const isConfigured = useAppStore((state) => state.isConfigured);
   const setShowSettings = useAppStore((state) => state.setShowSettings);
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
-  const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
+  // Gate on configuration too: submitting without an API key can only fail,
+  // and the inline notice + settings link already explain what to do.
+  const hasContent =
+    prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
+  const canSubmit = hasContent && (isConfigured || !isElectron);
 
   const handleSelectFolder = async () => {
     try {
@@ -593,6 +598,7 @@ export function WelcomeView() {
                   <span>{t('welcome.attachFiles')}</span>
                 </button>
               )}
+              {isElectron && <SandboxStatusBadge />}
             </div>
 
             <Button type="submit" variant="primary" size="lg" disabled={!canSubmit || isSubmitting}>

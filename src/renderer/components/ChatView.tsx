@@ -14,6 +14,7 @@ import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import { SubagentTracker } from './SubagentTracker';
+import { SandboxStatusBadge } from './SandboxStatusBadge';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
@@ -668,30 +669,33 @@ export function ChatView() {
         >
           {activeSession.title}
         </h2>
-        {activeConnectors.length > 0 && (
-          <>
-            <div
-              ref={connectorMeasureRef}
-              aria-hidden="true"
-              className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
-            >
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-mcp/20">
-                <Plug className="w-3.5 h-3.5" />
-                <span className="text-xs font-medium whitespace-nowrap">
-                  {t('chat.connectorCount', { count: activeConnectors.length })}
+        <div className="justify-self-end flex items-center gap-2">
+          <SandboxStatusBadge />
+          {activeConnectors.length > 0 && (
+            <>
+              <div
+                ref={connectorMeasureRef}
+                aria-hidden="true"
+                className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
+              >
+                <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-mcp/20">
+                  <Plug className="w-3.5 h-3.5" />
+                  <span className="text-xs font-medium whitespace-nowrap">
+                    {t('chat.connectorCount', { count: activeConnectors.length })}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15">
+                <Plug className="w-3.5 h-3.5 text-mcp" />
+                <span className="text-xs text-mcp font-medium">
+                  {showConnectorLabel
+                    ? t('chat.connectorCount', { count: activeConnectors.length })
+                    : activeConnectors.length}
                 </span>
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
-              <Plug className="w-3.5 h-3.5 text-mcp" />
-              <span className="text-xs text-mcp font-medium">
-                {showConnectorLabel
-                  ? t('chat.connectorCount', { count: activeConnectors.length })
-                  : activeConnectors.length}
-              </span>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Context Usage Bar */}

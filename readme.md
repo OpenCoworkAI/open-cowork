@@ -27,7 +27,7 @@
 
 ---
 
-Open Cowork is a free, open-source AI agent desktop application for Windows and macOS. It wraps Claude Code, OpenAI, Gemini, DeepSeek, and other AI models into a user-friendly GUI with one-click installation — no coding required. Key capabilities include VM-level sandbox isolation (WSL2 on Windows, Lima on macOS), a built-in Skills system for generating PPTX, DOCX, XLSX, and PDF documents, MCP (Model Context Protocol) integration for connecting to browsers, Notion, and other desktop apps, GUI automation via computer use, and remote control through Feishu (Lark) and Slack. Open Cowork is the open-source implementation of Claude Cowork, designed to make AI-powered desktop automation accessible to everyone.
+Open Cowork is a free, open-source AI agent desktop application for Windows and macOS. It wraps Claude Code, OpenAI, Gemini, DeepSeek, and other AI models into a user-friendly GUI with one-click installation — no coding required. Key capabilities include optional VM-level sandbox isolation (WSL2 on Windows, Lima on macOS — enable it in Settings; GUI automation and sudo commands run on the host by design), a built-in Skills system for generating PPTX, DOCX, XLSX, and PDF documents, MCP (Model Context Protocol) integration for connecting to browsers, Notion, and other desktop apps, GUI operation for controlling desktop applications, and remote control through Feishu (Lark) and Slack. Open Cowork is the open-source implementation of Claude Cowork, designed to make AI-powered desktop automation accessible to everyone.
 
 ---
 
@@ -62,7 +62,7 @@ It provides a sandboxed workspace where AI can manage files, generate profession
 - **Multimodal Input**: Drag & drop files and images directly into the chat input for seamless multimodal interaction.
 - **Real-time Trace**: Watch AI reasoning and tool execution in the Trace Panel.
 - **Secure Workspace**: All operations confined to your chosen workspace folder.
-- **VM-Level Isolation**: WSL2 (Windows) and Lima (macOS) VM isolation—all commands execute in an isolated VM to protect your host system.
+- **VM-Level Isolation (opt-in)**: WSL2 (Windows) and Lima (macOS) VM isolation for shell commands and file operations. Enable it in Settings → Sandbox; the in-app status badge always shows whether you are isolated. Note: GUI operation and sudo commands run on the host by design and are not covered by the sandbox.
 - **UI Enhancements**: Beautiful and flexible UI design, system language switching, comprehensive MCP/Skills/Tools call display.
 
 <a id="demo"></a>
@@ -290,7 +290,7 @@ See our full **[ROADMAP.md](ROADMAP.md)** for detailed plans.
 Open Cowork is a free, open-source desktop application that provides a local AI agent workspace. It wraps AI models (Claude, GPT, Gemini, DeepSeek, etc.) into a GUI with one-click installers for Windows and macOS — no terminal or coding knowledge required.
 
 **How is Open Cowork different from Claude Cowork?**
-Open Cowork is the open-source implementation of Claude Cowork. It adds multi-model support (not just Claude), GUI automation via computer use, remote control through Feishu/Slack, and VM-level sandbox isolation. See the [feature comparison table](#features) for details.
+Open Cowork is the open-source implementation of Claude Cowork. It adds multi-model support (not just Claude), GUI operation for desktop applications, remote control through Feishu/Slack, and opt-in VM-level sandbox isolation. See the [feature comparison table](#features) for details.
 
 **What AI models does Open Cowork support?**
 Claude (via Anthropic or OpenRouter), OpenAI-compatible APIs, and Chinese models including GLM (Zhipu AI), MiniMax, and Kimi. Any provider offering an OpenAI-compatible API endpoint can be configured.
