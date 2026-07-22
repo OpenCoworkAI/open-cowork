@@ -419,6 +419,8 @@ export interface PermissionRequest {
   toolName: string;
   input: Record<string, unknown>;
   sessionId: string;
+  /** Set for tool families needing an explicit risk warning (GUI control). */
+  highRisk?: 'gui';
 }
 
 export type PermissionResult = 'allow' | 'deny' | 'allow_always';

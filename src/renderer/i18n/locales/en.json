@@ -937,6 +937,7 @@
   },
   "permission": {
     "permissionRequired": "Permission Required",
+    "guiRiskWarning": "This lets the AI control your real mouse, keyboard, and screen. GUI operations always run on this machine and are not covered by the sandbox. \"Always allow\" grants all GUI operations for this session.",
     "tool": "Tool:",
     "input": "Input:",
     "warning": "This action may modify your system. Review carefully.",

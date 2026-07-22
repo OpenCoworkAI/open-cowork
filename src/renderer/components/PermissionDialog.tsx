@@ -61,6 +61,13 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           </div>
         </div>
 
+        {/* High-risk family warning (GUI control of the real mouse/keyboard) */}
+        {permission.highRisk === 'gui' && (
+          <div className="mt-4 p-3 bg-warning/10 border border-warning/30 rounded-xl">
+            <p className="text-sm text-warning leading-6">{t('permission.guiRiskWarning')}</p>
+          </div>
+        )}
+
         {/* Tool Details */}
         <div className="mt-4 p-4 bg-surface-muted rounded-xl">
           <div className="flex items-center gap-2 mb-2">

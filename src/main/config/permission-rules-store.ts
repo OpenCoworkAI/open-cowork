@@ -35,6 +35,28 @@ let rules: PermissionRule[] = [...DEFAULT_RULES];
 const alwaysAllowBySession = new Map<string, Set<string>>();
 
 /**
+ * GUI-operate tools control the real mouse/keyboard/screen and always run on
+ * the host (they cannot be sandboxed). They are treated as one high-risk
+ * family: a single session-scoped grant covers all of them, instead of a
+ * fragmented dialog per tool (mouse_click, keyboard_type, screenshot, …).
+ */
+const GUI_SERVER_KEYS = new Set(['gui-operate', 'gui_operate', 'guioperate']);
+const GUI_FAMILY_GRANT = 'mcp-family:gui-operate';
+
+function mcpServerKey(toolName: string): string | null {
+  const lowered = toolName.toLowerCase();
+  if (!lowered.startsWith('mcp__')) return null;
+  const rest = lowered.slice('mcp__'.length);
+  const idx = rest.indexOf('__');
+  return idx > 0 ? rest.slice(0, idx) : null;
+}
+
+export function isGuiOperateTool(toolName: string): boolean {
+  const key = mcpServerKey(toolName);
+  return key !== null && GUI_SERVER_KEYS.has(key);
+}
+
+/**
  * Sanitize an untrusted rules payload from IPC. Drops entries with empty
  * tool names, coerces invalid `action` values to `'ask'`, and preserves
  * optional string `pattern` fields. Returns null for non-array input.
@@ -95,6 +117,7 @@ export function decidePermission(
 
   const session = alwaysAllowBySession.get(sessionId);
   if (session?.has(lowered)) return 'allow';
+  if (session?.has(GUI_FAMILY_GRANT) && isGuiOperateTool(toolName)) return 'allow';
 
   const inputStr = safeStringify(input);
 
@@ -109,6 +132,10 @@ export function decidePermission(
 export function rememberAlwaysAllow(sessionId: string, toolName: string): void {
   const set = alwaysAllowBySession.get(sessionId) ?? new Set<string>();
   set.add(toolName.toLowerCase());
+  // One approval covers the whole GUI-operate family for this session.
+  if (isGuiOperateTool(toolName)) {
+    set.add(GUI_FAMILY_GRANT);
+  }
   alwaysAllowBySession.set(sessionId, set);
 }
 

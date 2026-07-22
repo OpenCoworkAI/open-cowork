@@ -177,8 +177,9 @@ export class SessionManager {
           sessionId: string,
           toolUseId: string,
           toolName: string,
-          input: Record<string, unknown>
-        ) => this.requestPermission(sessionId, toolUseId, toolName, input),
+          input: Record<string, unknown>,
+          highRisk?: 'gui'
+        ) => this.requestPermission(sessionId, toolUseId, toolName, input, highRisk),
       },
       this.pathResolver,
       this.mcpManager,
@@ -1263,7 +1264,8 @@ export class SessionManager {
     sessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    highRisk?: 'gui'
   ): Promise<PermissionResult> {
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
@@ -1277,7 +1279,7 @@ export class SessionManager {
       });
       this.sendToRenderer({
         type: 'permission.request',
-        payload: { toolUseId, toolName, input, sessionId },
+        payload: { toolUseId, toolName, input, sessionId, highRisk },
       });
     });
   }

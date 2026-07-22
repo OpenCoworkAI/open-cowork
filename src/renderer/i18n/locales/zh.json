@@ -937,6 +937,7 @@
   },
   "permission": {
     "permissionRequired": "需要权限",
+    "guiRiskWarning": "此操作将允许 AI 控制你的真实鼠标、键盘和屏幕。GUI 操作始终在本机执行,不受沙盒保护。「本会话总是允许」将授权本会话内的全部 GUI 操作。",
     "tool": "工具：",
     "input": "输入：",
     "warning": "此操作可能会修改您的系统。请仔细审查。",
