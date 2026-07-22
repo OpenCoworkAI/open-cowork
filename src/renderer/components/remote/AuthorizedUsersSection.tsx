@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Users, Trash2 } from 'lucide-react';
 import { formatAppDate } from '../../utils/i18n-format';
 import type { PairedUser } from './types';
+import { IconButton } from '../ui';
 
 interface Props {
   pairedUsers: PairedUser[];
@@ -40,13 +41,14 @@ export function AuthorizedUsersSection({ pairedUsers, onRevoke }: Props) {
                 <div className="text-xs text-text-muted">{formatAppDate(user.lastActiveAt)}</div>
               </div>
             </div>
-            <button
+            <IconButton
+              variant="danger"
+              size="sm"
               onClick={() => onRevoke(user)}
-              className="p-2 rounded-lg hover:bg-error/10 text-text-muted hover:text-error transition-colors"
               title={t('remote.revokeAccess')}
             >
               <Trash2 className="w-4 h-4" />
-            </button>
+            </IconButton>
           </div>
         ))}
       </div>

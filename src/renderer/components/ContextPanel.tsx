@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo, ContentBlock, ToolUseContent } from '../types';
 import { getMcpToolDisplayName } from './message/toolHelpers';
+import { IconButton } from './ui';
 
 const EMPTY_STEPS: TraceStep[] = [];
 
@@ -281,13 +282,9 @@ export function ContextPanel() {
   if (contextPanelCollapsed) {
     return (
       <div className="w-10 bg-background border-l border-border-muted flex items-start justify-center pt-3">
-        <button
-          onClick={toggleContextPanel}
-          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
-          title={t('context.expandPanel')}
-        >
+        <IconButton variant="ghost" size="sm" onClick={toggleContextPanel} title={t('context.expandPanel')}>
           <ChevronLeft className="w-4 h-4" />
-        </button>
+        </IconButton>
       </div>
     );
   }
@@ -296,13 +293,9 @@ export function ContextPanel() {
     <div className="w-72 bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
       {/* Header */}
       <div className="px-3 h-10 flex items-center gap-2 border-b border-border-muted shrink-0">
-        <button
-          onClick={toggleContextPanel}
-          className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
-          title={t('context.collapsePanel')}
-        >
+        <IconButton variant="ghost" size="xs" onClick={toggleContextPanel} title={t('context.collapsePanel')}>
           <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+        </IconButton>
         <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
           {t('context.context')}
         </span>

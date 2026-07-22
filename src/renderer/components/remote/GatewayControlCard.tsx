@@ -5,6 +5,7 @@
 import { useTranslation } from 'react-i18next';
 import { Power, Smartphone, Loader2 } from 'lucide-react';
 import type { GatewayStatus, PairedUser, PairingRequest } from './types';
+import { Button } from '../ui';
 
 interface Props {
   status: GatewayStatus | null;
@@ -46,14 +47,11 @@ export function GatewayControlCard({
             </div>
           </div>
 
-          <button
+          <Button
+            variant={status?.running ? 'danger' : 'primary'}
+            size="lg"
             onClick={onToggle}
             disabled={isTogglingGateway || !isFeishuConfigured}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
-              status?.running
-                ? 'bg-error hover:bg-error/90 text-white'
-                : 'bg-accent hover:bg-accent/90 text-white'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isTogglingGateway ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -61,7 +59,7 @@ export function GatewayControlCard({
               <Power className="w-4 h-4" />
             )}
             {status?.running ? t('remote.stopService') : t('remote.startService')}
-          </button>
+          </Button>
         </div>
 
         {/* Status metrics — only shown when running */}

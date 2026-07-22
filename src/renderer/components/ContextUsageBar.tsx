@@ -6,6 +6,7 @@ import { useContextUsage } from '../hooks/useContextUsage';
 import { useIPC } from '../hooks/useIPC';
 import { useActiveSessionId } from '../store/selectors';
 import { useActiveCompactionHistory } from '../store/selectors';
+import { Button } from './ui';
 
 function formatTokens(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -140,20 +141,12 @@ export function ContextUsageBar() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm(false)}
-                    className="px-3 py-1.5 rounded-lg text-xs text-text-muted hover:bg-surface-hover transition-colors"
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => setShowConfirm(false)}>
                     {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCompact}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-background hover:bg-accent-hover transition-colors"
-                  >
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={handleCompact}>
                     {t('compaction.confirm')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

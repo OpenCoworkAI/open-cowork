@@ -24,6 +24,7 @@ import type {
   ConfigStep,
   LocalizedBanner,
 } from './remote/types';
+import { Button } from './ui';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -334,18 +335,14 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
 
         {/* Save button */}
         <div className="flex justify-end mt-6 pt-6 border-t border-border">
-          <button
-            onClick={saveConfig}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
-          >
+          <Button variant="primary" size="lg" onClick={saveConfig} disabled={isSaving}>
             {isSaving ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Check className="w-4 h-4" />
             )}
             {t('remote.saveConfig')}
-          </button>
+          </Button>
         </div>
       </div>
 
