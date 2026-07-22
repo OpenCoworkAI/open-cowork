@@ -38,6 +38,14 @@ test('main window opens and renders the app shell', async () => {
   // Welcome view greets on a fresh profile; an existing profile may restore
   // a session instead — both render the sidebar brand.
   await expect(page.getByText('Open Cowork').first()).toBeVisible({ timeout: 15_000 });
+
+  // Fresh profiles get the one-time sandbox choice; dismiss it so later
+  // tests interact with the shell underneath.
+  const skipButton = page.locator('button', { hasText: /暂不启用|Not now/ });
+  if (await skipButton.count()) {
+    await skipButton.click();
+    await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  }
 });
 
 test('settings modal opens over the intact layout and closes with Escape', async () => {

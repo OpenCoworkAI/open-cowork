@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -21,6 +21,10 @@ import { SandboxSetupDialog } from './components/SandboxSetupDialog';
 import { SandboxSyncToast } from './components/SandboxSyncToast';
 import { GlobalNoticeToast } from './components/GlobalNoticeToast';
 import { PanelErrorBoundary } from './components/PanelErrorBoundary';
+import {
+  SandboxChoiceDialog,
+  shouldOfferSandboxChoice,
+} from './components/SandboxChoiceDialog';
 import { DialogOverlay } from './components/ui';
 import type { GlobalNoticeAction } from './store';
 
@@ -74,6 +78,9 @@ function App() {
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
   const initialized = useRef(false);
+  const [offerSandboxChoice, setOfferSandboxChoice] = useState(() =>
+    shouldOfferSandboxChoice(isElectron, window.electronAPI?.platform)
+  );
 
   useEffect(() => {
     // Only run once on mount
@@ -167,6 +174,11 @@ function App() {
           </PanelErrorBoundary>
         )}
       </div>
+
+      {/* First-run sandbox choice — informed opt-in instead of silent off */}
+      {offerSandboxChoice && !showSandboxSetup && (
+        <SandboxChoiceDialog onDone={() => setOfferSandboxChoice(false)} />
+      )}
 
       {/* Settings Modal — a temporary layer over the intact app layout */}
       {showSettings && (

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Shield, AlertCircle, CheckCircle, Settings, Loader2 } from 'lucide-react';
 import { renderLocalizedBannerMessage } from './shared';
 import type { LocalizedBanner } from './shared';
+import { Button } from '../ui';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -103,8 +104,22 @@ export function SettingsSandbox() {
     }
   }
 
-  // TODO: Re-enable when sandbox debugging is complete
-  // async function handleToggleSandbox() { ... }
+  // Toggle persists to config; the sandbox adapter initializes at startup,
+  // so changes take effect after an app restart (the success note says so).
+  async function handleToggleSandbox() {
+    try {
+      const next = !sandboxEnabled;
+      const result = await window.electronAPI.config.save({ sandboxEnabled: next });
+      if (result?.success) {
+        setSandboxEnabled(next);
+        setSuccess({ text: t(next ? 'sandbox.toggleEnabledSaved' : 'sandbox.toggleDisabledSaved') });
+        setTimeout(() => setSuccess(null), 5000);
+      }
+    } catch (err) {
+      console.error('Failed to toggle sandbox:', err);
+      setError({ text: t('sandbox.toggleFailed') });
+    }
+  }
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click
@@ -345,6 +360,14 @@ export function SettingsSandbox() {
         <p className="text-xs text-text-muted max-w-sm mx-auto">
           {t('sandbox.helpText1')} {t('sandbox.helpText2')}
         </p>
+        <Button
+          variant={sandboxEnabled ? 'secondary' : 'primary'}
+          onClick={() => {
+            void handleToggleSandbox();
+          }}
+        >
+          {sandboxEnabled ? t('sandbox.toggleDisable') : t('sandbox.toggleEnable')}
+        </Button>
       </div>
 
       {/* Status Details */}

@@ -421,6 +421,11 @@
     "setupSubtitle": "首次运行需要配置安全执行环境。",
     "progressLabel": "进度",
     "continuingNative": "将继续使用原生执行模式。",
+    "toggleEnable": "启用沙盒",
+    "toggleDisable": "关闭沙盒",
+    "toggleEnabledSaved": "沙盒已启用,重启应用后生效。",
+    "toggleDisabledSaved": "沙盒已关闭,重启应用后生效。",
+    "toggleFailed": "保存沙盒设置失败,请重试。",
     "errorNodeWsl": "在 WSL 中安装 Node.js 失败。请检查网络连接,或在 WSL 终端手动执行安装(sudo apt install nodejs)后点击重试。",
     "errorLimaCreate": "创建 Lima 虚拟机失败。常见原因:磁盘剩余空间不足(需 ≥5GB)、镜像下载超时(检查网络/代理)、或 Lima 未正确安装(brew install lima)。处理后点击重试。",
     "errorLimaStart": "启动 Lima 虚拟机失败。可尝试在终端执行 limactl list 查看实例状态,或 limactl delete 后点击重试重建;也可以先继续使用原生模式。",
@@ -980,5 +985,14 @@
     "completed": "已完成",
     "inDuration": "耗时 {{duration}}",
     "showResult": "查看结果"
+  },
+  "sandboxChoice": {
+    "title": "保护你的电脑",
+    "body": "Open Cowork 可以把 AI 执行的命令放进一个隔离的 Linux 虚拟机(沙盒)中运行。现在选择,之后也可以随时在 设置 → 沙盒 中更改。",
+    "enableHint": "启用(推荐):命令在虚拟机内执行,即使 AI 出错也不会影响你的系统。首次启用需下载约 1GB 的虚拟机镜像。",
+    "skipHint": "跳过:命令直接在本机执行,速度稍快但没有虚拟机保护。界面会持续显示「未隔离」徽章提醒你。",
+    "enable": "启用沙盒(推荐)",
+    "enabling": "正在启用…",
+    "skip": "暂不启用"
   }
 }
