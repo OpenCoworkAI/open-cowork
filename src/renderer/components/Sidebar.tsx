@@ -21,6 +21,8 @@ import {
   FolderOpen,
   MoreHorizontal,
   Pin,
+  Pencil,
+  Archive,
   X,
 } from 'lucide-react';
 import type { Session, SessionStatus } from '../types';
@@ -47,6 +49,7 @@ type SessionGroup = {
   /** Absolute working directory — only set for project groups. */
   cwd?: string;
   pinned?: boolean;
+  archived?: boolean;
 };
 
 const STATUS_DOT: Record<SessionStatus, string> = {
@@ -158,6 +161,44 @@ export function Sidebar() {
     });
   }, []);
 
+  // Display alias per project — local only, never renames the folder on disk.
+  const [projectAliases, setProjectAliases] = useState<Record<string, string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('sidebar-project-aliases') || '{}');
+      return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    } catch {
+      return {};
+    }
+  });
+  const saveProjectAlias = useCallback((cwd: string, alias: string) => {
+    setProjectAliases((prev) => {
+      const next = { ...prev };
+      if (alias.trim()) next[cwd] = alias.trim();
+      else delete next[cwd];
+      localStorage.setItem('sidebar-project-aliases', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const [renameTarget, setRenameTarget] = useState<SessionGroup | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const [archivedProjects, setArchivedProjects] = useState<string[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('sidebar-archived-projects') || '[]');
+      return Array.isArray(raw) ? raw.filter((v) => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const toggleArchiveProject = useCallback((cwd: string) => {
+    setArchivedProjects((prev) => {
+      const next = prev.includes(cwd) ? prev.filter((p) => p !== cwd) : [...prev, cwd];
+      localStorage.setItem('sidebar-archived-projects', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const [showArchived, setShowArchived] = useState(false);
+
   const [projectMenuKey, setProjectMenuKey] = useState<string | null>(null);
   // The menu floats to the RIGHT of the sidebar (over the main content) via a
   // body portal — a dropdown inside the scroll container would be clipped and
@@ -170,7 +211,7 @@ export function Sidebar() {
     projectMenuTriggerRef.current = trigger;
     // Clamp so the menu never runs off the bottom of the window.
     setProjectMenuPos({
-      top: Math.min(rect.top - 4, window.innerHeight - 170),
+      top: Math.min(rect.top - 4, window.innerHeight - 250),
       left: rect.right + 8,
     });
     setProjectMenuKey(key);
@@ -215,10 +256,29 @@ export function Sidebar() {
   const groupedSessions = useMemo(
     () =>
       groupMode === 'project'
-        ? groupSessionsByProject(filteredSessions, t, sortMode, pinnedProjects)
+        ? groupSessionsByProject(filteredSessions, t, sortMode, pinnedProjects, projectAliases)
         : groupSessionsByDate(filteredSessions, t, sortMode),
-    [filteredSessions, groupMode, sortMode, pinnedProjects, t]
+    [filteredSessions, groupMode, sortMode, pinnedProjects, projectAliases, t]
   );
+
+  // Archived projects fold away under a toggle at the bottom of the list.
+  const { visibleGroups, archivedGroups } = useMemo(() => {
+    if (groupMode !== 'project') {
+      return { visibleGroups: groupedSessions, archivedGroups: [] as SessionGroup[] };
+    }
+    const archived: SessionGroup[] = [];
+    const visible: SessionGroup[] = [];
+    for (const group of groupedSessions) {
+      if (group.cwd && archivedProjects.includes(group.cwd)) {
+        archived.push({ ...group, archived: true });
+      } else {
+        visible.push(group);
+      }
+    }
+    return { visibleGroups: visible, archivedGroups: archived };
+  }, [groupedSessions, groupMode, archivedProjects]);
+
+  const renderGroups = showArchived ? [...visibleGroups, ...archivedGroups] : visibleGroups;
 
   // Exit select mode when sidebar collapses
   useEffect(() => {
@@ -533,7 +593,7 @@ export function Sidebar() {
           </div>
         ) : (
           <div className="space-y-3">
-            {groupedSessions.map((group) => {
+            {renderGroups.map((group) => {
               const isCollapsed = collapsedGroups.has(group.key);
               const isProjectGroup = groupMode === 'project';
               const isClipped = !expandedGroups.has(group.key) && group.sessions.length > CLIP_AT;
@@ -541,7 +601,7 @@ export function Sidebar() {
                 ? group.sessions.slice(0, CLIP_AT - 1)
                 : group.sessions;
               return (
-                <section key={group.key}>
+                <section key={group.key} className={cn(group.archived && 'opacity-70')}>
                   <div
                     role="button"
                     tabIndex={0}
@@ -625,6 +685,29 @@ export function Sidebar() {
                                   }}
                                 >
                                   {t('sidebar.showInFolder')}
+                                </ProjectMenuItem>
+                                <ProjectMenuItem
+                                  icon={<Pencil className="w-3.5 h-3.5" />}
+                                  onClick={() => {
+                                    setRenameTarget(group);
+                                    setRenameValue(
+                                      group.cwd ? (projectAliases[group.cwd] ?? '') : ''
+                                    );
+                                    closeProjectMenu();
+                                  }}
+                                >
+                                  {t('sidebar.renameProject')}
+                                </ProjectMenuItem>
+                                <ProjectMenuItem
+                                  icon={<Archive className="w-3.5 h-3.5" />}
+                                  onClick={() => {
+                                    toggleArchiveProject(group.cwd!);
+                                    closeProjectMenu();
+                                  }}
+                                >
+                                  {group.archived
+                                    ? t('sidebar.unarchiveProject')
+                                    : t('sidebar.archiveProject')}
                                 </ProjectMenuItem>
                                 <div className="my-1.5 h-px bg-border-muted" />
                                 <ProjectMenuItem
@@ -761,6 +844,21 @@ export function Sidebar() {
                 </section>
               );
             })}
+            {archivedGroups.length > 0 && (
+              <button
+                onClick={() => setShowArchived((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium tracking-[0.04em] text-text-muted hover:text-text-secondary transition-colors"
+              >
+                <Archive className="w-3 h-3 flex-shrink-0" />
+                <span>{t('sidebar.archivedGroup')}</span>
+                <span className="text-text-muted/60 tabular-nums">{archivedGroups.length}</span>
+                {showArchived ? (
+                  <ChevronDown className="w-3 h-3 ml-auto flex-shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 ml-auto flex-shrink-0" />
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -844,6 +942,49 @@ export function Sidebar() {
             </IconButton>
           </div>
         </div>
+      )}
+
+      {renameTarget && renameTarget.cwd && (
+        <DialogOverlay onClose={() => setRenameTarget(null)}>
+          <DialogPanel size="sm">
+            <DialogHeader>
+              <DialogTitle>{t('sidebar.renameProject')}</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveProjectAlias(renameTarget.cwd!, renameValue);
+                  setRenameTarget(null);
+                }}
+              >
+                <Input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder={cwdBasename(renameTarget.cwd) ?? ''}
+                />
+              </form>
+              <p className="mt-2 text-xs leading-5 text-text-muted">
+                {t('sidebar.renameProjectHint')}
+              </p>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setRenameTarget(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  saveProjectAlias(renameTarget.cwd!, renameValue);
+                  setRenameTarget(null);
+                }}
+              >
+                {t('common.save')}
+              </Button>
+            </DialogFooter>
+          </DialogPanel>
+        </DialogOverlay>
       )}
 
       {removeTarget && (
@@ -935,7 +1076,8 @@ function groupSessionsByProject(
   sessions: Session[],
   t: (key: string) => string,
   sortKey: 'updated' | 'created',
-  pinnedCwds: string[]
+  pinnedCwds: string[],
+  aliases: Record<string, string>
 ): SessionGroup[] {
   const sortedSessions = [...sessions].sort(
     (a, b) => sessionSortValue(b, sortKey) - sessionSortValue(a, sortKey)
@@ -948,7 +1090,8 @@ function groupSessionsByProject(
     if (!group) {
       group = {
         key,
-        label: project ?? t('sidebar.noProject'),
+        // Local display alias wins over the folder basename.
+        label: project ? (aliases[session.cwd!] ?? project) : t('sidebar.noProject'),
         sessions: [],
         cwd: project ? session.cwd : undefined,
         pinned: project ? pinnedCwds.includes(session.cwd!) : false,
