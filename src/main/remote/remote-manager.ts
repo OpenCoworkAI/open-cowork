@@ -10,6 +10,7 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { EmailChannel } from './channels/email';
 import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
@@ -18,6 +19,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  EmailChannelConfig,
   ChannelType,
   RemoteSessionMapping,
   PairedUser,
@@ -400,6 +402,65 @@ export class RemoteManager extends EventEmitter {
                 mode: 'allowlist',
                 allowlist: [
                   ...new Set([...nonFeishuEntries, ...pairedFeishuEntries, ...feishuEntries]),
+                ],
+              },
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    // Restart to apply changes
+    if (this.gateway?.running) {
+      await this.restart();
+    }
+  }
+
+  /**
+   * Update email channel config.
+   *
+   * Because email is a public-facing channel, the DM policy is synced into the
+   * gateway auth so unknown senders cannot drive the agent by default. Sender
+   * addresses are scoped as `email:<address>` in the allowlist and merged with
+   * entries from other channels, mirroring updateFeishuConfig().
+   */
+  async updateEmailConfig(config: EmailChannelConfig): Promise<void> {
+    remoteConfigStore.setEmailConfig(config);
+
+    if (config.dm) {
+      const currentGateway = remoteConfigStore.getGatewayConfig();
+      const currentAuth = currentGateway.auth;
+
+      if (currentAuth.mode === 'token' || currentAuth.token) {
+        log(
+          '[RemoteManager] Skipping email DM policy sync: gateway uses token auth, preserving for other channels'
+        );
+      } else {
+        switch (config.dm.policy) {
+          case 'open':
+            remoteConfigStore.setGatewayConfig({ auth: { ...currentAuth, mode: 'open' } });
+            break;
+          case 'pairing':
+            remoteConfigStore.setGatewayConfig({ auth: { ...currentAuth, mode: 'pairing' } });
+            break;
+          case 'allowlist': {
+            const emailEntries = (config.dm.allowFrom ?? []).map(
+              (addr) => `email:${addr.toLowerCase()}`
+            );
+            const nonEmailEntries = (currentAuth.allowlist ?? []).filter(
+              (entry) => !entry.startsWith('email:')
+            );
+            const pairedEmailEntries = remoteConfigStore
+              .getPairedUsers()
+              .filter((u) => u.channelType === 'email')
+              .map((u) => `email:${u.userId.toLowerCase()}`);
+            remoteConfigStore.setGatewayConfig({
+              auth: {
+                ...currentAuth,
+                mode: 'allowlist',
+                allowlist: [
+                  ...new Set([...nonEmailEntries, ...pairedEmailEntries, ...emailEntries]),
                 ],
               },
             });
@@ -1192,6 +1253,14 @@ export class RemoteManager extends EventEmitter {
       );
 
       log('[RemoteManager] Slack channel registered');
+    }
+
+    // Register Email channel if configured (needs credentials + a resolvable server)
+    const emailConfig = config.channels.email;
+    if (emailConfig && emailConfig.user && emailConfig.password) {
+      const emailChannel = new EmailChannel(emailConfig);
+      this.gateway.registerChannel(emailChannel);
+      log('[RemoteManager] Email channel registered');
     }
 
     // TODO: Register other channels (WeChat, Telegram, DingTalk)

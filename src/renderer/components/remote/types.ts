@@ -66,6 +66,18 @@ export interface RemoteConfig {
         policy: string;
       };
     };
+    email?: {
+      provider: string;
+      user: string;
+      password: string;
+      fromName?: string;
+      imap?: { host: string; port: number; secure: boolean };
+      smtp?: { host: string; port: number; secure: boolean };
+      dm: {
+        policy: string;
+        allowFrom?: string[];
+      };
+    };
   };
 }
 
@@ -76,6 +88,6 @@ export interface TunnelStatus {
   error?: string;
 }
 
-export type ConfigStep = 'feishu' | 'connection' | 'advanced';
+export type ConfigStep = 'feishu' | 'email' | 'connection' | 'advanced';
 
 export type LocalizedBanner = { key?: string; text?: string | null };

@@ -11,6 +11,7 @@ import { PairingRequestsSection } from './remote/PairingRequestsSection';
 import { PairingGuideCard } from './remote/PairingGuideCard';
 import { ConfigStepNav } from './remote/ConfigStepNav';
 import { FeishuConfigStep } from './remote/FeishuConfigStep';
+import { EmailConfigStep } from './remote/EmailConfigStep';
 import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
 import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
@@ -45,6 +46,17 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [feishuAppId, setFeishuAppId] = useState('');
   const [feishuAppSecret, setFeishuAppSecret] = useState('');
   const [feishuDmPolicy, setFeishuDmPolicy] = useState('pairing');
+  // Email channel form state
+  const [emailProvider, setEmailProvider] = useState('gmail');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [emailFromName, setEmailFromName] = useState('Open Cowork Assistant');
+  const [emailImapHost, setEmailImapHost] = useState('');
+  const [emailImapPort, setEmailImapPort] = useState('993');
+  const [emailSmtpHost, setEmailSmtpHost] = useState('');
+  const [emailSmtpPort, setEmailSmtpPort] = useState('587');
+  const [emailDmPolicy, setEmailDmPolicy] = useState('allowlist');
+  const [emailAllowFrom, setEmailAllowFrom] = useState('');
   const [gatewayPort, setGatewayPort] = useState(18789);
   const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('');
   const [autoApproveSafeTools, setAutoApproveSafeTools] = useState(true);
@@ -100,6 +112,19 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
           setFeishuDmPolicy(configResult.channels.feishu.dm?.policy || 'pairing');
           setUseLongConnection(configResult.channels.feishu.useWebSocket !== false);
+        }
+        if (configResult.channels?.email) {
+          const email = configResult.channels.email;
+          setEmailProvider(email.provider || 'gmail');
+          setEmailAddress(email.user || '');
+          setEmailPassword(email.password || '');
+          setEmailFromName(email.fromName || '');
+          setEmailImapHost(email.imap?.host || '');
+          setEmailImapPort(String(email.imap?.port ?? 993));
+          setEmailSmtpHost(email.smtp?.host || '');
+          setEmailSmtpPort(String(email.smtp?.port ?? 587));
+          setEmailDmPolicy(email.dm?.policy || 'allowlist');
+          setEmailAllowFrom((email.dm?.allowFrom || []).join(', '));
         }
       }
     } catch (err) {
@@ -174,6 +199,46 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         });
       }
 
+      if (emailAddress && emailPassword) {
+        const isCustom = emailProvider === 'custom';
+        await window.electronAPI.remote.updateEmailConfig({
+          type: 'email',
+          provider: emailProvider as
+            | 'gmail'
+            | 'outlook'
+            | 'yahoo'
+            | 'icloud'
+            | 'gmx'
+            | 'webde'
+            | 'zoho'
+            | 'custom',
+          user: emailAddress,
+          password: emailPassword,
+          fromName: emailFromName || undefined,
+          imap: isCustom
+            ? {
+                host: emailImapHost,
+                port: Number(emailImapPort),
+                secure: Number(emailImapPort) === 993,
+              }
+            : undefined,
+          smtp: isCustom
+            ? {
+                host: emailSmtpHost,
+                port: Number(emailSmtpPort),
+                secure: Number(emailSmtpPort) === 465,
+              }
+            : undefined,
+          dm: {
+            policy: emailDmPolicy as 'open' | 'pairing' | 'allowlist',
+            allowFrom: emailAllowFrom
+              .split(',')
+              .map((s) => s.trim().toLowerCase())
+              .filter(Boolean),
+          },
+        });
+      }
+
       setSuccess({ key: 'remote.configSaved' });
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
@@ -234,6 +299,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   }
 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
+  const isEmailConfigured = !!(emailAddress && emailPassword);
   const isConnectionConfigured =
     useLongConnection || (tunnelEnabled && !!ngrokAuthToken) || !!tunnelStatus?.connected;
   const permissionSeparator = i18n.language.startsWith('zh') ? '、' : ', ';
@@ -291,6 +357,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       <ConfigStepNav
         activeStep={activeStep}
         isFeishuConfigured={isFeishuConfigured}
+        isEmailConfigured={isEmailConfigured}
         isConnectionConfigured={isConnectionConfigured}
         onStepChange={setActiveStep}
       />
@@ -305,6 +372,30 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             onAppIdChange={setFeishuAppId}
             onAppSecretChange={setFeishuAppSecret}
             onDmPolicyChange={setFeishuDmPolicy}
+          />
+        )}
+        {activeStep === 'email' && (
+          <EmailConfigStep
+            provider={emailProvider}
+            address={emailAddress}
+            password={emailPassword}
+            fromName={emailFromName}
+            imapHost={emailImapHost}
+            imapPort={emailImapPort}
+            smtpHost={emailSmtpHost}
+            smtpPort={emailSmtpPort}
+            dmPolicy={emailDmPolicy}
+            allowFrom={emailAllowFrom}
+            onProviderChange={setEmailProvider}
+            onAddressChange={setEmailAddress}
+            onPasswordChange={setEmailPassword}
+            onFromNameChange={setEmailFromName}
+            onImapHostChange={setEmailImapHost}
+            onImapPortChange={setEmailImapPort}
+            onSmtpHostChange={setEmailSmtpHost}
+            onSmtpPortChange={setEmailSmtpPort}
+            onDmPolicyChange={setEmailDmPolicy}
+            onAllowFromChange={setEmailAllowFrom}
           />
         )}
         {activeStep === 'connection' && (

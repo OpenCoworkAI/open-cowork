@@ -17,6 +17,7 @@ import type {
   TelegramChannelConfig,
   DingtalkChannelConfig,
   WebSocketChannelConfig,
+  EmailChannelConfig,
   PairedUser,
 } from './types';
 import { DEFAULT_REMOTE_CONFIG } from './types';
@@ -226,6 +227,22 @@ class RemoteConfigStore {
   setWebSocketConfig(config: WebSocketChannelConfig): void {
     this.store.set('channels.websocket', config);
     log('[RemoteConfig] WebSocket config updated');
+  }
+
+  /**
+   * Get email channel config
+   */
+  getEmailConfig(): EmailChannelConfig | undefined {
+    return this.store.get('channels.email');
+  }
+
+  /**
+   * Set email channel config. The password field is persisted encrypted at
+   * rest by the underlying encrypted store (same mechanism as other channels).
+   */
+  setEmailConfig(config: EmailChannelConfig): void {
+    this.store.set('channels.email', config);
+    log('[RemoteConfig] Email config updated');
   }
 
   /**
