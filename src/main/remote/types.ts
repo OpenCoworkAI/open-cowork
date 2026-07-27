@@ -84,6 +84,7 @@ export type ChannelType =
   | 'dingtalk'
   | 'websocket'
   | 'slack'
+  | 'email'
   | 'stdio';
 
 export interface ChannelConfig {
@@ -100,7 +101,8 @@ export interface ChannelConfig {
     | TelegramChannelConfig
     | DingtalkChannelConfig
     | WebSocketChannelConfig
-    | SlackChannelConfig;
+    | SlackChannelConfig
+    | EmailChannelConfig;
 }
 
 // Feishu (飞书) Channel
@@ -254,6 +256,78 @@ export interface SlackChannelConfig {
       requireMention: boolean;
       allowFrom?: string[];
     };
+  };
+}
+
+// Email Channel (IMAP receive + SMTP send)
+
+/** Known mail-provider presets. 'custom' means IMAP/SMTP hosts are supplied manually. */
+export type EmailProvider =
+  | 'gmail'
+  | 'outlook'
+  | 'yahoo'
+  | 'icloud'
+  | 'gmx'
+  | 'webde'
+  | 'zoho'
+  | 'custom';
+
+/** Connection settings for one mail server endpoint. */
+export interface EmailServerEndpoint {
+  /** Server host, e.g. imap.gmail.com */
+  host: string;
+
+  /** Server port, e.g. 993 (IMAPS) or 465/587 (SMTP) */
+  port: number;
+
+  /**
+   * Use an implicit TLS connection.
+   * true  -> IMAPS (993) / SMTPS (465)
+   * false -> plain port that upgrades via STARTTLS (587, 143)
+   */
+  secure: boolean;
+}
+
+export interface EmailChannelConfig {
+  type: 'email';
+
+  /** Provider preset. When not 'custom', imap/smtp hosts are filled from the preset. */
+  provider: EmailProvider;
+
+  /** Login / mailbox address, e.g. bot@example.com */
+  user: string;
+
+  /**
+   * Password or, strongly recommended, an app-specific password / app password.
+   * Stored encrypted at rest via the remote config store — never logged.
+   */
+  password: string;
+
+  /** From address shown on outgoing mail. Defaults to `user`. */
+  fromAddress?: string;
+
+  /** Display name for outgoing mail, e.g. "Open Cowork Assistant". */
+  fromName?: string;
+
+  /** IMAP endpoint. Optional when a non-custom provider preset is selected. */
+  imap?: EmailServerEndpoint;
+
+  /** SMTP endpoint. Optional when a non-custom provider preset is selected. */
+  smtp?: EmailServerEndpoint;
+
+  /** Mailbox to watch for incoming mail. Defaults to 'INBOX'. */
+  mailbox?: string;
+
+  /** Seconds between inbox polls for new mail. Defaults to 30, min 10. */
+  pollIntervalSec?: number;
+
+  /** Who is allowed to drive the agent by email. */
+  dm: {
+    /** Policy for handling mail from unknown senders */
+    policy: 'open' | 'pairing' | 'allowlist';
+
+    /** Allowed sender addresses (when policy is 'allowlist') */
+    allowFrom?: string[];
   };
 }
 
@@ -564,6 +638,7 @@ export interface RemoteConfig {
     dingtalk?: DingtalkChannelConfig;
     websocket?: WebSocketChannelConfig;
     slack?: SlackChannelConfig;
+    email?: EmailChannelConfig;
   };
 }
 

@@ -65,7 +65,43 @@ export type McpPresetsMap = Record<
 // ---------------------------------------------------------------------------
 
 /** Slim channel-type union (mirrors ChannelType in remote/types.ts). */
-export type RemoteChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket';
+export type RemoteChannelType =
+  | 'feishu'
+  | 'wechat'
+  | 'telegram'
+  | 'dingtalk'
+  | 'websocket'
+  | 'slack'
+  | 'email';
+
+/** Known mail-provider presets (mirrors EmailProvider in remote/types.ts). */
+export type EmailProvider =
+  | 'gmail'
+  | 'outlook'
+  | 'yahoo'
+  | 'icloud'
+  | 'gmx'
+  | 'webde'
+  | 'zoho'
+  | 'custom';
+
+/** Email channel configuration (mirrors EmailChannelConfig in remote/types.ts). */
+export interface EmailChannelConfig {
+  type: 'email';
+  provider: EmailProvider;
+  user: string;
+  password: string;
+  fromAddress?: string;
+  fromName?: string;
+  imap?: { host: string; port: number; secure: boolean };
+  smtp?: { host: string; port: number; secure: boolean };
+  mailbox?: string;
+  pollIntervalSec?: number;
+  dm: {
+    policy: 'open' | 'pairing' | 'allowlist';
+    allowFrom?: string[];
+  };
+}
 
 /** Feishu channel configuration (mirrors FeishuChannelConfig in remote/types.ts). */
 export interface FeishuChannelConfig {
@@ -125,6 +161,7 @@ export interface RemoteConfig {
     telegram?: Record<string, unknown>;
     dingtalk?: Record<string, unknown>;
     websocket?: Record<string, unknown>;
+    email?: EmailChannelConfig;
   };
 }
 
