@@ -255,4 +255,60 @@ describe('deepseek-common structured response parsing', () => {
       body: 'Review mode: initial\n\nNo findings.',
     });
   });
+
+  it('raises the output token budget only after an invalid structured response', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '',
+                  reasoning_content: 'Analysis was truncated before the final JSON object.',
+                  role: 'assistant',
+                },
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '',
+                  reasoning_content: '{"body":"No findings."}',
+                  role: 'assistant',
+                },
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { callDeepSeekJsonWithRetries } = await import('../.github/scripts/deepseek-common.mjs');
+
+    await expect(
+      callDeepSeekJsonWithRetries({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.deepseek.com',
+        effort: 'high',
+        model: 'deepseek-v4-flash',
+        systemPrompt: 'Review the pull request.',
+        userPrompt: 'Return JSON.',
+      })
+    ).resolves.toMatchObject({
+      parsed: { body: 'No findings.' },
+    });
+
+    const requestBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(requestBodies.map((body) => body.max_tokens)).toEqual([8192, 16384]);
+  });
 });
