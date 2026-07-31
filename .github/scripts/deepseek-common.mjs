@@ -236,15 +236,50 @@ export function parseJsonObject(text) {
     return JSON.parse(text);
   } catch {}
 
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    return null;
+  let candidateStart = -1;
+  let depth = 0;
+  let escaped = false;
+  let inString = false;
+  let lastParsed = null;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (candidateStart === -1) {
+      if (character === '{') {
+        candidateStart = index;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === '{') {
+      depth += 1;
+    } else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          lastParsed = JSON.parse(text.slice(candidateStart, index + 1));
+        } catch {}
+        candidateStart = -1;
+      }
+    }
   }
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
-  }
+
+  return lastParsed;
 }
 
 export async function callDeepSeekJson({
@@ -291,14 +326,26 @@ export async function callDeepSeekJson({
   }
 
   const payload = JSON.parse(rawText);
-  const content = payload.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error(`DeepSeek API returned no message content: ${truncate(rawText, 1000, 'response')}`);
+  const message = payload.choices?.[0]?.message;
+  const standardContent =
+    typeof message?.content === 'string' && message.content.trim() ? message.content : null;
+  const reasoningContent =
+    typeof message?.reasoning_content === 'string' && message.reasoning_content.trim()
+      ? message.reasoning_content
+      : null;
+  const content = standardContent || reasoningContent;
+
+  if (!content) {
+    throw new Error(
+      `DeepSeek API returned no message or reasoning content: ${truncate(rawText, 1000, 'response')}`
+    );
   }
 
   const parsed = parseJsonObject(content);
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error(`DeepSeek returned non-JSON content: ${truncate(content, 1000, 'model output')}`);
+    throw new Error(
+      `DeepSeek returned non-JSON content: ${truncate(content, 1000, 'model output')}`
+    );
   }
 
   return {
@@ -312,6 +359,7 @@ function isRetryableDeepSeekOutputError(error) {
   const message = String(error?.message || error)
   return (
     message.includes('DeepSeek API returned no message content') ||
+    message.includes('DeepSeek API returned no message or reasoning content') ||
     message.includes('DeepSeek returned non-JSON content') ||
     message.includes('Model returned an empty body.')
   )
