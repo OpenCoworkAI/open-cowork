@@ -156,9 +156,19 @@ export function normalizeMcpToolResultForModel(result: unknown): NormalizedToolT
   const resultObj = isRecord(result) ? result : null;
   if (resultObj?.content) {
     const { textParts, images } = extractTextAndImagesFromContent(resultObj.content);
+    if (resultObj.structuredContent !== undefined) {
+      textParts.push(safeStringifyToolResult(resultObj.structuredContent));
+    }
     return {
       text: finalizeText(textParts, images.length),
       images,
+    };
+  }
+
+  if (resultObj?.structuredContent !== undefined) {
+    return {
+      text: safeStringifyToolResult(resultObj.structuredContent),
+      images: [],
     };
   }
 

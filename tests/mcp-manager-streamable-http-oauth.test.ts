@@ -5,14 +5,20 @@ const mockState = vi.hoisted(() => ({
     close: ReturnType<typeof vi.fn>;
     finishAuth: ReturnType<typeof vi.fn>;
     options: {
-      authProvider?: { redirectToAuthorization(url: URL): unknown; redirectUrl?: string | URL };
+      authProvider?: {
+        redirectToAuthorization(url: URL): unknown;
+        redirectUrl?: string | URL;
+        state(): string;
+      };
     };
     url: URL;
   }>,
   latestAuthProvider: null as {
     redirectToAuthorization(url: URL): unknown;
     redirectUrl?: string | URL;
+    state(): string;
   } | null,
+  clientOptions: [] as unknown[],
   mockClientConnect: vi.fn(),
   mockClientListTools: vi.fn(),
   mockOpenExternal: vi.fn(),
@@ -46,39 +52,38 @@ vi.mock('../src/main/utils/shell-resolver', () => ({
   getDefaultShell: () => '/bin/bash',
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
+vi.mock('@modelcontextprotocol/client', () => ({
   UnauthorizedError: MockUnauthorizedError,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class MockClient {
     close = vi.fn().mockResolvedValue(undefined);
     connect = mockState.mockClientConnect;
     listTools = mockState.mockClientListTools;
+
+    constructor(_clientInfo: unknown, options: unknown) {
+      mockState.clientOptions.push(options);
+    }
   },
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: class MockStdioClientTransport {},
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: class MockSSEClientTransport {},
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: class MockStreamableHTTPClientTransport {
     close = vi.fn().mockResolvedValue(undefined);
     finishAuth = vi.fn().mockResolvedValue(undefined);
     options: {
-      authProvider?: { redirectUrl?: string | URL; redirectToAuthorization(url: URL): unknown };
+      authProvider?: {
+        redirectUrl?: string | URL;
+        redirectToAuthorization(url: URL): unknown;
+        state(): string;
+      };
     };
     url: URL;
 
     constructor(
       url: URL,
       options: {
-        authProvider?: { redirectUrl?: string | URL; redirectToAuthorization(url: URL): unknown };
+        authProvider?: {
+          redirectUrl?: string | URL;
+          redirectToAuthorization(url: URL): unknown;
+          state(): string;
+        };
       }
     ) {
       this.url = url;
@@ -88,21 +93,29 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   },
 }));
 
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: class MockStdioClientTransport {},
+}));
+
 import { MCPManager } from '../src/main/mcp/mcp-manager';
 import type { MCPServerConfig } from '../src/main/mcp/mcp-manager';
 
 describe('MCPManager streamable HTTP OAuth', () => {
   beforeEach(() => {
     mockState.createdStreamableTransports.length = 0;
+    mockState.clientOptions.length = 0;
     mockState.latestAuthProvider = null;
 
     mockState.mockOpenExternal.mockReset();
-    mockState.mockOpenExternal.mockImplementation(async () => {
+    mockState.mockOpenExternal.mockImplementation(async (authorizationUrl: string) => {
       if (!mockState.latestAuthProvider?.redirectUrl) {
         throw new Error('OAuth redirect URL was not prepared');
       }
 
-      await fetch(`${String(mockState.latestAuthProvider.redirectUrl)}?code=oauth-from-browser`);
+      const state = new URL(authorizationUrl).searchParams.get('state');
+      await fetch(
+        `${String(mockState.latestAuthProvider.redirectUrl)}?code=oauth-from-browser&state=${encodeURIComponent(state ?? '')}`
+      );
     });
 
     mockState.mockClientListTools.mockReset();
@@ -115,9 +128,12 @@ describe('MCPManager streamable HTTP OAuth', () => {
 
       if (connectAttempt === 1) {
         mockState.latestAuthProvider = transport.options.authProvider ?? null;
-        await transport.options.authProvider?.redirectToAuthorization(
-          new URL('https://auth.example.com/authorize')
-        );
+        const authorizationUrl = new URL('https://auth.example.com/authorize');
+        const state = transport.options.authProvider?.state();
+        if (state) {
+          authorizationUrl.searchParams.set('state', state);
+        }
+        await transport.options.authProvider?.redirectToAuthorization(authorizationUrl);
         throw new MockUnauthorizedError('Authorization required');
       }
     });
@@ -135,14 +151,20 @@ describe('MCPManager streamable HTTP OAuth', () => {
 
     await manager.initializeServers([config]);
 
-    expect(mockState.mockOpenExternal).toHaveBeenCalledWith('https://auth.example.com/authorize');
+    const openedAuthorizationUrl = new URL(mockState.mockOpenExternal.mock.calls[0][0]);
+    expect(openedAuthorizationUrl.origin + openedAuthorizationUrl.pathname).toBe(
+      'https://auth.example.com/authorize'
+    );
+    expect(openedAuthorizationUrl.searchParams.get('state')).toBeTruthy();
     expect(mockState.mockClientConnect).toHaveBeenCalledTimes(2);
     expect(mockState.createdStreamableTransports).toHaveLength(2);
-    expect(mockState.createdStreamableTransports[0].finishAuth).toHaveBeenCalledWith(
-      'oauth-from-browser'
-    );
+    const callbackParams = mockState.createdStreamableTransports[0].finishAuth.mock.calls[0][0];
+    expect(Object.fromEntries(callbackParams)).toMatchObject({ code: 'oauth-from-browser' });
     expect(mockState.createdStreamableTransports[0].close).toHaveBeenCalledTimes(1);
     expect(mockState.createdStreamableTransports[1].close).not.toHaveBeenCalled();
+    expect(mockState.clientOptions[0]).toMatchObject({
+      versionNegotiation: { mode: 'auto' },
+    });
 
     expect(manager.getServerStatus()).toEqual([
       expect.objectContaining({
