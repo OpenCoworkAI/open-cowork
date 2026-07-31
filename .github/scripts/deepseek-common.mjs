@@ -383,10 +383,17 @@ export function assertNonEmptyParsedString(parsed, fieldName = 'body') {
 }
 
 export async function callDeepSeekJsonWithRetries(options) {
-  const { maxAttempts = 3, fieldName = 'body', userPrompt, ...requestOptions } = options
+  const {
+    maxAttempts = 3,
+    fieldName = 'body',
+    maxTokens = 8192,
+    userPrompt,
+    ...requestOptions
+  } = options
   let lastError = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptMaxTokens = attempt === 1 ? maxTokens : Math.max(maxTokens, 16384)
     const attemptPrompt =
       attempt === 1
         ? userPrompt
@@ -404,6 +411,7 @@ export async function callDeepSeekJsonWithRetries(options) {
     try {
       const result = await callDeepSeekJson({
         ...requestOptions,
+        maxTokens: attemptMaxTokens,
         userPrompt: attemptPrompt,
       })
       assertNonEmptyParsedString(result.parsed, fieldName)
