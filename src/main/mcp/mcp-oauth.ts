@@ -1,13 +1,12 @@
-import {
-  UnauthorizedError,
-  type OAuthClientProvider,
-  type OAuthDiscoveryState,
-} from '@modelcontextprotocol/sdk/client/auth.js';
+import { UnauthorizedError } from '@modelcontextprotocol/client';
 import type {
-  OAuthClientInformationMixed,
   OAuthClientMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+  OAuthClientProvider,
+  OAuthDiscoveryState,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
+} from '@modelcontextprotocol/client';
+import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -17,13 +16,13 @@ type OpenExternal = (url: string) => Promise<void> | void;
 
 type OAuthTransport = {
   close(): Promise<void>;
-  finishAuth(authorizationCode: string): Promise<void>;
+  finishAuth(callbackParams: URLSearchParams): Promise<void>;
 };
 
 interface OAuthCallbackListener {
   close(): Promise<void>;
   redirectUrl: string;
-  waitForCode(): Promise<string>;
+  waitForCallback(): Promise<URLSearchParams>;
 }
 
 interface OAuthProviderOptions {
@@ -41,6 +40,7 @@ interface ConnectWithOAuthOptions<TTransport extends OAuthTransport> {
 
 function buildClientMetadata(redirectUrl: string): OAuthClientMetadata {
   return {
+    application_type: 'native',
     client_name: 'Open Cowork MCP Connector',
     grant_types: ['authorization_code', 'refresh_token'],
     logo_uri: undefined,
@@ -78,13 +78,14 @@ async function safeCloseTransport(transport: OAuthTransport): Promise<void> {
 export class OpenCoworkMcpOAuthProvider implements OAuthClientProvider {
   clientMetadataUrl?: string;
 
-  private _clientInformation?: OAuthClientInformationMixed;
+  private _clientInformation?: StoredOAuthClientInformation;
   private _codeVerifier?: string;
   private _discoveryState?: OAuthDiscoveryState;
+  private _expectedState?: string;
   private _metadata: OAuthClientMetadata;
   private _redirectUrl?: string | URL;
   private readonly _openExternal: OpenExternal;
-  private _tokens?: OAuthTokens;
+  private _tokens?: StoredOAuthTokens;
 
   constructor({ clientMetadataUrl, openExternal, redirectUrl }: OAuthProviderOptions) {
     this.clientMetadataUrl = clientMetadataUrl;
@@ -115,24 +116,39 @@ export class OpenCoworkMcpOAuthProvider implements OAuthClientProvider {
     this._metadata = buildClientMetadata(nextRedirectUrl);
   }
 
-  clientInformation(): OAuthClientInformationMixed | undefined {
+  clientInformation(): StoredOAuthClientInformation | undefined {
     return this._clientInformation;
   }
 
-  saveClientInformation(clientInformation: OAuthClientInformationMixed): void {
+  saveClientInformation(clientInformation: StoredOAuthClientInformation): void {
     this._clientInformation = clientInformation;
   }
 
-  tokens(): OAuthTokens | undefined {
+  tokens(): StoredOAuthTokens | undefined {
     return this._tokens;
   }
 
-  saveTokens(tokens: OAuthTokens): void {
+  saveTokens(tokens: StoredOAuthTokens): void {
     this._tokens = tokens;
+  }
+
+  state(): string {
+    this._expectedState = randomBytes(32).toString('base64url');
+    return this._expectedState;
   }
 
   redirectToAuthorization(authorizationUrl: URL): void | Promise<void> {
     return this._openExternal(authorizationUrl.toString());
+  }
+
+  validateCallbackState(callbackParams: URLSearchParams): void {
+    const receivedState = callbackParams.get('state');
+    const expectedState = this._expectedState;
+    this._expectedState = undefined;
+
+    if (!expectedState || receivedState !== expectedState) {
+      throw new Error('MCP OAuth authorization failed: invalid state parameter');
+    }
   }
 
   saveCodeVerifier(codeVerifier: string): void {
@@ -174,15 +190,15 @@ export class OpenCoworkMcpOAuthProvider implements OAuthClientProvider {
 export async function createOAuthCallbackListener(
   timeoutMs: number = MCP_OAUTH_CALLBACK_TIMEOUT_MS
 ): Promise<OAuthCallbackListener> {
-  let resolveCode!: (code: string) => void;
-  let rejectCode!: (error: Error) => void;
+  let resolveCallback!: (params: URLSearchParams) => void;
+  let rejectCallback!: (error: Error) => void;
   let closedPromise: Promise<void> | null = null;
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const codePromise = new Promise<string>((resolve, reject) => {
-    resolveCode = resolve;
-    rejectCode = reject;
+  const callbackPromise = new Promise<URLSearchParams>((resolve, reject) => {
+    resolveCallback = resolve;
+    rejectCallback = reject;
   });
 
   const server = createServer((request, response) => {
@@ -196,8 +212,6 @@ export async function createOAuthCallbackListener(
     const port = address && typeof address === 'object' ? (address as AddressInfo).port : 0;
     const parsedUrl = new URL(request.url ?? '', `http://127.0.0.1:${port}`);
     const authorizationCode = parsedUrl.searchParams.get('code');
-    const error = parsedUrl.searchParams.get('error');
-    const errorDescription = parsedUrl.searchParams.get('error_description');
 
     if (settled) {
       response.writeHead(409, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -211,19 +225,17 @@ export async function createOAuthCallbackListener(
       response.end(
         '<html><body><h1>Authorization complete</h1><p>You can return to Open Cowork now.</p><script>setTimeout(() => window.close(), 1200);</script></body></html>'
       );
-      resolveCode(authorizationCode);
+      resolveCallback(new URLSearchParams(parsedUrl.searchParams));
       void closeServer(server);
       return;
     }
 
-    const failureMessage = error
-      ? `OAuth authorization failed: ${errorDescription || error}`
-      : 'OAuth authorization failed: missing authorization code';
-
     settled = true;
     response.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-    response.end(`<html><body><h1>Authorization failed</h1><p>${failureMessage}</p></body></html>`);
-    rejectCode(new Error(failureMessage));
+    response.end(
+      '<html><body><h1>Authorization failed</h1><p>Return to Open Cowork for details.</p></body></html>'
+    );
+    resolveCallback(new URLSearchParams(parsedUrl.searchParams));
     void closeServer(server);
   });
 
@@ -264,7 +276,7 @@ export async function createOAuthCallbackListener(
       return;
     }
     settled = true;
-    rejectCode(
+    rejectCallback(
       new Error(
         `Timed out waiting for MCP OAuth authorization after ${Math.floor(timeoutMs / 1000)}s`
       )
@@ -275,7 +287,7 @@ export async function createOAuthCallbackListener(
   return {
     close,
     redirectUrl,
-    waitForCode: () => codePromise,
+    waitForCallback: () => callbackPromise,
   };
 }
 
@@ -302,8 +314,9 @@ export async function connectWithOAuthRetry<TTransport extends OAuthTransport>({
       }
     }
 
-    const authorizationCode = await listener.waitForCode();
-    await initialTransport.finishAuth(authorizationCode);
+    const callbackParams = await listener.waitForCallback();
+    provider.validateCallbackState(callbackParams);
+    await initialTransport.finishAuth(callbackParams);
 
     const authenticatedTransport = createTransport(provider);
     try {

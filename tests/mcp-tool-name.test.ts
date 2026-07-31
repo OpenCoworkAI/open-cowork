@@ -55,10 +55,15 @@ describe('MCP tool name parsing', () => {
 
     await manager.callTool(toolName, { foo: 'bar' });
 
-    expect(mockClient.callTool).toHaveBeenCalledWith({
-      name: 'create_or_modify_code',
-      arguments: { foo: 'bar' },
-    });
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      {
+        name: 'create_or_modify_code',
+        arguments: { foo: 'bar' },
+      },
+      {
+        toolDefinition: undefined,
+      }
+    );
   });
 
   it('strips server prefix for simple names', async () => {
@@ -67,10 +72,15 @@ describe('MCP tool name parsing', () => {
 
     await manager.callTool(toolName, { url: 'https://example.com' });
 
-    expect(mockClient.callTool).toHaveBeenCalledWith({
-      name: 'navigate',
-      arguments: { url: 'https://example.com' },
-    });
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      {
+        name: 'navigate',
+        arguments: { url: 'https://example.com' },
+      },
+      {
+        toolDefinition: undefined,
+      }
+    );
   });
 
   it('reconnects and retries when tool returns structured Not connected error', async () => {
@@ -166,7 +176,27 @@ describe('MCP tool name parsing', () => {
           {
             name: 'browser.context',
             description: 'Inspect browser context',
-            inputSchema: { type: 'object', properties: {} },
+            inputSchema: {
+              type: 'object',
+              properties: {
+                mode: {
+                  type: 'string',
+                  enum: ['summary', 'full'],
+                },
+              },
+              additionalProperties: false,
+              oneOf: [{ required: ['mode'] }],
+            },
+            outputSchema: {
+              type: 'object',
+              properties: {
+                tabs: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['tabs'],
+            },
+            annotations: {
+              readOnlyHint: true,
+            },
           },
         ],
       }),
@@ -191,13 +221,30 @@ describe('MCP tool name parsing', () => {
     const [tool] = manager.getTools();
     expect(tool.name).toBe('mcp__Browser_Context__browser_context');
     expect(tool.originalName).toBe('browser.context');
+    expect(tool.inputSchema).toMatchObject({
+      additionalProperties: false,
+      oneOf: [{ required: ['mode'] }],
+    });
+    expect(tool.outputSchema).toMatchObject({
+      required: ['tabs'],
+    });
+    expect(tool.toolDefinition.annotations).toMatchObject({
+      readOnlyHint: true,
+    });
 
     await manager.callTool(tool.name, { url: 'https://example.com' });
 
-    expect(mockClient.callTool).toHaveBeenCalledWith({
-      name: 'browser.context',
-      arguments: { url: 'https://example.com' },
-    });
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      {
+        name: 'browser.context',
+        arguments: { url: 'https://example.com' },
+      },
+      {
+        toolDefinition: expect.objectContaining({
+          name: 'browser.context',
+        }),
+      }
+    );
   });
 
   it('deduplicates sanitized MCP tool names that would otherwise collide', async () => {
@@ -281,10 +328,17 @@ describe('MCP tool name parsing', () => {
 
     await manager.callTool(tool.name, { url: 'https://example.com' });
 
-    expect(mockClient.callTool).toHaveBeenCalledWith({
-      name: originalToolName,
-      arguments: { url: 'https://example.com' },
-    });
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      {
+        name: originalToolName,
+        arguments: { url: 'https://example.com' },
+      },
+      {
+        toolDefinition: expect.objectContaining({
+          name: originalToolName,
+        }),
+      }
+    );
   });
 
   it('falls back to tool when the original tool name sanitizes to an empty string', async () => {

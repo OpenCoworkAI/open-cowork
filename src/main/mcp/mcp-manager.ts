@@ -11,10 +11,13 @@
  *
  * Dependencies: config-store (via mcp-config-store)
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  Client,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+  type Tool,
+} from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createHash } from 'crypto';
 import { app, BrowserWindow, shell } from 'electron';
 
@@ -55,11 +58,9 @@ export interface MCPTool {
   name: string;
   originalName?: string;
   description: string;
-  inputSchema: {
-    type: string;
-    properties: Record<string, unknown>;
-    required?: string[];
-  };
+  inputSchema: Tool['inputSchema'];
+  outputSchema?: Tool['outputSchema'];
+  toolDefinition: Tool;
   serverId: string;
   serverName: string;
 }
@@ -766,6 +767,9 @@ export class MCPManager {
       },
       {
         capabilities: {},
+        versionNegotiation: {
+          mode: 'auto',
+        },
       }
     );
 
@@ -1524,13 +1528,9 @@ export class MCPManager {
               name: prefixedName,
               originalName: originalToolName,
               description: tool.description || '',
-              inputSchema: {
-                type: 'object',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                properties: (tool.inputSchema as any)?.properties || {},
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                required: (tool.inputSchema as any)?.required,
-              },
+              inputSchema: tool.inputSchema,
+              outputSchema: tool.outputSchema,
+              toolDefinition: tool,
               serverId,
               serverName: config.name,
             } satisfies MCPTool;
@@ -1636,10 +1636,15 @@ export class MCPManager {
           throw new Error(`Tool call timeout after ${MCP_TOOL_CALL_TIMEOUT_MS}ms`);
         }
 
-        const callPromise = client.callTool({
-          name: actualToolName,
-          arguments: args,
-        });
+        const callPromise = client.callTool(
+          {
+            name: actualToolName,
+            arguments: args,
+          },
+          {
+            toolDefinition: currentTool.toolDefinition,
+          }
+        );
         const result = await raceWithTimeout(
           callPromise,
           remainingMs,
