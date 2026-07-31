@@ -176,3 +176,83 @@ describe('deepseek-common PR file pagination', () => {
     ]);
   });
 });
+
+describe('deepseek-common structured response parsing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses reasoning_content when DeepSeek returns an empty content field', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: '',
+                reasoning_content: '{"body":"No findings.\\n\\n*Open Cowork Bot*"}',
+                role: 'assistant',
+              },
+            },
+          ],
+          usage: { completion_tokens: 128 },
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { callDeepSeekJson } = await import('../.github/scripts/deepseek-common.mjs');
+
+    const result = await callDeepSeekJson({
+      apiKey: 'test-key',
+      baseUrl: 'https://api.deepseek.com',
+      effort: 'high',
+      model: 'deepseek-v4-flash',
+      systemPrompt: 'Review the pull request.',
+      userPrompt: 'Return JSON.',
+    });
+
+    expect(result.parsed).toEqual({
+      body: 'No findings.\n\n*Open Cowork Bot*',
+    });
+    expect(result.content).toContain('No findings.');
+  });
+
+  it('extracts the final JSON object from reasoning prose', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning_content: [
+                  'I should return an object such as {"example":true}.',
+                  'The review is complete.',
+                  '{"body":"Review mode: initial\\n\\nNo findings."}',
+                ].join('\n'),
+                role: 'assistant',
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { callDeepSeekJson } = await import('../.github/scripts/deepseek-common.mjs');
+
+    const result = await callDeepSeekJson({
+      apiKey: 'test-key',
+      baseUrl: 'https://api.deepseek.com',
+      effort: 'high',
+      model: 'deepseek-v4-flash',
+      systemPrompt: 'Review the pull request.',
+      userPrompt: 'Return JSON.',
+    });
+
+    expect(result.parsed).toEqual({
+      body: 'Review mode: initial\n\nNo findings.',
+    });
+  });
+});
