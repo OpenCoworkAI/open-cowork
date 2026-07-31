@@ -1,4 +1,5 @@
 export type SharedProviderType =
+  | 'tokenmix'
   | 'openrouter'
   | 'anthropic'
   | 'custom'
@@ -17,6 +18,7 @@ export interface SharedProviderPreset {
 }
 
 export interface SharedProviderPresets {
+  tokenmix: SharedProviderPreset;
   openrouter: SharedProviderPreset;
   anthropic: SharedProviderPreset;
   custom: SharedProviderPreset;
@@ -31,6 +33,24 @@ export interface ModelInputGuidance {
 }
 
 export const API_PROVIDER_PRESETS: SharedProviderPresets = {
+  tokenmix: {
+    name: 'TokenMix',
+    baseUrl: 'https://api.tokenmix.ai/v1',
+    models: [
+      { id: 'claude-opus-4-6', name: 'claude-opus-4-6' },
+      { id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6' },
+      { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' },
+      { id: 'gpt-5.4', name: 'gpt-5.4' },
+      { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' },
+      { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro' },
+      { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash' },
+      { id: 'deepseek-chat', name: 'deepseek-chat' },
+      { id: 'deepseek-reasoner', name: 'deepseek-reasoner' },
+      { id: 'qwen-max', name: 'qwen-max' },
+    ],
+    keyPlaceholder: 'sk-...',
+    keyHint: '从 tokenmix.ai 获取',
+  },
   openrouter: {
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -120,6 +140,18 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
 };
 
 export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: string[] }> = {
+  tokenmix: {
+    piProvider: 'openai',
+    pick: [
+      'claude-sonnet-4-6',
+      'claude-opus-4-6',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gemini-2.5-flash',
+      'deepseek-chat',
+      'qwen-max',
+    ],
+  },
   openrouter: {
     piProvider: 'openrouter',
     pick: [
@@ -172,6 +204,13 @@ export function getModelInputGuidance(
   provider: SharedProviderType,
   customProtocol: SharedCustomProtocolType = 'anthropic'
 ): ModelInputGuidance {
+  if (provider === 'tokenmix') {
+    return {
+      placeholder: 'claude-sonnet-4-6, gpt-5.4, gemini-2.5-flash, deepseek-chat',
+      hint: 'Use the exact model ID. TokenMix supports 171+ models — see tokenmix.ai/models for the full list.',
+    };
+  }
+
   if (provider === 'openrouter') {
     return {
       placeholder: 'openai/gpt-5.4, anthropic/claude-sonnet-4-6, google/gemini-3-flash-preview',
