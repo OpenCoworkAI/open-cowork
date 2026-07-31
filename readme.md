@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/opencoworkai-open-cowork-badge.png)](https://mseep.ai/app/opencoworkai-open-cowork)
+
 <p align="center">
   <img src="resources/logo.png" alt="Open Cowork Logo" width="280" />
 </p>
