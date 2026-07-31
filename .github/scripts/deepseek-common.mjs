@@ -343,9 +343,11 @@ export async function callDeepSeekJson({
 
   const parsed = parseJsonObject(content);
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error(
+    const error = new Error(
       `DeepSeek returned non-JSON content: ${truncate(content, 1000, 'model output')}`
     );
+    error.modelOutput = content;
+    throw error;
   }
 
   return {
@@ -391,25 +393,34 @@ export async function callDeepSeekJsonWithRetries(options) {
     ...requestOptions
   } = options
   let lastError = null
+  let previousModelOutput = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptMaxTokens = attempt === 1 ? maxTokens : Math.max(maxTokens, 16384)
+    const retryInstructions = [
+      'AUTOMATION RETRY NOTE:',
+      '- Return ONLY valid JSON.',
+      `- The JSON MUST include a non-empty string field named "${fieldName}".`,
+      '- Do not wrap the JSON in code fences.',
+      `- Do not return an empty, null, or missing "${fieldName}" field.`,
+    ]
     const attemptPrompt =
       attempt === 1
         ? userPrompt
-        : [
-            userPrompt,
-            '',
-            'AUTOMATION RETRY NOTE:',
-            '- Your previous response was invalid for automation.',
-            '- Return ONLY valid JSON.',
-            `- The JSON MUST include a non-empty string field named "${fieldName}".`,
-            '- Do not wrap the JSON in code fences.',
-            `- Do not return an empty, null, or missing "${fieldName}" field.`,
-          ].join('\n')
+        : previousModelOutput
+          ? [
+              'Finalize the prior model analysis below into the requested JSON response.',
+              'Do not repeat the analysis and do not inspect the pull request again.',
+              ...retryInstructions,
+              '',
+              'PRIOR MODEL ANALYSIS:',
+              truncate(previousModelOutput, 60000, 'prior model analysis'),
+            ].join('\n')
+          : [userPrompt, '', ...retryInstructions].join('\n')
 
+    let result = null
     try {
-      const result = await callDeepSeekJson({
+      result = await callDeepSeekJson({
         ...requestOptions,
         maxTokens: attemptMaxTokens,
         userPrompt: attemptPrompt,
@@ -417,6 +428,15 @@ export async function callDeepSeekJsonWithRetries(options) {
       assertNonEmptyParsedString(result.parsed, fieldName)
       return result
     } catch (error) {
+      const modelOutput =
+        typeof result?.content === 'string'
+          ? result.content
+          : typeof error?.modelOutput === 'string'
+            ? error.modelOutput
+            : null
+      if (modelOutput?.trim()) {
+        previousModelOutput = modelOutput
+      }
       lastError = error
       if (attempt >= maxAttempts || !isRetryableDeepSeekOutputError(error)) {
         throw error

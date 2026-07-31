@@ -266,7 +266,7 @@ describe('deepseek-common structured response parsing', () => {
               {
                 message: {
                   content: '',
-                  reasoning_content: 'Analysis was truncated before the final JSON object.',
+                  reasoning_content: 'Analysis was truncated before the final JSON object.\n{}',
                   role: 'assistant',
                 },
               },
@@ -302,7 +302,7 @@ describe('deepseek-common structured response parsing', () => {
         effort: 'high',
         model: 'deepseek-v4-flash',
         systemPrompt: 'Review the pull request.',
-        userPrompt: 'Return JSON.',
+        userPrompt: 'ORIGINAL LARGE PR PROMPT',
       })
     ).resolves.toMatchObject({
       parsed: { body: 'No findings.' },
@@ -310,5 +310,10 @@ describe('deepseek-common structured response parsing', () => {
 
     const requestBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
     expect(requestBodies.map((body) => body.max_tokens)).toEqual([8192, 16384]);
+    expect(requestBodies[1].messages[1].content).toContain('PRIOR MODEL ANALYSIS:');
+    expect(requestBodies[1].messages[1].content).toContain(
+      'Analysis was truncated before the final JSON object.'
+    );
+    expect(requestBodies[1].messages[1].content).not.toContain('ORIGINAL LARGE PR PROMPT');
   });
 });
