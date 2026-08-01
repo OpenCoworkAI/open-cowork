@@ -35,6 +35,23 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('http://localhost:3000/v1')).toBeNull();
   });
 
+  it('detects MiniMax on the current api.minimax.io domain', () => {
+    const setup = detectCommonProviderSetup('https://api.minimax.io/v1');
+    expect(setup?.id).toBe('minimax');
+    expect(setup?.recommendedProtocol).toBe('openai');
+    expect(setup?.exampleModel).toBe('MiniMax-M3');
+  });
+
+  it('still detects MiniMax on the legacy api.minimax.chat domain', () => {
+    const setup = detectCommonProviderSetup('https://api.minimax.chat/v1');
+    expect(setup?.id).toBe('minimax');
+  });
+
+  it('detects MiniMax on any minimax subdomain via hostContains matcher', () => {
+    const setup = detectCommonProviderSetup('https://eu.api.minimax.io/v1');
+    expect(setup?.id).toBe('minimax');
+  });
+
   it('keeps unknown hosts unmatched and exposes the generic OpenAI fallback separately', () => {
     expect(detectCommonProviderSetup('https://relay.example.internal/v1')).toBeNull();
     expect(getFallbackOpenAISetup().id).toBe('generic-openai');
