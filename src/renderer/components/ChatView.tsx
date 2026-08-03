@@ -792,7 +792,7 @@ export function ChatView() {
           >
             {/* Image previews */}
             {pastedImages.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3 max-h-[28vh] overflow-y-auto pr-1">
                 {pastedImages.map((img, index) => (
                   <div key={img.url || `pasted-image-${index}`} className="relative group">
                     <img
@@ -814,7 +814,7 @@ export function ChatView() {
 
             {/* File attachments */}
             {attachedFiles.length > 0 && (
-              <div className="space-y-2 mb-3">
+              <div className="space-y-2 mb-3 max-h-[22vh] overflow-y-auto pr-1">
                 {attachedFiles.map((file, index) => (
                   <div
                     key={file.path || `attached-file-${index}`}
