@@ -64,7 +64,7 @@ describe('SessionManager scheduled title generation', () => {
     expect(fakeManager.generateTitleWithConfig).toHaveBeenCalledWith(
       buildTitlePrompt('请帮我总结过去一周 Agent 论文')
     );
-    expect(title).toBe('[定时任务] 论文检索总结');
+    expect(title).toBe('[Scheduled] 论文检索总结');
   });
 
   it('falls back to default prompt title when model title generation returns null', async () => {
