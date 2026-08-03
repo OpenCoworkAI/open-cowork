@@ -270,8 +270,9 @@
           "note": "推荐使用 Gemini 兼容协议，并填写该 endpoint 暴露的精确模型 ID。"
         },
         "minimax": {
-          "name": "MiniMax",
-          "note": "除非网关文档明确说明其他协议，否则优先按 OpenAI 兼容协议配置。"
+          "globalName": "MiniMax (Global)",
+          "chinaName": "MiniMax (China)",
+          "note": "Choose the endpoint that matches your account region. Both compatible protocols are supported."
         },
         "genericOpenAI": {
           "name": "通用 OpenAI 兼容服务",

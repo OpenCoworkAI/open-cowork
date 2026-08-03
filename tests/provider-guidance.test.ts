@@ -21,6 +21,55 @@ describe('provider guidance helpers', () => {
     expect(setup?.recommendedProtocol).toBe('openai');
   });
 
+  it('exposes both MiniMax regions through both compatible protocols', () => {
+    const setups = COMMON_PROVIDER_SETUPS.filter((setup) => setup.id.startsWith('minimax-'));
+
+    expect(
+      setups.map((setup) => ({
+        id: setup.id,
+        protocol: setup.recommendedProtocol,
+        baseUrl: setup.recommendedBaseUrl,
+        model: setup.exampleModel,
+      }))
+    ).toEqual([
+      {
+        id: 'minimax-global-openai',
+        protocol: 'openai',
+        baseUrl: 'https://api.minimax.io/v1',
+        model: 'MiniMax-M3',
+      },
+      {
+        id: 'minimax-global-anthropic',
+        protocol: 'anthropic',
+        baseUrl: 'https://api.minimax.io/anthropic',
+        model: 'MiniMax-M3',
+      },
+      {
+        id: 'minimax-cn-openai',
+        protocol: 'openai',
+        baseUrl: 'https://api.minimaxi.com/v1',
+        model: 'MiniMax-M3',
+      },
+      {
+        id: 'minimax-cn-anthropic',
+        protocol: 'anthropic',
+        baseUrl: 'https://api.minimaxi.com/anthropic',
+        model: 'MiniMax-M3',
+      },
+    ]);
+
+    expect(detectCommonProviderSetup('https://api.minimax.io/v1')?.id).toBe(
+      'minimax-global-openai'
+    );
+    expect(detectCommonProviderSetup('https://api.minimax.io/anthropic')?.id).toBe(
+      'minimax-global-anthropic'
+    );
+    expect(detectCommonProviderSetup('https://api.minimaxi.com/v1')?.id).toBe('minimax-cn-openai');
+    expect(detectCommonProviderSetup('https://api.minimaxi.com/anthropic')?.id).toBe(
+      'minimax-cn-anthropic'
+    );
+  });
+
   it('detects OpenRouter and prefers the dedicated provider tab', () => {
     const setup = detectCommonProviderSetup('https://openrouter.ai/api/v1');
     expect(setup?.id).toBe('openrouter');

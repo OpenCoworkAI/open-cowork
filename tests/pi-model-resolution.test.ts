@@ -76,6 +76,34 @@ describe('pi model resolution helpers', () => {
     expect(model.baseUrl).toBe('https://api.x.ai/v1');
   });
 
+  it('uses current MiniMax metadata for synthetic fallback models', () => {
+    const m3 = buildSyntheticPiModel(
+      'MiniMax-M3',
+      'anthropic',
+      'anthropic',
+      'https://api.minimax.io/anthropic'
+    );
+    expect(m3).toMatchObject({
+      reasoning: true,
+      input: ['text', 'image'],
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0 },
+      contextWindow: 1000000,
+    });
+
+    const m27 = buildSyntheticPiModel(
+      'MiniMax-M2.7',
+      'openai',
+      'openai',
+      'https://api.minimaxi.com/v1'
+    );
+    expect(m27).toMatchObject({
+      reasoning: true,
+      input: ['text'],
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 },
+      contextWindow: 204800,
+    });
+  });
+
   it('preserves explicit provider-prefixed ids for openrouter synthetic fallbacks', () => {
     const fallback = resolveSyntheticPiModelFallback({
       rawModel: 'z-ai/glm-5-turbo',
