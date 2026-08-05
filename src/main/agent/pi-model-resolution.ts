@@ -108,12 +108,12 @@ interface KnownModelSpec {
  * The current runtime schema supports text and image input but not video metadata.
  */
 const EXACT_MODEL_SPECS: Record<string, KnownModelSpec> = {
-  // M3 pricing is tiered by input length and service tier, which the flat cost schema cannot express.
   'minimax-m3': {
     contextWindow: 1000000,
     maxTokens: 524288,
     reasoning: true,
     input: ['text', 'image'],
+    cost: { input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 },
   },
   'minimax-m2.7': {
     contextWindow: 204800,

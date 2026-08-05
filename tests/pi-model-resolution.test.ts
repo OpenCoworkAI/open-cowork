@@ -87,7 +87,7 @@ describe('pi model resolution helpers', () => {
     expect(m3.maxTokens).toBe(524288);
     expect(m3.reasoning).toBe(true);
     expect(m3.input).toEqual(['text', 'image']);
-    expect(m3.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    expect(m3.cost).toEqual({ input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 });
 
     const m27 = buildSyntheticPiModel(
       'MiniMax-M2.7',
