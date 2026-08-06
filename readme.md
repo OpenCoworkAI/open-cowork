@@ -101,10 +101,11 @@ https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74
 
 ```bash
 brew tap OpenCoworkAI/tap
-brew install --cask --no-quarantine open-cowork
+brew install --cask open-cowork
+xattr -dr com.apple.quarantine /Applications/Open\ Cowork.app
 ```
 
-> The `--no-quarantine` flag bypasses macOS Gatekeeper, so you won't see the "Apple cannot verify this app" warning.
+> The `xattr` bypasses macOS Gatekeeper, so you won't see the "Apple cannot verify this app" warning.
 
 ### Option 2: Download Installer
 
