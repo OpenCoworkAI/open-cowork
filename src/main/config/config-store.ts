@@ -1020,6 +1020,14 @@ export class ConfigStore {
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
+    // Only set when the profile has a real value: electron-store rejects an explicit
+    // `undefined` for a present key (see normalizeProfile's own convention above).
+    if (typeof projected.contextWindow === 'number' && projected.contextWindow > 0) {
+      result.contextWindow = projected.contextWindow;
+    }
+    if (typeof projected.maxTokens === 'number' && projected.maxTokens > 0) {
+      result.maxTokens = projected.maxTokens;
+    }
     this.normalizeModelIds(result);
     return result;
   }
@@ -1045,7 +1053,7 @@ export class ConfigStore {
     const activeConfigSet =
       nextConfigSets.find((set) => set.id === requestedActiveConfigSetId) || nextConfigSets[0];
     const projected = this.projectFromConfigSet(activeConfigSet);
-    return {
+    const result: AppConfig = {
       ...base,
       provider: projected.provider,
       customProtocol: projected.customProtocol,
@@ -1058,6 +1066,19 @@ export class ConfigStore {
       activeConfigSetId: activeConfigSet.id,
       configSets: nextConfigSets,
     };
+    // Clear rather than leave stale: `...base` can carry the previous set's value, and
+    // electron-store rejects an explicit `undefined` for a present key.
+    if (typeof projected.contextWindow === 'number' && projected.contextWindow > 0) {
+      result.contextWindow = projected.contextWindow;
+    } else {
+      delete result.contextWindow;
+    }
+    if (typeof projected.maxTokens === 'number' && projected.maxTokens > 0) {
+      result.maxTokens = projected.maxTokens;
+    } else {
+      delete result.maxTokens;
+    }
+    return result;
   }
 
   private buildUniqueConfigSetName(
