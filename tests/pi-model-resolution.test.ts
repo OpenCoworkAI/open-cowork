@@ -76,6 +76,45 @@ describe('pi model resolution helpers', () => {
     expect(model.baseUrl).toBe('https://api.x.ai/v1');
   });
 
+  it('uses current MiniMax metadata for synthetic models', () => {
+    const m3 = buildSyntheticPiModel(
+      'MiniMax-M3',
+      'anthropic',
+      'anthropic',
+      'https://api.minimax.io/anthropic'
+    );
+    expect(m3.contextWindow).toBe(1000000);
+    expect(m3.maxTokens).toBe(524288);
+    expect(m3.reasoning).toBe(true);
+    expect(m3.input).toEqual(['text', 'image']);
+    expect(m3.cost).toEqual({ input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0 });
+
+    const m27 = buildSyntheticPiModel(
+      'MiniMax-M2.7',
+      'openai',
+      'openai',
+      'https://api.minimaxi.com/v1'
+    );
+    expect(m27.contextWindow).toBe(204800);
+    expect(m27.maxTokens).toBe(204800);
+    expect(m27.reasoning).toBe(true);
+    expect(m27.input).toEqual(['text']);
+    expect(m27.cost).toEqual({
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
+      cacheWrite: 0.375,
+    });
+
+    const unknownVariant = buildSyntheticPiModel('MiniMax-M2.7-custom', 'openai', 'openai');
+    expect(unknownVariant.cost).toEqual({
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+  });
+
   it('preserves explicit provider-prefixed ids for openrouter synthetic fallbacks', () => {
     const fallback = resolveSyntheticPiModelFallback({
       rawModel: 'z-ai/glm-5-turbo',
