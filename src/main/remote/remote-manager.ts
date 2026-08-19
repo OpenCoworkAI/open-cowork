@@ -25,6 +25,10 @@ import type {
   RemoteConfig,
 } from './types';
 import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer/types/index';
+import { parsePermissionReply, normalizeChannelId } from './interaction-utils';
+
+// Permission reply window for remote sessions (mirrored by the session-level timer)
+const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
@@ -37,6 +41,7 @@ export interface AgentExecutor {
   ): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
   validateWorkingDirectory?(cwd: string): Promise<string | null> | string | null;
+  deferPermissionTimeout?(toolUseId: string, timeoutMs: number): boolean;
 }
 
 // Question/Permission request from agent
@@ -582,7 +587,7 @@ export class RemoteManager extends EventEmitter {
       questionId,
       questions,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes timeout
+      expiresAt: Date.now() + PERMISSION_TIMEOUT_MS,
     };
     await this.withInteractionLock(async () => {
       this.pendingInteractions.set(questionId, interaction);
@@ -629,7 +634,8 @@ export class RemoteManager extends EventEmitter {
 
   /**
    * Handle permission request from agent (for remote sessions)
-   * Returns true if handled, false if should use normal UI
+   * Resolves to the permission decision, or null if not handled remotely
+   * (caller should fall back to the normal desktop UI).
    */
   async handlePermissionRequest(
     actualSessionId: string,
@@ -690,13 +696,26 @@ export class RemoteManager extends EventEmitter {
     }
 
     // Build permission request message
-    let messageText = '⚠️ **需要你的授权**\n\n';
-    messageText += `工具: **${toolName}**\n\n`;
-    messageText += `参数:\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n`;
-    messageText += `---\n`;
-    messageText += `回复 "允许" 或 "y" 授权\n`;
-    messageText += `回复 "拒绝" 或 "n" 拒绝\n`;
-    messageText += `回复 "始终允许" 记住此授权`;
+    let messageText: string;
+    if (channelInfo.channelType === 'feishu') {
+      messageText = '⚠️ **需要你的授权**\n\n';
+      messageText += `工具: **${toolName}**\n\n`;
+      messageText += `参数:\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n`;
+      messageText += `---\n`;
+      messageText += `回复 "允许" 或 "y" 授权\n`;
+      messageText += `回复 "拒绝" 或 "n" 拒绝\n`;
+      messageText += `回复 "始终允许" 记住此授权`;
+    } else {
+      messageText = '⚠️ *Permission required*\n\n';
+      messageText += `*Tool:* \`${toolName}\`\n\n`;
+      messageText += `*Input:*\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n`;
+      messageText += `---\n`;
+      messageText += `Reply:\n`;
+      messageText += `• \`y\` / \`yes\` / \`allow\` / \`approve\` / \`ok\` / \`1\` — *Allow once*\n`;
+      messageText += `• \`always\` — *Allow and remember*\n`;
+      messageText += `• \`n\` / \`no\` / \`deny\` / \`reject\` / \`0\` — *Deny*\n\n`;
+      messageText += `_No reply within 5 minutes will be denied automatically._`;
+    }
 
     // Store pending interaction
     const interaction: RemoteInteraction = {
@@ -708,7 +727,7 @@ export class RemoteManager extends EventEmitter {
       toolName,
       input,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes timeout
+      expiresAt: Date.now() + PERMISSION_TIMEOUT_MS,
     };
     await this.withInteractionLock(async () => {
       this.pendingInteractions.set(toolUseId, interaction);
@@ -732,38 +751,40 @@ export class RemoteManager extends EventEmitter {
       return null;
     }
 
+    // Defer the session-level auto-deny window: the remote flow owns the request
+    // from here on. Returns false only if the session timer already fired.
+    const deferred = this.agentExecutor?.deferPermissionTimeout?.(toolUseId, PERMISSION_TIMEOUT_MS);
+    if (deferred === false) {
+      await this.withInteractionLock(async () => {
+        this.pendingInteractions.delete(toolUseId);
+        this.interactionResolvers.delete(toolUseId);
+      });
+      return { allow: false };
+    }
+
     // Wait for user response
     return new Promise((resolve) => {
       this.interactionResolvers.set(toolUseId, (response) => {
-        const lowerResponse = response.toLowerCase().trim();
-        if (
-          lowerResponse === '允许' ||
-          lowerResponse === 'y' ||
-          lowerResponse === 'yes' ||
-          lowerResponse === '是'
-        ) {
-          resolve({ allow: true });
-        } else if (lowerResponse === '始终允许' || lowerResponse === 'always') {
-          resolve({ allow: true, remember: true });
-        } else {
-          resolve({ allow: false });
-        }
+        resolve(parsePermissionReply(response));
       });
 
       // Set timeout - auto deny on timeout
-      setTimeout(
-        () => {
-          this.withInteractionLock(async () => {
-            if (this.pendingInteractions.has(toolUseId)) {
-              log('[RemoteManager] Permission timeout:', toolUseId);
-              this.pendingInteractions.delete(toolUseId);
-              this.interactionResolvers.delete(toolUseId);
-              resolve({ allow: false }); // Deny on timeout
-            }
-          }).catch((err) => logError('[RemoteManager] Permission timeout lock error:', err));
-        },
-        5 * 60 * 1000
-      );
+      setTimeout(() => {
+        this.withInteractionLock(async () => {
+          if (this.pendingInteractions.has(toolUseId)) {
+            log('[RemoteManager] Permission timeout:', toolUseId);
+            this.pendingInteractions.delete(toolUseId);
+            this.interactionResolvers.delete(toolUseId);
+            await this.doSendToChannel(
+              channelInfo,
+              channelInfo.channelType === 'feishu'
+                ? '⏱️ 授权请求超时（5分钟内未回复）— 已拒绝'
+                : '⏱️ *Permission request expired* (no reply within 5 minutes) — *denied*.'
+            );
+            resolve({ allow: false }); // Deny on timeout
+          }
+        }).catch((err) => logError('[RemoteManager] Permission timeout lock error:', err));
+      }, PERMISSION_TIMEOUT_MS);
     });
   }
 
@@ -793,45 +814,58 @@ export class RemoteManager extends EventEmitter {
     messageText: string
   ): Promise<boolean> {
     return this.withInteractionLock(async () => {
-      // Find any pending interaction for this user
-      let found = false;
+      // Consume a matching interaction: owner check, then resolve and remove.
+      // Returns true only if the message was actually consumed.
+      const consume = (interaction: RemoteInteraction, id: string): boolean => {
+        // Verify that the responder is the session owner to prevent hijacking
+        if (interaction.ownerSenderId && senderId !== interaction.ownerSenderId) {
+          log('[RemoteManager] Ignoring interaction response from non-owner sender:', senderId);
+          return false;
+        }
+
+        log('[RemoteManager] Found pending interaction:', id);
+
+        // Remove from pending
+        this.pendingInteractions.delete(id);
+
+        // Resolve the interaction
+        const resolver = this.interactionResolvers.get(id);
+        if (resolver) {
+          this.interactionResolvers.delete(id);
+
+          if (interaction.type === 'question') {
+            // Parse question response
+            resolver(this.parseQuestionResponse(messageText, interaction.questions || []));
+          } else {
+            // Pass through for permission
+            resolver(messageText);
+          }
+        }
+        return true;
+      };
+
+      // Pass 1: exact channel match (unambiguous case)
       for (const [id, interaction] of this.pendingInteractions) {
         const channelInfo = this.sessionChannelMapping.get(interaction.remoteSessionId);
         if (!channelInfo) continue;
-
         if (channelInfo.channelType === channelType && channelInfo.channelId === channelId) {
-          // Verify that the responder is the session owner to prevent hijacking
-          if (!interaction.ownerSenderId || senderId !== interaction.ownerSenderId) {
-            log('[RemoteManager] Ignoring interaction response from non-owner sender:', senderId);
-            continue;
-          }
-
-          log('[RemoteManager] Found pending interaction:', id);
-
-          // Remove from pending
-          this.pendingInteractions.delete(id);
-
-          // Resolve the interaction
-          const resolver = this.interactionResolvers.get(id);
-          if (resolver) {
-            this.interactionResolvers.delete(id);
-
-            if (interaction.type === 'question') {
-              // Parse question response
-              const response = this.parseQuestionResponse(messageText, interaction.questions || []);
-              resolver(response);
-            } else {
-              // Pass through for permission
-              resolver(messageText);
-            }
-          }
-
-          found = true;
-          break; // Only handle one interaction per message
+          if (consume(interaction, id)) return true;
         }
       }
 
-      return found;
+      // Pass 2: normalized match (Slack replies posted outside the thread)
+      for (const [id, interaction] of this.pendingInteractions) {
+        const channelInfo = this.sessionChannelMapping.get(interaction.remoteSessionId);
+        if (!channelInfo) continue;
+        if (
+          channelInfo.channelType === channelType &&
+          normalizeChannelId(channelInfo.channelId) === normalizeChannelId(channelId)
+        ) {
+          if (consume(interaction, id)) return true;
+        }
+      }
+
+      return false;
     });
   }
 
@@ -1110,6 +1144,21 @@ export class RemoteManager extends EventEmitter {
       this.sessionChannelMapping.delete(sessionId);
       this.sessionOwnerMapping.delete(sessionId);
     }
+
+    // Settle any pending interactions for this session so their promises
+    // don't hang until the remote 5-minute timeout fires.
+    await this.withInteractionLock(async () => {
+      for (const [id, interaction] of this.pendingInteractions) {
+        if (interaction.sessionId !== actualSessionId) continue;
+        this.pendingInteractions.delete(id);
+        const resolver = this.interactionResolvers.get(id);
+        if (resolver) {
+          this.interactionResolvers.delete(id);
+          // Permission → deny; question → empty object (parseQuestionResponse of '{}').
+          resolver(interaction.type === 'permission' ? 'no' : '{}');
+        }
+      }
+    });
   }
 
   // ============================================================================

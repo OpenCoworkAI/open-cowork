@@ -93,6 +93,7 @@ export class SessionManager {
   private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
     new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
+  private pendingPermissionTimers: Map<string, NodeJS.Timeout> = new Map();
   private pendingSudoPasswords: Map<
     string,
     { sessionId: string; resolve: (password: string | null) => void }
@@ -1228,10 +1229,9 @@ export class SessionManager {
 
   // Handle permission response
   handlePermissionResponse(toolUseId: string, result: PermissionResult): void {
-    const resolver = this.pendingPermissions.get(toolUseId);
-    if (resolver) {
-      resolver(result);
-      this.pendingPermissions.delete(toolUseId);
+    const settle = this.pendingPermissions.get(toolUseId);
+    if (settle) {
+      settle(result);
     }
   }
 
@@ -1243,20 +1243,54 @@ export class SessionManager {
     input: Record<string, unknown>
   ): Promise<PermissionResult> {
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
+      const settle = (result: PermissionResult): void => {
+        this.clearPermissionTimer(toolUseId);
         this.pendingPermissions.delete(toolUseId);
-        resolve('deny');
-        this.sendToRenderer({ type: 'permission.dismiss', payload: { toolUseId } });
-      }, 60_000);
-      this.pendingPermissions.set(toolUseId, (result: PermissionResult) => {
-        clearTimeout(timeoutId);
         resolve(result);
-      });
+      };
+      this.pendingPermissions.set(toolUseId, settle);
+      this.armPermissionTimeout(toolUseId, 60_000, settle);
       this.sendToRenderer({
         type: 'permission.request',
         payload: { toolUseId, toolName, input, sessionId },
       });
     });
+  }
+
+  private armPermissionTimeout(
+    toolUseId: string,
+    timeoutMs: number,
+    settle: (result: PermissionResult) => void
+  ): void {
+    const timeoutId = setTimeout(() => {
+      this.pendingPermissionTimers.delete(toolUseId);
+      settle('deny');
+      this.sendToRenderer({ type: 'permission.dismiss', payload: { toolUseId } });
+    }, timeoutMs);
+    this.pendingPermissionTimers.set(toolUseId, timeoutId);
+  }
+
+  private clearPermissionTimer(toolUseId: string): void {
+    const timer = this.pendingPermissionTimers.get(toolUseId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingPermissionTimers.delete(toolUseId);
+    }
+  }
+
+  /**
+   * Extend the auto-deny window for a pending permission (used when remote
+   * handling takes over the request). Returns false if the permission is
+   * already settled or unknown — the caller must not wait for it.
+   */
+  deferPermissionTimeout(toolUseId: string, timeoutMs: number): boolean {
+    const settle = this.pendingPermissions.get(toolUseId);
+    if (!settle) {
+      return false;
+    }
+    this.clearPermissionTimer(toolUseId);
+    this.armPermissionTimeout(toolUseId, timeoutMs, settle);
+    return true;
   }
 
   // Request sudo password from the user

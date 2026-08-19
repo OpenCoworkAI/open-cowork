@@ -752,6 +752,15 @@ async function startSandboxBootstrap(): Promise<void> {
 // Pluggable event sender — defaults to mainWindow IPC, swapped for JSONL in headless mode
 let eventSender: ((event: ServerEvent) => void) | null = null;
 
+// Deliver an event to the local UI (or headless JSONL sender)
+function deliverEventToRenderer(event: ServerEvent) {
+  if (eventSender) {
+    eventSender(event);
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('server-event', event);
+  }
+}
+
 // 发送事件到渲染进程（含远程会话拦截）
 function sendToRenderer(event: ServerEvent) {
   const payload =
@@ -843,21 +852,22 @@ function sendToRenderer(event: ServerEvent) {
               permissionResult = 'deny';
             }
             sessionManager.handlePermissionResponse(payload.toolUseId as string, permissionResult);
+          } else {
+            // Not handled remotely (missing mapping, gateway down, send failure) —
+            // fall back to the normal desktop permission dialog.
+            deliverEventToRenderer(event);
           }
         })
         .catch((err) => {
           logError('[Remote] Failed to handle permission request:', err);
+          deliverEventToRenderer(event);
         });
       return; // 不发送到本地 UI
     }
   }
 
   // 发送到本地 UI（or headless JSONL sender）
-  if (eventSender) {
-    eventSender(event);
-  } else if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('server-event', event);
-  }
+  deliverEventToRenderer(event);
 }
 
 // Initialize app
@@ -1478,6 +1488,8 @@ app
         }
         return null;
       },
+      deferPermissionTimeout: (toolUseId, timeoutMs) =>
+        sessionManager ? sessionManager.deferPermissionTimeout(toolUseId, timeoutMs) : false,
     };
     remoteManager.setAgentExecutor(agentExecutor);
 
