@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
-  const sendResponse = vi.fn(async () => {});
+  const sendResponse = vi.fn(
+    async (_msg: {
+      channelType: string;
+      channelId: string;
+      content: { type: string; markdown: string };
+    }) => {}
+  );
   const gatewayStart = vi.fn(async () => {});
   const gatewayStop = vi.fn(async () => {});
   const deferPermissionTimeout = vi.fn(() => true);
@@ -246,10 +252,16 @@ describe('RemoteManager permission request flow', () => {
     await expect(promise).resolves.toEqual({ allow: true });
   });
 
-  it('matches a reply with a different thread ts via normalized channel id', async () => {
-    const { manager } = await createRemoteManager();
+  it('matches a threaded reply against a prompt posted in the main channel', async () => {
+    const { manager, internals } = await createRemoteManager();
+    // The prompt was posted in the main channel (no thread suffix)...
+    internals.sessionChannelMapping.set(REMOTE_SESSION_ID, {
+      channelType: 'slack',
+      channelId: 'C123',
+    });
     const { promise } = await startPermissionRequest(manager);
 
+    // ...and the user replies inside a thread of the main channel.
     const consumed = await manager.handlePotentialInteractionResponse(
       'slack',
       'C123:999.999',
@@ -257,6 +269,30 @@ describe('RemoteManager permission request flow', () => {
       'ok'
     );
     expect(consumed).toBe(true);
+    await expect(promise).resolves.toEqual({ allow: true });
+  });
+
+  it('does not match a reply posted in a different thread', async () => {
+    const { manager, internals } = await createRemoteManager();
+    const { promise } = await startPermissionRequest(manager);
+
+    const consumed = await manager.handlePotentialInteractionResponse(
+      'slack',
+      'C123:999.999', // same channel, different thread ts
+      OWNER_ID,
+      'ok'
+    );
+    expect(consumed).toBe(false);
+    // Still pending; the owner can still answer from the correct thread.
+    expect(internals.pendingInteractions.size).toBe(1);
+
+    const correctThread = await manager.handlePotentialInteractionResponse(
+      'slack',
+      THREAD_CHANNEL_ID,
+      OWNER_ID,
+      'ok'
+    );
+    expect(correctThread).toBe(true);
     await expect(promise).resolves.toEqual({ allow: true });
   });
 
@@ -282,7 +318,7 @@ describe('RemoteManager permission request flow', () => {
     expect(mocks.sendResponse).not.toHaveBeenCalled();
   });
 
-  it('returns allow:false and cleans up when deferPermissionTimeout reports the session timer already fired', async () => {
+  it('returns allow:false, cleans up and posts an expiry notice when deferPermissionTimeout reports the session timer already fired', async () => {
     mocks.deferPermissionTimeout.mockReturnValueOnce(false);
     const { manager, internals } = await createRemoteManager();
 
@@ -292,8 +328,9 @@ describe('RemoteManager permission request flow', () => {
     expect(result).toEqual({ allow: false });
     expect(internals.pendingInteractions.size).toBe(0);
     expect(internals.interactionResolvers.size).toBe(0);
-    // The prompt was still sent to the channel.
-    expect(mocks.sendResponse).toHaveBeenCalled();
+    // The prompt was sent to the channel, followed by an expiry notice.
+    expect(mocks.sendResponse).toHaveBeenCalledTimes(2);
+    expect(mocks.sendResponse.mock.calls[1][0].content.markdown).toContain('expired');
   });
 
   it('auto-approves safe tools (Read) without a pending interaction', async () => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parsePermissionReply, normalizeChannelId } from '../src/main/remote/interaction-utils';
+import {
+  parsePermissionReply,
+  normalizeChannelId,
+  isThreadedChannelId,
+} from '../src/main/remote/interaction-utils';
 
 describe('parsePermissionReply', () => {
   const allowOnceTokens = ['y', 'yes', 'allow', 'approve', 'ok', '1', '是', '允许'];
@@ -64,5 +68,17 @@ describe('normalizeChannelId', () => {
 
   it('handles empty input', () => {
     expect(normalizeChannelId('')).toBe('');
+  });
+});
+
+describe('isThreadedChannelId', () => {
+  it('detects Slack thread suffixes', () => {
+    expect(isThreadedChannelId('C123:1700000000.123456')).toBe(true);
+  });
+
+  it('treats plain channel ids as non-threaded', () => {
+    expect(isThreadedChannelId('C123')).toBe(false);
+    expect(isThreadedChannelId('ou_abc123')).toBe(false);
+    expect(isThreadedChannelId('')).toBe(false);
   });
 });

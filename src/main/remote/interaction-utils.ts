@@ -47,3 +47,8 @@ export function normalizeChannelId(channelId: string): string {
   const idx = channelId.indexOf(':');
   return idx === -1 ? channelId : channelId.slice(0, idx);
 }
+
+/** True when a channel id carries a Slack thread suffix ("C123:threadTs"). */
+export function isThreadedChannelId(channelId: string): boolean {
+  return channelId.includes(':');
+}

@@ -25,7 +25,7 @@ import type {
   RemoteConfig,
 } from './types';
 import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer/types/index';
-import { parsePermissionReply, normalizeChannelId } from './interaction-utils';
+import { parsePermissionReply, normalizeChannelId, isThreadedChannelId } from './interaction-utils';
 
 // Permission reply window for remote sessions (mirrored by the session-level timer)
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
@@ -41,7 +41,13 @@ export interface AgentExecutor {
   ): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
   validateWorkingDirectory?(cwd: string): Promise<string | null> | string | null;
-  deferPermissionTimeout?(toolUseId: string, timeoutMs: number): boolean;
+  /**
+   * Extend the session-level permission auto-deny window; the remote channel
+   * prompt owns the timeout once it has been sent. Returns false when the
+   * permission is already settled or unknown. Required so the remote flow
+   * always backs the 5-minute reply window it advertises.
+   */
+  deferPermissionTimeout(toolUseId: string, timeoutMs: number): boolean;
 }
 
 // Question/Permission request from agent
@@ -753,11 +759,18 @@ export class RemoteManager extends EventEmitter {
 
     // Defer the session-level auto-deny window: the remote flow owns the request
     // from here on. Returns false only if the session timer already fired.
-    const deferred = this.agentExecutor?.deferPermissionTimeout?.(toolUseId, PERMISSION_TIMEOUT_MS);
+    const deferred = this.agentExecutor?.deferPermissionTimeout(toolUseId, PERMISSION_TIMEOUT_MS);
     if (deferred === false) {
       await this.withInteractionLock(async () => {
         this.pendingInteractions.delete(toolUseId);
         this.interactionResolvers.delete(toolUseId);
+        // The session-level timer already fired — tell the user the prompt is moot.
+        await this.doSendToChannel(
+          channelInfo,
+          channelInfo.channelType === 'feishu'
+            ? '⏱️ 授权请求已超时 — 已拒绝'
+            : '⏱️ *Permission request expired* — *denied*.'
+        );
       });
       return { allow: false };
     }
@@ -853,13 +866,17 @@ export class RemoteManager extends EventEmitter {
         }
       }
 
-      // Pass 2: normalized match (Slack replies posted outside the thread)
+      // Pass 2: normalized match for a reply posted outside the thread (or in
+      // the thread of a prompt posted in the main channel). Only when at least
+      // one side is non-threaded — two different thread suffixes must never
+      // match each other (pass 1 already handles same-thread replies).
       for (const [id, interaction] of this.pendingInteractions) {
         const channelInfo = this.sessionChannelMapping.get(interaction.remoteSessionId);
         if (!channelInfo) continue;
         if (
           channelInfo.channelType === channelType &&
-          normalizeChannelId(channelInfo.channelId) === normalizeChannelId(channelId)
+          normalizeChannelId(channelInfo.channelId) === normalizeChannelId(channelId) &&
+          (!isThreadedChannelId(channelInfo.channelId) || !isThreadedChannelId(channelId))
         ) {
           if (consume(interaction, id)) return true;
         }
