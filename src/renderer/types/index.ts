@@ -635,14 +635,7 @@ export interface Settings {
 
 // Tool types
 export type ToolName =
-  | 'read'
-  | 'write'
-  | 'edit'
-  | 'glob'
-  | 'grep'
-  | 'bash'
-  | 'webFetch'
-  | 'webSearch';
+  'read' | 'write' | 'edit' | 'glob' | 'grep' | 'bash' | 'webFetch' | 'webSearch';
 
 export interface ToolResult {
   success: boolean;
@@ -659,13 +652,15 @@ export interface ExecutionContext {
 }
 
 // App Config types
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType =
+  'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
   | 'openai'
+  | 'openai-codex'
   | 'gemini'
   | 'ollama'
   | 'custom:anthropic'
@@ -761,6 +756,7 @@ export interface ProviderPresets {
   anthropic: ProviderPreset;
   custom: ProviderPreset;
   openai: ProviderPreset;
+  'openai-codex': ProviderPreset;
   gemini: ProviderPreset;
   ollama: ProviderPreset;
 }
@@ -796,6 +792,20 @@ export interface ApiTestResult {
     | 'ollama_loading'
     | 'unknown';
   details?: string;
+}
+
+export interface OpenAICodexAuthStatus {
+  authenticated: boolean;
+  authenticating: boolean;
+}
+
+export type OpenAICodexAuthErrorCode =
+  'cancelled' | 'timeout' | 'invalid_authorization_url' | 'browser_open_failed' | 'login_failed';
+
+export interface OpenAICodexAuthActionResult {
+  ok: boolean;
+  status: OpenAICodexAuthStatus;
+  error?: OpenAICodexAuthErrorCode;
 }
 
 // API Diagnostics types

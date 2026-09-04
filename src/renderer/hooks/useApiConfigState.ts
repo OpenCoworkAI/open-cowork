@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import type {
@@ -12,12 +12,10 @@ import type {
   ProviderProfileKey,
   ProviderPresets,
   ProviderType,
+  OpenAICodexAuthStatus,
 } from '../types';
 import { isLoopbackBaseUrl } from '../../shared/network/loopback';
-import {
-  DEFAULT_OLLAMA_BASE_URL,
-  normalizeOllamaBaseUrl,
-} from '../../shared/ollama-base-url';
+import { DEFAULT_OLLAMA_BASE_URL, normalizeOllamaBaseUrl } from '../../shared/ollama-base-url';
 import { API_PROVIDER_PRESETS, getModelInputGuidance } from '../../shared/api-model-presets';
 import {
   COMMON_PROVIDER_SETUPS,
@@ -72,6 +70,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openrouter',
   'anthropic',
   'openai',
+  'openai-codex',
   'gemini',
   'ollama',
   'custom:anthropic',
@@ -89,6 +88,7 @@ function isProviderType(value: unknown): value is ProviderType {
     value === 'anthropic' ||
     value === 'custom' ||
     value === 'openai' ||
+    value === 'openai-codex' ||
     value === 'gemini' ||
     value === 'ollama'
   );
@@ -132,6 +132,9 @@ export function profileKeyToProvider(profileKey: ProviderProfileKey): {
   }
   if (profileKey === 'openai') {
     return { provider: 'openai', customProtocol: 'openai' };
+  }
+  if (profileKey === 'openai-codex') {
+    return { provider: 'openai-codex', customProtocol: 'openai' };
   }
   if (profileKey === 'gemini') {
     return { provider: 'gemini', customProtocol: 'gemini' };
@@ -196,7 +199,7 @@ function defaultProfileForKey(
   return {
     apiKey: '',
     baseUrl: preset.baseUrl,
-    model: profileKey === 'ollama' ? '' : (preset.models[0]?.id || ''),
+    model: profileKey === 'ollama' ? '' : preset.models[0]?.id || '',
     customModel: '',
     useCustomModel: prefersCustomInput,
     contextWindow: '',
@@ -265,9 +268,8 @@ function normalizeProfile(
   );
   return {
     apiKey: profile?.apiKey || '',
-    baseUrl: profileKey === 'ollama'
-      ? (normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl)
-      : rawBaseUrl,
+    baseUrl:
+      profileKey === 'ollama' ? normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl : rawBaseUrl,
     model: hasPresetModel ? modelValue : fallback.model,
     customModel: hasPresetModel ? '' : modelValue,
     useCustomModel: !hasPresetModel,
@@ -726,7 +728,10 @@ function apiConfigReducer(state: ApiConfigState, action: ApiConfigAction): ApiCo
     case 'CLEAR_DISCOVERED_MODELS':
       return {
         ...state,
-        discoveredModels: clearDiscoveredModelsForProfile(state.discoveredModels, action.profileKey),
+        discoveredModels: clearDiscoveredModelsForProfile(
+          state.discoveredModels,
+          action.profileKey
+        ),
       };
 
     case 'DELETE_DISCOVERED_MODELS': {
@@ -852,6 +857,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     diagnosticResult: null,
     isDiagnosing: false,
   }));
+  const [openAICodexAuthStatus, setOpenAICodexAuthStatus] = useState<OpenAICodexAuthStatus>({
+    authenticated: false,
+    authenticating: false,
+  });
 
   // Destructure state for convenience — avoids `state.X` in every expression
   const {
@@ -930,13 +939,76 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const modelPreset = modelPresetForProfile(activeProfileKey, presets);
   const currentPreset = modelPreset;
   const hasDiscoveredOllamaModels =
-    provider === 'ollama' && Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);
-  const modelOptions = provider === 'ollama'
-    ? (discoveredModels[activeProfileKey] || [])
-    : hasDiscoveredOllamaModels
-      ? (discoveredModels[activeProfileKey] || [])
-      : modelPreset.models;
+    provider === 'ollama' &&
+    Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);
+  const modelOptions =
+    provider === 'ollama'
+      ? discoveredModels[activeProfileKey] || []
+      : hasDiscoveredOllamaModels
+        ? discoveredModels[activeProfileKey] || []
+        : modelPreset.models;
   const modelInputGuidance = getModelInputGuidance(provider, customProtocol);
+
+  const refreshOpenAICodexAuthStatus = useCallback(async () => {
+    if (!isElectron) {
+      return;
+    }
+    try {
+      setOpenAICodexAuthStatus(await window.electronAPI.openAICodexAuth.status());
+    } catch {
+      setOpenAICodexAuthStatus({ authenticated: false, authenticating: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (enabled && provider === 'openai-codex') {
+      void refreshOpenAICodexAuthStatus();
+    }
+  }, [enabled, provider, refreshOpenAICodexAuthStatus]);
+
+  const loginOpenAICodex = useCallback(async () => {
+    if (!isElectron) {
+      return;
+    }
+    clearError();
+    clearSuccessMessage();
+    setOpenAICodexAuthStatus((current) => ({ ...current, authenticating: true }));
+    try {
+      const result = await window.electronAPI.openAICodexAuth.login();
+      setOpenAICodexAuthStatus(result.status);
+      if (result.ok) {
+        showSuccessKey('api.codexAuth.connectedSuccess');
+      } else if (result.error !== 'cancelled') {
+        showErrorKey(`api.codexAuth.errors.${result.error || 'login_failed'}`);
+      }
+    } catch {
+      setOpenAICodexAuthStatus({ authenticated: false, authenticating: false });
+      showErrorKey('api.codexAuth.errors.login_failed');
+    }
+  }, [clearError, clearSuccessMessage, showErrorKey, showSuccessKey]);
+
+  const cancelOpenAICodexLogin = useCallback(async () => {
+    if (!isElectron) {
+      return;
+    }
+    const result = await window.electronAPI.openAICodexAuth.cancel();
+    setOpenAICodexAuthStatus(result.status);
+  }, []);
+
+  const logoutOpenAICodex = useCallback(async () => {
+    if (!isElectron) {
+      return;
+    }
+    clearError();
+    clearSuccessMessage();
+    try {
+      const result = await window.electronAPI.openAICodexAuth.logout();
+      setOpenAICodexAuthStatus(result.status);
+      showSuccessKey('api.codexAuth.disconnectedSuccess');
+    } catch {
+      showErrorKey('api.codexAuth.errors.login_failed');
+    }
+  }, [clearError, clearSuccessMessage, showErrorKey, showSuccessKey]);
 
   const currentConfigSet = useMemo(
     () => configSets.find((set) => set.id === activeConfigSetId) || null,
@@ -956,10 +1028,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const customModel = currentProfile.customModel;
   const useCustomModel = currentProfile.useCustomModel;
   const shouldShowOllamaManualModelToggle =
-    provider !== 'ollama'
-      || useCustomModel
-      || Boolean(error)
-      || modelOptions.length === 0;
+    provider !== 'ollama' || useCustomModel || Boolean(error) || modelOptions.length === 0;
   const contextWindow = currentProfile.contextWindow;
   const maxTokens = currentProfile.maxTokens;
   const detectedProviderSetup = useMemo(
@@ -1104,12 +1173,17 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   ]);
 
   const allowEmptyApiKey =
+    provider === 'openai-codex' ||
     provider === 'ollama' ||
     (provider === 'custom' &&
       ((customProtocol === 'anthropic' && isCustomAnthropicLoopbackGateway(baseUrl)) ||
         (customProtocol === 'openai' && isCustomOpenAiLoopbackGateway(baseUrl)) ||
         (customProtocol === 'gemini' && isCustomGeminiLoopbackGateway(baseUrl))));
   const requiresApiKey = !allowEmptyApiKey;
+  const hasRequiredCredentials =
+    provider === 'openai-codex'
+      ? openAICodexAuthStatus.authenticated
+      : !requiresApiKey || Boolean(apiKey.trim());
   const currentDraftSignature = useMemo(
     () => buildApiConfigDraftSignature(activeProfileKey, profiles, enableThinking),
     [activeProfileKey, profiles, enableThinking]
@@ -1181,7 +1255,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
   const changeProtocol = useCallback((newProtocol: CustomProtocolType) => {
     dispatch({ type: 'SET_LAST_CUSTOM_PROTOCOL', payload: newProtocol });
-    dispatch({ type: 'SET_ACTIVE_PROFILE_KEY', payload: profileKeyFromProvider('custom', newProtocol) });
+    dispatch({
+      type: 'SET_ACTIVE_PROFILE_KEY',
+      payload: profileKeyFromProvider('custom', newProtocol),
+    });
   }, []);
 
   const setApiKey = useCallback(
@@ -1354,7 +1431,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
           if (!inPreset) {
             return {
               ...current,
-              model: provider === 'ollama' ? '' : (preset.models[0]?.id || ''),
+              model: provider === 'ollama' ? '' : preset.models[0]?.id || '',
             };
           }
         }
@@ -1364,8 +1441,12 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   }, [activeProfileKey, baseUrl, provider, presets]);
 
   const handleTest = useCallback(async () => {
-    if (requiresApiKey && !apiKey.trim()) {
-      showErrorKey('api.testError.missing_key');
+    if (!hasRequiredCredentials) {
+      showErrorKey(
+        provider === 'openai-codex'
+          ? 'api.codexAuth.errors.not_authenticated'
+          : 'api.testError.missing_key'
+      );
       return;
     }
 
@@ -1421,7 +1502,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     customProtocol,
     model,
     provider,
-    requiresApiKey,
+    hasRequiredCredentials,
     hasUnsavedChanges,
     clearError,
     clearSuccessMessage,
@@ -1430,52 +1511,59 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     showSuccessKey,
   ]);
 
-  const handleDiagnose = useCallback(async (verificationLevel: 'fast' | 'deep' = 'fast') => {
-    if (requiresApiKey && !apiKey.trim()) {
-      showErrorKey('api.testError.missing_key');
-      return;
-    }
+  const handleDiagnose = useCallback(
+    async (verificationLevel: 'fast' | 'deep' = 'fast') => {
+      if (!hasRequiredCredentials) {
+        showErrorKey(
+          provider === 'openai-codex'
+            ? 'api.codexAuth.errors.not_authenticated'
+            : 'api.testError.missing_key'
+        );
+        return;
+      }
 
-    clearError();
-    dispatch({ type: 'SET_IS_DIAGNOSING', payload: true });
-    dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: null });
-    dispatch({ type: 'SET_TEST_RESULT', payload: null });
-    try {
-      const resolvedBaseUrl =
-        provider === 'custom' || provider === 'ollama'
-          ? baseUrl.trim()
-          : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
+      clearError();
+      dispatch({ type: 'SET_IS_DIAGNOSING', payload: true });
+      dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: null });
+      dispatch({ type: 'SET_TEST_RESULT', payload: null });
+      try {
+        const resolvedBaseUrl =
+          provider === 'custom' || provider === 'ollama'
+            ? baseUrl.trim()
+            : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
 
-      const finalModel = useCustomModel ? customModel.trim() : model;
+        const finalModel = useCustomModel ? customModel.trim() : model;
 
-      const result = await window.electronAPI.config.diagnose({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: resolvedBaseUrl || undefined,
-        customProtocol,
-        model: finalModel || undefined,
-        verificationLevel,
-      });
-      dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: result });
-    } catch (err) {
-      showErrorText((err as Error).message || 'Diagnosis failed');
-    } finally {
-      dispatch({ type: 'SET_IS_DIAGNOSING', payload: false });
-    }
-  }, [
-    requiresApiKey,
-    apiKey,
-    baseUrl,
-    provider,
-    customProtocol,
-    model,
-    customModel,
-    useCustomModel,
-    currentPreset.baseUrl,
-    clearError,
-    showErrorKey,
-    showErrorText,
-  ]);
+        const result = await window.electronAPI.config.diagnose({
+          provider,
+          apiKey: apiKey.trim(),
+          baseUrl: resolvedBaseUrl || undefined,
+          customProtocol,
+          model: finalModel || undefined,
+          verificationLevel,
+        });
+        dispatch({ type: 'SET_DIAGNOSTIC_RESULT', payload: result });
+      } catch (err) {
+        showErrorText((err as Error).message || 'Diagnosis failed');
+      } finally {
+        dispatch({ type: 'SET_IS_DIAGNOSING', payload: false });
+      }
+    },
+    [
+      hasRequiredCredentials,
+      apiKey,
+      baseUrl,
+      provider,
+      customProtocol,
+      model,
+      customModel,
+      useCustomModel,
+      currentPreset.baseUrl,
+      clearError,
+      showErrorKey,
+      showErrorText,
+    ]
+  );
 
   const handleDeepDiagnose = useCallback(async () => {
     await handleDiagnose('deep');
@@ -1501,10 +1589,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
       const latestTarget = latestOllamaTargetRef.current;
       if (
-        requestId !== ollamaRefreshRequestIdRef.current
-        || latestTarget.provider !== 'ollama'
-        || latestTarget.activeProfileKey !== requestedProfileKey
-        || latestTarget.baseUrl !== requestedBaseUrl
+        requestId !== ollamaRefreshRequestIdRef.current ||
+        latestTarget.provider !== 'ollama' ||
+        latestTarget.activeProfileKey !== requestedProfileKey ||
+        latestTarget.baseUrl !== requestedBaseUrl
       ) {
         return models;
       }
@@ -1534,10 +1622,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     } catch (refreshError) {
       const latestTarget = latestOllamaTargetRef.current;
       if (
-        requestId !== ollamaRefreshRequestIdRef.current
-        || latestTarget.provider !== 'ollama'
-        || latestTarget.activeProfileKey !== requestedProfileKey
-        || latestTarget.baseUrl !== requestedBaseUrl
+        requestId !== ollamaRefreshRequestIdRef.current ||
+        latestTarget.provider !== 'ollama' ||
+        latestTarget.activeProfileKey !== requestedProfileKey ||
+        latestTarget.baseUrl !== requestedBaseUrl
       ) {
         return [];
       }
@@ -1622,10 +1710,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         });
         const latestTarget = latestOllamaTargetRef.current;
         if (
-          requestId !== ollamaDiscoverRequestIdRef.current
-          || latestTarget.provider !== 'ollama'
-          || latestTarget.activeProfileKey !== requestedProfileKey
-          || latestTarget.baseUrl !== requestedBaseUrl
+          requestId !== ollamaDiscoverRequestIdRef.current ||
+          latestTarget.provider !== 'ollama' ||
+          latestTarget.activeProfileKey !== requestedProfileKey ||
+          latestTarget.baseUrl !== requestedBaseUrl
         ) {
           return result;
         }
@@ -1656,10 +1744,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       } catch (discoveryError) {
         const latestTarget = latestOllamaTargetRef.current;
         if (
-          requestId !== ollamaDiscoverRequestIdRef.current
-          || latestTarget.provider !== 'ollama'
-          || latestTarget.activeProfileKey !== requestedProfileKey
-          || latestTarget.baseUrl !== requestedBaseUrl
+          requestId !== ollamaDiscoverRequestIdRef.current ||
+          latestTarget.provider !== 'ollama' ||
+          latestTarget.activeProfileKey !== requestedProfileKey ||
+          latestTarget.baseUrl !== requestedBaseUrl
         ) {
           return null;
         }
@@ -1707,8 +1795,12 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
   const handleSave = useCallback(
     async (options?: { silentSuccess?: boolean }) => {
-      if (requiresApiKey && !apiKey.trim()) {
-        showErrorKey('api.testError.missing_key');
+      if (!hasRequiredCredentials) {
+        showErrorKey(
+          provider === 'openai-codex'
+            ? 'api.codexAuth.errors.not_authenticated'
+            : 'api.testError.missing_key'
+        );
         return false;
       }
 
@@ -1786,7 +1878,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       presets,
       profiles,
       provider,
-      requiresApiKey,
+      hasRequiredCredentials,
       clearError,
       clearSuccessMessage,
       showErrorKey,
@@ -2074,6 +2166,11 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     isOllamaMode: provider === 'ollama',
     shouldShowOllamaManualModelToggle,
     requiresApiKey,
+    hasRequiredCredentials,
+    openAICodexAuthStatus,
+    loginOpenAICodex,
+    cancelOpenAICodexLogin,
+    logoutOpenAICodex,
     detectedProviderSetup,
     protocolGuidanceText,
     protocolGuidanceTone,

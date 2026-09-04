@@ -1684,6 +1684,8 @@ ${hints.join('\n')}
               baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
             })
           );
+        } else if (provider === 'openai-codex') {
+          log('[CoworkAgentRunner] Using stored ChatGPT OAuth credentials for OpenAI Codex');
         } else {
           logWarn('[CoworkAgentRunner] No API key configured for provider:', provider);
         }
@@ -2844,8 +2846,7 @@ Tool routing:
               // Surface compaction result details to the renderer (skip if retrying)
               if (event.result && !event.willRetry) {
                 const compactionDetails = event.result.details as
-                  | { readFiles?: string[]; modifiedFiles?: string[] }
-                  | undefined;
+                  { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
                 this.sendToRenderer({
                   type: 'compaction.result',
                   payload: {
@@ -3117,8 +3118,7 @@ Tool routing:
         })
       );
       const compactionDetails = result.details as
-        | { readFiles?: string[]; modifiedFiles?: string[] }
-        | undefined;
+        { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
       this.sendToRenderer({
         type: 'compaction.result',
         payload: {

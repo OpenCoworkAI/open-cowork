@@ -33,17 +33,20 @@ import {
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
 import { normalizeSubagentConfig, type SubagentConfig } from '../../shared/subagent-config';
+import { openAICodexAuthService } from '../auth/openai-codex-auth';
 
 /**
  * Application configuration schema
  */
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType =
+  'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
   | 'openrouter'
   | 'anthropic'
   | 'openai'
+  | 'openai-codex'
   | 'gemini'
   | 'ollama'
   | 'custom:anthropic'
@@ -236,7 +239,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   model: (v) => typeof v === 'string',
   provider: (v) =>
     typeof v === 'string' &&
-    ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
+    ['openrouter', 'anthropic', 'custom', 'openai', 'openai-codex', 'gemini', 'ollama'].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
 };
@@ -255,6 +258,11 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
   openai: {
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5.4',
+  },
+  'openai-codex': {
+    apiKey: '',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'gpt-5.4',
   },
   ollama: {
@@ -402,6 +410,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openrouter',
   'anthropic',
   'openai',
+  'openai-codex',
   'gemini',
   'ollama',
   'custom:anthropic',
@@ -416,6 +425,7 @@ function isProviderType(value: unknown): value is ProviderType {
     value === 'anthropic' ||
     value === 'custom' ||
     value === 'openai' ||
+    value === 'openai-codex' ||
     value === 'gemini' ||
     value === 'ollama'
   );
@@ -532,6 +542,9 @@ function profileKeyToProvider(profileKey: ProviderProfileKey): {
   if (profileKey === 'openai') {
     return { provider: 'openai', customProtocol: 'openai' };
   }
+  if (profileKey === 'openai-codex') {
+    return { provider: 'openai-codex', customProtocol: 'openai' };
+  }
   if (profileKey === 'gemini') {
     return { provider: 'gemini', customProtocol: 'gemini' };
   }
@@ -568,7 +581,7 @@ function normalizeCustomProtocol(
 }
 
 function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType {
-  if (provider === 'openai' || provider === 'ollama') {
+  if (provider === 'openai' || provider === 'openai-codex' || provider === 'ollama') {
     return 'openai';
   }
   if (provider === 'gemini') {
@@ -1503,6 +1516,9 @@ export class ConfigStore {
     baseUrl?: string;
     model?: string;
   }): boolean {
+    if (projection.provider === 'openai-codex') {
+      return Boolean(projection.model?.trim()) && openAICodexAuthService.hasAuth();
+    }
     if (projection.provider === 'ollama' && !projection.model?.trim()) {
       return false;
     }

@@ -43,6 +43,11 @@ import {
   exportOnConfigChange,
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
+import {
+  openAICodexAuthService,
+  toOpenAICodexAuthErrorCode,
+  type OpenAICodexAuthActionResult,
+} from './auth/openai-codex-auth';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
@@ -1951,7 +1956,10 @@ ipcMain.handle('config.getPresets', () => {
   }
 });
 
-const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
+const syncConfigAfterMutation = async (
+  previousConfig: AppConfig,
+  options?: { forceRunnerReload?: boolean }
+) => {
   // Mark as configured if any config set has usable credentials
   configStore.set('isConfigured', configStore.hasAnyUsableCredentials());
 
@@ -1960,6 +1968,7 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
 
   const updatedConfig = configStore.getAll();
   const shouldReloadRunner =
+    Boolean(options?.forceRunnerReload) ||
     buildAgentRuntimeSignature(previousConfig) !== buildAgentRuntimeSignature(updatedConfig);
   const shouldReloadSandbox = previousConfig.sandboxEnabled !== updatedConfig.sandboxEnabled;
 
@@ -2067,6 +2076,31 @@ ipcMain.handle('config.isConfigured', () => {
     logError('[Config] Error checking configured status:', error);
     return false;
   }
+});
+
+ipcMain.handle('openai-codex-auth.status', () => openAICodexAuthService.getStatus());
+
+ipcMain.handle('openai-codex-auth.login', async (): Promise<OpenAICodexAuthActionResult> => {
+  try {
+    const status = await openAICodexAuthService.login((url) => shell.openExternal(url));
+    await syncConfigAfterMutation(configStore.getAll(), { forceRunnerReload: true });
+    return { ok: true, status };
+  } catch (error) {
+    const code = toOpenAICodexAuthErrorCode(error);
+    logWarn('[OpenAICodexAuth] Login failed:', code);
+    return { ok: false, status: openAICodexAuthService.getStatus(), error: code };
+  }
+});
+
+ipcMain.handle('openai-codex-auth.cancel', async (): Promise<OpenAICodexAuthActionResult> => ({
+  ok: true,
+  status: await openAICodexAuthService.cancelLogin(),
+}));
+
+ipcMain.handle('openai-codex-auth.logout', async (): Promise<OpenAICodexAuthActionResult> => {
+  const status = await openAICodexAuthService.logout();
+  await syncConfigAfterMutation(configStore.getAll(), { forceRunnerReload: true });
+  return { ok: true, status };
 });
 
 ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<ApiTestResult> => {
