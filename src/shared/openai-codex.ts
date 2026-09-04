@@ -1,4 +1,10 @@
-export const OPENAI_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+export const OPENAI_CODEX_BASE_URL = 'https://chatgpt.com/backend-api';
+
+const TRUSTED_OPENAI_CODEX_PATHS = new Set([
+  '/backend-api',
+  '/backend-api/codex',
+  '/backend-api/codex/responses',
+]);
 
 export function isTrustedOpenAICodexBaseUrl(rawUrl: string | undefined): boolean {
   if (!rawUrl) {
@@ -11,7 +17,7 @@ export function isTrustedOpenAICodexBaseUrl(rawUrl: string | undefined): boolean
       parsed.protocol === 'https:' &&
       parsed.hostname === 'chatgpt.com' &&
       parsed.port === '' &&
-      parsed.pathname.replace(/\/+$/, '') === '/backend-api/codex' &&
+      TRUSTED_OPENAI_CODEX_PATHS.has(parsed.pathname.replace(/\/+$/, '')) &&
       parsed.search === '' &&
       parsed.hash === '' &&
       parsed.username === '' &&

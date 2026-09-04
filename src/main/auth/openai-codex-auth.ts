@@ -8,6 +8,8 @@ const OPENAI_AUTH_ORIGIN = 'https://auth.openai.com';
 const OPENAI_AUTH_PATH = '/oauth/authorize';
 const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const OPENAI_CODEX_REDIRECT_URI = 'http://localhost:1455/auth/callback';
+const OPENAI_CODEX_SCOPE = 'openid profile email offline_access';
+const MAX_OAUTH_PARAMETER_LENGTH = 2_048;
 
 export type OpenAICodexAuthErrorCode =
   | 'cancelled'
@@ -63,6 +65,8 @@ function assertAuthorizationUrl(rawUrl: string): void {
   const state = parsed.searchParams.get('state') || '';
   const codeChallenge = parsed.searchParams.get('code_challenge') || '';
   const hasSingleValue = (name: string) => parsed.searchParams.getAll(name).length === 1;
+  const isPresentAndBounded = (value: string) =>
+    value.length > 0 && value.length <= MAX_OAUTH_PARAMETER_LENGTH;
   const hasExpectedContract =
     parsed.origin === OPENAI_AUTH_ORIGIN &&
     parsed.pathname === OPENAI_AUTH_PATH &&
@@ -71,15 +75,19 @@ function assertAuthorizationUrl(rawUrl: string): void {
     hasSingleValue('response_type') &&
     hasSingleValue('client_id') &&
     hasSingleValue('redirect_uri') &&
+    hasSingleValue('scope') &&
     hasSingleValue('code_challenge') &&
     hasSingleValue('code_challenge_method') &&
     hasSingleValue('state') &&
     parsed.searchParams.get('response_type') === 'code' &&
     parsed.searchParams.get('client_id') === OPENAI_CODEX_CLIENT_ID &&
     parsed.searchParams.get('redirect_uri') === OPENAI_CODEX_REDIRECT_URI &&
+    parsed.searchParams.get('scope') === OPENAI_CODEX_SCOPE &&
     parsed.searchParams.get('code_challenge_method') === 'S256' &&
-    /^[a-f0-9]{32}$/.test(state) &&
-    /^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge);
+    // pi-ai owns state generation and PKCE encoding. We enforce their
+    // presence here; pi-ai validates callback state before token exchange.
+    isPresentAndBounded(state) &&
+    isPresentAndBounded(codeChallenge);
 
   if (!hasExpectedContract) {
     throw new OpenAICodexAuthError(
@@ -240,6 +248,8 @@ export class OpenAICodexAuthService {
   }
 
   submitManualCode(value: string): OpenAICodexAuthStatus {
+    // Preserve query strings and fragments: pi-ai parses callback URLs,
+    // query strings, code#state, and bare codes, then validates state.
     const normalized = typeof value === 'string' ? value.trim() : '';
     if (!normalized || normalized.length > 16_384 || !this.activeLogin || !this.manualCodeInput) {
       throw new OpenAICodexAuthError(
@@ -254,7 +264,9 @@ export class OpenAICodexAuthService {
   async logout(): Promise<OpenAICodexAuthStatus> {
     await this.cancelLogin();
     this.storage.drainErrors();
-    this.storage.logout(PROVIDER_ID);
+    // AuthStorage 0.60.0 is synchronous, but awaiting also preserves correct
+    // ordering if its port becomes asynchronous in a future release.
+    await this.storage.logout(PROVIDER_ID);
     return this.verifyMutation(false, 'logout_failed');
   }
 }

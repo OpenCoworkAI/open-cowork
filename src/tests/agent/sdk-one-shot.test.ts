@@ -83,7 +83,7 @@ describe('runPiAiOneShot', () => {
     config.provider = 'openai-codex';
     config.customProtocol = 'openai';
     config.apiKey = '';
-    config.baseUrl = 'https://chatgpt.com/backend-api/codex';
+    config.baseUrl = 'https://chatgpt.com/backend-api';
     config.model = 'gpt-5.4';
     config.activeProfileKey = 'openai-codex';
 

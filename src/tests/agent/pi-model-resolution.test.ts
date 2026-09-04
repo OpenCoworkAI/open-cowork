@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Api, Model } from '@mariozechner/pi-ai';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 import {
   applyPiModelRuntimeOverrides,
   inferPiApi,
@@ -37,6 +38,7 @@ describe('pi model runtime overrides', () => {
       provider: 'openai-codex',
       api: 'openai-codex-responses',
     });
+    expect(isTrustedOpenAICodexBaseUrl(model?.baseUrl)).toBe(true);
   });
 
   it('keeps OpenAI Responses for custom OpenAI configs that target official OpenAI', () => {
