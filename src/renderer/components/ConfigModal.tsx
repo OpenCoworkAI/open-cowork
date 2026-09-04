@@ -74,6 +74,7 @@ export function ConfigModal({
     openAICodexAuthStatus,
     loginOpenAICodex,
     cancelOpenAICodexLogin,
+    submitOpenAICodexCode,
     logoutOpenAICodex,
     protocolGuidanceText,
     protocolGuidanceTone,
@@ -240,6 +241,7 @@ export function ConfigModal({
               status={openAICodexAuthStatus}
               onLogin={loginOpenAICodex}
               onCancel={cancelOpenAICodexLogin}
+              onSubmitCode={submitOpenAICodexCode}
               onLogout={logoutOpenAICodex}
             />
           ) : (

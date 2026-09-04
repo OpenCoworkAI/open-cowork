@@ -52,6 +52,7 @@ export function SettingsAPI() {
     openAICodexAuthStatus,
     loginOpenAICodex,
     cancelOpenAICodexLogin,
+    submitOpenAICodexCode,
     logoutOpenAICodex,
     protocolGuidanceText,
     protocolGuidanceTone,
@@ -166,6 +167,7 @@ export function SettingsAPI() {
             status={openAICodexAuthStatus}
             onLogin={loginOpenAICodex}
             onCancel={cancelOpenAICodexLogin}
+            onSubmitCode={submitOpenAICodexCode}
             onLogout={logoutOpenAICodex}
           />
         </div>

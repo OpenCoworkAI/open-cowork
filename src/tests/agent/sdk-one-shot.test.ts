@@ -95,6 +95,22 @@ describe('runPiAiOneShot', () => {
     });
   });
 
+  it('never resolves the OAuth token for a non-ChatGPT endpoint', async () => {
+    const config = makeConfig();
+    config.provider = 'openai-codex';
+    config.customProtocol = 'openai';
+    config.apiKey = '';
+    config.baseUrl = 'https://example.test/backend-api/codex';
+    config.model = 'unknown-codex-model';
+    config.activeProfileKey = 'openai-codex';
+
+    await expect(runPiAiOneShot('hello', 'system', config)).rejects.toThrow(
+      'untrusted Codex endpoint'
+    );
+    expect(getApiKeyMock).not.toHaveBeenCalled();
+    expect(completeSimpleMock).not.toHaveBeenCalled();
+  });
+
   it('passes generation options through to completeSimple', async () => {
     await runPiAiOneShot('hello', 'system', makeConfig(), {
       temperature: 0.2,
