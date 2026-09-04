@@ -32,6 +32,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { OPENAI_CODEX_BASE_URL } from '../../shared/openai-codex';
 import { openAICodexAuthService } from '../auth/openai-codex-auth';
 
 /**
@@ -234,7 +235,7 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
   },
   'openai-codex': {
     apiKey: '',
-    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    baseUrl: OPENAI_CODEX_BASE_URL,
     model: 'gpt-5.4',
   },
   ollama: {
@@ -658,7 +659,11 @@ export class ConfigStore {
         ? profile.baseUrl.trim()
         : fallback.baseUrl;
     const baseUrl =
-      profileKey === 'ollama' ? normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl : rawBaseUrl;
+      profileKey === 'openai-codex'
+        ? OPENAI_CODEX_BASE_URL
+        : profileKey === 'ollama'
+          ? normalizeOllamaBaseUrl(rawBaseUrl) || fallback.baseUrl
+          : rawBaseUrl;
     const result: ProviderProfile = {
       apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
       baseUrl,

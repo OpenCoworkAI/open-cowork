@@ -995,6 +995,21 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     setOpenAICodexAuthStatus(result.status);
   }, []);
 
+  const submitOpenAICodexCode = useCallback(
+    async (value: string) => {
+      if (!isElectron) {
+        return;
+      }
+      clearError();
+      const result = await window.electronAPI.openAICodexAuth.submitCode(value);
+      setOpenAICodexAuthStatus(result.status);
+      if (!result.ok) {
+        showErrorKey(`api.codexAuth.errors.${result.error || 'login_failed'}`);
+      }
+    },
+    [clearError, showErrorKey]
+  );
+
   const logoutOpenAICodex = useCallback(async () => {
     if (!isElectron) {
       return;
@@ -1004,9 +1019,13 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     try {
       const result = await window.electronAPI.openAICodexAuth.logout();
       setOpenAICodexAuthStatus(result.status);
-      showSuccessKey('api.codexAuth.disconnectedSuccess');
+      if (result.ok) {
+        showSuccessKey('api.codexAuth.disconnectedSuccess');
+      } else {
+        showErrorKey(`api.codexAuth.errors.${result.error || 'logout_failed'}`);
+      }
     } catch {
-      showErrorKey('api.codexAuth.errors.login_failed');
+      showErrorKey('api.codexAuth.errors.logout_failed');
     }
   }, [clearError, clearSuccessMessage, showErrorKey, showSuccessKey]);
 
@@ -1179,11 +1198,11 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       ((customProtocol === 'anthropic' && isCustomAnthropicLoopbackGateway(baseUrl)) ||
         (customProtocol === 'openai' && isCustomOpenAiLoopbackGateway(baseUrl)) ||
         (customProtocol === 'gemini' && isCustomGeminiLoopbackGateway(baseUrl))));
-  const requiresApiKey = !allowEmptyApiKey;
+  const needsApiKeyInput = !allowEmptyApiKey;
   const hasRequiredCredentials =
     provider === 'openai-codex'
       ? openAICodexAuthStatus.authenticated
-      : !requiresApiKey || Boolean(apiKey.trim());
+      : !needsApiKeyInput || Boolean(apiKey.trim());
   const currentDraftSignature = useMemo(
     () => buildApiConfigDraftSignature(activeProfileKey, profiles, enableThinking),
     [activeProfileKey, profiles, enableThinking]
@@ -2165,11 +2184,11 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     handleDeepDiagnose,
     isOllamaMode: provider === 'ollama',
     shouldShowOllamaManualModelToggle,
-    requiresApiKey,
     hasRequiredCredentials,
     openAICodexAuthStatus,
     loginOpenAICodex,
     cancelOpenAICodexLogin,
+    submitOpenAICodexCode,
     logoutOpenAICodex,
     detectedProviderSetup,
     protocolGuidanceText,

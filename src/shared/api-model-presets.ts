@@ -1,3 +1,5 @@
+import { OPENAI_CODEX_BASE_URL } from './openai-codex';
+
 export type SharedProviderType =
   'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
 
@@ -73,7 +75,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
   },
   'openai-codex': {
     name: 'OpenAI Codex (ChatGPT)',
-    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    baseUrl: OPENAI_CODEX_BASE_URL,
     models: [
       { id: 'gpt-5.4', name: 'GPT-5.4' },
       { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },

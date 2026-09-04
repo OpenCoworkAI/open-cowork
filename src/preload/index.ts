@@ -232,6 +232,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('openai-codex-auth.login'),
     cancel: (): Promise<OpenAICodexAuthActionResult> =>
       ipcRenderer.invoke('openai-codex-auth.cancel'),
+    submitCode: (value: string): Promise<OpenAICodexAuthActionResult> =>
+      ipcRenderer.invoke('openai-codex-auth.submit-code', value),
     logout: (): Promise<OpenAICodexAuthActionResult> =>
       ipcRenderer.invoke('openai-codex-auth.logout'),
   },
@@ -551,6 +553,7 @@ declare global {
         status: () => Promise<OpenAICodexAuthStatus>;
         login: () => Promise<OpenAICodexAuthActionResult>;
         cancel: () => Promise<OpenAICodexAuthActionResult>;
+        submitCode: (value: string) => Promise<OpenAICodexAuthActionResult>;
         logout: () => Promise<OpenAICodexAuthActionResult>;
       };
       window: {

@@ -12,6 +12,7 @@ import {
 } from '../config/auth-utils';
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 import { getSharedAuthStorage } from './shared-auth';
 import {
   applyPiModelRuntimeOverrides,
@@ -223,10 +224,18 @@ export async function runPiAiOneShot(
 
   // piModel is guaranteed non-undefined after synthetic fallback
   const resolvedModel = piModel!;
+  const configuredApiKey = config.apiKey?.trim();
+
+  if (
+    !configuredApiKey &&
+    resolvedModel.provider === 'openai-codex' &&
+    !isTrustedOpenAICodexBaseUrl(resolvedModel.baseUrl)
+  ) {
+    throw new Error('Refusing to send ChatGPT OAuth credentials to an untrusted Codex endpoint.');
+  }
 
   // Resolve either the configured API key or an OAuth access token. Tokens stay
   // in the main process and are passed directly to pi-ai for this request only.
-  const configuredApiKey = config.apiKey?.trim();
   const authStorage = getSharedAuthStorage();
   if (configuredApiKey) {
     // Set for the config provider

@@ -4,10 +4,18 @@ import { getSharedAuthStorage } from '../agent/shared-auth';
 
 const PROVIDER_ID = 'openai-codex';
 const DEFAULT_LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
-const OPENAI_AUTH_HOST = 'auth.openai.com';
+const OPENAI_AUTH_ORIGIN = 'https://auth.openai.com';
+const OPENAI_AUTH_PATH = '/oauth/authorize';
+const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const OPENAI_CODEX_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 
 export type OpenAICodexAuthErrorCode =
-  'cancelled' | 'timeout' | 'invalid_authorization_url' | 'browser_open_failed' | 'login_failed';
+  | 'cancelled'
+  | 'timeout'
+  | 'invalid_authorization_url'
+  | 'browser_open_failed'
+  | 'login_failed'
+  | 'logout_failed';
 
 export interface OpenAICodexAuthStatus {
   authenticated: boolean;
@@ -20,7 +28,10 @@ export interface OpenAICodexAuthActionResult {
   error?: OpenAICodexAuthErrorCode;
 }
 
-type AuthStoragePort = Pick<AuthStorage, 'get' | 'hasAuth' | 'login' | 'logout' | 'reload'>;
+type AuthStoragePort = Pick<
+  AuthStorage,
+  'drainErrors' | 'get' | 'hasAuth' | 'login' | 'logout' | 'reload'
+>;
 type OpenExternal = (url: string) => Promise<void>;
 
 export class OpenAICodexAuthError extends Error {
@@ -39,16 +50,6 @@ function abortReason(signal: AbortSignal): Error {
     : new OpenAICodexAuthError('cancelled', 'OpenAI Codex login was cancelled.');
 }
 
-function waitForAbort(signal: AbortSignal): Promise<string> {
-  return new Promise((_, reject) => {
-    if (signal.aborted) {
-      reject(abortReason(signal));
-      return;
-    }
-    signal.addEventListener('abort', () => reject(abortReason(signal)), { once: true });
-  });
-}
-
 function assertAuthorizationUrl(rawUrl: string): void {
   let parsed: URL;
   try {
@@ -59,7 +60,28 @@ function assertAuthorizationUrl(rawUrl: string): void {
       'OpenAI returned an invalid authorization URL.'
     );
   }
-  if (parsed.protocol !== 'https:' || parsed.hostname !== OPENAI_AUTH_HOST) {
+  const state = parsed.searchParams.get('state') || '';
+  const codeChallenge = parsed.searchParams.get('code_challenge') || '';
+  const hasSingleValue = (name: string) => parsed.searchParams.getAll(name).length === 1;
+  const hasExpectedContract =
+    parsed.origin === OPENAI_AUTH_ORIGIN &&
+    parsed.pathname === OPENAI_AUTH_PATH &&
+    parsed.username === '' &&
+    parsed.password === '' &&
+    hasSingleValue('response_type') &&
+    hasSingleValue('client_id') &&
+    hasSingleValue('redirect_uri') &&
+    hasSingleValue('code_challenge') &&
+    hasSingleValue('code_challenge_method') &&
+    hasSingleValue('state') &&
+    parsed.searchParams.get('response_type') === 'code' &&
+    parsed.searchParams.get('client_id') === OPENAI_CODEX_CLIENT_ID &&
+    parsed.searchParams.get('redirect_uri') === OPENAI_CODEX_REDIRECT_URI &&
+    parsed.searchParams.get('code_challenge_method') === 'S256' &&
+    /^[a-f0-9]{32}$/.test(state) &&
+    /^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge);
+
+  if (!hasExpectedContract) {
     throw new OpenAICodexAuthError(
       'invalid_authorization_url',
       'OpenAI returned an unexpected authorization URL.'
@@ -74,19 +96,70 @@ export function toOpenAICodexAuthErrorCode(error: unknown): OpenAICodexAuthError
 export class OpenAICodexAuthService {
   private activeLogin: Promise<OpenAICodexAuthStatus> | null = null;
   private activeController: AbortController | null = null;
+  private manualCodeInput: {
+    resolve: (value: string) => void;
+    reject: (error: Error) => void;
+  } | null = null;
 
   constructor(
     private readonly storage: AuthStoragePort = getSharedAuthStorage(),
     private readonly loginTimeoutMs = DEFAULT_LOGIN_TIMEOUT_MS
   ) {}
 
-  getStatus(): OpenAICodexAuthStatus {
-    this.storage.reload();
+  private readStatus(): OpenAICodexAuthStatus {
     const credential = this.storage.get(PROVIDER_ID);
     return {
       authenticated: credential?.type === 'oauth' && this.storage.hasAuth(PROVIDER_ID),
       authenticating: this.activeLogin !== null,
     };
+  }
+
+  private verifyMutation(
+    expectedAuthenticated: boolean,
+    errorCode: 'login_failed' | 'logout_failed'
+  ): OpenAICodexAuthStatus {
+    this.storage.reload();
+    const errors = this.storage.drainErrors();
+    const status = { ...this.readStatus(), authenticating: false };
+    if (errors.length > 0 || status.authenticated !== expectedAuthenticated) {
+      throw new OpenAICodexAuthError(
+        errorCode,
+        expectedAuthenticated
+          ? 'ChatGPT credentials could not be saved.'
+          : 'ChatGPT credentials could not be removed.'
+      );
+    }
+    return status;
+  }
+
+  private waitForManualCode(signal: AbortSignal): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(abortReason(signal));
+        return;
+      }
+
+      const pending = {
+        resolve: (value: string) => {
+          signal.removeEventListener('abort', onAbort);
+          if (this.manualCodeInput === pending) this.manualCodeInput = null;
+          resolve(value);
+        },
+        reject: (error: Error) => {
+          signal.removeEventListener('abort', onAbort);
+          if (this.manualCodeInput === pending) this.manualCodeInput = null;
+          reject(error);
+        },
+      };
+      const onAbort = () => pending.reject(abortReason(signal));
+      this.manualCodeInput = pending;
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  getStatus(): OpenAICodexAuthStatus {
+    this.storage.reload();
+    return this.readStatus();
   }
 
   hasAuth(): boolean {
@@ -132,12 +205,15 @@ export class OpenAICodexAuthService {
       },
       // pi races this promise against the localhost callback. Rejecting it on
       // abort makes pi cancel its callback wait and close the HTTP server.
-      onManualCodeInput: () => waitForAbort(controller.signal),
+      onManualCodeInput: () => this.waitForManualCode(controller.signal),
     };
 
     const loginPromise = (async () => {
+      // Ignore errors from earlier, unrelated storage operations. Mutation
+      // verification below only evaluates errors caused by this login.
+      this.storage.drainErrors();
       await this.storage.login(PROVIDER_ID, callbacks);
-      return { ...this.getStatus(), authenticating: false };
+      return this.verifyMutation(true, 'login_failed');
     })();
     this.activeLogin = loginPromise;
 
@@ -163,10 +239,52 @@ export class OpenAICodexAuthService {
     return { ...this.getStatus(), authenticating: false };
   }
 
+  submitManualCode(value: string): OpenAICodexAuthStatus {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized || normalized.length > 16_384 || !this.activeLogin || !this.manualCodeInput) {
+      throw new OpenAICodexAuthError(
+        'login_failed',
+        'No OpenAI Codex login is waiting for an authorization code.'
+      );
+    }
+    this.manualCodeInput.resolve(normalized);
+    return this.readStatus();
+  }
+
   async logout(): Promise<OpenAICodexAuthStatus> {
     await this.cancelLogin();
+    this.storage.drainErrors();
     this.storage.logout(PROVIDER_ID);
-    return this.getStatus();
+    return this.verifyMutation(false, 'logout_failed');
+  }
+}
+
+export async function runOpenAICodexLoginAction(
+  service: OpenAICodexAuthService,
+  openExternal: OpenExternal
+): Promise<OpenAICodexAuthActionResult> {
+  try {
+    const status = await service.login(openExternal);
+    return status.authenticated
+      ? { ok: true, status }
+      : { ok: false, status, error: 'login_failed' };
+  } catch (error) {
+    return { ok: false, status: service.getStatus(), error: toOpenAICodexAuthErrorCode(error) };
+  }
+}
+
+export async function runOpenAICodexLogoutAction(
+  service: OpenAICodexAuthService
+): Promise<OpenAICodexAuthActionResult> {
+  try {
+    return { ok: true, status: await service.logout() };
+  } catch (error) {
+    const code = toOpenAICodexAuthErrorCode(error);
+    return {
+      ok: false,
+      status: service.getStatus(),
+      error: code === 'login_failed' ? 'logout_failed' : code,
+    };
   }
 }
 

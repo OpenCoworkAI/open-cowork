@@ -166,6 +166,9 @@
       "logout": "断开连接",
       "cancel": "取消登录",
       "waiting": "请在浏览器中完成登录。",
+      "manualCodePlaceholder": "授权码或重定向地址",
+      "manualCodeHint": "仅在浏览器无法自动返回应用时需要。",
+      "submitCode": "提交",
       "unofficial": "此集成使用 pi-ai 社区维护的 Codex OAuth provider，可能受上游变更影响。",
       "connectedSuccess": "ChatGPT 账户已连接",
       "disconnectedSuccess": "ChatGPT 账户已断开",
@@ -175,6 +178,7 @@
         "invalid_authorization_url": "OpenAI 返回了异常的授权地址",
         "browser_open_failed": "无法打开 OpenAI 登录页面",
         "login_failed": "ChatGPT 登录失败，请重试。",
+        "logout_failed": "无法断开 ChatGPT，凭据可能仍保存在本地。",
         "not_authenticated": "请先连接 ChatGPT 账户"
       }
     },

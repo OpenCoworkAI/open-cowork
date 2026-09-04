@@ -773,7 +773,12 @@ export interface OpenAICodexAuthStatus {
 }
 
 export type OpenAICodexAuthErrorCode =
-  'cancelled' | 'timeout' | 'invalid_authorization_url' | 'browser_open_failed' | 'login_failed';
+  | 'cancelled'
+  | 'timeout'
+  | 'invalid_authorization_url'
+  | 'browser_open_failed'
+  | 'login_failed'
+  | 'logout_failed';
 
 export interface OpenAICodexAuthActionResult {
   ok: boolean;
