@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Api, Model } from '@mariozechner/pi-ai';
 import {
   applyPiModelRuntimeOverrides,
+  inferPiApi,
+  resolvePiModelString,
   resolvePiRegistryModel,
+  resolvePiRouteProtocol,
 } from '../../main/agent/pi-model-resolution';
 
 const openAIResponsesModel = {
@@ -19,6 +22,23 @@ const openAIResponsesModel = {
 } as Model<Api>;
 
 describe('pi model runtime overrides', () => {
+  it('keeps OpenAI Codex on its subscription transport', () => {
+    expect(resolvePiRouteProtocol('openai-codex', 'openai')).toBe('openai-codex');
+    expect(
+      resolvePiModelString({ provider: 'openai-codex', customProtocol: 'openai', model: 'gpt-5.4' })
+    ).toBe('openai-codex/gpt-5.4');
+    expect(inferPiApi('openai-codex')).toBe('openai-codex-responses');
+
+    const model = resolvePiRegistryModel('openai-codex/gpt-5.4', {
+      configProvider: 'openai-codex',
+      rawProvider: 'openai-codex',
+    });
+    expect(model).toMatchObject({
+      provider: 'openai-codex',
+      api: 'openai-codex-responses',
+    });
+  });
+
   it('keeps OpenAI Responses for custom OpenAI configs that target official OpenAI', () => {
     const model = resolvePiRegistryModel('openai/gpt-5.4', {
       configProvider: 'openai',

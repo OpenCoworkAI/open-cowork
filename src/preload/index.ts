@@ -25,6 +25,8 @@ import type {
   MemoryDebugFileInfo,
   MemoryDebugFileContent,
   MemoryInspectSessionResult,
+  OpenAICodexAuthActionResult,
+  OpenAICodexAuthStatus,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -222,6 +224,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.diagnose', input),
     discoverLocal: (payload?: { baseUrl?: string }): Promise<LocalOllamaDiscoveryResult> =>
       ipcRenderer.invoke('config.discover-local', payload),
+  },
+
+  openAICodexAuth: {
+    status: (): Promise<OpenAICodexAuthStatus> => ipcRenderer.invoke('openai-codex-auth.status'),
+    login: (): Promise<OpenAICodexAuthActionResult> =>
+      ipcRenderer.invoke('openai-codex-auth.login'),
+    cancel: (): Promise<OpenAICodexAuthActionResult> =>
+      ipcRenderer.invoke('openai-codex-auth.cancel'),
+    logout: (): Promise<OpenAICodexAuthActionResult> =>
+      ipcRenderer.invoke('openai-codex-auth.logout'),
   },
 
   // Window control methods
@@ -534,6 +546,12 @@ declare global {
         }) => Promise<ProviderModelInfo[]>;
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
+      };
+      openAICodexAuth: {
+        status: () => Promise<OpenAICodexAuthStatus>;
+        login: () => Promise<OpenAICodexAuthActionResult>;
+        cancel: () => Promise<OpenAICodexAuthActionResult>;
+        logout: () => Promise<OpenAICodexAuthActionResult>;
       };
       window: {
         minimize: () => void;

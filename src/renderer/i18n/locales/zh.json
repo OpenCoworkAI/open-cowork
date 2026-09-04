@@ -158,6 +158,26 @@
     "apiKey": "API 密钥",
     "enterApiKey": "输入你的 API Key",
     "apiKeyDescription": "仅保存在本地，并绑定到当前配置方案。",
+    "codexAuth": {
+      "title": "ChatGPT 订阅",
+      "description": "使用 ChatGPT 登录，以使用订阅方案包含的 Codex 模型，无需 API Key。",
+      "connected": "已连接",
+      "login": "使用 ChatGPT 登录",
+      "logout": "断开连接",
+      "cancel": "取消登录",
+      "waiting": "请在浏览器中完成登录。",
+      "unofficial": "此集成使用 pi-ai 社区维护的 Codex OAuth provider，可能受上游变更影响。",
+      "connectedSuccess": "ChatGPT 账户已连接",
+      "disconnectedSuccess": "ChatGPT 账户已断开",
+      "errors": {
+        "cancelled": "已取消 ChatGPT 登录",
+        "timeout": "ChatGPT 登录超时，请重试。",
+        "invalid_authorization_url": "OpenAI 返回了异常的授权地址",
+        "browser_open_failed": "无法打开 OpenAI 登录页面",
+        "login_failed": "ChatGPT 登录失败，请重试。",
+        "not_authenticated": "请先连接 ChatGPT 账户"
+      }
+    },
     "protocol": "协议",
     "baseUrl": "基础 URL",
     "model": "模型",

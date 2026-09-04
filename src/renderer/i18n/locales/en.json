@@ -158,6 +158,26 @@
     "apiKey": "API Key",
     "enterApiKey": "Enter your API Key",
     "apiKeyDescription": "Saved locally and scoped to the active configuration set.",
+    "codexAuth": {
+      "title": "ChatGPT subscription",
+      "description": "Sign in with ChatGPT to use Codex models included with your plan. No API key is required.",
+      "connected": "Connected",
+      "login": "Sign in with ChatGPT",
+      "logout": "Disconnect",
+      "cancel": "Cancel sign-in",
+      "waiting": "Complete sign-in in your browser.",
+      "unofficial": "This integration uses pi-ai's community-maintained Codex OAuth provider and may be affected by upstream changes.",
+      "connectedSuccess": "ChatGPT account connected",
+      "disconnectedSuccess": "ChatGPT account disconnected",
+      "errors": {
+        "cancelled": "ChatGPT sign-in was cancelled",
+        "timeout": "ChatGPT sign-in timed out. Please try again.",
+        "invalid_authorization_url": "OpenAI returned an unexpected authorization URL",
+        "browser_open_failed": "Could not open the OpenAI sign-in page",
+        "login_failed": "ChatGPT sign-in failed. Please try again.",
+        "not_authenticated": "Connect your ChatGPT account first"
+      }
+    },
     "protocol": "Protocol",
     "baseUrl": "Base URL",
     "model": "Model",

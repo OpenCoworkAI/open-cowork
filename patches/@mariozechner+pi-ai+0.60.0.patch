@@ -1,5 +1,5 @@
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-index 29ae8cf..6d9ea61 100644
+index 29ae8cf..40c0233 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 @@ -474,13 +474,32 @@ export function convertMessages(model, context, compat) {
@@ -61,3 +61,39 @@ index 29ae8cf..6d9ea61 100644
          thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
          openRouterRouting: model.compat.openRouterRouting ?? {},
          vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
+diff --git a/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js b/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
+index a2d3ebf..2ccb876 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
++++ b/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
+@@ -82,13 +82,12 @@ async function exchangeAuthorizationCode(code, verifier, redirectUri = REDIRECT_
+         }),
+     });
+     if (!response.ok) {
+-        const text = await response.text().catch(() => "");
+-        console.error("[openai-codex] code->token failed:", response.status, text);
++        console.error("[openai-codex] code->token failed:", response.status);
+         return { type: "failed" };
+     }
+     const json = (await response.json());
+     if (!json.access_token || !json.refresh_token || typeof json.expires_in !== "number") {
+-        console.error("[openai-codex] token response missing fields:", json);
++        console.error("[openai-codex] token response missing required fields");
+         return { type: "failed" };
+     }
+     return {
+@@ -110,13 +109,12 @@ async function refreshAccessToken(refreshToken) {
+             }),
+         });
+         if (!response.ok) {
+-            const text = await response.text().catch(() => "");
+-            console.error("[openai-codex] Token refresh failed:", response.status, text);
++            console.error("[openai-codex] Token refresh failed:", response.status);
+             return { type: "failed" };
+         }
+         const json = (await response.json());
+         if (!json.access_token || !json.refresh_token || typeof json.expires_in !== "number") {
+-            console.error("[openai-codex] Token refresh response missing fields:", json);
++            console.error("[openai-codex] Token refresh response missing required fields");
+             return { type: "failed" };
+         }
+         return {
