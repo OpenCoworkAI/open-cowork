@@ -1504,6 +1504,10 @@ app
 
 // Flag to prevent double cleanup
 let isCleaningUp = false;
+// Set once cleanup has actually finished (or is skipped in dev mode), so a
+// before-quit fired while it is still running, including the one app.quit()
+// below re-triggers, lets the pending quit through instead of re-entering here.
+let quitReady = false;
 
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1606,6 +1610,7 @@ app.on('window-all-closed', async () => {
     // On macOS dev mode, also quit — so vite-plugin-electron can restart cleanly
     // without the old process holding the single-instance lock.
     await cleanupSandboxResources();
+    quitReady = true;
     app.quit();
   }
   // On macOS production, keep app alive — cleanup happens in before-quit
@@ -1618,30 +1623,37 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) {
 
 // Handle app quit - before-quit (for macOS Cmd+Q and other quit methods)
 app.on('before-quit', async (event) => {
-  if (!isCleaningUp) {
-    // In dev mode, exit quickly — no need for async sandbox cleanup
-    if (process.env.VITE_DEV_SERVER_URL) {
-      stopNavServer();
-      try {
-        closeDatabase();
-      } catch {
-        /* best-effort */
-      }
-      closeLogFile();
-      tray?.destroy();
-      tray = null;
-      return;
-    }
-    // Set the flag immediately before any await to prevent re-entrant cleanup
-    isCleaningUp = true;
+  if (quitReady) return; // cleanup already finished; let this quit through
+  if (isCleaningUp) {
+    // A previous before-quit is already cleaning up (e.g. a second Cmd+Q
+    // press mid-cleanup). Keep the quit pending instead of letting it
+    // through before that cleanup, which owns isCleaningUp, has finished.
     event.preventDefault();
-    try {
-      await cleanupSandboxResources();
-    } catch (error) {
-      logError('[App] before-quit cleanup failed, forcing quit:', error);
-    }
-    app.quit();
+    return;
   }
+
+  // In dev mode, exit quickly, no need for async sandbox cleanup
+  if (process.env.VITE_DEV_SERVER_URL) {
+    stopNavServer();
+    try {
+      closeDatabase();
+    } catch {
+      /* best-effort */
+    }
+    closeLogFile();
+    tray?.destroy();
+    tray = null;
+    return;
+  }
+
+  event.preventDefault();
+  try {
+    await cleanupSandboxResources();
+  } catch (error) {
+    logError('[App] before-quit cleanup failed, forcing quit:', error);
+  }
+  quitReady = true;
+  app.quit();
 });
 
 // IPC Handlers
