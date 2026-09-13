@@ -12,6 +12,7 @@ import {
 } from '../config/auth-utils';
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 import { getSharedAuthStorage } from './shared-auth';
 import {
   applyPiModelRuntimeOverrides,
@@ -223,18 +224,28 @@ export async function runPiAiOneShot(
 
   // piModel is guaranteed non-undefined after synthetic fallback
   const resolvedModel = piModel!;
+  const configuredApiKey = config.apiKey?.trim();
 
-  // Set API key via AuthStorage (for agent sessions) AND env vars (for pi-ai completeSimple)
-  const apiKey = config.apiKey?.trim();
-  if (apiKey) {
-    const authStorage = getSharedAuthStorage();
+  if (
+    !configuredApiKey &&
+    resolvedModel.provider === 'openai-codex' &&
+    !isTrustedOpenAICodexBaseUrl(resolvedModel.baseUrl)
+  ) {
+    throw new Error('Refusing to send ChatGPT OAuth credentials to an untrusted Codex endpoint.');
+  }
+
+  // Resolve either the configured API key or an OAuth access token. Tokens stay
+  // in the main process and are passed directly to pi-ai for this request only.
+  const authStorage = getSharedAuthStorage();
+  if (configuredApiKey) {
     // Set for the config provider
-    authStorage.setRuntimeApiKey(provider, apiKey);
+    authStorage.setRuntimeApiKey(provider, configuredApiKey);
     // Also set for the model's native provider if different
     if (resolvedModel.provider !== provider) {
-      authStorage.setRuntimeApiKey(resolvedModel.provider, apiKey);
+      authStorage.setRuntimeApiKey(resolvedModel.provider, configuredApiKey);
     }
   }
+  const resolvedApiKey = configuredApiKey || (await authStorage.getApiKey(resolvedModel.provider));
 
   const start = Date.now();
 
@@ -256,7 +267,7 @@ export async function runPiAiOneShot(
       systemPrompt,
       messages: [userMsg],
     },
-    { ...options, apiKey: apiKey || undefined }
+    { ...options, apiKey: resolvedApiKey || undefined }
   );
 
   // pi-ai resolves (not rejects) on provider errors — the error details
@@ -311,7 +322,7 @@ export async function probeWithSdk(input: ApiTestInput, config: AppConfig): Prom
     return { ok: false, errorType: 'unknown', details: 'missing_model' };
   }
 
-  if (!probeConfig.apiKey?.trim()) {
+  if (input.provider !== 'openai-codex' && !probeConfig.apiKey?.trim()) {
     return { ok: false, errorType: 'missing_key', details: 'API key is required.' };
   }
 

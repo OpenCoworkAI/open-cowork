@@ -40,6 +40,13 @@ import {
   exportOnConfigChange,
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
+import {
+  openAICodexAuthService,
+  runOpenAICodexLoginAction,
+  runOpenAICodexLogoutAction,
+  toOpenAICodexAuthErrorCode,
+  type OpenAICodexAuthActionResult,
+} from './auth/openai-codex-auth';
 import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
@@ -1924,6 +1931,8 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
   configStore.applyToEnv();
 
   const updatedConfig = configStore.getAll();
+  // OAuth state is intentionally absent from this signature. Active pi agent
+  // sessions resolve credentials from the shared AuthStorage before each prompt.
   const shouldReloadRunner =
     buildAgentRuntimeSignature(previousConfig) !== buildAgentRuntimeSignature(updatedConfig);
   const shouldReloadSandbox = previousConfig.sandboxEnabled !== updatedConfig.sandboxEnabled;
@@ -2032,6 +2041,47 @@ ipcMain.handle('config.isConfigured', () => {
     logError('[Config] Error checking configured status:', error);
     return false;
   }
+});
+
+ipcMain.handle('openai-codex-auth.status', () => openAICodexAuthService.getStatus());
+
+ipcMain.handle('openai-codex-auth.login', async (): Promise<OpenAICodexAuthActionResult> => {
+  const result = await runOpenAICodexLoginAction(openAICodexAuthService, (url) =>
+    shell.openExternal(url)
+  );
+  if (result.ok) {
+    await syncConfigAfterMutation(configStore.getAll());
+  } else {
+    logWarn('[OpenAICodexAuth] Login failed:', result.error);
+  }
+  return result;
+});
+
+ipcMain.handle('openai-codex-auth.cancel', async (): Promise<OpenAICodexAuthActionResult> => ({
+  ok: true,
+  status: await openAICodexAuthService.cancelLogin(),
+}));
+
+ipcMain.handle(
+  'openai-codex-auth.submit-code',
+  (_event, value: string): OpenAICodexAuthActionResult => {
+    try {
+      return { ok: true, status: openAICodexAuthService.submitManualCode(value) };
+    } catch (error) {
+      const code = toOpenAICodexAuthErrorCode(error);
+      return { ok: false, status: openAICodexAuthService.getStatus(), error: code };
+    }
+  }
+);
+
+ipcMain.handle('openai-codex-auth.logout', async (): Promise<OpenAICodexAuthActionResult> => {
+  const result = await runOpenAICodexLogoutAction(openAICodexAuthService);
+  if (result.ok) {
+    await syncConfigAfterMutation(configStore.getAll());
+  } else {
+    logWarn('[OpenAICodexAuth] Logout failed:', result.error);
+  }
+  return result;
 });
 
 ipcMain.handle('config.test', async (_event, payload: ApiTestInput): Promise<ApiTestResult> => {

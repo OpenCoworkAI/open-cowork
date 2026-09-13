@@ -86,6 +86,7 @@ import {
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
 const VIRTUAL_WORKSPACE_PATH = '/workspace';
@@ -1681,6 +1682,15 @@ ${hints.join('\n')}
       // Set up API keys via AuthStorage
       const authStorage = getSharedAuthStorage();
       const apiKey = runtimeConfig.apiKey?.trim();
+      if (
+        !apiKey &&
+        piModel.provider === 'openai-codex' &&
+        !isTrustedOpenAICodexBaseUrl(piModel.baseUrl)
+      ) {
+        throw new Error(
+          'Refusing to send ChatGPT OAuth credentials to an untrusted Codex endpoint.'
+        );
+      }
       if (apiKey) {
         // Map our config provider to pi-ai provider name
         const piProvider =
@@ -1704,6 +1714,10 @@ ${hints.join('\n')}
               baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
             })
           );
+        } else if (provider === 'openai-codex') {
+          // ModelRegistry reads the shared AuthStorage before every prompt and
+          // refreshes expired OAuth credentials without recreating the runner.
+          log('[CoworkAgentRunner] Using stored ChatGPT OAuth credentials for OpenAI Codex');
         } else {
           logWarn('[CoworkAgentRunner] No API key configured for provider:', provider);
         }
@@ -2841,8 +2855,7 @@ Tool routing:
               // Surface compaction result details to the renderer (skip if retrying)
               if (event.result && !event.willRetry) {
                 const compactionDetails = event.result.details as
-                  | { readFiles?: string[]; modifiedFiles?: string[] }
-                  | undefined;
+                  { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
                 this.sendToRenderer({
                   type: 'compaction.result',
                   payload: {
@@ -3114,8 +3127,7 @@ Tool routing:
         })
       );
       const compactionDetails = result.details as
-        | { readFiles?: string[]; modifiedFiles?: string[] }
-        | undefined;
+        { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
       this.sendToRenderer({
         type: 'compaction.result',
         payload: {
