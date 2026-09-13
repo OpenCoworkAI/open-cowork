@@ -59,6 +59,7 @@ import type {
   PermissionRule,
 } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
+import { routePermissionRequestEvent } from './remote/permission-route';
 import { remoteConfigStore } from './remote/remote-config-store';
 import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
 import { startNavServer, stopNavServer } from './nav-server';
@@ -752,6 +753,15 @@ async function startSandboxBootstrap(): Promise<void> {
 // Pluggable event sender — defaults to mainWindow IPC, swapped for JSONL in headless mode
 let eventSender: ((event: ServerEvent) => void) | null = null;
 
+// Deliver an event to the local UI (or headless JSONL sender)
+function deliverEventToRenderer(event: ServerEvent) {
+  if (eventSender) {
+    eventSender(event);
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('server-event', event);
+  }
+}
+
 // 发送事件到渲染进程（含远程会话拦截）
 function sendToRenderer(event: ServerEvent) {
   const payload =
@@ -827,37 +837,31 @@ function sendToRenderer(event: ServerEvent) {
     // 拦截 permission.request
     if (event.type === 'permission.request' && payload.toolUseId && payload.toolName) {
       log('[Remote] Intercepting permission for remote session:', sessionId);
-      remoteManager
-        .handlePermissionRequest(
+      // 远程处理失败（返回 null 或抛错）时回退到本地 UI（桌面权限对话框）
+      const sm = sessionManager;
+      void routePermissionRequestEvent(
+        event,
+        {
           sessionId,
-          payload.toolUseId as string,
-          payload.toolName as string,
-          (payload.input as Record<string, unknown> | undefined) ?? {}
-        )
-        .then((result) => {
-          if (result !== null && sessionManager) {
-            let permissionResult: 'allow' | 'deny' | 'allow_always';
-            if (result.allow) {
-              permissionResult = result.remember ? 'allow_always' : 'allow';
-            } else {
-              permissionResult = 'deny';
-            }
-            sessionManager.handlePermissionResponse(payload.toolUseId as string, permissionResult);
-          }
-        })
-        .catch((err) => {
-          logError('[Remote] Failed to handle permission request:', err);
-        });
+          toolUseId: payload.toolUseId as string,
+          toolName: payload.toolName as string,
+          input: (payload.input as Record<string, unknown> | undefined) ?? {},
+        },
+        {
+          handleRemotePermissionRequest: (id, toolUseId, toolName, input) =>
+            remoteManager.handlePermissionRequest(id, toolUseId, toolName, input),
+          handlePermissionResponse: sm
+            ? (toolUseId, result) => sm.handlePermissionResponse(toolUseId, result)
+            : undefined,
+        },
+        deliverEventToRenderer
+      );
       return; // 不发送到本地 UI
     }
   }
 
   // 发送到本地 UI（or headless JSONL sender）
-  if (eventSender) {
-    eventSender(event);
-  } else if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('server-event', event);
-  }
+  deliverEventToRenderer(event);
 }
 
 // Initialize app
@@ -1176,6 +1180,8 @@ app
           validateWorkingDirectory: (cwd) => {
             return getWorkspacePathUnsupportedReason(cwd) || null;
           },
+          // Stdio mode has no session-level permission timer to defer.
+          deferPermissionTimeout: () => false,
         };
         remoteManager.setAgentExecutor(stdioAgentExecutor);
         remoteManager.setRendererCallback(headlessSendWithPermission);
@@ -1478,6 +1484,8 @@ app
         }
         return null;
       },
+      deferPermissionTimeout: (toolUseId, timeoutMs) =>
+        sessionManager ? sessionManager.deferPermissionTimeout(toolUseId, timeoutMs) : false,
     };
     remoteManager.setAgentExecutor(agentExecutor);
 
