@@ -60,7 +60,12 @@ import type {
 } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
-import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
+import type {
+  GatewayConfig,
+  FeishuChannelConfig,
+  SlackChannelConfig,
+  ChannelType,
+} from './remote/types';
 import { startNavServer, stopNavServer } from './nav-server';
 import {
   ScheduledTaskManager,
@@ -2850,6 +2855,16 @@ ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannel
     return { success: true };
   } catch (error) {
     logError('[Remote] Error updating Feishu config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.updateSlackConfig', async (_event, config: SlackChannelConfig | null) => {
+  try {
+    await remoteManager.updateSlackConfig(config);
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error updating Slack config:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

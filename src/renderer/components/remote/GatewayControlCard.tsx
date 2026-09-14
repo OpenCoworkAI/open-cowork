@@ -11,7 +11,7 @@ interface Props {
   pairedUsers: PairedUser[];
   pendingPairings: PairingRequest[];
   isTogglingGateway: boolean;
-  isFeishuConfigured: boolean;
+  canStartGateway: boolean;
   onToggle: () => void;
 }
 
@@ -20,7 +20,7 @@ export function GatewayControlCard({
   pairedUsers,
   pendingPairings,
   isTogglingGateway,
-  isFeishuConfigured,
+  canStartGateway,
   onToggle,
 }: Props) {
   const { t } = useTranslation();
@@ -48,7 +48,7 @@ export function GatewayControlCard({
 
           <button
             onClick={onToggle}
-            disabled={isTogglingGateway || !isFeishuConfigured}
+            disabled={isTogglingGateway || !canStartGateway}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
               status?.running
                 ? 'bg-error hover:bg-error/90 text-white'

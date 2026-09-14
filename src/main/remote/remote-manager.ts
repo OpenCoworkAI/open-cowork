@@ -18,6 +18,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  SlackChannelConfig,
   ChannelType,
   RemoteMessage,
   RemoteSessionMapping,
@@ -26,6 +27,12 @@ import type {
   RemoteConfig,
 } from './types';
 import type { Message, ContentBlock, ServerEvent, Session } from '../../renderer/types/index';
+import {
+  getSlackChannelConfigError,
+  mergeSlackChannelConfig,
+  parseSlackDmPolicy,
+  shouldApplySlackDmPolicyToGateway,
+} from '../../shared/slack-channel-config';
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
@@ -411,6 +418,83 @@ export class RemoteManager extends EventEmitter {
     }
 
     // Restart to apply changes
+    if (this.gateway?.running) {
+      await this.restart();
+    }
+  }
+
+  /**
+   * Update Slack channel config. Pass null to clear/disable the Slack channel.
+   */
+  async updateSlackConfig(config: SlackChannelConfig | null): Promise<void> {
+    if (!config) {
+      remoteConfigStore.clearSlackConfig();
+      if (this.gateway?.running) {
+        await this.restart();
+      }
+      return;
+    }
+
+    const configError = getSlackChannelConfigError(config);
+    if (configError) {
+      throw new Error(configError);
+    }
+
+    const merged = mergeSlackChannelConfig(remoteConfigStore.getSlackConfig(), config);
+    remoteConfigStore.setSlackConfig(merged);
+
+    // Sync Slack DM policy to gateway auth only when it would not relax a
+    // stricter mode already enforced by Feishu (or another channel).
+    if (merged.dm) {
+      const currentGateway = remoteConfigStore.getGatewayConfig();
+      const currentAuth = currentGateway.auth;
+      const slackPolicy = parseSlackDmPolicy(merged.dm.policy);
+
+      if (currentAuth.mode === 'token' || currentAuth.token) {
+        log(
+          '[RemoteManager] Skipping Slack DM policy sync: gateway uses token auth, preserving for other channels'
+        );
+      } else if (!shouldApplySlackDmPolicyToGateway(slackPolicy, currentAuth.mode)) {
+        log(
+          '[RemoteManager] Skipping Slack DM policy sync: would relax existing gateway auth mode',
+          currentAuth.mode
+        );
+      } else {
+        switch (slackPolicy) {
+          case 'open':
+            remoteConfigStore.setGatewayConfig({
+              auth: { ...currentAuth, mode: 'open' },
+            });
+            break;
+          case 'pairing':
+            remoteConfigStore.setGatewayConfig({
+              auth: { ...currentAuth, mode: 'pairing' },
+            });
+            break;
+          case 'allowlist': {
+            const slackEntries = (merged.dm.allowFrom ?? []).map((id) => `slack:${id}`);
+            const nonSlackEntries = (currentAuth.allowlist ?? []).filter(
+              (entry) => !entry.startsWith('slack:')
+            );
+            const pairedSlackEntries = remoteConfigStore
+              .getPairedUsers()
+              .filter((u) => u.channelType === 'slack')
+              .map((u) => `slack:${u.userId}`);
+            remoteConfigStore.setGatewayConfig({
+              auth: {
+                ...currentAuth,
+                mode: 'allowlist',
+                allowlist: [
+                  ...new Set([...nonSlackEntries, ...pairedSlackEntries, ...slackEntries]),
+                ],
+              },
+            });
+            break;
+          }
+        }
+      }
+    }
+
     if (this.gateway?.running) {
       await this.restart();
     }

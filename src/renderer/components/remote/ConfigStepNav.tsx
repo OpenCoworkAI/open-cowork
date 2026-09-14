@@ -1,14 +1,15 @@
 /**
- * ConfigStepNav — tab navigation for the three configuration steps
+ * ConfigStepNav — tab navigation for Remote Control configuration steps
  */
 
 import { useTranslation } from 'react-i18next';
-import { MessageSquare, Link2, Settings2, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, Hash, Link2, Settings2, CheckCircle2 } from 'lucide-react';
 import type { ConfigStep } from './types';
 
 interface Props {
   activeStep: ConfigStep;
   isFeishuConfigured: boolean;
+  isSlackConfigured: boolean;
   isConnectionConfigured: boolean;
   onStepChange: (step: ConfigStep) => void;
 }
@@ -16,6 +17,7 @@ interface Props {
 export function ConfigStepNav({
   activeStep,
   isFeishuConfigured,
+  isSlackConfigured,
   isConnectionConfigured,
   onStepChange,
 }: Props) {
@@ -27,6 +29,12 @@ export function ConfigStepNav({
       labelKey: 'remote.stepFeishu',
       icon: MessageSquare,
       done: isFeishuConfigured,
+    },
+    {
+      id: 'slack',
+      labelKey: 'remote.stepSlack',
+      icon: Hash,
+      done: isSlackConfigured,
     },
     {
       id: 'connection',
@@ -48,7 +56,7 @@ export function ConfigStepNav({
         <button
           key={step.id}
           onClick={() => onStepChange(step.id)}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 rounded-lg transition-all ${
             activeStep === step.id
               ? 'bg-accent text-white'
               : 'hover:bg-surface-hover text-text-secondary'
@@ -59,7 +67,7 @@ export function ConfigStepNav({
           ) : (
             <step.icon className="w-4 h-4" />
           )}
-          <span className="text-sm font-medium">{t(step.labelKey)}</span>
+          <span className="text-sm font-medium whitespace-nowrap">{t(step.labelKey)}</span>
         </button>
       ))}
     </div>
