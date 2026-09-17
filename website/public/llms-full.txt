@@ -52,7 +52,7 @@ macOS Homebrew:
 
 ```bash
 brew tap OpenCoworkAI/tap
-brew install --cask --no-quarantine open-cowork
+HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
 ```
 
 Installer downloads:

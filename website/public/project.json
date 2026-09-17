@@ -31,7 +31,7 @@
     {
       "platform": "macOS",
       "method": "Homebrew",
-      "commands": ["brew tap OpenCoworkAI/tap", "brew install --cask --no-quarantine open-cowork"]
+      "commands": ["brew tap OpenCoworkAI/tap", "HOMEBREW_CASK_OPTS=\"--no-quarantine\" brew install --cask open-cowork"]
     },
     {
       "platform": "Windows and macOS",

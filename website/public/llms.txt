@@ -21,7 +21,7 @@ Open Cowork is a free, open-source AI agent desktop application for Windows and 
 - License: MIT
 - Current website metadata version: 3.3.0
 - Platforms with prebuilt installers: Windows and macOS
-- macOS install option: Homebrew cask via `brew tap OpenCoworkAI/tap` and `brew install --cask --no-quarantine open-cowork`
+- macOS install option: Homebrew cask via `brew tap OpenCoworkAI/tap` and `HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork`
 - Desktop stack: Electron, React, TypeScript, Vite, Tailwind CSS
 - Website stack: VitePress
 - Supported workflows: local AI agent workspace, file operations, document generation, MCP tools, GUI automation, remote control

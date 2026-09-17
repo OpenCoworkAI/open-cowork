@@ -29,7 +29,7 @@ Open Cowork is a free, open-source desktop application that provides a local AI 
 ### macOS (Homebrew)
 ```
 brew tap OpenCoworkAI/tap
-brew install --cask --no-quarantine open-cowork
+HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
 ```
 
 ### Windows / macOS (Installer)
