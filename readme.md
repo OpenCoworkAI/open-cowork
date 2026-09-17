@@ -101,6 +101,7 @@ https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74
 
 ```bash
 brew tap OpenCoworkAI/tap
+brew trust opencoworkai/tap
 HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
 ```
 
@@ -190,7 +191,7 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
 
 1.  **macOS Installation**: If you downloaded the DMG directly (not via Homebrew) and see a security warning, go to **System Settings > Privacy & Security** and click **Open Anyway**. Or install via Homebrew to avoid this entirely:
     ```bash
-    brew tap OpenCoworkAI/tap && HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
+    brew tap OpenCoworkAI/tap && brew trust opencoworkai/tap && HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
     ```
 2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
 3.  **Notion Connector**: Besides setting the integration token, you also need to add connections in a root page. See https://www.notion.com/help/add-and-manage-connections-with-the-api for more details.

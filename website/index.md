@@ -136,6 +136,7 @@ features:
 
 ```bash
 brew tap OpenCoworkAI/tap
+brew trust opencoworkai/tap
 HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
 ```
 

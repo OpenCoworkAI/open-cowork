@@ -93,6 +93,7 @@ https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
 
 ```bash
 brew tap OpenCoworkAI/tap
+brew trust opencoworkai/tap
 HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
 ```
 
@@ -182,7 +183,7 @@ brew install lima
 
 1.  **macOS 安装问题**：如果直接下载 DMG 安装后提示”无法验证开发者”，推荐使用 Homebrew 安装以避免此问题：
     ```bash
-    brew tap OpenCoworkAI/tap && HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
+    brew tap OpenCoworkAI/tap && brew trust opencoworkai/tap && HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask open-cowork
     ```
     或者前往 **系统设置 > 隐私与安全性** 点击”仍要打开”。
 2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
