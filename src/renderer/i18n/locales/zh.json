@@ -273,6 +273,10 @@
           "name": "MiniMax",
           "note": "除非网关文档明确说明其他协议，否则优先按 OpenAI 兼容协议配置。"
         },
+        "requesty": {
+          "name": "Requesty",
+          "note": "推荐使用 OpenAI 兼容协议，并填写 Requesty 模型 ID（如 gpt-5.4-mini）。如需欧盟路由，可将域名改为 router.eu.requesty.ai。"
+        },
         "genericOpenAI": {
           "name": "通用 OpenAI 兼容服务",
           "note": "适用于自定义中继、网关或模拟 OpenAI API 的推理服务。"
