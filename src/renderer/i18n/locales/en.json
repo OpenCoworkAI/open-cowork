@@ -609,6 +609,7 @@
     "deselectAll": "Deselect All",
     "nSelected": "{{count}} selected",
     "batchDeleteConfirm": "Delete {{count}} conversations? This cannot be undone.",
+    "deleteConfirm": "Delete conversation \"{{title}}\"? This cannot be undone.",
     "cancel": "Cancel",
     "confirmDelete": "Delete",
     "exportSession": "Export conversation",

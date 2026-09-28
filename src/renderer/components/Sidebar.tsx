@@ -48,6 +48,10 @@ export function Sidebar() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!exportError) return;
@@ -64,7 +68,9 @@ export function Sidebar() {
 
   // Exit select mode when sidebar collapses
   useEffect(() => {
-    if (sidebarCollapsed && isSelectMode) {
+    if (!sidebarCollapsed) return;
+    setPendingDeleteSession(null);
+    if (isSelectMode) {
       setIsSelectMode(false);
       setSelectedIds(new Set());
       setShowDeleteConfirm(false);
@@ -84,6 +90,15 @@ export function Sidebar() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSelectMode]);
+
+  useEffect(() => {
+    if (!pendingDeleteSession) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingDeleteSession(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDeleteSession]);
 
   // Reset selection when search query changes to avoid deleting hidden sessions
   useEffect(() => {
@@ -202,7 +217,14 @@ export function Sidebar() {
 
   const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    deleteSession(sessionId);
+    const session = sessions.find((item) => item.id === sessionId);
+    setPendingDeleteSession({ id: sessionId, title: session?.title ?? '' });
+  };
+
+  const confirmPendingDelete = () => {
+    if (!pendingDeleteSession) return;
+    deleteSession(pendingDeleteSession.id);
+    setPendingDeleteSession(null);
   };
 
   const handleExportSession = async (e: React.MouseEvent, session: Session) => {
@@ -301,7 +323,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-[17.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
+    <aside className="relative w-[17.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
       <div className="px-4 pt-5 pb-4 border-b border-border-muted">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">
@@ -466,6 +488,40 @@ export function Sidebar() {
             >
               {themeIcon}
             </button>
+          </div>
+        </div>
+      )}
+
+      {pendingDeleteSession && (
+        <div
+          className="absolute inset-0 z-20 flex items-end bg-black/20"
+          onClick={() => setPendingDeleteSession(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full border-t border-border-muted bg-surface px-3 py-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border border-error/30 bg-error/10 rounded-lg px-3 py-3">
+              <p className="text-[13px] text-text-primary mb-3">
+                {t('sidebar.deleteConfirm', { title: pendingDeleteSession.title })}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPendingDeleteSession(null)}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium text-text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  {t('sidebar.cancel')}
+                </button>
+                <button
+                  onClick={confirmPendingDelete}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium bg-error text-white hover:bg-error/90 transition-colors"
+                >
+                  {t('sidebar.confirmDelete')}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
