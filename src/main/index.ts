@@ -1181,6 +1181,15 @@ app
         remoteManager.setAgentExecutor(stdioAgentExecutor);
         remoteManager.setRendererCallback(headlessSendWithPermission);
 
+        // Cascade channel-binding cleanup when a session is deleted, so a
+        // deleted channel session cannot leave a stale in-memory binding.
+        headlessExtensionManager.register({
+          name: 'remote-session-binding',
+          onSessionDeleted: async ({ sessionId }) => {
+            await remoteManager.handleSessionDeleted(sessionId);
+          },
+        });
+
         const stdioChannel = await remoteManager.startStdioMode(headlessArgs.cwd);
 
         // Set the interceptor so ALL events from SM flow through stdio routing
@@ -1481,6 +1490,16 @@ app
       },
     };
     remoteManager.setAgentExecutor(agentExecutor);
+
+    // Cascade channel-binding cleanup when a session is deleted from the
+    // desktop UI, so a deleted channel session cannot leave a stale in-memory
+    // binding (channel would otherwise keep failing until restart).
+    extensionManager.register({
+      name: 'remote-session-binding',
+      onSessionDeleted: async ({ sessionId }) => {
+        await remoteManager.handleSessionDeleted(sessionId);
+      },
+    });
 
     // 远程控制启用时启动
     if (remoteConfigStore.isEnabled()) {

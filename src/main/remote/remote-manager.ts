@@ -533,6 +533,24 @@ export class RemoteManager extends EventEmitter {
   }
 
   /**
+   * Cascade cleanup when an actual session is deleted (desktop delete /
+   * batch delete): tear down every channel binding pointing at it.
+   *
+   * Triggered by the SessionManager onSessionDeleted extension hook (wired in
+   * index.ts). The executeAgent self-heal above is the safety net; this hook
+   * closes the dangling window at the moment of deletion instead.
+   */
+  async handleSessionDeleted(actualSessionId: string): Promise<void> {
+    const remoteSessionId = this.sessionIdMapping.get(actualSessionId);
+    if (!remoteSessionId) {
+      return; // Not a channel-bound session
+    }
+    await this.removeRemoteSession(actualSessionId);
+    this.messageRouter.clearSession(remoteSessionId);
+    log('[RemoteManager] Cleared channel binding for deleted session:', actualSessionId);
+  }
+
+  /**
    * Check if a session is a remote session
    */
   isRemoteSession(actualSessionId: string): boolean {
@@ -1277,7 +1295,42 @@ export class RemoteManager extends EventEmitter {
     log('[RemoteManager] Working directory:', workingDirectory || '(default)');
 
     // Check if this is a new remote session
-    const isNewSession = !this.remoteSessionIds.has(sessionId);
+    let isNewSession = !this.remoteSessionIds.has(sessionId);
+
+    if (!isNewSession) {
+      // Continue existing session - use actual session ID
+      const actualSessionId = this.reverseSessionIdMapping.get(sessionId);
+      if (!actualSessionId) {
+        throw new Error(`No actual session ID found for remote session: ${sessionId}`);
+      }
+      log('[RemoteManager] Continuing session:', actualSessionId, 'for remote:', sessionId);
+      try {
+        this.emitRemoteUserMessage(actualSessionId, content, prompt);
+        await this.agentExecutor.continueSession(
+          actualSessionId,
+          prompt,
+          content,
+          workingDirectory
+        );
+        return;
+      } catch (error) {
+        // Self-heal a stale binding: the actual session was deleted (typically
+        // from the desktop session list) while the in-memory mapping survived,
+        // so every subsequent channel message would fail with "internal error"
+        // until restart. SessionManager throws plain "Session not found: <id>"
+        // errors (no dedicated error class), so match on the message; any other
+        // failure is rethrown untouched.
+        if (!(error instanceof Error) || !/Session not found/i.test(error.message)) {
+          throw error;
+        }
+        logWarn('[RemoteManager] Stale binding detected, recreating session:', {
+          remoteSessionId: sessionId,
+          staleSessionId: actualSessionId,
+        });
+        await this.removeRemoteSession(actualSessionId);
+        isNewSession = true;
+      }
+    }
 
     if (isNewSession) {
       // Create new session with working directory
@@ -1317,15 +1370,6 @@ export class RemoteManager extends EventEmitter {
       });
 
       this.emitRemoteUserMessage(newSession.id, content, prompt);
-    } else {
-      // Continue existing session - use actual session ID
-      const actualSessionId = this.reverseSessionIdMapping.get(sessionId);
-      if (!actualSessionId) {
-        throw new Error(`No actual session ID found for remote session: ${sessionId}`);
-      }
-      log('[RemoteManager] Continuing session:', actualSessionId, 'for remote:', sessionId);
-      this.emitRemoteUserMessage(actualSessionId, content, prompt);
-      await this.agentExecutor.continueSession(actualSessionId, prompt, content, workingDirectory);
     }
 
     // Note: The actual response handling is done through the session manager
