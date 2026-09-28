@@ -74,12 +74,19 @@ describe('windows bash operations', () => {
       onData,
       env: { PATH: 'test-path' },
     });
-    const output = Buffer.from('hello');
+    // Wait until the async exec body has actually reached its spawn point
+    // (on Windows it first reads the console code page via a subprocess).
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalled());
+    // GBK bytes (你好). On non-Windows hosts they pass through untouched; on
+    // Windows they are re-encoded to UTF-8 by the codepage normalizer.
+    const output = Buffer.from([0xc4, 0xe3, 0xba, 0xc3]);
     child.stdout.emit('data', output);
     child.emit('close', 0);
 
     await expect(promise).resolves.toEqual({ exitCode: 0 });
-    expect(onData).toHaveBeenCalledWith(output);
+    const expectedBuffer =
+      process.platform === 'win32' ? Buffer.from('你好', 'utf-8') : output;
+    expect(onData).toHaveBeenCalledWith(expectedBuffer);
     expect(spawnProcess).toHaveBeenCalledWith(
       'C:\\Windows\\System32\\cmd.exe',
       ['/d', '/s', '/c', 'echo hello'],
@@ -115,6 +122,9 @@ describe('windows bash operations', () => {
         (error: Error) => error
       );
 
+      // Wait until the async exec body reaches its spawn point (and thus the
+      // timeout timer is registered) before advancing the fake clock.
+      await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalled());
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(spawnProcess).toHaveBeenNthCalledWith(
