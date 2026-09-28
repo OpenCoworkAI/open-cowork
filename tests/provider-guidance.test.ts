@@ -28,6 +28,14 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('https://openrouter.ai')?.id).toBe('openrouter');
   });
 
+  it('detects Requesty, including regional hosts, and recommends OpenAI-compatible setup', () => {
+    const setup = detectCommonProviderSetup('https://router.requesty.ai/v1');
+    expect(setup?.id).toBe('requesty');
+    expect(setup?.applyProvider).toBe('custom');
+    expect(setup?.recommendedProtocol).toBe('openai');
+    expect(detectCommonProviderSetup('https://router.eu.requesty.ai/v1')?.id).toBe('requesty');
+  });
+
   it('detects Ollama only on the local default port and prefers the dedicated provider tab', () => {
     const setup = detectCommonProviderSetup('http://localhost:11434/v1');
     expect(setup?.id).toBe('ollama');
