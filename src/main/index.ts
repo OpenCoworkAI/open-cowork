@@ -1177,6 +1177,10 @@ app
           validateWorkingDirectory: (cwd) => {
             return getWorkspacePathUnsupportedReason(cwd) || null;
           },
+          hasSession: (sessionId) => {
+            if (!sessionManager) throw new Error('Session manager not initialized');
+            return sessionManager.hasSession(sessionId);
+          },
         };
         remoteManager.setAgentExecutor(stdioAgentExecutor);
         remoteManager.setRendererCallback(headlessSendWithPermission);
@@ -1487,6 +1491,10 @@ app
           return 'Directory does not exist';
         }
         return null;
+      },
+      hasSession: (sessionId) => {
+        if (!sessionManager) throw new Error('Session manager not initialized');
+        return sessionManager.hasSession(sessionId);
       },
     };
     remoteManager.setAgentExecutor(agentExecutor);

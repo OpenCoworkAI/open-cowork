@@ -14,6 +14,7 @@ import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
+import { SessionNotFoundError } from '../session/session-errors';
 import type {
   GatewayStatus,
   GatewayConfig,
@@ -39,6 +40,12 @@ export interface AgentExecutor {
   ): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
   validateWorkingDirectory?(cwd: string): Promise<string | null> | string | null;
+  /**
+   * Optional existence probe for stale-binding detection: a channel binding may
+   * outlive its actual session (deleted from the desktop UI). When provided,
+   * executeAgent rebinds proactively instead of failing a turn first.
+   */
+  hasSession?(sessionId: string): boolean;
 }
 
 // Question/Permission request from agent
@@ -1303,32 +1310,46 @@ export class RemoteManager extends EventEmitter {
       if (!actualSessionId) {
         throw new Error(`No actual session ID found for remote session: ${sessionId}`);
       }
-      log('[RemoteManager] Continuing session:', actualSessionId, 'for remote:', sessionId);
-      try {
-        this.emitRemoteUserMessage(actualSessionId, content, prompt);
-        await this.agentExecutor.continueSession(
-          actualSessionId,
-          prompt,
-          content,
-          workingDirectory
-        );
-        return;
-      } catch (error) {
-        // Self-heal a stale binding: the actual session was deleted (typically
-        // from the desktop session list) while the in-memory mapping survived,
-        // so every subsequent channel message would fail with "internal error"
-        // until restart. SessionManager throws plain "Session not found: <id>"
-        // errors (no dedicated error class), so match on the message; any other
-        // failure is rethrown untouched.
-        if (!(error instanceof Error) || !/Session not found/i.test(error.message)) {
-          throw error;
-        }
-        logWarn('[RemoteManager] Stale binding detected, recreating session:', {
+
+      // Proactive stale-binding probe: when the actual session was deleted from
+      // the desktop UI, rebind BEFORE emitting the user message, so renderer /
+      // stdio consumers never see a user turn aimed at a dead session.
+      if (this.agentExecutor.hasSession && !this.agentExecutor.hasSession(actualSessionId)) {
+        logWarn('[RemoteManager] Stale binding detected (session deleted), rebinding:', {
           remoteSessionId: sessionId,
           staleSessionId: actualSessionId,
         });
         await this.removeRemoteSession(actualSessionId);
         isNewSession = true;
+      } else {
+        log('[RemoteManager] Continuing session:', actualSessionId, 'for remote:', sessionId);
+        try {
+          this.emitRemoteUserMessage(actualSessionId, content, prompt);
+          await this.agentExecutor.continueSession(
+            actualSessionId,
+            prompt,
+            content,
+            workingDirectory
+          );
+          return;
+        } catch (error) {
+          // Safety net for the probe→continue race and for executors without
+          // hasSession. Typed match first; the string fallback only covers
+          // executors that predate SessionNotFoundError. Any other error is
+          // rethrown untouched — only a deleted session justifies a rebuild.
+          const isSessionGone =
+            error instanceof SessionNotFoundError ||
+            (error instanceof Error && /Session not found/i.test(error.message));
+          if (!isSessionGone) {
+            throw error;
+          }
+          logWarn('[RemoteManager] Stale binding detected, recreating session:', {
+            remoteSessionId: sessionId,
+            staleSessionId: actualSessionId,
+          });
+          await this.removeRemoteSession(actualSessionId);
+          isNewSession = true;
+        }
       }
     }
 
