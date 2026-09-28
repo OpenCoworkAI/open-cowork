@@ -252,6 +252,17 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
     expect(userEmits).toEqual(['actual-session-1', 'actual-session-2']);
   });
 
+  it('handleSessionDeleted is idempotent and non-throwing when the binding is already gone', async () => {
+    await route(manager, makeMessage('stdio-idem', 'hi'));
+    await manager.handleSessionDeleted('actual-session-1');
+
+    // A repeated call (e.g. delete + batch-delete overlap, or a hook replay)
+    // must be a harmless no-op: the deletion flow must never reject because
+    // of binding cleanup.
+    await expect(manager.handleSessionDeleted('actual-session-1')).resolves.toBeUndefined();
+    expect(manager.isRemoteSession('actual-session-1')).toBe(false);
+  });
+
   it('onSessionDeleted extension hook clears the binding using the actual session id', async () => {
     await route(manager, makeMessage('stdio-hook', 'hi'));
     expect(manager.isRemoteSession('actual-session-1')).toBe(true);

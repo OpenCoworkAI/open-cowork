@@ -387,7 +387,7 @@ export class SessionManager {
    * be deleted from the desktop UI while a channel binding still points at it.
    */
   hasSession(sessionId: string): boolean {
-    return this.loadSession(sessionId) !== null;
+    return Boolean(this.loadSession(sessionId));
   }
 
   // List all sessions
