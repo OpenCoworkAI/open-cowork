@@ -1334,12 +1334,13 @@ export class RemoteManager extends EventEmitter {
           return;
         } catch (error) {
           // Safety net for the probe→continue race and for executors without
-          // hasSession. Typed match first; the string fallback only covers
+          // hasSession. Typed match first; the string fallback (anchored and
+          // case-sensitive, matching SessionManager's exact prefix) only covers
           // executors that predate SessionNotFoundError. Any other error is
           // rethrown untouched — only a deleted session justifies a rebuild.
           const isSessionGone =
             error instanceof SessionNotFoundError ||
-            (error instanceof Error && /Session not found/i.test(error.message));
+            (error instanceof Error && /^Session not found:/.test(error.message));
           if (!isSessionGone) {
             throw error;
           }

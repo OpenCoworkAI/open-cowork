@@ -356,4 +356,30 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
       undefined
     );
   });
+
+  it('does not rebuild on an unrelated error merely containing "session not found"', async () => {
+    await route(manager, makeMessage('stdio-fp', 'hi'));
+    const actualSessionId = 'actual-session-1';
+
+    // A transport/gateway failure whose message happens to contain the phrase
+    // mid-sentence — the anchored, case-sensitive fallback must not treat it
+    // as a deleted session (rebuilding here would silently drop the binding
+    // and the conversation context).
+    continueSession.mockRejectedValueOnce(
+      new Error('upstream gateway reported session not found in pool')
+    );
+
+    await route(manager, makeMessage('stdio-fp', 'again'));
+
+    expect(startSession).toHaveBeenCalledTimes(1);
+    expect(manager.isRemoteSession(actualSessionId)).toBe(true);
+
+    await route(manager, makeMessage('stdio-fp', 'once more'));
+    expect(continueSession).toHaveBeenLastCalledWith(
+      actualSessionId,
+      'once more',
+      expect.anything(),
+      undefined
+    );
+  });
 });
