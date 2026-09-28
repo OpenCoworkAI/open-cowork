@@ -252,6 +252,32 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
     expect(userEmits).toEqual(['actual-session-1', 'actual-session-2']);
   });
 
+  it('pins the catch-path emission sequence (deliberate residual)', async () => {
+    const userEmits: string[] = [];
+    manager.setRendererCallback((event) => {
+      if (event.type === 'stream.message') {
+        const message = event.payload.message;
+        if (message.role === 'user') userEmits.push(message.sessionId);
+      }
+    });
+
+    await route(manager, makeMessage('stdio-seq', 'hi'));
+
+    // Probe says alive, but the session is deleted before continueSession runs
+    // (probe→continue race), so the catch path heals.
+    continueSession.mockRejectedValueOnce(new SessionNotFoundError('actual-session-1'));
+
+    await route(manager, makeMessage('stdio-seq', 'again'));
+
+    // Deliberate residual, pinned: the optimistic pre-emit for turn 2 went to
+    // the just-reported-dead session (the renderer drops it into an orphaned
+    // in-memory entry; the sidebar is DB-driven so nothing resurfaces), while
+    // the healed session still gets its own user turn. Suppressing the last
+    // emission would drop the user turn from the healed session's live UI.
+    expect(userEmits).toEqual(['actual-session-1', 'actual-session-1', 'actual-session-2']);
+    expect(startSession).toHaveBeenCalledTimes(2);
+  });
+
   it('handleSessionDeleted is idempotent and non-throwing when the binding is already gone', async () => {
     await route(manager, makeMessage('stdio-idem', 'hi'));
     await manager.handleSessionDeleted('actual-session-1');
