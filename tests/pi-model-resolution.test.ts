@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Api, Model } from '@mariozechner/pi-ai';
 import {
   applyPiModelRuntimeOverrides,
   buildPiModelLookupCandidates,
@@ -11,6 +12,23 @@ import {
 } from '../src/main/agent/pi-model-resolution';
 
 describe('pi model resolution helpers', () => {
+  it('accepts video in model input metadata', () => {
+    const model: Model<Api> = {
+      id: 'video-model',
+      name: 'Video model',
+      api: 'openai-completions',
+      provider: 'custom',
+      baseUrl: 'https://api.example.com/v1',
+      reasoning: false,
+      input: ['text', 'image', 'video'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 16384,
+    };
+
+    expect(model.input).toContain('video');
+  });
+
   it('skips invalid custom raw provider lookups and deduplicates candidates', () => {
     const candidates = buildPiModelLookupCandidates('openai/gpt-5.4', {
       configProvider: 'openai',

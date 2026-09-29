@@ -61,3 +61,16 @@ index 29ae8cf..6d9ea61 100644
          thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
          openRouterRouting: model.compat.openRouterRouting ?? {},
          vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
+diff --git a/node_modules/@mariozechner/pi-ai/dist/types.d.ts b/node_modules/@mariozechner/pi-ai/dist/types.d.ts
+index 6ae8939..26a178f 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/types.d.ts
++++ b/node_modules/@mariozechner/pi-ai/dist/types.d.ts
+@@ -278,7 +278,7 @@ export interface Model<TApi extends Api> {
+     provider: Provider;
+     baseUrl: string;
+     reasoning: boolean;
+-    input: ("text" | "image")[];
++    input: ("text" | "image" | "video")[];
+     cost: {
+         input: number;
+         output: number;
