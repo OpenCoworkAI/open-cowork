@@ -17,8 +17,8 @@ import {
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   createCodingTools,
-  type BashToolOptions,
   type AgentSession as PiAgentSession,
+  type CreateAgentSessionOptions,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
@@ -83,6 +83,7 @@ import {
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
+import { createLimaSandboxCodingTools } from './lima-sandbox-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
 
 // Virtual workspace path shown to the model (hides real sandbox path)
@@ -2137,12 +2138,20 @@ Tool routing:
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
       await enrichProcessPathForBuild();
 
-      const bashOptions: BashToolOptions | undefined =
-        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
-      const codingTools = createCodingTools(
-        effectiveCwd,
-        bashOptions ? { bash: bashOptions } : undefined
-      );
+      // Lima creates the session directory inside the VM. Host bash checks that
+      // path with existsSync, fails, and the UI then rewrites it to /workspace.
+      // Run the coding tools in the guest and keep those implementations: the
+      // SDK otherwise rebuilds host-local tools from cwd.
+      const guestSandboxPath =
+        useSandboxIsolation && sandbox.isLima && sandboxPath ? sandboxPath : null;
+      const codingTools = guestSandboxPath
+        ? createLimaSandboxCodingTools(guestSandboxPath)
+        : createCodingTools(
+            effectiveCwd,
+            process.platform === 'win32'
+              ? { bash: { operations: createWindowsBashOperations() } }
+              : undefined
+          );
 
       // Inject a default 120s timeout for bash commands when the model omits one
       const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(
@@ -2271,6 +2280,13 @@ Tool routing:
           authStorage,
           modelRegistry,
           tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
+          ...(guestSandboxPath
+            ? {
+                baseToolsOverride: Object.fromEntries(
+                  wrappedTools.map((tool) => [tool.name, tool])
+                ) as CreateAgentSessionOptions['baseToolsOverride'],
+              }
+            : {}),
           customTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({

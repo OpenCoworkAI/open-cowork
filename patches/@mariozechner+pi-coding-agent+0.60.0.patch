@@ -1,0 +1,28 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
+index aaaa782..3a2caf5 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
+@@ -28,6 +28,11 @@ export interface CreateAgentSessionOptions {
+     }>;
+     /** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
+     tools?: Tool[];
++    /**
++     * Tool implementations to run instead of rebuilding host-local tools from cwd.
++     * Lima sandbox sessions pass this so bash executes inside the guest workspace.
++     */
++    baseToolsOverride?: Record<string, Tool>;
+     /** Custom tools to register (in addition to built-in tools). */
+     customTools?: ToolDefinition[];
+     /** Resource loader. When omitted, DefaultResourceLoader is used. */
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+index 438ac8c..96d0236 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+@@ -230,6 +230,7 @@ export async function createAgentSession(options = {}) {
+         customTools: options.customTools,
+         modelRegistry,
+         initialActiveToolNames,
++        baseToolsOverride: options.baseToolsOverride,
+         extensionRunnerRef,
+     });
+     const extensionsResult = resourceLoader.getExtensions();
