@@ -63,12 +63,22 @@ export const ToolUseBlock = memo(function ToolUseBlock({
     }
   }
 
-  // Determine state: running / success / error
-  // Only show spinner if session still has an active turn; otherwise treat as done
+  // Determine state: running / success / error / cancelled
+  // Only a tool belonging to the CURRENTLY ACTIVE turn may render as running.
+  // A cancelled tool (no result) from an earlier turn must not be re-armed
+  // when a new turn starts and activeTurn becomes non-null again.
   const hasActiveTurn = Boolean(activeTurn);
-  const isRunning = !toolResult && hasActiveTurn;
+  let belongsToActiveTurn = hasActiveTurn;
+  if (hasActiveTurn && activeTurn?.userMessageId && message?.timestamp != null) {
+    const turnUserMsg = allMessages.find((m) => m.id === activeTurn.userMessageId);
+    if (turnUserMsg) {
+      belongsToActiveTurn = message.timestamp >= turnUserMsg.timestamp;
+    }
+  }
+  const isRunning = !toolResult && hasActiveTurn && belongsToActiveTurn;
+  const isCanceled = !toolResult && !(hasActiveTurn && belongsToActiveTurn);
   const isError = toolResult?.isError === true;
-  const isSuccess = toolResult && !isError;
+  const isSuccess = Boolean(toolResult) && !isError;
 
   const label = getToolLabel(block.name, block.input, block.displayName);
   const isMCPTool = block.name.startsWith('mcp__');
@@ -134,12 +144,20 @@ export const ToolUseBlock = memo(function ToolUseBlock({
         {/* Status icon */}
         <div
           className={`flex-shrink-0 ${
-            isError ? 'text-error' : isRunning ? 'text-accent' : 'text-text-muted'
+            isError
+              ? 'text-error'
+              : isCanceled
+                ? 'text-text-muted'
+                : isRunning
+                  ? 'text-accent'
+                  : 'text-text-muted'
           }`}
         >
           {isRunning ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : isError ? (
+            <XCircle className="w-3.5 h-3.5" />
+          ) : isCanceled ? (
             <XCircle className="w-3.5 h-3.5" />
           ) : (
             <CheckCircle2 className="w-3.5 h-3.5 text-success" />

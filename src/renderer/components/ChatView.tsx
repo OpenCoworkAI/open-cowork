@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useActiveSessionId,
@@ -13,7 +13,15 @@ import {
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
-import { SubagentTracker } from './SubagentTracker';
+import {
+  SubagentCards,
+  partitionSubagents,
+} from './SubagentTracker';
+import {
+  useSubagentStates,
+  useLoadSubagentHistory,
+  clearSubagentStatesForSession,
+} from '../hooks/useSubagentProgress';
 import { ContextUsageBar } from './ContextUsageBar';
 import type { Message, ContentBlock } from '../types';
 import { Send, Square, Plus, Loader2, Plug, X, Clock } from 'lucide-react';
@@ -40,6 +48,11 @@ export function ChatView() {
   const appConfig = useAppConfig();
   const setGlobalNotice = useAppStore((s) => s.setGlobalNotice);
   const { continueSession, stopSession, isElectron } = useIPC();
+
+  // Subagent progress: live events + persisted history, placed inline in the
+  // message stream at the point where each child was spawned.
+  const subagents = useSubagentStates(activeSessionId);
+  useLoadSubagentHistory(activeSessionId);
   const [prompt, setPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeConnectors, setActiveConnectors] = useState<
@@ -105,6 +118,22 @@ export function ChatView() {
 
     return [...messages.slice(0, insertIndex), streamingMessage, ...messages.slice(insertIndex)];
   }, [activeSessionId, activeTurn?.userMessageId, messages, partialMessage, partialThinking]);
+
+  // Drop in-memory subagent state when switching sessions so it never leaks
+  // across conversations (replayed from DB again on return if needed).
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevSessionIdRef.current && prevSessionIdRef.current !== activeSessionId) {
+      clearSubagentStatesForSession(prevSessionIdRef.current);
+    }
+    prevSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  // Slot subagent cards into message gaps so they follow the model's analysis order.
+  const subagentPlacement = useMemo(
+    () => partitionSubagents(displayedMessages, subagents),
+    [displayedMessages, subagents]
+  );
 
   // Format execution time for display
   const formatExecutionTime = useCallback((ms: number): string => {
@@ -265,7 +294,7 @@ export function ChatView() {
 
     prevMessageCountRef.current = messageCount;
     prevPartialLengthRef.current = partialLength;
-  }, [messages.length, partialMessage.length, partialThinking.length]);
+  }, [messages.length, partialMessage.length, partialThinking.length, scrollToBottom]);
 
   // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)
   useEffect(() => {
@@ -286,7 +315,7 @@ export function ChatView() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, []); // ResizeObserver is stable — no need to recreate on message count changes
+  }, [scrollToBottom]); // scrollToBottom is a stable ref-held function
 
   // Cleanup scroll timeouts on unmount
   useEffect(() => {
@@ -740,19 +769,30 @@ export function ChatView() {
               <p className="text-base text-text-secondary">{t('chat.startConversation')}</p>
             </div>
           ) : (
-            displayedMessages.map((message) => {
-              const isStreaming =
-                typeof message.id === 'string' && message.id.startsWith('partial-');
-              return (
-                <div key={message.id}>
-                  <MessageCard message={message} isStreaming={isStreaming} />
-                </div>
-              );
-            })
+            <>
+              {subagentPlacement.leading.length > 0 && (
+                <SubagentCards states={subagentPlacement.leading} />
+              )}
+              {displayedMessages.map((message, index) => {
+                const isStreaming =
+                  typeof message.id === 'string' && message.id.startsWith('partial-');
+                const gap = subagentPlacement.gaps[index] || [];
+                return (
+                  <Fragment key={message.id}>
+                    <div>
+                      <MessageCard message={message} isStreaming={isStreaming} />
+                    </div>
+                    {gap.length > 0 && <SubagentCards states={gap} />}
+                  </Fragment>
+                );
+              })}
+            </>
           )}
 
           {/* Subagent progress indicators */}
-          <SubagentTracker sessionId={activeSessionId} />
+          {displayedMessages.length === 0 && subagents.length > 0 && (
+            <SubagentCards states={subagents} />
+          )}
 
           {/* Processing indicator - show when we have an active turn but no streaming content yet */}
           {hasActiveTurn &&

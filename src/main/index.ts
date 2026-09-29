@@ -17,7 +17,8 @@ import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { config } from 'dotenv';
-import { initDatabase, closeDatabase } from './db/database';
+import { initDatabase, getDatabase, closeDatabase } from './db/database';
+import type { SubagentRunRow } from './db/database';
 import { SessionManager } from './session/session-manager';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
@@ -25,7 +26,10 @@ import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
-import { SubagentExtension } from './agent/subagent-extension';
+import {
+  SubagentExtension,
+  type SubagentRunRecorder,
+} from './agent/subagent-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
 import {
   configStore,
@@ -53,6 +57,7 @@ import type { MCPServerConfig } from './mcp/mcp-manager';
 import type {
   ClientEvent,
   ServerEvent,
+  SubagentRun,
   ApiTestInput,
   ApiTestResult,
   DiagnosticInput,
@@ -163,6 +168,95 @@ function resolveSubagentToolPermission(
   }
   const decision = decidePermission('subagent', toolName, toolInput);
   return decision === 'deny' ? 'deny' : 'allow';
+}
+
+/**
+ * Persist a subagent run snapshot into the `subagent_runs` table: an initial
+ * 'running' row on spawn, then a terminal update with the accumulated tools
+ * timeline, full text, error and duration. Failures are logged and swallowed
+ * so persistence problems never disrupt subagent execution.
+ */
+const recordSubagentRun: SubagentRunRecorder = (run) => {
+  try {
+    const db = getDatabase();
+    const now = Date.now();
+    if (run.status === 'running') {
+      db.subagentRuns.create({
+        id: run.subagentId,
+        session_id: run.sessionId,
+        task: run.task,
+        status: 'running',
+        tools: JSON.stringify(run.tools),
+        accumulated_text: '',
+        error: null,
+        duration_ms: null,
+        started_at: now,
+        completed_at: null,
+      });
+    } else {
+      const updated = db.subagentRuns.update(run.subagentId, {
+        status: run.status,
+        tools: JSON.stringify(run.tools),
+        accumulated_text: run.accumulatedText,
+        error: run.error ?? null,
+        duration_ms: run.durationMs ?? null,
+        completed_at: now,
+      });
+      // If the initial 'running' row is missing (insert failure, restart, or a
+      // terminal write racing the insert), the update hit zero rows. Fall back
+      // to inserting a terminal row so the run is not silently lost.
+      if (!updated) {
+        // Recover the spawn time from the run's own duration so the card lands
+        // near its real position in the stream instead of reading as the
+        // current moment.
+        const startedAt = run.durationMs != null ? now - run.durationMs : now;
+        db.subagentRuns.create({
+          id: run.subagentId,
+          session_id: run.sessionId,
+          task: run.task,
+          status: run.status,
+          tools: JSON.stringify(run.tools),
+          accumulated_text: run.accumulatedText,
+          error: run.error ?? null,
+          duration_ms: run.durationMs ?? null,
+          started_at: startedAt,
+          completed_at: now,
+        });
+      }
+    }
+  } catch (err) {
+    logError('[SubagentExtension] Failed to persist subagent run:', err);
+  }
+};
+
+/**
+ * Convert a persisted `subagent_runs` row into the renderer-facing DTO shape
+ * used by the subagent card UI.
+ */
+function subagentRunRowToDto(row: SubagentRunRow): SubagentRun {
+  let tools: SubagentRun['tools'] = [];
+  try {
+    const parsed = JSON.parse(row.tools);
+    if (Array.isArray(parsed)) {
+      tools = parsed as SubagentRun['tools'];
+    }
+  } catch {
+    // tools column is best-effort — leave empty if malformed
+  }
+  return {
+    subagentId: row.id,
+    sessionId: row.session_id,
+    task: row.task,
+    status: (['running', 'completed', 'failed'].includes(row.status)
+      ? row.status
+      : 'failed') as SubagentRun['status'],
+    tools,
+    accumulatedText: row.accumulated_text,
+    ...(row.error ? { error: row.error } : {}),
+    ...(row.duration_ms != null ? { durationMs: row.duration_ms } : {}),
+    startedAt: row.started_at,
+    ...(row.completed_at != null ? { completedAt: row.completed_at } : {}),
+  };
 }
 
 function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
@@ -935,7 +1029,9 @@ app
           () => sessionManager?.getMCPManager() ?? null,
           sendToRenderer,
           async (toolName, toolInput) =>
-            resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
+            resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>),
+          (sessionId) => sessionManager?.getSessionAbortSignal(sessionId) ?? null,
+          recordSubagentRun
         ),
       ]);
 
@@ -1326,7 +1422,9 @@ app
         () => sessionManager?.getMCPManager() ?? null,
         sendToRenderer,
         async (toolName, toolInput) =>
-          resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>)
+          resolveSubagentToolPermission(toolName, toolInput as Record<string, unknown>),
+        (sessionId) => sessionManager?.getSessionAbortSignal(sessionId) ?? null,
+        recordSubagentRun
       ),
     ]);
 
@@ -3250,6 +3348,11 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
 
     case 'session.getTraceSteps':
       return sm.getTraceSteps(event.payload.sessionId);
+
+    case 'session.getSubagentRuns':
+      return getDatabase()
+        .subagentRuns.getBySessionId(event.payload.sessionId)
+        .map(subagentRunRowToDto);
 
     case 'session.compact':
       return sm.compactSession(event.payload.sessionId, event.payload.customInstructions);

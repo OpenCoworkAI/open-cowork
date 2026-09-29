@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock configStore so the error-path test can force a deterministic model
 // resolution failure instead of depending on whatever auth/config happens to
@@ -14,6 +14,7 @@ vi.mock('../../main/config/config-store', () => ({
 }));
 
 import { SubagentExtension } from '../../main/agent/subagent-extension';
+import * as piModelResolution from '../../main/agent/pi-model-resolution';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
 
@@ -28,6 +29,14 @@ const mockContext = {
 };
 
 describe('SubagentExtension', () => {
+  beforeEach(() => {
+    // Keep the synthetic fallback off so tests can still exercise the
+    // deterministic early-failure path (registry returns nothing).
+    vi.spyOn(piModelResolution, 'buildSyntheticPiModelFromRuntimeConfig').mockReturnValue(
+      undefined as never
+    );
+  });
+
   it('registers spawn_subagent tool via beforeSessionRun', async () => {
     const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
     const result = await extension.beforeSessionRun(mockContext as never);
@@ -186,11 +195,13 @@ describe('SubagentExtension', () => {
 
       await execute('test-call', { task: 'test early failure' });
 
-      // Model resolution failure happens before session creation,
-      // so only 'started' is emitted (no completed/failed since the tool returns early)
+      // Model resolution failure happens before session creation, so the tool
+      // returns early — but a failed terminal event is still published so the
+      // UI card does not stay 'running' forever.
       expect(events.length).toBeGreaterThanOrEqual(1);
       const eventTypes = events.map((e) => e.payload?.event);
       expect(eventTypes).toContain('started');
+      expect(eventTypes).toContain('failed');
       // No completed event since it returns with error before entering the session flow
       expect(eventTypes).not.toContain('completed');
     });

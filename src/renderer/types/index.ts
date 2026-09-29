@@ -470,6 +470,7 @@ export type ClientEvent =
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
+  | { type: 'session.getSubagentRuns'; payload: { sessionId: string } }
   | {
       type: 'session.compact';
       payload: { sessionId: string; customInstructions?: string };
@@ -596,6 +597,26 @@ export type ServerEvent =
         action?: 'open_api_settings';
       };
     };
+
+// Persistent record of a subagent analysis run, loaded from the
+// `subagent_runs` table when a session is reopened.
+export interface SubagentRun {
+  subagentId: string;
+  sessionId: string;
+  task: string;
+  status: 'running' | 'completed' | 'failed';
+  tools: Array<{
+    toolName: string;
+    startedAt?: number;
+    durationMs?: number;
+    isError?: boolean;
+  }>;
+  accumulatedText: string;
+  error?: string;
+  durationMs?: number;
+  startedAt: number;
+  completedAt?: number;
+}
 
 // Settings types
 export interface Settings {

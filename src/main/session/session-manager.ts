@@ -924,16 +924,36 @@ export class SessionManager {
         log('[SessionManager] Continuing queue with newly arrived prompts:', session.id);
       }
     } finally {
-      // Only clean up here — no restart logic needed since the outer loop
-      // already handles re-checking. activeSessions is only deleted once
-      // there are truly no pending items remaining.
       this.activeSessions.delete(session.id);
       const queue = this.promptQueues.get(session.id);
-      if (queue && queue.length === 0) {
-        this.promptQueues.delete(session.id);
+
+      if (queue && queue.length > 0) {
+        // Prompts were queued while this run was in flight (e.g. a "continue"
+        // arriving after the user stopped the session) and the abort path did
+        // not drain them. Restart with a fresh controller before reporting
+        // idle — the session never actually went idle. The restarted
+        // processQueue() owns the next idle transition.
+        this.processQueue(session).catch((err) => {
+          logError('[SessionManager] Queue restart error:', err);
+          this.sendToRenderer({
+            type: 'error',
+            payload: {
+              message: `Failed to process message: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          });
+        });
+      } else {
+        if (queue) this.promptQueues.delete(session.id);
+        this.updateSessionStatus(session.id, 'idle');
       }
-      this.updateSessionStatus(session.id, 'idle');
     }
+  }
+
+  // Expose the abort signal for a running session so long-running child
+  // operations (e.g. subagents) can be cancelled together with the parent.
+  getSessionAbortSignal(sessionId: string): AbortSignal | undefined {
+    const controller = this.activeSessions.get(sessionId);
+    return controller?.signal;
   }
 
   // Stop a running session
@@ -980,6 +1000,7 @@ export class SessionManager {
 
     // Delete from database (messages will be deleted automatically via CASCADE)
     this.db.sessions.delete(sessionId);
+    this.db.subagentRuns.deleteBySessionId(sessionId);
     this.messageCache.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
     this.titleGenerationTokens.delete(sessionId);

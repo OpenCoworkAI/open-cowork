@@ -27,14 +27,13 @@ function formatDuration(ms: number): string {
 
 export const SubagentProgress = memo(function SubagentProgress({ state }: SubagentProgressProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(state.status === 'running');
-  const [showResult, setShowResult] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const isRunning = state.status === 'running';
   const isCompleted = state.status === 'completed';
   const isFailed = state.status === 'failed';
 
-  // Truncate task description for collapsed view
+  // Truncate task description for the header summary (collapsed + expanded alike)
   const taskPreview = state.task.length > 60 ? state.task.substring(0, 57) + '...' : state.task;
 
   return (
@@ -70,22 +69,15 @@ export const SubagentProgress = memo(function SubagentProgress({ state }: Subage
         {/* Bot icon */}
         <Bot className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
 
-        {/* Label */}
+        {/* Label + task summary */}
         <span className="text-xs font-medium text-text-secondary truncate flex-1 min-w-0">
-          {t('subagent.label')}: &ldquo;{expanded ? state.task : taskPreview}&rdquo;
+          {t('subagent.label')}: &ldquo;{taskPreview}&rdquo;
         </span>
 
         {/* Duration */}
         {state.durationMs != null && (
           <span className="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
             {formatDuration(state.durationMs)}
-          </span>
-        )}
-
-        {/* Error preview in collapsed mode */}
-        {isFailed && !expanded && state.error && (
-          <span className="text-[11px] text-error truncate max-w-[180px] flex-shrink-0">
-            {state.error.length > 40 ? state.error.substring(0, 37) + '...' : state.error}
           </span>
         )}
 
@@ -97,16 +89,25 @@ export const SubagentProgress = memo(function SubagentProgress({ state }: Subage
         )}
       </button>
 
-      {/* Expanded content */}
+      {/* Expanded content — full task + tools + full text, single click like the main blocks */}
       {expanded && (
-        <div className="border-t border-border/50 animate-fade-in">
+        <div className="border-t border-border/50">
+          {/* Full task (the "input") */}
+          <div className="px-3 py-2 border-b border-border/50">
+            <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">
+              {t('subagent.taskLabel')}
+            </div>
+            <p className="text-xs text-text-secondary whitespace-pre-wrap break-words">
+              {state.task}
+            </p>
+          </div>
+
           {/* Tool activity list */}
           {state.tools.length > 0 && (
-            <div className="px-3 py-2 space-y-1">
+            <div className="px-3 py-2 space-y-1 border-b border-border/50">
               {state.tools.map((tool, index) => (
                 <ToolActivityRow key={`${tool.toolName}-${index}`} tool={tool} />
               ))}
-              {/* Currently running tool indicator */}
               {state.activeToolName && (
                 <div className="flex items-center gap-2 text-xs text-text-muted">
                   <Loader2 className="w-3 h-3 animate-spin text-accent" />
@@ -117,16 +118,31 @@ export const SubagentProgress = memo(function SubagentProgress({ state }: Subage
             </div>
           )}
 
+          {/* Full accumulated text (the "output") — no second click needed */}
+          {state.accumulatedText && (
+            <div className="px-3 py-2 border-b border-border/50">
+              <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">
+                {t('subagent.outputLabel')}
+              </div>
+              <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-all bg-surface-muted rounded-lg p-2.5 border border-border-subtle max-h-[300px] overflow-y-auto">
+                {state.accumulatedText}
+              </pre>
+            </div>
+          )}
+
           {/* Error display */}
           {isFailed && state.error && (
-            <div className="px-3 py-2 border-t border-border/50">
-              <p className="text-xs text-error">{state.error}</p>
+            <div className="px-3 py-2 border-b border-border/50">
+              <div className="text-[10px] uppercase tracking-wide text-error mb-1">
+                {t('subagent.errorLabel')}
+              </div>
+              <p className="text-xs text-error whitespace-pre-wrap break-words">{state.error}</p>
             </div>
           )}
 
           {/* Completion status */}
           {isCompleted && (
-            <div className="px-3 py-2 border-t border-border/50">
+            <div className="px-3 py-2">
               <div className="flex items-center gap-2 text-xs text-success">
                 <CheckCircle2 className="w-3 h-3" />
                 <span>
@@ -135,31 +151,6 @@ export const SubagentProgress = memo(function SubagentProgress({ state }: Subage
                     ` ${t('subagent.inDuration', { duration: formatDuration(state.durationMs) })}`}
                 </span>
               </div>
-            </div>
-          )}
-
-          {/* Accumulated text / result (collapsible) */}
-          {state.accumulatedText && (
-            <div className="px-3 py-2 border-t border-border/50">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowResult(!showResult);
-                }}
-                className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
-              >
-                {showResult ? (
-                  <ChevronDown className="w-3 h-3" />
-                ) : (
-                  <ChevronRight className="w-3 h-3" />
-                )}
-                <span>{t('subagent.showResult')}</span>
-              </button>
-              {showResult && (
-                <pre className="mt-2 text-xs font-mono text-text-secondary whitespace-pre-wrap break-all bg-surface-muted rounded-lg p-2.5 border border-border-subtle max-h-[200px] overflow-y-auto">
-                  {state.accumulatedText}
-                </pre>
-              )}
             </div>
           )}
         </div>

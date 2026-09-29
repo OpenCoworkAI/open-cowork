@@ -2883,8 +2883,34 @@ Tool routing:
       });
 
       // Execute the prompt — unsubscribe in finally to prevent event listener leak
+      // The SDK prompt does NOT observe AbortSignal, so when the runner controller
+      // is aborted (user stop / timeout / loop guard) we must forcibly abort the
+      // SDL session itself, otherwise the stream keeps running until the SDK
+      // decides to return on its own (stranding the runner).
+      let onControllerAbort: (() => void) | undefined;
+      const abortPiSession = () => {
+        try {
+          const abortable = piSession as unknown as { abort?: () => Promise<void> | void };
+          const result = abortable?.abort?.();
+          if (result && typeof result === 'object' && 'then' in result) {
+            void Promise.resolve(result).catch(() => {
+              logWarn('[CoworkAgentRunner] piSession.abort() promise rejected');
+            });
+          }
+        } catch (e) {
+          logWarn('[CoworkAgentRunner] piSession.abort() failed:', e);
+        }
+      };
       try {
         resetActivityTimeout();
+        onControllerAbort = () => abortPiSession();
+        controller.signal.addEventListener('abort', onControllerAbort);
+        // The controller may already be aborted before registration (there are
+        // awaits between controller creation and this point); addEventListener
+        // will never fire for it, so invoke the abort hook directly.
+        if (controller.signal.aborted) {
+          abortPiSession();
+        }
         if (provider === 'ollama') {
           log(
             '[CoworkAgentRunner] Starting Ollama prompt',
@@ -2912,6 +2938,9 @@ Tool routing:
         }
         if (activityTimeoutId) clearTimeout(activityTimeoutId);
         if (ollamaColdStartTimerId) clearTimeout(ollamaColdStartTimerId);
+        if (onControllerAbort) {
+          controller.signal.removeEventListener('abort', onControllerAbort);
+        }
       }
 
       logTiming('agent prompt completed', runStartTime);

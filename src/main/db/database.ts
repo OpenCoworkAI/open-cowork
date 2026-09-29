@@ -38,6 +38,13 @@ export interface DatabaseInstance {
     deleteBySessionId: (sessionId: string) => void;
   };
 
+  subagentRuns: {
+    create: (run: SubagentRunRow) => void;
+    update: (id: string, updates: Partial<SubagentRunRow>) => boolean;
+    getBySessionId: (sessionId: string) => SubagentRunRow[];
+    deleteBySessionId: (sessionId: string) => void;
+  };
+
   scheduledTasks: {
     create: (task: ScheduledTaskRow) => void;
     update: (id: string, updates: Partial<ScheduledTaskRow>) => void;
@@ -91,6 +98,19 @@ export interface TraceStepRow {
   is_error: number | null;
   timestamp: number;
   duration: number | null;
+}
+
+export interface SubagentRunRow {
+  id: string;
+  session_id: string;
+  task: string;
+  status: string;
+  tools: string; // JSON string: Array<SubagentToolActivity>
+  accumulated_text: string;
+  error: string | null;
+  duration_ms: number | null;
+  started_at: number;
+  completed_at: number | null;
 }
 
 export interface ScheduledTaskRow {
@@ -296,6 +316,33 @@ function initializeSchema(database: Database.Database): void {
     ON trace_steps(session_id, timestamp)
   `);
 
+    // Create subagent_runs table (persistent record of subagent analysis runs)
+    database.exec(`
+    CREATE TABLE IF NOT EXISTS subagent_runs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      task TEXT NOT NULL,
+      status TEXT NOT NULL,
+      tools TEXT NOT NULL DEFAULT '[]',
+      accumulated_text TEXT NOT NULL DEFAULT '',
+      error TEXT,
+      duration_ms INTEGER,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_subagent_runs_session_id
+    ON subagent_runs(session_id)
+  `);
+
+    database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_subagent_runs_started_at
+    ON subagent_runs(session_id, started_at)
+  `);
+
     // Create memory_entries table (for future use)
     database.exec(`
     CREATE TABLE IF NOT EXISTS memory_entries (
@@ -489,6 +536,21 @@ export function initDatabase(): DatabaseInstance {
     DELETE FROM trace_steps WHERE session_id = ?
   `);
 
+  const insertSubagentRun = rawDb.prepare(`
+    INSERT OR REPLACE INTO subagent_runs (
+      id, session_id, task, status, tools, accumulated_text, error, duration_ms, started_at, completed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getSubagentRunsBySessionStmt = rawDb.prepare(`
+    SELECT * FROM subagent_runs WHERE session_id = ? ORDER BY started_at ASC
+  `);
+
+  const deleteSubagentRunsBySessionStmt = rawDb.prepare(`
+    DELETE FROM subagent_runs WHERE session_id = ?
+  `);
+
   const insertScheduledTask = rawDb.prepare(`
     INSERT OR REPLACE INTO scheduled_tasks (
       id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
@@ -646,6 +708,50 @@ export function initDatabase(): DatabaseInstance {
 
       deleteBySessionId: (sessionId: string) => {
         deleteTraceStepsBySessionStmt.run(sessionId);
+      },
+    },
+
+    subagentRuns: {
+      create: (run: SubagentRunRow) => {
+        insertSubagentRun.run(
+          run.id,
+          run.session_id,
+          run.task,
+          run.status,
+          run.tools,
+          run.accumulated_text,
+          run.error,
+          run.duration_ms,
+          run.started_at,
+          run.completed_at
+        );
+      },
+
+      update: (id: string, updates: Partial<SubagentRunRow>) => {
+        const setClauses: string[] = [];
+        const values: unknown[] = [];
+
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            validateIdentifier(key);
+            setClauses.push(`${key} = ?`);
+            values.push(value);
+          }
+        }
+
+        if (setClauses.length === 0) return false;
+
+        values.push(id);
+        const sql = `UPDATE subagent_runs SET ${setClauses.join(', ')} WHERE id = ?`;
+        return rawDb.prepare(sql).run(...values).changes > 0;
+      },
+
+      getBySessionId: (sessionId: string): SubagentRunRow[] => {
+        return getSubagentRunsBySessionStmt.all(sessionId) as SubagentRunRow[];
+      },
+
+      deleteBySessionId: (sessionId: string) => {
+        deleteSubagentRunsBySessionStmt.run(sessionId);
       },
     },
 

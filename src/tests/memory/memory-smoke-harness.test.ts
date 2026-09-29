@@ -208,6 +208,12 @@ function createDatabaseInstance(db: Database.Database): DatabaseInstance {
       getBySessionId: vi.fn(() => []),
       deleteBySessionId: vi.fn(),
     },
+    subagentRuns: {
+      create: vi.fn(),
+      update: vi.fn(),
+      getBySessionId: vi.fn(() => []),
+      deleteBySessionId: vi.fn(),
+    },
     scheduledTasks: {
       create: vi.fn(),
       update: vi.fn(),
