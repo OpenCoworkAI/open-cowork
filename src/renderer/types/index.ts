@@ -1,3 +1,5 @@
+import type { HttpWatchConfig, HttpWatchConfigInput } from '../../shared/schedule/watch-task';
+
 // Session types
 export interface Session {
   id: string;
@@ -140,12 +142,17 @@ export interface ScheduleTask {
   runAt: number;
   nextRunAt: number | null;
   scheduleConfig: ScheduleConfig | null;
+  watchConfig: HttpWatchConfig | null;
   repeatEvery: number | null;
   repeatUnit: ScheduleRepeatUnit | null;
   enabled: boolean;
   lastRunAt: number | null;
   lastRunSessionId: string | null;
   lastError: string | null;
+  lastState: string | null;
+  lastCheckedAt: number | null;
+  consecutiveUnchanged: number;
+  readonly watchConfigError: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -157,6 +164,7 @@ export interface ScheduleCreateInput {
   runAt: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduleConfig | null;
+  watchConfig?: HttpWatchConfigInput | null;
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
@@ -169,6 +177,7 @@ export interface ScheduleUpdateInput {
   runAt?: number;
   nextRunAt?: number | null;
   scheduleConfig?: ScheduleConfig | null;
+  watchConfig?: HttpWatchConfigInput | null;
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;

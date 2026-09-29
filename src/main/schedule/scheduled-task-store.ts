@@ -1,20 +1,24 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { DatabaseInstance, ScheduledTaskRow } from '../db/database';
+import { normalizeWatchConfig, parsePersistedWatchConfig } from '../../shared/schedule/watch-task';
+import type { HttpWatchConfigInput } from '../../shared/schedule/watch-task';
 import type {
   ScheduledTask,
-  ScheduledTaskCreateInput,
   ScheduledTaskStore,
-  ScheduledTaskUpdateInput,
+  ScheduledTaskStoreCreateInput,
+  ScheduledTaskStoreUpdateInput,
 } from './scheduled-task-manager';
 
-export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskStore {
+export type ScheduledTaskDatabase = Pick<DatabaseInstance, 'scheduledTasks'>;
+
+export function createScheduledTaskStore(db: ScheduledTaskDatabase): ScheduledTaskStore {
   return {
     list: () => db.scheduledTasks.getAll().map(mapRowToTask),
     get: (id: string) => {
       const row = db.scheduledTasks.get(id);
       return row ? mapRowToTask(row) : null;
     },
-    create: (input: ScheduledTaskCreateInput) => {
+    create: (input: ScheduledTaskStoreCreateInput) => {
       const now = Date.now();
       const row: ScheduledTaskRow = {
         id: uuidv4(),
@@ -24,6 +28,10 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
         run_at: input.runAt,
         next_run_at: input.nextRunAt ?? input.runAt,
         schedule_config: input.scheduleConfig ? JSON.stringify(input.scheduleConfig) : null,
+        watch_config: serializeWatchConfig(input.watchConfig),
+        last_state: null,
+        last_checked_at: null,
+        consecutive_unchanged: 0,
         repeat_every: input.repeatEvery ?? null,
         repeat_unit: input.repeatUnit ?? null,
         enabled: input.enabled === false ? 0 : 1,
@@ -36,7 +44,7 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
       db.scheduledTasks.create(row);
       return mapRowToTask(row);
     },
-    update: (id: string, updates: ScheduledTaskUpdateInput) => {
+    update: (id: string, updates: ScheduledTaskStoreUpdateInput) => {
       const mapped = mapTaskUpdatesToRow(updates);
       db.scheduledTasks.update(id, mapped);
       const row = db.scheduledTasks.get(id);
@@ -52,6 +60,8 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
 }
 
 function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
+  const watch = mapPersistedWatchConfig(row.watch_config);
+
   return {
     id: row.id,
     title: row.title,
@@ -66,12 +76,16 @@ function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
     lastRunAt: row.last_run_at,
     lastRunSessionId: row.last_run_session_id,
     lastError: row.last_error,
+    ...watch,
+    lastState: row.last_state ?? null,
+    lastCheckedAt: row.last_checked_at ?? null,
+    consecutiveUnchanged: row.consecutive_unchanged ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<ScheduledTaskRow> {
+function mapTaskUpdatesToRow(updates: ScheduledTaskStoreUpdateInput): Partial<ScheduledTaskRow> {
   const mapped: Partial<ScheduledTaskRow> = {};
   if (updates.title !== undefined) mapped.title = updates.title;
   if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
@@ -81,13 +95,49 @@ function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<Schedul
   if (updates.scheduleConfig !== undefined) {
     mapped.schedule_config = updates.scheduleConfig ? JSON.stringify(updates.scheduleConfig) : null;
   }
+  if (updates.watchConfig !== undefined) {
+    mapped.watch_config = serializeWatchConfig(updates.watchConfig);
+  }
   if (updates.repeatEvery !== undefined) mapped.repeat_every = updates.repeatEvery;
   if (updates.repeatUnit !== undefined) mapped.repeat_unit = updates.repeatUnit;
   if (updates.enabled !== undefined) mapped.enabled = updates.enabled ? 1 : 0;
   if (updates.lastRunAt !== undefined) mapped.last_run_at = updates.lastRunAt;
   if (updates.lastRunSessionId !== undefined) mapped.last_run_session_id = updates.lastRunSessionId;
   if (updates.lastError !== undefined) mapped.last_error = updates.lastError;
+  if (updates.lastState !== undefined) mapped.last_state = updates.lastState;
+  if (updates.lastCheckedAt !== undefined) mapped.last_checked_at = updates.lastCheckedAt;
+  if (updates.consecutiveUnchanged !== undefined) {
+    mapped.consecutive_unchanged = updates.consecutiveUnchanged;
+  }
   return mapped;
+}
+
+function serializeWatchConfig(value: HttpWatchConfigInput | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return JSON.stringify(normalizeWatchConfig(value));
+}
+
+function mapPersistedWatchConfig(
+  value: string | null | undefined
+): Pick<ScheduledTask, 'watchConfig' | 'watchConfigError'> {
+  const parsed = parsePersistedWatchConfig(value ?? null);
+
+  switch (parsed.kind) {
+    case 'none':
+      return { watchConfig: null, watchConfigError: null };
+    case 'valid':
+      return { watchConfig: parsed.config, watchConfigError: null };
+    case 'invalid':
+      return { watchConfig: null, watchConfigError: parsed.error };
+    default:
+      return assertNever(parsed);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected persisted watch configuration result: ${String(value)}`);
 }
 
 function parseScheduleConfig(value: string | null): ScheduledTask['scheduleConfig'] {
