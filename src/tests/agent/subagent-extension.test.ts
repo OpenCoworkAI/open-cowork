@@ -210,8 +210,9 @@ describe('SubagentExtension', () => {
       const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
 
       // Access private state to simulate concurrent subagents
-      const state = (extension as unknown as { activeCounts: Map<string, number> }).activeCounts;
-      state.set('test-session', 3);
+      const state = (extension as unknown as { activeSubagents: Map<string, Set<string>> })
+        .activeSubagents;
+      state.set('test-session', new Set(['first', 'second', 'third']));
 
       const result = await extension.beforeSessionRun(mockContext as never);
       const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
@@ -307,14 +308,15 @@ describe('SubagentExtension', () => {
       expect(eventTypes).not.toContain('completed');
     });
 
-    it('decrements concurrency counter even on failure', async () => {
+    it('releases the concurrency slot even on failure', async () => {
       mockGetAll.mockReturnValue({
         model: 'nonexistent-provider/fake-model-xyz',
         provider: 'nonexistent-provider',
       });
 
       const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
-      const state = (extension as unknown as { activeCounts: Map<string, number> }).activeCounts;
+      const state = (extension as unknown as { activeSubagents: Map<string, Set<string>> })
+        .activeSubagents;
 
       expect(state.size).toBe(0);
       const result = await extension.beforeSessionRun(mockContext as never);
@@ -398,9 +400,9 @@ describe('SubagentExtension', () => {
       subagent: { model: '', defaultAgent: '', maxConcurrent: 1, presets: [] },
     });
     const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
-    (extension as unknown as { activeCounts: Map<string, number> }).activeCounts.set(
+    (extension as unknown as { activeSubagents: Map<string, Set<string>> }).activeSubagents.set(
       'test-session',
-      1
+      new Set(['running'])
     );
     const result = await extension.beforeSessionRun(mockContext as never);
     const outcome = (await (result.customTools![0].execute as unknown as ToolExecuteFn)('busy', {
@@ -437,9 +439,50 @@ describe('SubagentExtension', () => {
     await vi.waitFor(() => expect(pending).toHaveLength(2));
     pending.forEach((reject) => reject(new Error('fixture completed')));
     await Promise.all([runningFirst, runningSecond]);
-    expect((extension as unknown as { activeCounts: Map<string, number> }).activeCounts.size).toBe(
-      0
+    expect(
+      (extension as unknown as { activeSubagents: Map<string, Set<string>> }).activeSubagents.size
+    ).toBe(0);
+  });
+
+  it('reuses only completed slots when children finish out of order', async () => {
+    mockGetAll.mockReturnValue({
+      ...mockGetAll(),
+      subagent: { model: '', defaultAgent: '', maxConcurrent: 2, presets: [] },
+    });
+    const pending: Array<(error: Error) => void> = [];
+    mockCreateAgentSession.mockImplementation(
+      () => new Promise((_, reject) => pending.push(reject))
     );
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun(mockContext as never);
+    const execute = result.customTools![0].execute as unknown as ToolExecuteFn;
+    const first = execute('first', { task: 'inspect first' });
+    const second = execute('second', { task: 'inspect second' });
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    const active = (extension as unknown as { activeSubagents: Map<string, Set<string>> })
+      .activeSubagents;
+    const ids = [...active.get('test-session')!];
+    expect(await execute('blocked', { task: 'inspect' })).toMatchObject({
+      content: [{ text: expect.stringContaining('maximum concurrent subagents (2)') }],
+    });
+    pending[1](new Error('second completed'));
+    await second;
+    expect([...active.get('test-session')!]).toEqual([ids[0]]);
+    const third = execute('third', { task: 'inspect third' });
+    await vi.waitFor(() => expect(pending).toHaveLength(3));
+    expect(active.get('test-session')?.size).toBe(2);
+    pending[0](new Error('first completed'));
+    await first;
+    expect(active.get('test-session')?.size).toBe(1);
+    pending[2](new Error('third completed'));
+    await third;
+    expect(active.size).toBe(0);
+    const fourth = execute('fourth', { task: 'inspect fourth' });
+    await vi.waitFor(() => expect(pending).toHaveLength(4));
+    expect(active.get('test-session')?.size).toBe(1);
+    pending[3](new Error('fourth completed'));
+    await fourth;
+    expect(active.size).toBe(0);
   });
 
   it('returns child text and emits tool progress through a successful SDK session', async () => {

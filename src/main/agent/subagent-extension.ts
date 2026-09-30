@@ -101,7 +101,7 @@ function createSpawnSubagentTool(
   parentSessionId: string,
   requestPermission: PermissionHandler | null,
   getParentAbortSignal: () => AbortSignal | null,
-  activeCounts: Map<string, number>,
+  activeSubagents: Map<string, Set<string>>,
   cwd: string,
   sandboxIsolated: boolean
 ): AgentRuntimeCustomTool {
@@ -202,8 +202,8 @@ function createSpawnSubagentTool(
           details: undefined,
         };
       }
-      const activeCount = activeCounts.get(parentSessionId) ?? 0;
-      if (activeCount >= childConfig.maxConcurrent) {
+      const active = activeSubagents.get(parentSessionId) ?? new Set<string>();
+      if (active.size >= childConfig.maxConcurrent) {
         return {
           content: [
             {
@@ -224,7 +224,8 @@ function createSpawnSubagentTool(
       log(`[SubagentExtension] Spawning child ${subagentId} for task: "${task.slice(0, 100)}..."`);
       const startTime = Date.now();
 
-      activeCounts.set(parentSessionId, activeCount + 1);
+      active.add(subagentId);
+      activeSubagents.set(parentSessionId, active);
 
       safeSendEvent(
         sendEvent,
@@ -544,9 +545,8 @@ function createSpawnSubagentTool(
           details: undefined as unknown,
         };
       } finally {
-        const remaining = activeCounts.get(parentSessionId)! - 1;
-        if (remaining === 0) activeCounts.delete(parentSessionId);
-        else activeCounts.set(parentSessionId, remaining);
+        active.delete(subagentId);
+        if (active.size === 0) activeSubagents.delete(parentSessionId);
       }
     },
   };
@@ -554,7 +554,7 @@ function createSpawnSubagentTool(
 
 export class SubagentExtension implements AgentRuntimeExtension {
   readonly name = 'subagent';
-  private activeCounts = new Map<string, number>();
+  private activeSubagents = new Map<string, Set<string>>();
 
   constructor(
     private readonly getMcpManager: () => MCPManager | null,
@@ -572,7 +572,7 @@ export class SubagentExtension implements AgentRuntimeExtension {
           context.session.id,
           this.requestPermission,
           this.getParentAbortSignal,
-          this.activeCounts,
+          this.activeSubagents,
           context.session.cwd || configStore.getAll()?.defaultWorkdir || process.cwd(),
           context.sandboxIsolated ?? false
         ),

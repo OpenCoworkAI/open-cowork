@@ -56,15 +56,61 @@ describe('ConfigStore config sets', () => {
       const store = new ConfigStore();
       expect(store.getAll().subagent).toBeUndefined();
       expect(store.getAll().subagentConfigError).toContain('Invalid subagent');
-      const raw = (store as unknown as { store: { store: Record<string, unknown> } }).store.store;
-      expect(raw.subagent).toEqual(subagent);
-      expect(() => store.update({ theme: 'dark' })).toThrow('Repair subagent');
-      expect(raw.subagent).toEqual(subagent);
+      const persisted = (store as unknown as { store: { store: Record<string, unknown> } }).store;
+      store.update({ theme: 'dark', model: 'updated-parent-model' });
+      expect(persisted.store.theme).toBe('dark');
+      expect(persisted.store.model).toBe('updated-parent-model');
+      expect(persisted.store.subagent).toEqual(subagent);
+      expect(persisted.store).not.toHaveProperty('subagentConfigError');
+      expect(store.getAll().subagentConfigError).toContain('Invalid subagent');
+      const beforeInvalidUpdate = structuredClone(persisted.store);
+      expect(() => store.update({ theme: 'light', subagent: subagent as never })).toThrow(
+        'Invalid subagent'
+      );
+      expect(persisted.store).toEqual(beforeInvalidUpdate);
       store.update({ subagent: normalizeSubagentConfig() });
       expect(store.getAll().subagentConfigError).toBeUndefined();
       expect(store.getAll().subagent?.maxConcurrent).toBe(3);
+      expect(persisted.store.subagent).toEqual(normalizeSubagentConfig());
+      expect(persisted.store.theme).toBe('dark');
+      expect(persisted.store).not.toHaveProperty('subagentConfigError');
     }
   );
+
+  it('persists unrelated migrations while preserving invalid subagent data', () => {
+    mocks.seed = {
+      provider: 'gemini',
+      model: 'gemini/gemini-2.5-pro',
+      theme: 'sepia',
+      subagent: null,
+    };
+    const store = new ConfigStore();
+    const persisted = (store as unknown as { store: { store: Record<string, unknown> } }).store;
+    expect(persisted.store.model).toBe('gemini-2.5-pro');
+    expect(persisted.store.theme).toBe('light');
+    expect(persisted.store.subagent).toBeNull();
+    expect(persisted.store).not.toHaveProperty('subagentConfigError');
+    mocks.seed = structuredClone(persisted.store);
+    const restarted = new ConfigStore();
+    expect(restarted.getAll().model).toBe('gemini-2.5-pro');
+    expect(restarted.getAll().subagentConfigError).toContain('Invalid subagent');
+  });
+
+  it('allows config-set changes while preserving invalid subagent data', () => {
+    mocks.seed = { subagent: null };
+    const store = new ConfigStore();
+    const created = store.createSet({ name: 'Work', mode: 'clone' });
+    const id = created.activeConfigSetId;
+    expect(store.renameSet({ id, name: 'Renamed' }).configSets).toContainEqual(
+      expect.objectContaining({ id, name: 'Renamed' })
+    );
+    expect(store.switchSet({ id: 'default' }).activeConfigSetId).toBe('default');
+    expect(store.deleteSet({ id }).configSets).toHaveLength(1);
+    const persisted = (store as unknown as { store: { store: Record<string, unknown> } }).store;
+    expect(persisted.store.subagent).toBeNull();
+    expect(persisted.store).not.toHaveProperty('subagentConfigError');
+    expect(store.getAll().subagentConfigError).toContain('Invalid subagent');
+  });
 
   it('migrates legacy fields into default config set transparently', () => {
     mocks.seed = {

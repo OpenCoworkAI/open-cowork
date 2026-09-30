@@ -20,6 +20,10 @@ export function SettingsSubagents() {
     setDraft(structuredClone(appConfig?.subagent ?? DEFAULT_SUBAGENT_CONFIG));
   }, [appConfig?.subagent]);
   const preset = draft.presets[selected];
+  const concurrencyValid =
+    Number.isInteger(draft.maxConcurrent) && draft.maxConcurrent >= 1 && draft.maxConcurrent <= 8;
+  const missingInstructions = draft.presets.filter((entry) => !entry.prompt.trim());
+  const hiddenMissingInstructions = missingInstructions.filter((entry) => entry !== preset);
 
   function updatePreset(updates: Partial<SubagentPreset>) {
     setDraft((current) => ({
@@ -81,10 +85,19 @@ export function SettingsSubagents() {
             type="number"
             min={1}
             max={8}
+            step={1}
+            required
+            aria-invalid={!concurrencyValid}
+            aria-describedby={concurrencyValid ? undefined : 'subagent-concurrency-error'}
             className={fieldClass}
-            value={draft.maxConcurrent}
-            onChange={(event) => setDraft({ ...draft, maxConcurrent: Number(event.target.value) })}
+            value={Number.isNaN(draft.maxConcurrent) ? '' : draft.maxConcurrent}
+            onChange={(event) => setDraft({ ...draft, maxConcurrent: event.target.valueAsNumber })}
           />
+          {!concurrencyValid && (
+            <span id="subagent-concurrency-error" role="alert" className="block text-xs text-error">
+              {t('subagentSettings.concurrencyInvalid')}
+            </span>
+          )}
         </label>
         <label className="space-y-1 text-sm md:col-span-2">
           <span>{t('subagentSettings.defaultRole')}</span>
@@ -158,6 +171,13 @@ export function SettingsSubagents() {
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
+        {hiddenMissingInstructions.length > 0 && (
+          <p role="alert" className="text-sm text-error break-words">
+            {t('subagentSettings.incompleteAgents', {
+              agents: hiddenMissingInstructions.map((entry) => entry.name).join(', '),
+            })}
+          </p>
+        )}
         {preset && (
           <>
             <label className="block text-sm space-y-1">
@@ -194,9 +214,21 @@ export function SettingsSubagents() {
                 aria-label={t('subagentSettings.instructions')}
                 className={fieldClass}
                 rows={4}
+                required
+                aria-invalid={!preset.prompt.trim()}
+                aria-describedby={preset.prompt.trim() ? undefined : 'subagent-instructions-error'}
                 value={preset.prompt}
                 onChange={(event) => updatePreset({ prompt: event.target.value })}
               />
+              {!preset.prompt.trim() && (
+                <span
+                  id="subagent-instructions-error"
+                  role="alert"
+                  className="block text-xs text-error"
+                >
+                  {t('subagentSettings.instructionsRequired')}
+                </span>
+              )}
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -237,7 +269,7 @@ export function SettingsSubagents() {
         </p>
       )}
       <button
-        disabled={busy}
+        disabled={busy || !concurrencyValid || missingInstructions.length > 0}
         onClick={save}
         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-50"
       >

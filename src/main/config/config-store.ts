@@ -610,8 +610,7 @@ export class ConfigStore {
   }
 
   private ensureNormalized(): void {
-    const normalized = this.normalizeConfig(this.store.store as Partial<AppConfig>);
-    if (!normalized.subagentConfigError) this.store.set(normalized);
+    this.saveConfig(this.store.store as Partial<AppConfig>);
   }
 
   /**
@@ -1068,14 +1067,13 @@ export class ConfigStore {
     };
   }
 
-  private saveConfig(config: AppConfig): void {
-    if (config.subagentConfigError) {
-      throw new Error(
-        `Repair subagent settings before saving configuration: ${config.subagentConfigError}`
-      );
-    }
-    const normalized = this.normalizeConfig(config);
-    this.store.set(normalized);
+  private saveConfig(config: Partial<AppConfig>): void {
+    const { subagent, subagentConfigError, ...rest } = this.normalizeConfig(config);
+    // Merge other fields while preserving the invalid persisted subagent for repair.
+    this.store.set({
+      ...rest,
+      ...(config.subagentConfigError || subagentConfigError ? {} : { subagent }),
+    });
   }
 
   private composeProjectedConfig(
