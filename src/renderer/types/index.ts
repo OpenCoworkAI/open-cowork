@@ -634,10 +634,18 @@ export interface ExecutionContext {
 }
 
 // App Config types
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType =
+  | 'tokenmix'
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'gemini'
+  | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
+  | 'tokenmix'
   | 'openrouter'
   | 'anthropic'
   | 'openai'
@@ -730,6 +738,7 @@ export interface ProviderPreset {
 }
 
 export interface ProviderPresets {
+  tokenmix: ProviderPreset;
   openrouter: ProviderPreset;
   anthropic: ProviderPreset;
   custom: ProviderPreset;
