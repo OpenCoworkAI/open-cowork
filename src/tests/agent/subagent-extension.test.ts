@@ -21,6 +21,7 @@ vi.mock('../../main/config/config-store', () => ({
 }));
 
 import { SubagentExtension } from '../../main/agent/subagent-extension';
+import * as logger from '../../main/utils/logger';
 
 type ToolExecuteFn = (id: string, params: unknown) => Promise<unknown>;
 
@@ -75,16 +76,30 @@ describe('SubagentExtension', () => {
   });
 
   it('keeps parent sessions usable when child configuration is invalid', async () => {
+    const configError = 'Unknown default subagent: private-role-name';
+    const logError = vi.spyOn(logger, 'logError').mockImplementation(() => {});
     mockGetAll.mockReturnValue({
       ...mockGetAll(),
-      subagentConfigError: 'Invalid subagent configuration',
+      subagentConfigError: configError,
     });
     const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
     const result = await extension.beforeSessionRun(mockContext as never);
     const output = await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
       task: 'inspect',
     });
-    expect(JSON.stringify(output)).toContain('Invalid subagent');
+    expect(output).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Subagent configuration error. Repair it in Settings > Subagents.',
+        },
+      ],
+      details: undefined,
+    });
+    expect(logError).toHaveBeenCalledWith(
+      '[SubagentExtension] Invalid subagent configuration:',
+      configError
+    );
     expect(mockCreateAgentSession).not.toHaveBeenCalled();
   });
 

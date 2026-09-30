@@ -179,13 +179,19 @@ function createSpawnSubagentTool(
       // Concurrency guard
       const config = configStore.getAll();
       if (sandboxIsolated || config.subagentConfigError) {
+        if (config.subagentConfigError) {
+          logError(
+            '[SubagentExtension] Invalid subagent configuration:',
+            config.subagentConfigError
+          );
+        }
         return {
           content: [
             {
               type: 'text' as const,
               text: sandboxIsolated
                 ? 'Subagents are unavailable in sandbox sessions until child tools support sandbox isolation.'
-                : `Subagent configuration error: ${config.subagentConfigError}. Repair it in settings.`,
+                : 'Subagent configuration error. Repair it in Settings > Subagents.',
             },
           ],
           details: undefined,

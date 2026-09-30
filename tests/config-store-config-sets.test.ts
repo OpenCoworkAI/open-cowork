@@ -55,6 +55,7 @@ describe('ConfigStore config sets', () => {
       mocks.seed = { subagent };
       const store = new ConfigStore();
       expect(store.getAll().subagent).toBeUndefined();
+      expect(store.get('subagent')).toBeUndefined();
       expect(store.getAll().subagentConfigError).toContain('Invalid subagent');
       const persisted = (store as unknown as { store: { store: Record<string, unknown> } }).store;
       store.update({ theme: 'dark', model: 'updated-parent-model' });
@@ -71,6 +72,7 @@ describe('ConfigStore config sets', () => {
       store.update({ subagent: normalizeSubagentConfig() });
       expect(store.getAll().subagentConfigError).toBeUndefined();
       expect(store.getAll().subagent?.maxConcurrent).toBe(3);
+      expect(store.get('subagent')).toEqual(store.getAll().subagent);
       expect(persisted.store.subagent).toEqual(normalizeSubagentConfig());
       expect(persisted.store.theme).toBe('dark');
       expect(persisted.store).not.toHaveProperty('subagentConfigError');

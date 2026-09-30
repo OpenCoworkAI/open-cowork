@@ -1798,7 +1798,7 @@ ${hints.join('\n')}
         modelBaseUrl: piModel.baseUrl,
         effectiveCwd,
         apiKey,
-        subagent: configStore.get('subagent'),
+        subagent: configStore.getAll().subagent,
       });
       const skillPaths = await this.resolveSkillPaths(session.id);
       const skillsSignature = JSON.stringify(skillPaths);
