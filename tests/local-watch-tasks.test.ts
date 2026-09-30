@@ -99,6 +99,35 @@ describe('local conditional scheduled tasks', () => {
     expect(executeTask).toHaveBeenCalledTimes(2);
   });
 
+  it('starts with the persisted observation snapshot without re-reading it', async () => {
+    await writeFile(join(cwd, 'watched.txt'), 'before');
+    await manager.runNow(task.id);
+    const lastState = task.lastState;
+    await writeFile(join(cwd, 'watched.txt'), 'after');
+    const get = vi.spyOn(store, 'get');
+    const update = vi.spyOn(store, 'update');
+    executeTask.mockImplementation(async (executionTask: ScheduledTask) => {
+      expect(executionTask).toBe(update.mock.results[1].value);
+      expect(executionTask.lastState).not.toBe(lastState);
+      expect(executionTask.lastCheckedAt).toBeTypeOf('number');
+      expect(executionTask.lastError).toBeNull();
+      expect(get).toHaveBeenCalledTimes(2);
+      return { sessionId: 'changed-session' };
+    });
+    expect((await manager.runNow(task.id))?.outcome).toBe('triggered');
+    expect(executeTask).toHaveBeenCalledOnce();
+  });
+
+  it('skips execution when the observation update has no task', async () => {
+    await writeFile(join(cwd, 'watched.txt'), 'before');
+    await manager.runNow(task.id);
+    await writeFile(join(cwd, 'watched.txt'), 'after');
+    const update = store.update;
+    store.update = (id, updates) => (updates.lastState !== undefined ? null : update(id, updates));
+    expect((await manager.runNow(task.id))?.outcome).toBe('skipped');
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
   it('compares command output in the task workspace without a model on unchanged checks', async () => {
     task.watchConfig = {
       checkType: 'command',

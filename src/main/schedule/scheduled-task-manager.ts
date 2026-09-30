@@ -424,28 +424,31 @@ export class ScheduledTaskManager {
 
   private async executeAndRecord(task: ScheduledTask): Promise<ScheduledTaskExecutionRecord> {
     let checkingCondition = Boolean(task.watchConfig || task.watchConfigError);
+    let executionTask = task;
     try {
       if (task.watchConfigError) throw new Error(task.watchConfigError);
       if (task.watchConfig) {
         if (!this.checkCondition) throw new Error('Condition checker is unavailable.');
         const state = await this.checkCondition(task);
         const current = this.store.get(task.id);
-        if (!current || !this.isCurrentCondition(task))
+        if (!current || !this.isCurrentCondition(task, current))
           return { success: true, outcome: 'skipped' };
         const baseline = current.lastState == null;
         const unchanged = current.lastState === state;
         // Commit observations before starting the agent; failure must not replay a change.
-        this.store.update(task.id, {
+        const observed = this.store.update(task.id, {
           lastState: state,
           lastCheckedAt: this.now(),
           consecutiveUnchanged: unchanged ? (current.consecutiveUnchanged ?? 0) + 1 : 0,
           lastError: null,
         });
+        if (!observed) return { success: true, outcome: 'skipped' };
         if (baseline || unchanged)
           return { success: true, outcome: baseline ? 'baseline' : 'unchanged' };
+        executionTask = observed;
       }
       checkingCondition = false;
-      const result = await this.executeTask(task.watchConfig ? this.store.get(task.id)! : task);
+      const result = await this.executeTask(executionTask);
       try {
         this.store.update(task.id, {
           lastRunAt: this.now(),
@@ -479,8 +482,10 @@ export class ScheduledTaskManager {
     }
   }
 
-  private isCurrentCondition(task: ScheduledTask): boolean {
-    const current = this.store.get(task.id);
+  private isCurrentCondition(
+    task: ScheduledTask,
+    current: ScheduledTask | null = this.store.get(task.id)
+  ): boolean {
     return Boolean(
       current &&
       current.cwd === task.cwd &&
