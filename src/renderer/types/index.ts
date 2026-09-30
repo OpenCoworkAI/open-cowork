@@ -1,3 +1,8 @@
+import type {
+  LocalWatchConfig,
+  ScheduledTaskRunOutcome,
+} from '../../shared/schedule/local-watch-task';
+
 // Session types
 export interface Session {
   id: string;
@@ -133,6 +138,11 @@ export interface WeeklyScheduleConfig {
 export type ScheduleConfig = DailyScheduleConfig | WeeklyScheduleConfig;
 
 export interface ScheduleTask {
+  watchConfig?: LocalWatchConfig | null;
+  watchConfigError?: string | null;
+  lastState?: string | null;
+  lastCheckedAt?: number | null;
+  consecutiveUnchanged?: number;
   id: string;
   title: string;
   prompt: string;
@@ -151,6 +161,7 @@ export interface ScheduleTask {
 }
 
 export interface ScheduleCreateInput {
+  watchConfig?: LocalWatchConfig | null;
   title?: string;
   prompt: string;
   cwd: string;
@@ -163,6 +174,7 @@ export interface ScheduleCreateInput {
 }
 
 export interface ScheduleUpdateInput {
+  watchConfig?: LocalWatchConfig | null;
   title?: string;
   prompt?: string;
   cwd?: string;
@@ -172,9 +184,11 @@ export interface ScheduleUpdateInput {
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
-  lastRunAt?: number | null;
-  lastRunSessionId?: string | null;
-  lastError?: string | null;
+}
+
+export interface ScheduleRunNowResult {
+  task: ScheduleTask;
+  outcome: ScheduledTaskRunOutcome;
 }
 
 // Skills types

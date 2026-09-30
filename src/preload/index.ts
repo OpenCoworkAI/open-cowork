@@ -14,6 +14,7 @@ import type {
   PluginToggleResult,
   PluginComponentKind,
   ScheduleTask,
+  ScheduleRunNowResult,
   ScheduleCreateInput,
   ScheduleUpdateInput,
   ProviderModelInfo,
@@ -443,7 +444,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('schedule.delete', id),
     toggle: (id: string, enabled: boolean): Promise<ScheduleTask | null> =>
       ipcRenderer.invoke('schedule.toggle', id, enabled),
-    runNow: (id: string): Promise<ScheduleTask | null> => ipcRenderer.invoke('schedule.runNow', id),
+    runNow: (id: string): Promise<ScheduleRunNowResult | null> =>
+      ipcRenderer.invoke('schedule.runNow', id),
   },
 
   memory: {
@@ -704,7 +706,7 @@ declare global {
         update: (id: string, updates: ScheduleUpdateInput) => Promise<ScheduleTask | null>;
         delete: (id: string) => Promise<{ success: boolean }>;
         toggle: (id: string, enabled: boolean) => Promise<ScheduleTask | null>;
-        runNow: (id: string) => Promise<ScheduleTask | null>;
+        runNow: (id: string) => Promise<ScheduleRunNowResult | null>;
       };
       memory: {
         getOverview: (cwd?: string) => Promise<MemoryOverview>;
