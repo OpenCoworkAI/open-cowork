@@ -161,14 +161,26 @@ export class SandboxAdapter implements SandboxExecutor {
   private async initializeWSL(config: SandboxAdapterConfig): Promise<void> {
     log('[SandboxAdapter] Checking WSL2 availability...');
 
-    // Try to use cached status from bootstrap first (much faster)
+    // Wait for the app-wide sandbox bootstrap rather than just peeking at its cache.
+    // The bootstrap (which drives the "Setting Up Sandbox" startup popup) and this
+    // adapter used to run their OWN independent WSL checks whenever the bootstrap
+    // hadn't finished yet. Two concurrent "wsl -d <distro>" probes at cold-start could
+    // resolve differently (one timing out, one succeeding once the VM woke up), leaving
+    // this adapter permanently stuck on whatever it saw first - even after the popup
+    // went on to report success. Awaiting bootstrap.bootstrap() guarantees both places
+    // agree on a single, shared result. bootstrap.bootstrap() is idempotent, so this is
+    // a no-op await if it already completed, and just joins the in-flight check if not.
     const bootstrap = getSandboxBootstrap();
-    let wslStatus = bootstrap.getCachedWSLStatus();
-
-    if (wslStatus) {
-      log('[SandboxAdapter] Using cached WSL status from bootstrap');
-    } else {
-      log('[SandboxAdapter] No cached status, checking WSL...');
+    let wslStatus: WSLStatus;
+    try {
+      const bootstrapResult = await bootstrap.bootstrap();
+      wslStatus =
+        bootstrapResult.wslStatus ??
+        bootstrap.getCachedWSLStatus() ??
+        (await WSLBridge.checkWSLStatus());
+      log('[SandboxAdapter] Using WSL status from shared bootstrap check');
+    } catch (error) {
+      log('[SandboxAdapter] Bootstrap check failed, falling back to a direct WSL check:', error);
       wslStatus = await WSLBridge.checkWSLStatus();
     }
 
