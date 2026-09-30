@@ -709,6 +709,8 @@
     "watchBaselineSaved": "基线已保存",
     "watchUnchanged": "未检测到变化",
     "watchTriggered": "已检测到变化，任务已启动",
+    "watchSkipped": "任务已更改，本次检查结果已丢弃",
+    "watchTimeoutInvalid": "请输入 1 到 30 秒之间的整数。",
     "createTitle": "新建定时任务",
     "editTitle": "编辑定时任务",
     "autoTitleLabel": "自动标题（用于会话区分）",

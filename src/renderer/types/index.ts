@@ -1,4 +1,7 @@
-import type { LocalWatchConfig } from '../../shared/schedule/local-watch-task';
+import type {
+  LocalWatchConfig,
+  ScheduledTaskRunOutcome,
+} from '../../shared/schedule/local-watch-task';
 
 // Session types
 export interface Session {
@@ -181,9 +184,11 @@ export interface ScheduleUpdateInput {
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
-  lastRunAt?: number | null;
-  lastRunSessionId?: string | null;
-  lastError?: string | null;
+}
+
+export interface ScheduleRunNowResult {
+  task: ScheduleTask;
+  outcome: ScheduledTaskRunOutcome;
 }
 
 // Skills types

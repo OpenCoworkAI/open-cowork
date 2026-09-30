@@ -10,6 +10,9 @@ export function ScheduleConditionFields({
 }) {
   const { t } = useTranslation();
   const fieldClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-sm';
+  const timeout =
+    value?.checkType === 'command' ? (value.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
+  const timeoutValid = Number.isInteger(timeout) && timeout >= 1 && timeout <= 30;
   return (
     <div className="border-t border-border pt-3 space-y-2">
       <label className="block text-sm space-y-1">
@@ -73,17 +76,25 @@ export function ScheduleConditionFields({
               type="number"
               min={1}
               max={30}
-              value={(value.checkConfig.timeoutMs ?? 10000) / 1000}
+              required
+              aria-invalid={!timeoutValid}
+              aria-describedby={!timeoutValid ? 'watch-timeout-error' : undefined}
+              value={Number.isFinite(timeout) ? timeout : ''}
               onChange={(event) =>
                 onChange({
                   ...value,
                   checkConfig: {
                     ...value.checkConfig,
-                    timeoutMs: Number(event.target.value) * 1000,
+                    timeoutMs: event.target.value === '' ? NaN : Number(event.target.value) * 1000,
                   },
                 })
               }
             />
+            {!timeoutValid && (
+              <span id="watch-timeout-error" role="alert" className="block text-xs text-error">
+                {t('schedule.watchTimeoutInvalid')}
+              </span>
+            )}
           </label>
         </>
       )}

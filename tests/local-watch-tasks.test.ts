@@ -75,14 +75,14 @@ afterEach(async () => {
 describe('local conditional scheduled tasks', () => {
   it('establishes a baseline, skips unchanged content, and starts exactly once per change', async () => {
     await writeFile(join(cwd, 'watched.txt'), 'before');
-    await manager.runNow(task.id);
+    expect((await manager.runNow(task.id))?.outcome).toBe('baseline');
     expect(task.lastCheckedAt).toBeTypeOf('number');
     expect(task.lastRunAt).toBeNull();
-    await manager.runNow(task.id);
+    expect((await manager.runNow(task.id))?.outcome).toBe('unchanged');
     expect(task.consecutiveUnchanged).toBe(1);
     expect(executeTask).not.toHaveBeenCalled();
     await writeFile(join(cwd, 'watched.txt'), 'after');
-    await manager.runNow(task.id);
+    expect((await manager.runNow(task.id))?.outcome).toBe('triggered');
     expect(executeTask).toHaveBeenCalledTimes(1);
     expect(task.lastRunSessionId).toBe('changed-session');
     await manager.runNow(task.id);
@@ -188,6 +188,75 @@ describe('local conditional scheduled tasks', () => {
     await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('rejects promptly and stops detached descendants holding output pipes open', async () => {
+    const marker = join(cwd, 'detached-write.txt');
+    const child = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 2500)`;
+    const parent = `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(child)}], { detached: true, stdio: 'inherit' }); setTimeout(() => {}, 10000)`;
+    task.watchConfig = {
+      checkType: 'command',
+      compareMode: 'output',
+      checkConfig: {
+        command: `"${process.execPath}" -e ${JSON.stringify(parent)}`,
+        timeoutMs: 1000,
+      },
+    };
+    const started = Date.now();
+    await expect(manager.runNow(task.id)).rejects.toThrow('timed out');
+    expect(Date.now() - started).toBeLessThan(2000);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects oversized files and reads only regular files', async () => {
+    await writeFile(join(cwd, 'watched.txt'), Buffer.alloc(10 * 1024 * 1024 + 1));
+    await expect(checkLocalCondition(task)).rejects.toThrow('10 MiB');
+  });
+
+  it('keeps observations private when receiving public task updates', () => {
+    task.lastState = 'saved';
+    task.lastCheckedAt = 123;
+    manager.update(task.id, {
+      title: 'edited',
+      lastState: 'forged',
+      lastCheckedAt: 999,
+      consecutiveUnchanged: 50,
+      lastError: 'forged',
+      lastRunSessionId: 'forged',
+    } as Parameters<typeof manager.update>[1]);
+    expect(task.title).toContain('edited');
+    expect(task.lastState).toBe('saved');
+    expect(task.lastCheckedAt).toBe(123);
+    expect(task.lastError).toBeNull();
+    expect(task.lastRunSessionId).toBeNull();
+  });
+
+  it.each(['edit', 'disable', 'delete'] as const)(
+    'discards a stale failed check after %s',
+    async (change) => {
+      let fail!: (error: Error) => void;
+      const onTaskError = vi.fn();
+      manager = new ScheduledTaskManager({
+        store,
+        executeTask,
+        onTaskError,
+        checkCondition: () =>
+          new Promise((_, reject) => {
+            fail = reject;
+          }),
+      });
+      const checking = manager.runNow(task.id);
+      if (change === 'edit') manager.update(task.id, { cwd: '/different' });
+      if (change === 'disable') manager.toggle(task.id, false);
+      if (change === 'delete') store.get = () => null;
+      fail(new Error('old check failed'));
+      const result = await checking;
+      expect(result?.outcome ?? 'skipped').toBe('skipped');
+      expect(task.lastError).toBeNull();
+      expect(task.lastCheckedAt == null).toBe(true);
+      expect(onTaskError).not.toHaveBeenCalled();
+    }
+  );
+
   it('persists a changed observation before an agent failure', async () => {
     await writeFile(join(cwd, 'watched.txt'), 'one');
     await manager.runNow(task.id);
@@ -200,6 +269,17 @@ describe('local conditional scheduled tasks', () => {
     await expect(manager.runNow(task.id)).rejects.toThrow('model unavailable');
     await manager.runNow(task.id);
     expect(executeTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an agent failure even if the condition changes during the run', async () => {
+    await writeFile(join(cwd, 'watched.txt'), 'one');
+    await manager.runNow(task.id);
+    await writeFile(join(cwd, 'watched.txt'), 'two');
+    executeTask.mockImplementation(async () => {
+      manager.update(task.id, { cwd: '/different' });
+      throw new Error('agent failed');
+    });
+    await expect(manager.runNow(task.id)).rejects.toThrow('agent failed');
   });
 
   it('retains the baseline across manager restarts', async () => {

@@ -1,6 +1,13 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
+export type ScheduledTaskRunOutcome =
+  | 'baseline'
+  | 'unchanged'
+  | 'triggered'
+  | 'started'
+  | 'skipped';
+
 export type LocalWatchConfig =
   | { checkType: 'file'; compareMode: 'content'; checkConfig: { path: string } }
   | {

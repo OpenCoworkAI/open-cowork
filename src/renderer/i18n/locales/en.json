@@ -709,6 +709,8 @@
     "watchBaselineSaved": "Baseline saved",
     "watchUnchanged": "No change detected",
     "watchTriggered": "Change detected; task started",
+    "watchSkipped": "Check discarded because the task changed",
+    "watchTimeoutInvalid": "Enter a whole number from 1 to 30 seconds.",
     "createTitle": "Create Schedule",
     "editTitle": "Edit Schedule",
     "autoTitleLabel": "Auto title (used to identify sessions)",

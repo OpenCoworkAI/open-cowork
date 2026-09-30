@@ -54,6 +54,10 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   const [repeatEvery, setRepeatEvery] = useState(1);
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
   const [watchConfig, setWatchConfig] = useState<LocalWatchConfig | null>(null);
+  const timeoutSeconds =
+    watchConfig?.checkType === 'command' ? (watchConfig.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
+  const timeoutValid =
+    Number.isInteger(timeoutSeconds) && timeoutSeconds >= 1 && timeoutSeconds <= 30;
   const weekdayOptions = getWeekdayOptions(t);
   const scheduleModeOptions = getScheduleModeOptions(t, scheduleMode, Boolean(watchConfig));
   const promptChangedWhileEditing = Boolean(
@@ -266,13 +270,13 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         throw new Error(t('schedule.taskMissing'));
       }
       setSuccess({
-        key: task.watchConfig
-          ? task.lastState == null
-            ? 'schedule.watchBaselineSaved'
-            : task.lastState === updated.lastState
-              ? 'schedule.watchUnchanged'
-              : 'schedule.watchTriggered'
-          : 'schedule.runNowSuccess',
+        key: {
+          baseline: 'schedule.watchBaselineSaved',
+          unchanged: 'schedule.watchUnchanged',
+          triggered: 'schedule.watchTriggered',
+          skipped: 'schedule.watchSkipped',
+          started: 'schedule.runNowSuccess',
+        }[updated.outcome],
       });
       await loadTasks();
     } catch (err) {
@@ -524,7 +528,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         <div className="flex items-center gap-2">
           <button
             onClick={submitTask}
-            disabled={isLoading}
+            disabled={isLoading || !timeoutValid}
             className="px-3 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-50"
           >
             {editingId ? t('schedule.saveChanges') : t('schedule.createTask')}

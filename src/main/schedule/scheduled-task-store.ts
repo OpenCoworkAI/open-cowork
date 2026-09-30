@@ -5,7 +5,7 @@ import type {
   ScheduledTask,
   ScheduledTaskCreateInput,
   ScheduledTaskStore,
-  ScheduledTaskUpdateInput,
+  ScheduledTaskStoreUpdate,
 } from './scheduled-task-manager';
 
 export function createScheduledTaskStore(
@@ -45,7 +45,7 @@ export function createScheduledTaskStore(
       db.scheduledTasks.create(row);
       return mapRowToTask(row);
     },
-    update: (id: string, updates: ScheduledTaskUpdateInput) => {
+    update: (id: string, updates: ScheduledTaskStoreUpdate) => {
       const mapped = mapTaskUpdatesToRow(updates);
       db.scheduledTasks.update(id, mapped);
       const row = db.scheduledTasks.get(id);
@@ -94,7 +94,7 @@ function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
   };
 }
 
-function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<ScheduledTaskRow> {
+function mapTaskUpdatesToRow(updates: ScheduledTaskStoreUpdate): Partial<ScheduledTaskRow> {
   const mapped: Partial<ScheduledTaskRow> = {};
   if (updates.title !== undefined) mapped.title = updates.title;
   if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
