@@ -16,6 +16,10 @@ import {
   buildScheduledTaskTitle,
 } from '../../shared/schedule/task-title';
 import { log, logError } from '../utils/logger';
+import {
+  normalizeLocalWatchConfig,
+  type LocalWatchConfig,
+} from '../../shared/schedule/local-watch-task';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
 export type ScheduledTaskWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -36,6 +40,11 @@ export type ScheduledTaskScheduleConfig =
   | ScheduledTaskWeeklyScheduleConfig;
 
 export interface ScheduledTask {
+  watchConfig?: LocalWatchConfig | null;
+  watchConfigError?: string | null;
+  lastState?: string | null;
+  lastCheckedAt?: number | null;
+  consecutiveUnchanged?: number;
   id: string;
   title: string;
   prompt: string;
@@ -54,6 +63,7 @@ export interface ScheduledTask {
 }
 
 export interface ScheduledTaskCreateInput {
+  watchConfig?: LocalWatchConfig | null;
   title?: string;
   prompt: string;
   cwd: string;
@@ -66,6 +76,10 @@ export interface ScheduledTaskCreateInput {
 }
 
 export interface ScheduledTaskUpdateInput {
+  watchConfig?: LocalWatchConfig | null;
+  lastState?: string | null;
+  lastCheckedAt?: number | null;
+  consecutiveUnchanged?: number;
   title?: string;
   prompt?: string;
   cwd?: string;
@@ -103,6 +117,7 @@ interface ScheduledTaskExecutionRecord {
 interface ScheduledTaskManagerOptions {
   store: ScheduledTaskStore;
   executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  checkCondition?: (task: ScheduledTask) => Promise<string>;
   onTaskError?: (taskId: string, error: string) => void;
   now?: () => number;
 }
@@ -110,6 +125,7 @@ interface ScheduledTaskManagerOptions {
 export class ScheduledTaskManager {
   private readonly store: ScheduledTaskStore;
   private readonly executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  private readonly checkCondition?: (task: ScheduledTask) => Promise<string>;
   private readonly onTaskError?: (taskId: string, error: string) => void;
   private readonly now: () => number;
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -119,6 +135,7 @@ export class ScheduledTaskManager {
   constructor(options: ScheduledTaskManagerOptions) {
     this.store = options.store;
     this.executeTask = options.executeTask;
+    this.checkCondition = options.checkCondition;
     this.onTaskError = options.onTaskError;
     this.now = options.now ?? (() => Date.now());
   }
@@ -159,6 +176,8 @@ export class ScheduledTaskManager {
   }
 
   create(input: ScheduledTaskCreateInput): ScheduledTask {
+    const watchConfig =
+      input.watchConfig == null ? null : normalizeLocalWatchConfig(input.watchConfig);
     const normalizedPrompt = input.prompt.trim();
     const normalizedTitle = input.title
       ? buildScheduledTaskTitle(input.title)
@@ -171,8 +190,16 @@ export class ScheduledTaskManager {
       normalizedScheduleConfig || normalizedRepeatEvery === null
         ? null
         : normalizeRepeatUnit(input.repeatUnit);
+    if (
+      watchConfig &&
+      !normalizedScheduleConfig &&
+      !(normalizedRepeatEvery && normalizedRepeatUnit)
+    ) {
+      throw new Error('Conditional tasks require a repeating schedule.');
+    }
     const created = this.store.create({
       ...input,
+      watchConfig,
       title: normalizedTitle,
       prompt: normalizedPrompt,
       scheduleConfig: normalizedScheduleConfig,
@@ -188,6 +215,15 @@ export class ScheduledTaskManager {
   update(id: string, updates: ScheduledTaskUpdateInput): ScheduledTask | null {
     const current = this.store.get(id);
     if (!current) return null;
+    const watchConfig =
+      updates.watchConfig === undefined
+        ? current.watchConfig
+        : updates.watchConfig === null
+          ? null
+          : normalizeLocalWatchConfig(updates.watchConfig);
+    const resetBaseline =
+      JSON.stringify(watchConfig) !== JSON.stringify(current.watchConfig) ||
+      (updates.cwd !== undefined && updates.cwd !== current.cwd);
     const nextPrompt = updates.prompt === undefined ? current.prompt : updates.prompt.trim();
     const nextTitle =
       updates.title === undefined
@@ -214,8 +250,20 @@ export class ScheduledTaskManager {
     if (!usesScheduleConfig && nextRepeatEvery !== undefined && nextRepeatEvery === null) {
       nextRepeatUnit = null;
     }
+    if (
+      watchConfig &&
+      !usesScheduleConfig &&
+      !(
+        (nextRepeatEvery === undefined ? current.repeatEvery : nextRepeatEvery) &&
+        (nextRepeatUnit === undefined ? current.repeatUnit : nextRepeatUnit)
+      )
+    ) {
+      throw new Error('Conditional tasks require a repeating schedule.');
+    }
     const updated = this.store.update(id, {
       ...updates,
+      watchConfig: updates.watchConfig === undefined ? undefined : watchConfig,
+      ...(resetBaseline ? { lastState: null, lastCheckedAt: null, consecutiveUnchanged: 0 } : {}),
       prompt: nextPrompt,
       title: nextTitle,
       scheduleConfig: nextScheduleConfig,
@@ -293,6 +341,8 @@ export class ScheduledTaskManager {
       return;
     }
     if (this.executingTasks.has(taskId)) {
+      // Preserve the next slot while a long check or agent run owns this task.
+      this.prepareExecution(task);
       return;
     }
     this.executingTasks.add(taskId);
@@ -363,7 +413,31 @@ export class ScheduledTaskManager {
 
   private async executeAndRecord(task: ScheduledTask): Promise<ScheduledTaskExecutionRecord> {
     try {
-      const result = await this.executeTask(task);
+      if (task.watchConfigError) throw new Error(task.watchConfigError);
+      if (task.watchConfig) {
+        if (!this.checkCondition) throw new Error('Condition checker is unavailable.');
+        const state = await this.checkCondition(task);
+        const current = this.store.get(task.id);
+        if (
+          !current ||
+          JSON.stringify(current.watchConfig) !== JSON.stringify(task.watchConfig) ||
+          current.cwd !== task.cwd
+        ) {
+          return { success: true };
+        }
+        if (task.enabled && !current.enabled) return { success: true };
+        const baseline = current.lastState == null;
+        const unchanged = current.lastState === state;
+        // Commit observations before starting the agent; failure must not replay a change.
+        this.store.update(task.id, {
+          lastState: state,
+          lastCheckedAt: this.now(),
+          consecutiveUnchanged: unchanged ? (current.consecutiveUnchanged ?? 0) + 1 : 0,
+          lastError: null,
+        });
+        if (baseline || unchanged) return { success: true };
+      }
+      const result = await this.executeTask(task.watchConfig ? this.store.get(task.id)! : task);
       try {
         this.store.update(task.id, {
           lastRunAt: this.now(),
@@ -378,8 +452,9 @@ export class ScheduledTaskManager {
       const message = error instanceof Error ? error.message : String(error);
       try {
         this.store.update(task.id, {
-          lastRunAt: this.now(),
-          lastRunSessionId: null,
+          ...(!task.watchConfig && !task.watchConfigError
+            ? { lastRunAt: this.now(), lastRunSessionId: null }
+            : { lastCheckedAt: this.now() }),
           lastError: message,
         });
       } catch (updateError) {

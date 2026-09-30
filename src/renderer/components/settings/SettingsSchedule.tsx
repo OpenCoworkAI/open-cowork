@@ -14,6 +14,8 @@ import { useAppStore } from '../../store';
 import { formatAppDateTime, joinAppList } from '../../utils/i18n-format';
 import { renderLocalizedBannerMessage, getWeekdayOptions, getScheduleModeOptions } from './shared';
 import type { LocalizedBanner, ScheduleFormMode } from './shared';
+import type { LocalWatchConfig } from '../../../shared/schedule/local-watch-task';
+import { ScheduleConditionFields } from './ScheduleConditionFields';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -51,8 +53,9 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   const [enabled, setEnabled] = useState(true);
   const [repeatEvery, setRepeatEvery] = useState(1);
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
+  const [watchConfig, setWatchConfig] = useState<LocalWatchConfig | null>(null);
   const weekdayOptions = getWeekdayOptions(t);
-  const scheduleModeOptions = getScheduleModeOptions(t);
+  const scheduleModeOptions = getScheduleModeOptions(t, scheduleMode, Boolean(watchConfig));
   const promptChangedWhileEditing = Boolean(
     editingTaskSnapshot && prompt.trim() !== editingTaskSnapshot.prompt.trim()
   );
@@ -186,6 +189,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           return;
         }
         const payload: ScheduleUpdateInput = {
+          watchConfig,
           cwd: cwd.trim() || workingDir || '',
           enabled,
           scheduleConfig,
@@ -210,6 +214,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           return;
         }
         const payload: ScheduleCreateInput = {
+          watchConfig,
           prompt: trimmedPrompt,
           cwd: cwd.trim() || workingDir || '',
           runAt: runAtValue,
@@ -260,7 +265,15 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
       if (!updated) {
         throw new Error(t('schedule.taskMissing'));
       }
-      setSuccess({ key: 'schedule.runNowSuccess' });
+      setSuccess({
+        key: task.watchConfig
+          ? task.lastState == null
+            ? 'schedule.watchBaselineSaved'
+            : task.lastState === updated.lastState
+              ? 'schedule.watchUnchanged'
+              : 'schedule.watchTriggered'
+          : 'schedule.runNowSuccess',
+      });
       await loadTasks();
     } catch (err) {
       setError(err instanceof Error ? { text: err.message } : { key: 'schedule.runNowFailed' });
@@ -334,6 +347,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     );
     setRepeatEvery(task.repeatEvery ?? 1);
     setRepeatUnit(task.repeatUnit ?? 'day');
+    setWatchConfig(task.watchConfig ?? null);
     setError(null);
     setSuccess(null);
   }
@@ -351,6 +365,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setEnabled(true);
     setRepeatEvery(1);
     setRepeatUnit('day');
+    setWatchConfig(null);
   }
 
   return (
@@ -395,6 +410,17 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           onChange={(e) => setCwd(e.target.value)}
           placeholder={t('schedule.cwdPlaceholder')}
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
+        />
+        <ScheduleConditionFields
+          value={watchConfig}
+          onChange={(value) => {
+            setWatchConfig(value);
+            if (value && scheduleMode === 'once') {
+              setScheduleMode('legacy-interval');
+              setRepeatEvery(1);
+              setRepeatUnit('minute');
+            }
+          }}
         />
         <div className="rounded-lg border border-border bg-background p-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -447,7 +473,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
               />
             )}
           </div>
-          {scheduleMode === 'legacy-interval' && (
+          {scheduleMode === 'legacy-interval' && !watchConfig && (
             <div className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">
               {t('schedule.legacyIntervalNotice')}
             </div>
@@ -571,6 +597,30 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                         {t('schedule.recentSession', { value: task.lastRunSessionId })}
                       </div>
                     )}
+                    {task.watchConfig && (
+                      <div className="text-xs text-text-muted break-words">
+                        {t(
+                          task.watchConfig.checkType === 'file'
+                            ? 'schedule.watchFile'
+                            : 'schedule.watchCommand'
+                        )}
+                        :{' '}
+                        {task.watchConfig.checkType === 'file'
+                          ? task.watchConfig.checkConfig.path
+                          : task.watchConfig.checkConfig.command}
+                        <div>
+                          {task.lastCheckedAt == null
+                            ? t('schedule.watchPending')
+                            : t('schedule.watchChecked', {
+                                time: formatTime(task.lastCheckedAt),
+                                count: task.consecutiveUnchanged ?? 0,
+                              })}
+                        </div>
+                      </div>
+                    )}
+                    {task.watchConfigError && (
+                      <div className="text-xs text-error break-words">{task.watchConfigError}</div>
+                    )}
                     <div className="text-xs text-text-muted">
                       {t('schedule.sessionStatus', { value: lastRunStatusLabel })}
                     </div>
@@ -595,7 +645,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                         disabled={isLoading}
                         className="px-2 py-1 rounded bg-surface-hover text-xs text-text-secondary disabled:opacity-50"
                       >
-                        {t('schedule.runNow')}
+                        {t(task.watchConfig ? 'schedule.watchCheckNow' : 'schedule.runNow')}
                       </button>
                       <button
                         onClick={() => stopTaskRun(task)}
