@@ -4,6 +4,7 @@ import {
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   createCodingTools,
+  createReadOnlyTools,
   DefaultResourceLoader,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
@@ -17,14 +18,20 @@ import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
 import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
-import { resolvePiRegistryModel, resolvePiRouteProtocol } from './pi-model-resolution';
+import {
+  resolvePiRegistryModel,
+  resolvePiRouteProtocol,
+  resolvePiModelString,
+  buildSyntheticPiModelFromRuntimeConfig,
+} from './pi-model-resolution';
+import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
+import { normalizeSubagentConfig } from '../../shared/subagent-config';
 import type { ServerEvent } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const MAX_TIMEOUT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const TIMEOUT_MESSAGE = 'Subagent timed out';
-const MAX_CONCURRENT_SUBAGENTS = 3;
 const MAX_TASK_LENGTH = 10_000;
 
 class SubagentTimeoutError extends Error {
@@ -41,12 +48,14 @@ class ParentCancelledError extends Error {
 
 interface SubagentParams {
   task: string;
+  model?: string;
+  agent?: string;
   result_format?: string;
   allowed_tools?: string[];
   timeout_seconds?: number;
 }
 
-function buildChildSystemPrompt(task: string, resultFormat?: string): string {
+function buildChildSystemPrompt(task: string, resultFormat?: string, rolePrompt?: string): string {
   const parts = [
     'You are a focused sub-agent. Complete the task below and return ONLY the result.',
     'Do not ask questions. Do not provide commentary beyond what is needed for the result.',
@@ -54,6 +63,7 @@ function buildChildSystemPrompt(task: string, resultFormat?: string): string {
     `## Task`,
     task,
   ];
+  if (rolePrompt) parts.push('', '## Role', rolePrompt);
   if (resultFormat) {
     parts.push('', `## Expected Output Format`, resultFormat);
   }
@@ -90,8 +100,10 @@ function createSpawnSubagentTool(
   parentSessionId: string,
   requestPermission: PermissionHandler | null,
   getParentAbortSignal: () => AbortSignal | null,
-  concurrencyState: { active: number }
+  activeCounts: Map<string, number>,
+  cwd: string
 ): AgentRuntimeCustomTool {
+  const settings = normalizeSubagentConfig(configStore.getAll()?.subagent);
   return {
     name: 'spawn_subagent',
     label: 'spawn_subagent',
@@ -105,6 +117,17 @@ function createSpawnSubagentTool(
           'A clear, self-contained description of what the child agent should accomplish. ' +
           'Include all necessary context since the child has no access to your conversation.',
       }),
+      model: Type.Optional(
+        Type.String({
+          description:
+            'Child model ID on the active API provider. Overrides the selected preset and default child model.',
+        })
+      ),
+      agent: Type.Optional(
+        Type.String({
+          description: `Named role preset. Available: ${settings.presets.map((preset) => `${preset.name}: ${preset.description}`).join('; ')}. Default: ${settings.defaultAgent || 'general'}.`,
+        })
+      ),
       result_format: Type.Optional(
         Type.String({
           description:
@@ -114,7 +137,7 @@ function createSpawnSubagentTool(
       allowed_tools: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            'Restrict MCP tools available to the child. Standard coding tools (read, write, edit, bash) are always available. If omitted, the child inherits all parent MCP tools.',
+            'Restrict the child coding and MCP tools by name. Intersects the role preset restrictions. An empty list disables all tools; omitted inherits the preset tools.',
         })
       ),
       timeout_seconds: Type.Optional(
@@ -126,7 +149,7 @@ function createSpawnSubagentTool(
       ),
     }),
     async execute(_toolCallId: string, params: unknown) {
-      const { task, result_format, allowed_tools, timeout_seconds } = (params ||
+      const { task, model, agent, result_format, allowed_tools, timeout_seconds } = (params ||
         {}) as SubagentParams;
 
       if (!task || typeof task !== 'string' || task.trim().length === 0) {
@@ -149,12 +172,25 @@ function createSpawnSubagentTool(
       }
 
       // Concurrency guard
-      if (concurrencyState.active >= MAX_CONCURRENT_SUBAGENTS) {
+      const config = configStore.getAll();
+      const childConfig = normalizeSubagentConfig(config.subagent);
+      const agentName = agent ?? childConfig.defaultAgent;
+      const preset = childConfig.presets.find((candidate) => candidate.name === agentName);
+      if (agentName && !preset) {
+        return {
+          content: [
+            { type: 'text' as const, text: `Error: unknown subagent preset: ${agentName}` },
+          ],
+          details: undefined,
+        };
+      }
+      const activeCount = activeCounts.get(parentSessionId) ?? 0;
+      if (activeCount >= childConfig.maxConcurrent) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error: maximum concurrent subagents (${MAX_CONCURRENT_SUBAGENTS}) reached. Wait for a running subagent to complete.`,
+              text: `Error: maximum concurrent subagents (${childConfig.maxConcurrent}) reached. Wait for a running subagent to complete.`,
             },
           ],
           details: undefined as unknown,
@@ -170,7 +206,7 @@ function createSpawnSubagentTool(
       log(`[SubagentExtension] Spawning child ${subagentId} for task: "${task.slice(0, 100)}..."`);
       const startTime = Date.now();
 
-      concurrencyState.active++;
+      activeCounts.set(parentSessionId, activeCount + 1);
 
       safeSendEvent(
         sendEvent,
@@ -181,29 +217,38 @@ function createSpawnSubagentTool(
       );
 
       try {
-        const config = configStore.getAll();
         const authStorage = getSharedAuthStorage();
         const modelRegistry = new ModelRegistry(authStorage);
 
-        const modelString = config.model?.trim() || 'anthropic/claude-sonnet-4-6';
-        const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
-        const piModel = resolvePiRegistryModel(modelString, {
-          configProvider: configProtocol,
-          customBaseUrl: config.baseUrl?.trim() || undefined,
-          rawProvider: config.provider,
+        const selectedModel = model?.trim() || preset?.model || childConfig.model || config.model;
+        const modelString = resolvePiModelString({
+          provider: config.provider,
           customProtocol: config.customProtocol,
+          model: selectedModel,
         });
-        if (!piModel) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: 'Error: could not resolve model for subagent. Check provider/model config.',
-              },
-            ],
-            details: undefined as unknown,
-          };
-        }
+        const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
+        const effectiveBaseUrl =
+          configProtocol === 'openai'
+            ? normalizeOpenAICompatibleBaseUrl(config.baseUrl) || config.baseUrl
+            : config.baseUrl;
+        const piModel =
+          resolvePiRegistryModel(modelString, {
+            configProvider: configProtocol,
+            customBaseUrl: effectiveBaseUrl,
+            rawProvider: config.provider,
+            customProtocol: config.customProtocol,
+          }) ??
+          buildSyntheticPiModelFromRuntimeConfig(
+            {
+              ...config,
+              model: selectedModel,
+              contextWindow: selectedModel === config.model ? config.contextWindow : undefined,
+              maxTokens: selectedModel === config.model ? config.maxTokens : undefined,
+            },
+            { resolvedModelString: modelString, routeProtocol: configProtocol, effectiveBaseUrl }
+          );
+        const apiKey = config.apiKey?.trim();
+        if (apiKey) authStorage.setRuntimeApiKey(piModel.provider, apiKey);
 
         // Build MCP tools (minus spawn_subagent)
         let mcpCustomTools: ToolDefinition[] = [];
@@ -234,18 +279,39 @@ function createSpawnSubagentTool(
           });
         }
 
-        if (allowed_tools && allowed_tools.length > 0) {
-          const allowSet = new Set(allowed_tools);
-          mcpCustomTools = mcpCustomTools.filter((t) => allowSet.has(t.name));
-        }
+        // A call can narrow a role's capabilities, never widen them.
+        const isAllowed = (name: string) =>
+          (!preset?.allowedTools || preset.allowedTools.includes(name)) &&
+          (!allowed_tools || allowed_tools.includes(name));
+        mcpCustomTools = mcpCustomTools.filter(
+          (tool) => isAllowed(tool.name) && tool.name !== 'spawn_subagent'
+        );
+        const codingTools = [
+          ...new Map(
+            [...createCodingTools(cwd), ...createReadOnlyTools(cwd)].map((tool) => [
+              tool.name,
+              tool,
+            ])
+          ).values(),
+        ].filter((tool) => isAllowed(tool.name));
 
-        const cwd = config.defaultWorkdir || process.cwd();
-        const codingTools = createCodingTools(cwd);
-
-        const childSystemPrompt = buildChildSystemPrompt(task, result_format);
+        const childSystemPrompt = buildChildSystemPrompt(task, result_format, preset?.prompt);
         const resourceLoader = new DefaultResourceLoader({
           cwd,
           appendSystemPrompt: childSystemPrompt,
+          noExtensions: true,
+          extensionFactories: requestPermission
+            ? [
+                (pi) => {
+                  pi.on('tool_call', async (event) => {
+                    const decision = await requestPermission(event.toolName, event.input);
+                    if (decision === 'deny') {
+                      return { block: true, reason: 'Permission denied by parent session policy' };
+                    }
+                  });
+                },
+              ]
+            : [],
         });
         await resourceLoader.reload();
 
@@ -264,47 +330,8 @@ function createSpawnSubagentTool(
           cwd,
         });
 
-        // Install permission gating on child session (mirrors parent behavior)
-        if (requestPermission) {
-          const piSession = childSession as unknown as {
-            setBeforeToolCall?: (
-              hook: (call: {
-                toolName: string;
-                args: unknown;
-              }) => Promise<{ block: boolean; reason?: string } | void>
-            ) => void;
-          };
-          if (typeof piSession.setBeforeToolCall === 'function') {
-            piSession.setBeforeToolCall(async (call) => {
-              const decision = await requestPermission(call.toolName, call.args);
-              if (decision === 'deny') {
-                return { block: true, reason: 'Permission denied by parent session policy' };
-              }
-              return undefined;
-            });
-          } else {
-            logError(
-              '[SubagentExtension] Child session does not support setBeforeToolCall — permission gating disabled'
-            );
-          }
-        }
-
         let finalText = '';
         const unsubscribe = childSession.subscribe((event) => {
-          if (event.type === 'agent_end') {
-            const messages = (event as { messages?: unknown[] }).messages || [];
-            for (let i = messages.length - 1; i >= 0; i--) {
-              const msg = messages[i] as { role?: string; content?: unknown } | undefined;
-              if (msg && msg.role === 'assistant' && Array.isArray(msg.content)) {
-                finalText = (msg.content as Array<{ type: string; text?: string }>)
-                  .filter((b) => b.type === 'text' && b.text)
-                  .map((b) => b.text)
-                  .join('');
-                break;
-              }
-            }
-          }
-
           if (event.type === 'tool_execution_start') {
             safeSendEvent(
               sendEvent,
@@ -371,6 +398,21 @@ function createSpawnSubagentTool(
           if (parentAbortPromise) racers.push(parentAbortPromise);
 
           await Promise.race(racers);
+          // prompt() can finish before queued subscription events reach listeners.
+          const finalMessage = [...childSession.messages]
+            .reverse()
+            .find((message) => message.role === 'assistant');
+          if (finalMessage?.role === 'assistant') {
+            if (finalMessage.stopReason === 'error' || finalMessage.stopReason === 'aborted') {
+              throw new Error(
+                finalMessage.errorMessage || `Subagent response ${finalMessage.stopReason}`
+              );
+            }
+            finalText = finalMessage.content
+              .filter((block) => block.type === 'text')
+              .map((block) => block.text)
+              .join('');
+          }
         } finally {
           if (timeoutId) clearTimeout(timeoutId);
           if (parentAbortHandler && parentSignal) {
@@ -441,7 +483,9 @@ function createSpawnSubagentTool(
           details: undefined as unknown,
         };
       } finally {
-        concurrencyState.active--;
+        const remaining = activeCounts.get(parentSessionId)! - 1;
+        if (remaining === 0) activeCounts.delete(parentSessionId);
+        else activeCounts.set(parentSessionId, remaining);
       }
     },
   };
@@ -449,7 +493,7 @@ function createSpawnSubagentTool(
 
 export class SubagentExtension implements AgentRuntimeExtension {
   readonly name = 'subagent';
-  private concurrencyState = { active: 0 };
+  private activeCounts = new Map<string, number>();
 
   constructor(
     private readonly getMcpManager: () => MCPManager | null,
@@ -467,7 +511,8 @@ export class SubagentExtension implements AgentRuntimeExtension {
           context.session.id,
           this.requestPermission,
           this.getParentAbortSignal,
-          this.concurrencyState
+          this.activeCounts,
+          context.session.cwd || configStore.getAll()?.defaultWorkdir || process.cwd()
         ),
       ],
     };

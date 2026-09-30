@@ -49,6 +49,8 @@
     "goToSettings": "Go to Settings"
   },
   "settings": {
+    "subagents": "Subagents",
+    "subagentsDesc": "Child models, roles, and tool access",
     "title": "Settings",
     "apiSettings": "API Settings",
     "apiSettingsDesc": "Configure API provider and key",
@@ -942,6 +944,23 @@
     "description": "An unexpected error occurred in the application. You can try to recover by clicking the button below.",
     "details": "Error details",
     "retry": "Try again"
+  },
+  "subagentSettings": {
+    "model": "Default child model (active API provider)",
+    "concurrency": "Concurrent children per session",
+    "defaultRole": "Default role",
+    "generalRole": "General",
+    "roles": "Named agents",
+    "add": "Add agent",
+    "remove": "Remove agent",
+    "name": "Agent name",
+    "description": "Task description",
+    "roleModel": "Role model",
+    "instructions": "Role instructions",
+    "restrictTools": "Restrict tools",
+    "tools": "Allowed tool names (comma-separated)",
+    "save": "Save subagent settings",
+    "saved": "Subagent settings saved"
   },
   "subagent": {
     "label": "Subagent",

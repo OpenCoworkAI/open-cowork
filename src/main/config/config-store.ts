@@ -32,6 +32,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { normalizeSubagentConfig, type SubagentConfig } from '../../shared/subagent-config';
 
 /**
  * Application configuration schema
@@ -78,6 +79,7 @@ export interface ApiConfigSet {
 }
 
 export interface AppConfig {
+  subagent?: SubagentConfig;
   // API Provider
   provider: ProviderType;
 
@@ -1038,6 +1040,7 @@ export class ConfigStore {
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
+      subagent: normalizeSubagentConfig(raw.subagent),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
@@ -1463,6 +1466,7 @@ export class ConfigStore {
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
           : current.memoryRuntime,
+      subagent: normalizeSubagentConfig(updates.subagent ?? current.subagent),
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });
