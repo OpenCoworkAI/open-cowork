@@ -65,6 +65,14 @@ describe('pi model resolution helpers', () => {
     expect(resolvePiRouteProtocol('custom', 'anthropic')).toBe('anthropic');
   });
 
+  it('keeps ChatGPT Codex on the native OAuth transport', () => {
+    expect(resolvePiRouteProtocol('openai-codex', 'openai')).toBe('openai-codex');
+    expect(inferPiApi('openai-codex')).toBe('openai-codex-responses');
+    expect(resolvePiModelString({ provider: 'openai-codex', model: 'gpt-5.4' })).toBe(
+      'openai-codex/gpt-5.4'
+    );
+  });
+
   it('builds synthetic models with protocol-specific api defaults', () => {
     expect(inferPiApi('anthropic')).toBe('anthropic-messages');
     expect(inferPiApi('gemini')).toBe('google-generative-ai');

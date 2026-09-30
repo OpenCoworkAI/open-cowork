@@ -26,12 +26,13 @@ interface ConfigModalProps {
 }
 
 const PROVIDER_LABELS: Record<
-  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'custom',
+  'openrouter' | 'anthropic' | 'openai' | 'openai-codex' | 'gemini' | 'ollama' | 'custom',
   string
 > = {
   openrouter: 'OpenRouter',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  'openai-codex': 'ChatGPT (Codex)',
   gemini: 'Gemini',
   ollama: 'Ollama',
   custom: 'Custom',
@@ -68,6 +69,9 @@ export function ConfigModal({
     testResult,
     friendlyTestDetails,
     isOllamaMode,
+    codexAuthenticated,
+    isCodexLoggingIn,
+    loginCodex,
     requiresApiKey,
     protocolGuidanceText,
     protocolGuidanceTone,
@@ -201,43 +205,82 @@ export function ConfigModal({
               {t('api.provider')}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
-                (p) => (
-                  <button
-                    key={p}
-                    onClick={() => changeProvider(p)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      provider === p
-                        ? 'bg-accent text-white'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    {presets?.[p]?.name ||
-                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
-                      p}
-                  </button>
-                )
-              )}
+              {(
+                [
+                  'openrouter',
+                  'anthropic',
+                  'openai',
+                  'openai-codex',
+                  'gemini',
+                  'ollama',
+                  'custom',
+                ] as const
+              ).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => changeProvider(p)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    provider === p
+                      ? 'bg-accent text-white'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  }`}
+                >
+                  {presets?.[p]?.name ||
+                    (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
+                    p}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* API Key */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-              <Key className="w-4 h-4" />
-              {t('api.apiKey')}
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-              className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-            />
-            {currentPreset?.keyHint && (
-              <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
-            )}
-          </div>
+          {/* API Key / ChatGPT OAuth */}
+          {provider === 'openai-codex' ? (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <Key className="w-4 h-4" />
+                {t('api.codexAuthTitle')}
+              </label>
+              <p className="text-xs text-text-muted">{t('api.codexDescription')}</p>
+              <div className="flex items-center gap-2 text-sm">
+                {codexAuthenticated ? (
+                  <CheckCircle className="w-4 h-4 text-success" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                )}
+                <span className="text-text-secondary">
+                  {codexAuthenticated
+                    ? t('api.codexAuthenticated')
+                    : t('api.codexNotAuthenticated')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loginCodex()}
+                disabled={isCodexLoggingIn}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isCodexLoggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isCodexLoggingIn ? t('api.codexLoggingIn') : t('api.codexLogin')}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <Key className="w-4 h-4" />
+                {t('api.apiKey')}
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
+                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+              {currentPreset?.keyHint && (
+                <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
+              )}
+            </div>
+          )}
 
           {/* Custom Protocol */}
           {provider === 'custom' && (
@@ -360,8 +403,12 @@ export function ConfigModal({
                   >
                     <Edit3 className="w-3 h-3" />
                     {isOllamaMode
-                      ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
-                      : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
+                      ? useCustomModel
+                        ? t('api.useDetectedModels')
+                        : t('api.manualModel')
+                      : useCustomModel
+                        ? t('api.usePreset')
+                        : t('api.custom')}
                   </button>
                 )}
               </div>
@@ -452,7 +499,11 @@ export function ConfigModal({
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={handleTest}
-              disabled={isTesting || (requiresApiKey && !apiKey.trim())}
+              disabled={
+                isTesting ||
+                (requiresApiKey && !apiKey.trim()) ||
+                (provider === 'openai-codex' && codexAuthenticated !== true)
+              }
               className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isTesting ? (
@@ -471,7 +522,11 @@ export function ConfigModal({
               onClick={() => {
                 void handleSave();
               }}
-              disabled={isSaving || (requiresApiKey && !apiKey.trim())}
+              disabled={
+                isSaving ||
+                (requiresApiKey && !apiKey.trim()) ||
+                (provider === 'openai-codex' && codexAuthenticated !== true)
+              }
               className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               {isSaving ? (

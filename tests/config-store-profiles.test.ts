@@ -123,6 +123,25 @@ describe('ConfigStore provider profiles', () => {
     expect(back.apiKey).toBe('sk-openai');
   });
 
+  it('persists the ChatGPT Codex profile without an API key', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'openai-codex',
+      customProtocol: 'openai',
+      apiKey: '',
+      baseUrl: 'https://chatgpt.com/backend-api',
+      model: 'gpt-5.4',
+    });
+
+    const config = store.getAll();
+    expect(config.activeProfileKey).toBe('openai-codex');
+    expect(config.apiKey).toBe('');
+    expect(config.model).toBe('gpt-5.4');
+    expect(config.profiles['openai-codex']?.baseUrl).toBe('https://chatgpt.com/backend-api');
+    expect(store.hasUsableCredentialsForActiveSet()).toBe(true);
+  });
+
   it('updates active profile credentials only for current profile', () => {
     const store = new ConfigStore();
 

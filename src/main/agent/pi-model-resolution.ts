@@ -1,4 +1,5 @@
-import { getModel, type Api, type Model } from '@mariozechner/pi-ai';
+import { getModel } from '@earendil-works/pi-ai/compat';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import { isOfficialOpenAIBaseUrl } from '../config/auth-utils';
 
 const COMMON_FALLBACK_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
@@ -50,6 +51,7 @@ export function resolvePiRouteProtocol(provider?: string, customProtocol?: strin
   if (provider === 'ollama') return 'openai';
   if (provider === 'openai') return 'openai';
   if (provider === 'openrouter') return 'openai';
+  if (provider === 'openai-codex') return 'openai-codex';
   if (provider === 'gemini') return 'gemini';
   return provider || 'anthropic';
 }
@@ -89,6 +91,8 @@ export function inferPiApi(protocol: string): string {
     case 'gemini':
     case 'google':
       return 'google-generative-ai';
+    case 'openai-codex':
+      return 'openai-codex-responses';
     case 'openai':
     default:
       return 'openai-completions';
@@ -146,6 +150,12 @@ export function buildSyntheticPiModel(
   const api = apiOverride || inferPiApi(protocol);
   const autoReasoning = reasoning ?? REASONING_MODEL_PATTERN.test(modelId);
   const knownSpecs = lookupModelSpecs(modelId);
+  // ponytail: name-based vision heuristic — ceiling: a vision model without
+  // 'vision/vl/omni/multimodal' in its id defaults to text-only (safe: text-only
+  // models 400 on images, #251). Add an explicit input override if that matters.
+  const looksVision = /vision|vl|omni|multimodal|gpt-4o|gpt-4-turbo|gemini|claude-3|claude-4/i.test(
+    modelId
+  );
   return {
     id: modelId,
     name: modelId,
@@ -153,10 +163,13 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: autoReasoning,
-    input: ['text', 'image'],
+    input: looksVision ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 128000,
     maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
+    // Unknown OpenAI-compatible endpoints often reject the optional `strict`
+    // tool parameter (#232/#233); omit it for synthetic models.
+    compat: { supportsStrictMode: false },
   } as Model<Api>;
 }
 
@@ -250,6 +263,9 @@ export function resolvePiModelString(input: PiModelStringInput): string {
     return model;
   }
   const provider = input.provider || 'anthropic';
+  if (provider === 'openai-codex') {
+    return `openai-codex/${model}`;
+  }
   const protocol = input.customProtocol || provider;
   return `${protocol}/${model}`;
 }
@@ -375,15 +391,24 @@ export function applyPiModelRuntimeOverrides(
     } as typeof nextModel;
   }
 
-  // DeepSeek V4 models on custom/relay endpoints need thinking blocks in content[] array.
+  // DeepSeek V4 models on custom/relay endpoints need thinking blocks in content[]
+  // array, reasoning_content replayed on later turns, and the deepseek thinking
+  // format. 0.85 auto-detects these only for official deepseek.com endpoints (#162/#231).
   if (nextModel.api === 'openai-completions' && DEEPSEEK_V4_MODEL_PATTERN.test(nextModel.id)) {
     const currentCompat = (nextModel.compat || {}) as Record<string, unknown>;
-    if (!currentCompat.requiresThinkingInContent) {
+    const additions: Record<string, unknown> = {};
+    if (currentCompat.requiresThinkingInContent !== true)
+      additions.requiresThinkingInContent = true;
+    if (currentCompat.requiresReasoningContentOnAssistantMessages !== true) {
+      additions.requiresReasoningContentOnAssistantMessages = true;
+    }
+    if (currentCompat.thinkingFormat !== 'deepseek') additions.thinkingFormat = 'deepseek';
+    if (Object.keys(additions).length > 0) {
       nextModel = {
         ...nextModel,
         compat: {
           ...currentCompat,
-          requiresThinkingInContent: true,
+          ...additions,
         },
       } as typeof nextModel;
     }

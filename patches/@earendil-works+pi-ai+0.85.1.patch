@@ -1,0 +1,69 @@
+diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+index 48464f2..f30c970 100644
+--- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
++++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+@@ -979,7 +979,15 @@ export function convertMessages(model, context, compat, options) {
+             const preservedReasoningDetails = signedReasoningDetails ?? (legacyReasoningDetails.length > 0 ? legacyReasoningDetails : undefined);
+             const nonEmptyThinkingBlocks = thinkingBlocks.filter((block) => block.thinking.trim().length > 0);
+             if (nonEmptyThinkingBlocks.length > 0) {
+-                if (compat.requiresThinkingAsText) {
++                if (compat.requiresThinkingInContent) {
++                    // DeepSeek V4 Pro requires thinking blocks in content[] array, not as top-level field
++                    const thinkingContent = nonEmptyThinkingBlocks.map((block) => ({
++                        type: "thinking",
++                        thinking: block.thinking,
++                    }));
++                    assistantMsg.content = [...thinkingContent, ...assistantTextParts];
++                }
++                else if (compat.requiresThinkingAsText) {
+                     // Convert thinking blocks to plain text (no tags to avoid model mimicking them)
+                     const thinkingText = nonEmptyThinkingBlocks
+                         .map((block) => sanitizeSurrogates(block.thinking))
+@@ -1272,6 +1280,7 @@ function detectCompat(model) {
+         isAntLing ||
+         isZai;
+     const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
++    const isDeepSeekV4 = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i.test(model.id);
+     const isOpenRouterDeveloperRoleModel = isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
+     const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;
+     return {
+@@ -1284,6 +1293,7 @@ function detectCompat(model) {
+         requiresToolResultName: false,
+         requiresAssistantAfterToolResult: false,
+         requiresThinkingAsText: false,
++        requiresThinkingInContent: isDeepSeekV4,
+         requiresReasoningContentOnAssistantMessages: isDeepSeek,
+         thinkingFormat: isDeepSeek
+             ? "deepseek"
+@@ -1334,6 +1344,7 @@ function getCompat(model) {
+         requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
+         requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
+         requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
++        requiresThinkingInContent: model.compat.requiresThinkingInContent ?? detected.requiresThinkingInContent,
+         requiresReasoningContentOnAssistantMessages: model.compat.requiresReasoningContentOnAssistantMessages ??
+             detected.requiresReasoningContentOnAssistantMessages,
+         thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
+diff --git a/node_modules/@earendil-works/pi-ai/dist/auth/oauth/load.js b/node_modules/@earendil-works/pi-ai/dist/auth/oauth/load.js
+index 782ae16..504f828 100644
+--- a/node_modules/@earendil-works/pi-ai/dist/auth/oauth/load.js
++++ b/node_modules/@earendil-works/pi-ai/dist/auth/oauth/load.js
+@@ -16,6 +16,10 @@ const importOAuthModule = (specifier) => {
+     const runtimeSpecifier = import.meta.url.endsWith(".js") ? specifier.replace(/\.ts$/, ".js") : specifier;
+     return import(__rewriteRelativeImportExtension(runtimeSpecifier));
+ };
++// Electron bundles pi-ai into a single CommonJS entrypoint. The bundler-opaque
++// dynamic path otherwise resolves beside that entrypoint, where this module
++// does not exist in the packaged app.
++import { openaiCodexOAuth } from "./openai-codex.js";
+ let bundledLoaders;
+ /** Registers statically bundled OAuth flows for standalone Bun binaries. */
+ export function registerBundledOAuthFlowLoaders(loaders) {
+@@ -29,7 +33,7 @@ export const loadAnthropicOAuth = async () => {
+ export const loadOpenAICodexOAuth = async () => {
+     if (bundledLoaders)
+         return bundledLoaders.openaiCodex();
+-    return (await importOAuthModule("./openai-codex.ts")).openaiCodexOAuth;
++    return openaiCodexOAuth;
+ };
+ export const loadGitHubCopilotOAuth = async () => {
+     if (bundledLoaders)

@@ -32,6 +32,7 @@ import type {
 } from '../../renderer/types';
 import { log, logWarn } from '../utils/logger';
 import { probeWithSdk } from '../agent/sdk-one-shot';
+import { getSharedModelRuntime } from '../agent/shared-auth';
 import { fetchOllamaModelIndex } from './ollama-api';
 
 const STEP_NAMES: DiagnosticStepName[] = ['dns', 'tcp', 'tls', 'auth', 'model'];
@@ -360,6 +361,27 @@ async function stepTls(
 }
 
 async function stepAuth(input: DiagnosticInput, step: DiagnosticStep): Promise<void> {
+  if (input.provider === 'openai-codex') {
+    const start = Date.now();
+    try {
+      const runtime = await getSharedModelRuntime();
+      const auth = await runtime.getAuth('openai-codex');
+      if (!auth?.auth?.apiKey) {
+        step.status = 'fail';
+        step.error = 'ChatGPT OAuth is not connected';
+        step.fix = 'codex_login_required';
+      } else {
+        step.status = 'ok';
+      }
+    } catch (error) {
+      step.status = 'fail';
+      step.error = getErrorMessage(error);
+      step.fix = 'codex_auth_failed';
+    }
+    step.latencyMs = Date.now() - start;
+    return;
+  }
+
   // Gemini: verify key via models.get() — lightweight and always available
   if (isGeminiProtocol(input)) {
     const start = Date.now();

@@ -98,6 +98,49 @@ export function Sidebar() {
     setShowDeleteConfirm(false);
   }, []);
 
+  // Load only the currently selected session. Cancelling the previous request
+  // prevents a fast A → B switch from updating the view with A's late result.
+  useEffect(() => {
+    if (!activeSessionId || !isElectron) return;
+
+    const sessionId = activeSessionId;
+    let cancelled = false;
+    const state = useAppStore.getState().sessionStates[sessionId];
+
+    if (!state?.messages?.length) {
+      void getSessionMessages(sessionId)
+        .then((messages) => {
+          if (!cancelled && messages.length > 0) {
+            setMessages(sessionId, messages);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) console.error('[Sidebar] Failed to load messages:', error);
+        });
+    }
+
+    if (!state?.traceSteps?.length) {
+      void getSessionTraceSteps(sessionId)
+        .then((steps) => {
+          if (!cancelled) setTraceSteps(sessionId, steps || []);
+        })
+        .catch((error) => {
+          if (!cancelled) console.error('[Sidebar] Failed to load trace steps:', error);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSessionId,
+    getSessionMessages,
+    getSessionTraceSteps,
+    isElectron,
+    setMessages,
+    setTraceSteps,
+  ]);
+
   const toggleSelectSession = useCallback((sessionId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -146,53 +189,11 @@ export function Sidebar() {
   }, [selectedIds, visibleSessionIds, batchDeleteSessions, exitSelectMode]);
 
   const handleSessionClick = useCallback(
-    async (sessionId: string) => {
+    (sessionId: string) => {
       setShowSettings(false);
-
-      if (activeSessionId === sessionId) return;
-
-      setActiveSession(sessionId);
-
-      // Read sessionStates at call-time from the store rather than closing over
-      // the selector value. The selector returns a new object reference every
-      // time any session's state changes (patchSession spreads the whole map),
-      // so including it in deps would rebuild this callback on every streaming
-      // tick and cause a React #185 "Maximum update depth exceeded" loop when
-      // rapidly switching sessions on slow renderers (e.g. Windows).
-      const currentSessionStates = useAppStore.getState().sessionStates;
-
-      const existingMessages = currentSessionStates[sessionId]?.messages;
-      if ((!existingMessages || existingMessages.length === 0) && isElectron) {
-        try {
-          const messages = await getSessionMessages(sessionId);
-          if (messages && messages.length > 0) {
-            setMessages(sessionId, messages);
-          }
-        } catch (error) {
-          console.error('[Sidebar] Failed to load messages:', error);
-        }
-      }
-
-      const existingSteps = currentSessionStates[sessionId]?.traceSteps;
-      if ((!existingSteps || existingSteps.length === 0) && isElectron) {
-        try {
-          const steps = await getSessionTraceSteps(sessionId);
-          setTraceSteps(sessionId, steps || []);
-        } catch (error) {
-          console.error('[Sidebar] Failed to load trace steps:', error);
-        }
-      }
+      if (activeSessionId !== sessionId) setActiveSession(sessionId);
     },
-    [
-      activeSessionId,
-      getSessionMessages,
-      getSessionTraceSteps,
-      isElectron,
-      setActiveSession,
-      setMessages,
-      setShowSettings,
-      setTraceSteps,
-    ]
+    [activeSessionId, setActiveSession, setShowSettings]
   );
 
   const handleNewSession = () => {

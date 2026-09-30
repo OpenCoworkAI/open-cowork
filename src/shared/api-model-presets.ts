@@ -3,6 +3,7 @@ export type SharedProviderType =
   | 'anthropic'
   | 'custom'
   | 'openai'
+  | 'openai-codex'
   | 'gemini'
   | 'ollama';
 
@@ -21,6 +22,7 @@ export interface SharedProviderPresets {
   anthropic: SharedProviderPreset;
   custom: SharedProviderPreset;
   openai: SharedProviderPreset;
+  'openai-codex': SharedProviderPreset;
   gemini: SharedProviderPreset;
   ollama: SharedProviderPreset;
 }
@@ -74,6 +76,22 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     ],
     keyPlaceholder: 'sk-...',
     keyHint: '从 platform.openai.com 获取',
+  },
+  'openai-codex': {
+    name: 'ChatGPT (Codex)',
+    baseUrl: 'https://chatgpt.com/backend-api',
+    models: [
+      { id: 'gpt-5.3-codex-spark', name: 'gpt-5.3-codex-spark' },
+      { id: 'gpt-5.4', name: 'gpt-5.4' },
+      { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' },
+      { id: 'gpt-5.5', name: 'gpt-5.5' },
+      { id: 'gpt-5.6-luna', name: 'gpt-5.6-luna' },
+      { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol' },
+      { id: 'gpt-5.6-terra', name: 'gpt-5.6-terra' },
+      { id: 'gpt-6-astra', name: 'gpt-6-astra' },
+    ],
+    keyPlaceholder: '',
+    keyHint: 'Sign in with ChatGPT via Pi OAuth; no OpenAI API key required.',
   },
   gemini: {
     name: 'Gemini',
@@ -155,6 +173,19 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
       'o4-mini',
     ],
   },
+  'openai-codex': {
+    piProvider: 'openai-codex',
+    pick: [
+      'gpt-5.3-codex-spark',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-5.5',
+      'gpt-5.6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-6-astra',
+    ],
+  },
   gemini: {
     piProvider: 'google',
     pick: [
@@ -197,6 +228,13 @@ export function getModelInputGuidance(
     return {
       placeholder: 'glm-5, kimi-k2-thinking, claude-sonnet-4-6',
       hint: 'Use the exact model ID for the selected protocol or endpoint.',
+    };
+  }
+
+  if (provider === 'openai-codex') {
+    return {
+      placeholder: 'gpt-5.4, gpt-5.5, gpt-5.6-sol',
+      hint: 'Use your ChatGPT Plus/Pro subscription via Codex OAuth; do not enter an API key.',
     };
   }
 

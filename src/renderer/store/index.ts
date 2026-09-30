@@ -85,7 +85,7 @@ function getSession(states: Record<string, SessionState>, sessionId: string): Se
   return states[sessionId] ?? DEFAULT_SESSION_STATE;
 }
 
-interface AppState {
+export interface AppState {
   // Sessions
   sessions: Session[];
   activeSessionId: string | null;

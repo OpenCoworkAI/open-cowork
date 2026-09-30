@@ -15,7 +15,7 @@ import type {
   ExtensionFactory,
   ExtensionAPI,
   SessionBeforeCompactEvent,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 
 /**
  * Configuration for the custom compaction extension.

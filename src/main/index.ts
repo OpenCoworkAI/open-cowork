@@ -42,6 +42,7 @@ import {
 } from './config/config-file-watcher';
 import { runConfigApiTest } from './config/config-test-routing';
 import { listOllamaModels } from './config/ollama-api';
+import { getSharedModelRuntime } from './agent/shared-auth';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
@@ -180,7 +181,7 @@ function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
 }
 
 async function verifyGeminiRuntimeForSmokeTest(): Promise<void> {
-  const { completeSimple, getModel } = await import('@mariozechner/pi-ai');
+  const { completeSimple, getModel } = await import('@earendil-works/pi-ai/compat');
   const model = getModel('google', 'gemini-2.5-flash');
   if (!model) {
     throw new Error('Gemini smoke-test model is missing from the pi-ai registry');
@@ -1633,10 +1634,11 @@ app.on('before-quit', async (event) => {
       tray = null;
       return;
     }
-    // Set the flag immediately before any await to prevent re-entrant cleanup
-    isCleaningUp = true;
     event.preventDefault();
     try {
+      // cleanupSandboxResources() sets isCleaningUp itself (and bails if it is
+      // already set) — setting the flag here first made the cleanup body a no-op
+      // and left quit re-entrant only via the flag it was supposed to guard (#297).
       await cleanupSandboxResources();
     } catch (error) {
       logError('[App] before-quit cleanup failed, forcing quit:', error);
@@ -1887,6 +1889,75 @@ ipcMain.handle('dialog.selectFiles', async () => {
 });
 
 // Config IPC handlers
+let codexLoginInFlight = false;
+
+async function getCodexAuthStatus(): Promise<{
+  authenticated: boolean;
+  models: Array<{ id: string; name: string }>;
+}> {
+  const modelRuntime = await getSharedModelRuntime();
+  const auth = await modelRuntime.getAuth('openai-codex');
+  return {
+    authenticated: Boolean(auth?.auth?.apiKey),
+    models: modelRuntime.getModels('openai-codex').map((model) => ({
+      id: model.id,
+      name: model.name,
+    })),
+  };
+}
+
+ipcMain.handle('config.codexStatus', async () => getCodexAuthStatus());
+
+ipcMain.handle('config.codexLogin', async () => {
+  if (codexLoginInFlight) {
+    throw new Error('A ChatGPT login is already in progress.');
+  }
+
+  codexLoginInFlight = true;
+  const controller = new AbortController();
+  try {
+    const modelRuntime = await getSharedModelRuntime();
+    await modelRuntime.login('openai-codex', 'oauth', {
+      signal: controller.signal,
+      prompt: async (prompt) => {
+        if (prompt.type === 'select') {
+          return 'browser';
+        }
+        if (prompt.type === 'manual_code') {
+          return new Promise<string>((_resolve, reject) => {
+            const signal = prompt.signal || controller.signal;
+            const timeout = setTimeout(
+              () => {
+                reject(new Error('ChatGPT login timed out. Please try again.'));
+              },
+              5 * 60 * 1000
+            );
+            const cancel = () => {
+              clearTimeout(timeout);
+              reject(new Error('ChatGPT login cancelled.'));
+            };
+            if (signal.aborted) {
+              cancel();
+              return;
+            }
+            signal.addEventListener('abort', cancel, { once: true });
+          });
+        }
+        throw new Error('Unsupported ChatGPT login prompt.');
+      },
+      notify: (event) => {
+        if (event.type === 'auth_url') {
+          void shell.openExternal(event.url);
+        }
+      },
+    });
+    return getCodexAuthStatus();
+  } finally {
+    controller.abort();
+    codexLoginInFlight = false;
+  }
+});
+
 ipcMain.handle('config.get', () => {
   try {
     return configStore.getAll();
@@ -3114,7 +3185,7 @@ ipcMain.handle('memory.setEnabled', (_event, enabled: boolean) => {
   return result;
 });
 
-ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', args: unknown[]) => {
+ipcMain.handle('logs.write', (_event, level: 'info' | 'warn' | 'error', ...args: unknown[]) => {
   try {
     if (level === 'warn') {
       logWarn(...args);

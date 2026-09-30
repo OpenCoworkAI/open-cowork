@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Api, Model } from '@mariozechner/pi-ai';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import {
   applyPiModelRuntimeOverrides,
   resolvePiRegistryModel,
@@ -19,6 +19,17 @@ const openAIResponsesModel = {
 } as Model<Api>;
 
 describe('pi model runtime overrides', () => {
+  it('resolves native ChatGPT Codex models with the Codex API', () => {
+    const model = resolvePiRegistryModel('gpt-5.4', {
+      configProvider: 'openai-codex',
+      rawProvider: 'openai-codex',
+    });
+
+    expect(model?.provider).toBe('openai-codex');
+    expect(model?.api).toBe('openai-codex-responses');
+    expect(model?.baseUrl).toBe('https://chatgpt.com/backend-api');
+  });
+
   it('keeps OpenAI Responses for custom OpenAI configs that target official OpenAI', () => {
     const model = resolvePiRegistryModel('openai/gpt-5.4', {
       configProvider: 'openai',

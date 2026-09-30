@@ -4,7 +4,7 @@ import type {
   TextContent,
   ThinkingContent,
   ToolCall,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 
 type MessageEndContentBlock = TextContent | ThinkingContent | ToolCall;
 

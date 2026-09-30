@@ -2,16 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const completeSimpleMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@mariozechner/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai/compat', () => ({
   completeSimple: completeSimpleMock,
   getModel: vi.fn(() => undefined),
 }));
 
 vi.mock('../../main/agent/shared-auth', () => ({
-  getSharedAuthStorage: () => ({
+  getSharedModelRuntime: async () => ({
     setRuntimeApiKey: vi.fn(),
   }),
-  ModelRegistry: vi.fn(),
 }));
 
 import type { AppConfig } from '../../main/config/config-store';

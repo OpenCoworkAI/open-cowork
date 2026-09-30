@@ -4,7 +4,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import {
   SettingsManager as PiSettingsManager,
   type BashOperations,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import { getDefaultShell } from '../utils/shell-resolver';
 
 const DEFAULT_TERMINATION_GRACE_MS = 5000;

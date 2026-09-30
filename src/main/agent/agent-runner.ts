@@ -20,9 +20,9 @@ import {
   type BashToolOptions,
   type AgentSession as PiAgentSession,
   type ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
-import { Type, type TSchema } from '@sinclair/typebox';
-import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+} from '@earendil-works/pi-coding-agent';
+import { Type, type TSchema } from '@earendil-works/pi-ai';
+import { getSharedModelRuntime } from './shared-auth';
 import type { Session, Message, TraceStep, ServerEvent, ContentBlock } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
@@ -542,7 +542,7 @@ interface CachedPiSession {
 }
 
 /**
- * CoworkAgentRunner - Uses @mariozechner/pi-coding-agent SDK
+ * CoworkAgentRunner - Uses @earendil-works/pi-coding-agent SDK
  *
  * Environment variables should be set before running:
  *   ANTHROPIC_BASE_URL=https://openrouter.ai/api
@@ -1657,23 +1657,47 @@ ${hints.join('\n')}
         },
       });
 
-      // Set up API keys via AuthStorage
-      const authStorage = getSharedAuthStorage();
-      const apiKey = runtimeConfig.apiKey?.trim();
+      // Set up API keys via ModelRuntime
+      const modelRuntime = await getSharedModelRuntime();
+      // 0.85: synthetic models use provider ids unknown to the catalog and ModelRuntime
+      // drops unknown providers on credential sync. Register the provider first so the
+      // runtime API key below sticks (0.60's AuthStorage accepted any provider id).
+      if (usedSyntheticModel) {
+        modelRuntime.registerProvider(piModel.provider, {
+          baseUrl: piModel.baseUrl,
+          api: piModel.api,
+          models: [
+            {
+              id: piModel.id,
+              name: piModel.name,
+              reasoning: piModel.reasoning,
+              input: piModel.input,
+              cost: piModel.cost,
+              contextWindow: piModel.contextWindow,
+              maxTokens: piModel.maxTokens,
+            },
+          ],
+        });
+      }
+      // Codex must stay on Pi's OAuth credential even if an old profile still
+      // contains an API-key-shaped value.
+      const apiKey = provider === 'openai-codex' ? '' : runtimeConfig.apiKey?.trim();
       if (apiKey) {
         // Map our config provider to pi-ai provider name
         const piProvider =
           provider === 'custom' ? runtimeConfig.customProtocol || 'anthropic' : provider;
-        authStorage.setRuntimeApiKey(piProvider, apiKey);
+        await modelRuntime.setRuntimeApiKey(piProvider, apiKey);
         // Also set the key for the model's native provider (e.g., when using
         // google/gemini via openrouter, pi-ai looks up "google" not "openrouter")
         if (piModel.provider !== piProvider) {
-          authStorage.setRuntimeApiKey(piModel.provider, apiKey);
+          await modelRuntime.setRuntimeApiKey(piModel.provider, apiKey);
           log('[CoworkAgentRunner] Set runtime API key for model provider:', piModel.provider);
         }
         log('[CoworkAgentRunner] Set runtime API key for config provider:', piProvider);
       } else {
-        if (provider === 'ollama') {
+        if (provider === 'openai-codex') {
+          log('[ClaudeAgentRunner] Codex configured without API key; relying on ChatGPT OAuth');
+        } else if (provider === 'ollama') {
           log(
             '[CoworkAgentRunner] Ollama configured without explicit API key; relying on OpenAI-compatible placeholder/env auth path',
             safeStringify({
@@ -2204,8 +2228,8 @@ Tool routing:
         logTiming('agent session reused', runStartTime);
       } else {
         // First query in this session — create new agent session
-        // ResourceLoader + ModelRegistry only needed for session creation — skip on reuse
-        const { DefaultResourceLoader } = await import('@mariozechner/pi-coding-agent');
+        const { DefaultResourceLoader, getAgentDir } =
+          await import('@earendil-works/pi-coding-agent');
 
         // Per-session compaction instructions (from session metadata if present).
         // Capped at 2000 chars to limit prompt injection surface — this field
@@ -2221,8 +2245,9 @@ Tool routing:
 
         const resourceLoader = new DefaultResourceLoader({
           cwd: effectiveCwd,
+          agentDir: getAgentDir(),
           additionalSkillPaths: skillPaths,
-          appendSystemPrompt: coworkAppendPrompt,
+          appendSystemPrompt: [coworkAppendPrompt],
           extensionFactories: [
             createCompactionExtensionFactory({
               customInstructions: sessionCompactInstructions,
@@ -2232,8 +2257,6 @@ Tool routing:
           ],
         });
         await resourceLoader.reload();
-
-        const modelRegistry = new ModelRegistry(authStorage);
 
         // Ollama-specific compaction tuning based on actual context window
         const contextWindow = piModel.contextWindow || 128000;
@@ -2268,10 +2291,9 @@ Tool routing:
         const { session: newPiSession } = await createAgentSession({
           model: piModel,
           thinkingLevel,
-          authStorage,
-          modelRegistry,
-          tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
-          customTools,
+          modelRuntime,
+          noTools: 'builtin',
+          customTools: [...wrappedTools, ...customTools],
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
             compaction: compactionSettings,
@@ -2790,7 +2812,7 @@ Tool routing:
               break;
             }
 
-            case 'auto_compaction_start': {
+            case 'compaction_start': {
               log('[CoworkAgentRunner] Auto-compaction started, reason:', event.reason);
               compactionStepId = `compaction-${Date.now()}`;
               this.sendTraceStep(session.id, {
@@ -2803,7 +2825,7 @@ Tool routing:
               break;
             }
 
-            case 'auto_compaction_end': {
+            case 'compaction_end': {
               const status = event.aborted ? 'error' : event.errorMessage ? 'error' : 'completed';
               const title = event.aborted
                 ? 'Context compaction aborted'

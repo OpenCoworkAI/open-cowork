@@ -1,4 +1,5 @@
-import { completeSimple, type UserMessage as PiUserMessage } from '@mariozechner/pi-ai';
+import { completeSimple } from '@earendil-works/pi-ai/compat';
+import type { UserMessage as PiUserMessage } from '@earendil-works/pi-ai';
 import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
 import { PROVIDER_PRESETS, type AppConfig, type CustomProtocolType } from '../config/config-store';
 import {
@@ -12,7 +13,7 @@ import {
 } from '../config/auth-utils';
 import { log, logWarn } from '../utils/logger';
 import { normalizeGeneratedTitle } from '../session/session-title-utils';
-import { getSharedAuthStorage } from './shared-auth';
+import { getSharedModelRuntime } from './shared-auth';
 import {
   applyPiModelRuntimeOverrides,
   buildSyntheticPiModel,
@@ -49,6 +50,11 @@ function resolveProbeApiKey(
   explicitApiKey: string | undefined,
   config: AppConfig
 ): string {
+  if (input.provider === 'openai-codex') {
+    // Codex authenticates through ModelRuntime's ChatGPT OAuth credentials.
+    return '';
+  }
+
   const candidateApiKey = explicitApiKey ?? config.apiKey?.trim() ?? '';
   if (candidateApiKey) {
     return candidateApiKey;
@@ -224,15 +230,18 @@ export async function runPiAiOneShot(
   // piModel is guaranteed non-undefined after synthetic fallback
   const resolvedModel = piModel!;
 
-  // Set API key via AuthStorage (for agent sessions) AND env vars (for pi-ai completeSimple)
-  const apiKey = config.apiKey?.trim();
-  if (apiKey) {
-    const authStorage = getSharedAuthStorage();
+  // Set API key via ModelRuntime (for agent sessions) AND env vars (for pi-ai completeSimple)
+  // Codex must use the OAuth credential managed by ModelRuntime, never a stale
+  // API-key value left in a shared config profile.
+  const apiKey = config.provider === 'openai-codex' ? '' : config.apiKey?.trim();
+  const modelRuntime =
+    apiKey || resolvedModel.provider === 'openai-codex' ? await getSharedModelRuntime() : undefined;
+  if (apiKey && modelRuntime) {
     // Set for the config provider
-    authStorage.setRuntimeApiKey(provider, apiKey);
+    await modelRuntime.setRuntimeApiKey(provider, apiKey);
     // Also set for the model's native provider if different
     if (resolvedModel.provider !== provider) {
-      authStorage.setRuntimeApiKey(resolvedModel.provider, apiKey);
+      await modelRuntime.setRuntimeApiKey(resolvedModel.provider, apiKey);
     }
   }
 
@@ -250,14 +259,24 @@ export async function runPiAiOneShot(
     'api:',
     resolvedModel.api
   );
-  const response = await completeSimple(
-    resolvedModel,
-    {
-      systemPrompt,
-      messages: [userMsg],
-    },
-    { ...options, apiKey: apiKey || undefined }
-  );
+  const response =
+    resolvedModel.provider === 'openai-codex'
+      ? await (modelRuntime || (await getSharedModelRuntime())).completeSimple(
+          resolvedModel,
+          {
+            systemPrompt,
+            messages: [userMsg],
+          },
+          options
+        )
+      : await completeSimple(
+          resolvedModel,
+          {
+            systemPrompt,
+            messages: [userMsg],
+          },
+          { ...options, apiKey: apiKey || undefined }
+        );
 
   // pi-ai resolves (not rejects) on provider errors — the error details
   // live in stopReason/errorMessage on the response object.  Surface them
@@ -311,7 +330,7 @@ export async function probeWithSdk(input: ApiTestInput, config: AppConfig): Prom
     return { ok: false, errorType: 'unknown', details: 'missing_model' };
   }
 
-  if (!probeConfig.apiKey?.trim()) {
+  if (input.provider !== 'openai-codex' && !probeConfig.apiKey?.trim()) {
     return { ok: false, errorType: 'missing_key', details: 'API key is required.' };
   }
 

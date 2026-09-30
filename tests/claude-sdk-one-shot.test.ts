@@ -3,6 +3,7 @@ import type { AppConfig } from '../src/main/config/config-store';
 
 const mocks = vi.hoisted(() => ({
   completeSimple: vi.fn(),
+  runtimeCompleteSimple: vi.fn(),
   setRuntimeApiKey: vi.fn(),
   resolvePiRegistryModel: vi.fn(),
   buildSyntheticPiModel: vi.fn(),
@@ -44,13 +45,14 @@ vi.mock('electron-store', () => {
   };
 });
 
-vi.mock('@mariozechner/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai/compat', () => ({
   completeSimple: mocks.completeSimple,
 }));
 
 vi.mock('../src/main/agent/shared-auth', () => ({
-  getSharedAuthStorage: () => ({
+  getSharedModelRuntime: async () => ({
     setRuntimeApiKey: mocks.setRuntimeApiKey,
+    completeSimple: mocks.runtimeCompleteSimple,
   }),
 }));
 
@@ -64,6 +66,9 @@ vi.mock('../src/main/agent/pi-model-resolution', () => ({
     }
     if (provider === 'ollama' || provider === 'openai' || provider === 'openrouter') {
       return 'openai';
+    }
+    if (provider === 'openai-codex') {
+      return 'openai-codex';
     }
     if (provider === 'gemini') {
       return 'gemini';
@@ -148,6 +153,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 describe('probeWithSdk', () => {
   beforeEach(() => {
     mocks.completeSimple.mockReset();
+    mocks.runtimeCompleteSimple.mockReset();
     mocks.setRuntimeApiKey.mockReset();
     mocks.resolvePiRegistryModel.mockReset();
     mocks.buildSyntheticPiModel.mockReset();
@@ -161,6 +167,38 @@ describe('probeWithSdk', () => {
     mocks.completeSimple.mockResolvedValue({
       content: [{ type: 'text', text: 'sdk_probe_ok' }],
     });
+  });
+
+  it('uses ModelRuntime OAuth for Codex probes without an API key', async () => {
+    mocks.resolvePiRegistryModel.mockReturnValue({
+      id: 'gpt-5.4',
+      provider: 'openai-codex',
+      api: 'openai-codex-responses',
+      baseUrl: 'https://chatgpt.com/backend-api',
+    });
+    mocks.runtimeCompleteSimple.mockResolvedValue({
+      content: [{ type: 'text', text: 'sdk_probe_ok' }],
+    });
+
+    const result = await probeWithSdk(
+      {
+        provider: 'openai-codex',
+        apiKey: '',
+        model: 'gpt-5.4',
+      },
+      createConfig({
+        provider: 'openai-codex',
+        apiKey: '',
+        baseUrl: 'https://chatgpt.com/backend-api',
+        customProtocol: 'openai',
+        activeProfileKey: 'openai-codex',
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.runtimeCompleteSimple).toHaveBeenCalledTimes(1);
+    expect(mocks.completeSimple).not.toHaveBeenCalled();
+    expect(mocks.setRuntimeApiKey).not.toHaveBeenCalled();
   });
 
   it('does not fall back to saved api key when the draft explicitly clears it', async () => {

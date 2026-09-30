@@ -136,7 +136,7 @@ describe('SubagentExtension', () => {
 
       const schema = tool.parameters;
       expect(schema).toBeDefined();
-      expect(schema.properties).toBeDefined();
+      expect((schema as Record<string, unknown>).properties).toBeDefined();
     });
 
     it('emits subagent.progress started event on execution', async () => {

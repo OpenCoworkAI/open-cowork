@@ -1,14 +1,15 @@
-import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent';
+import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 // Singleton — safe because Electron main process is single-threaded.
-// AuthStorage.create() is synchronous, so no async race possible.
-let sharedAuthStorage: AuthStorage | null = null;
+// We store the promise itself, so concurrent callers share one creation.
+let sharedModelRuntime: Promise<ModelRuntime> | null = null;
 
-export function getSharedAuthStorage(): AuthStorage {
-  if (!sharedAuthStorage) {
-    sharedAuthStorage = AuthStorage.create();
+export function getSharedModelRuntime(): Promise<ModelRuntime> {
+  if (!sharedModelRuntime) {
+    sharedModelRuntime = ModelRuntime.create().catch((err) => {
+      sharedModelRuntime = null;
+      throw err;
+    });
   }
-  return sharedAuthStorage;
+  return sharedModelRuntime;
 }
-
-export { AuthStorage, ModelRegistry };

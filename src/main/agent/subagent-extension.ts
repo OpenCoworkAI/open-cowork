@@ -3,17 +3,18 @@ import {
   createAgentSession,
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
-  createCodingTools,
   DefaultResourceLoader,
+  getAgentDir,
   type ToolDefinition,
-} from '@mariozechner/pi-coding-agent';
+  type AgentSessionEvent,
+} from '@earendil-works/pi-coding-agent';
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
   BeforeSessionRunContext,
   AgentRuntimeCustomTool,
 } from '../extensions/agent-runtime-extension';
-import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { getSharedModelRuntime } from './shared-auth';
 import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
@@ -182,8 +183,7 @@ function createSpawnSubagentTool(
 
       try {
         const config = configStore.getAll();
-        const authStorage = getSharedAuthStorage();
-        const modelRegistry = new ModelRegistry(authStorage);
+        const modelRuntime = await getSharedModelRuntime();
 
         const modelString = config.model?.trim() || 'anthropic/claude-sonnet-4-6';
         const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
@@ -240,20 +240,19 @@ function createSpawnSubagentTool(
         }
 
         const cwd = config.defaultWorkdir || process.cwd();
-        const codingTools = createCodingTools(cwd);
 
         const childSystemPrompt = buildChildSystemPrompt(task, result_format);
         const resourceLoader = new DefaultResourceLoader({
           cwd,
-          appendSystemPrompt: childSystemPrompt,
+          agentDir: getAgentDir(),
+          appendSystemPrompt: [childSystemPrompt],
         });
         await resourceLoader.reload();
 
         const { session: childSession } = await createAgentSession({
           model: piModel,
-          authStorage,
-          modelRegistry,
-          tools: codingTools,
+          modelRuntime,
+          tools: ['read', 'bash', 'edit', 'write'],
           customTools: mcpCustomTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
@@ -290,7 +289,7 @@ function createSpawnSubagentTool(
         }
 
         let finalText = '';
-        const unsubscribe = childSession.subscribe((event) => {
+        const unsubscribe = childSession.subscribe((event: AgentSessionEvent) => {
           if (event.type === 'agent_end') {
             const messages = (event as { messages?: unknown[] }).messages || [];
             for (let i = messages.length - 1; i >= 0; i--) {

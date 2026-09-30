@@ -47,6 +47,9 @@ export function SettingsAPI() {
     isDiscoveringLocalOllama,
     enableThinking,
     isOllamaMode,
+    codexAuthenticated,
+    isCodexLoggingIn,
+    loginCodex,
     requiresApiKey,
     protocolGuidanceText,
     protocolGuidanceTone,
@@ -128,47 +131,84 @@ export function SettingsAPI() {
         </label>
         <p className="text-xs leading-5 text-text-muted">{t('api.providerDescription')}</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-          {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
-            (p) => (
-              <button
-                key={p}
-                onClick={() => changeProvider(p)}
-                disabled={isLoadingConfig}
-                className={`px-3 py-2 rounded-lg text-sm transition-colors border ${
-                  provider === p
-                    ? 'border-accent bg-accent/10 text-accent font-medium'
-                    : 'border-border-muted text-text-secondary hover:border-border hover:text-text-primary disabled:opacity-50'
-                }`}
-              >
-                {p === 'custom' ? t('api.moreModels') : presets?.[p]?.name || p}
-              </button>
-            )
-          )}
+          {(
+            [
+              'openrouter',
+              'anthropic',
+              'openai',
+              'openai-codex',
+              'gemini',
+              'ollama',
+              'custom',
+            ] as const
+          ).map((p) => (
+            <button
+              key={p}
+              onClick={() => changeProvider(p)}
+              disabled={isLoadingConfig}
+              className={`px-3 py-2 rounded-lg text-sm transition-colors border ${
+                provider === p
+                  ? 'border-accent bg-accent/10 text-accent font-medium'
+                  : 'border-border-muted text-text-secondary hover:border-border hover:text-text-primary disabled:opacity-50'
+              }`}
+            >
+              {p === 'custom' ? t('api.moreModels') : presets?.[p]?.name || p}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* API Key */}
-      <div className="space-y-3 py-5 border-b border-border-muted">
-        <label
-          htmlFor="api-key-input"
-          className="flex items-center gap-2 text-sm font-medium text-text-primary"
-        >
-          <Key className="w-4 h-4" />
-          {t('api.apiKey')}
-        </label>
-        <p className="text-xs leading-5 text-text-muted">{t('api.apiKeyDescription')}</p>
-        <input
-          id="api-key-input"
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-          className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-        />
-        {currentPreset?.keyHint && (
-          <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
-        )}
-      </div>
+      {/* API Key / ChatGPT OAuth */}
+      {provider === 'openai-codex' ? (
+        <div className="space-y-3 py-5 border-b border-border-muted">
+          <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+            <Key className="w-4 h-4" />
+            {t('api.codexAuthTitle')}
+          </label>
+          <p className="text-xs leading-5 text-text-muted">{t('api.codexDescription')}</p>
+          <div className="flex items-center gap-2 text-sm">
+            {codexAuthenticated ? (
+              <CheckCircle className="w-4 h-4 text-success" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+            )}
+            <span className="text-text-secondary">
+              {codexAuthenticated ? t('api.codexAuthenticated') : t('api.codexNotAuthenticated')}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loginCodex()}
+            disabled={isCodexLoggingIn}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isCodexLoggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isCodexLoggingIn ? t('api.codexLoggingIn') : t('api.codexLogin')}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3 py-5 border-b border-border-muted">
+          <label
+            htmlFor="api-key-input"
+            className="flex items-center gap-2 text-sm font-medium text-text-primary"
+          >
+            <Key className="w-4 h-4" />
+            {t('api.apiKey')}
+          </label>
+          <p className="text-xs leading-5 text-text-muted">{t('api.apiKeyDescription')}</p>
+          <input
+            id="api-key-input"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
+            className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+          />
+          {currentPreset?.keyHint && (
+            <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
+          )}
+        </div>
+      )}
 
       {/* Custom Protocol */}
       {provider === 'custom' && (
@@ -428,13 +468,15 @@ export function SettingsAPI() {
         </div>
       )}
       {/* Diagnostics Panel */}
-      <ApiDiagnosticsPanel
-        result={diagnosticResult}
-        isRunning={isDiagnosing}
-        onRunDiagnostics={handleDiagnose}
-        onRunDeepDiagnostics={isOllamaMode ? handleDeepDiagnose : undefined}
-        disabled={requiresApiKey && !apiKey.trim()}
-      />
+      {provider !== 'openai-codex' && (
+        <ApiDiagnosticsPanel
+          result={diagnosticResult}
+          isRunning={isDiagnosing}
+          onRunDiagnostics={handleDiagnose}
+          onRunDeepDiagnostics={isOllamaMode ? handleDeepDiagnose : undefined}
+          disabled={requiresApiKey && !apiKey.trim()}
+        />
+      )}
 
       {/* Save Button */}
       <div className="space-y-3 py-5 border-b border-border-muted">
@@ -443,7 +485,11 @@ export function SettingsAPI() {
             onClick={() => {
               void handleSave();
             }}
-            disabled={isSaving || (requiresApiKey && !apiKey.trim())}
+            disabled={
+              isSaving ||
+              (requiresApiKey && !apiKey.trim()) ||
+              (provider === 'openai-codex' && codexAuthenticated !== true)
+            }
             className="w-full py-3 px-4 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
           >
             {isSaving ? (

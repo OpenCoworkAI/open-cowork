@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const completionsPath = path.resolve(
-  'node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js'
+  'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js'
 );
 const completionsSource = fs.readFileSync(completionsPath, 'utf8');
 const isPatched = completionsSource.includes('requiresThinkingInContent');
 
 if (!isPatched) {
-  throw new Error('Expected @mariozechner/pi-ai patch to be applied before running this suite');
+  throw new Error('Expected @earendil-works/pi-ai patch to be applied before running this suite');
 }
 
 const mod = await import(pathToFileURL(completionsPath).href);
