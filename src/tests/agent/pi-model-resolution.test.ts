@@ -44,6 +44,7 @@ describe('pi model runtime overrides', () => {
     expect(model.compat).toMatchObject({
       supportsDeveloperRole: false,
       supportsStore: false,
+      supportsStrictMode: false,
     });
   });
 });

@@ -70,6 +70,27 @@ function shouldDisableDeveloperRoleForEndpoint(
   return true;
 }
 
+/**
+ * Every non-official OpenAI-compatible endpoint (custom relays such as
+ * TokenMix, local Ollama, OpenRouter) gets the same compat overrides.
+ * Those endpoints 400 on proprietary Chat Completions fields (`strict`
+ * inside `function`, `store`, `developer` role). pi-ai omits `strict` when
+ * `supportsStrictMode` is false. Omitting the field matches OpenAI's default
+ * of non-strict tools, so providers that accept `strict` keep the same
+ * behaviour as an explicit `strict: false`.
+ */
+function applyNonOfficialOpenAICompat(model: Model<Api>): Model<Api> {
+  return {
+    ...model,
+    compat: {
+      ...(model.compat || {}),
+      supportsDeveloperRole: false,
+      supportsStore: false,
+      supportsStrictMode: false,
+    },
+  } as Model<Api>;
+}
+
 function shouldPreserveOpenAIResponsesApi(
   model: Model<Api>,
   options: PiModelLookupOptions
@@ -341,14 +362,7 @@ export function applyPiModelRuntimeOverrides(
     nextModel = { ...nextModel, api: 'openai-completions' } as typeof nextModel;
   }
   if (shouldDisableDeveloperRoleForEndpoint(nextModel, options)) {
-    nextModel = {
-      ...nextModel,
-      compat: {
-        ...(nextModel.compat || {}),
-        supportsDeveloperRole: false,
-        supportsStore: false,
-      },
-    } as typeof nextModel;
+    nextModel = applyNonOfficialOpenAICompat(nextModel);
   }
 
   if (
