@@ -2923,7 +2923,12 @@ Tool routing:
           id: uuidv4(),
           sessionId: session.id,
           role: 'assistant',
-          content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+          content: [
+            {
+              type: 'text',
+              text: '**Request timed out**: no response received for a while, operation aborted.',
+            },
+          ],
           timestamp: Date.now(),
         };
         this.sendMessage(session.id, errorMsg);
@@ -2966,7 +2971,12 @@ Tool routing:
             id: uuidv4(),
             sessionId: session.id,
             role: 'assistant',
-            content: [{ type: 'text', text: '**请求超时**：长时间未收到响应，操作已中止。' }],
+            content: [
+              {
+                type: 'text',
+                text: '**Request timed out**: no response received for a while, operation aborted.',
+              },
+            ],
             timestamp: Date.now(),
           };
           this.sendMessage(session.id, errorMsg);

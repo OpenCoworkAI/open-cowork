@@ -186,7 +186,7 @@ export class ToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw new Error('Request timed out, please check your network connection and retry');
       }
       throw error;
     }
@@ -233,7 +233,7 @@ export class ToolExecutor {
         error instanceof Error &&
         (error.name === 'AbortError' || error.name === 'TimeoutError')
       ) {
-        throw new Error('请求超时，请检查网络连接后重试');
+        throw new Error('Request timed out, please check your network connection and retry');
       }
       throw error;
     }
