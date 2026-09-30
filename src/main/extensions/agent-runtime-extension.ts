@@ -9,6 +9,7 @@ export interface BeforeSessionRunContext {
   prompt: string;
   existingMessages: Message[];
   isColdStart: boolean;
+  sandboxIsolated?: boolean;
 }
 
 export interface BeforeSessionRunResult {

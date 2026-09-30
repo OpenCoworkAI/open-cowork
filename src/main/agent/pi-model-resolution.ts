@@ -19,6 +19,7 @@ export interface PiModelLookupOptions {
   rawProvider?: string;
   customBaseUrl?: string;
   customProtocol?: string;
+  restrictToProvider?: boolean;
 }
 
 export interface PiModelLookupCandidate {
@@ -404,6 +405,7 @@ export function resolvePiRegistryModel(
   options: PiModelLookupOptions = {}
 ): Model<Api> | undefined {
   for (const candidate of buildPiModelLookupCandidates(modelString, options)) {
+    if (options.restrictToProvider && candidate.provider !== options.configProvider) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (getModel as (...args: unknown[]) => Model<Api> | undefined)(
       candidate.provider as PiRegistryProvider,
