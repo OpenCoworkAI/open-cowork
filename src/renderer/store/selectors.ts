@@ -19,6 +19,16 @@ import { useAppStore } from './index';
 import type { Session, Message, TraceStep, Settings, AppConfig } from '../types';
 import type { GlobalNotice, SessionExecutionClock, CompactionEvent } from './index';
 
+// Stable empty fallbacks. Returning a fresh `[]` from a selector makes
+// useSyncExternalStore see a new snapshot on every read, which re-renders in an
+// infinite loop until React throws "Maximum update depth exceeded".
+// Treat them as read-only: the store always replaces arrays wholesale.
+// Only the two consumed by component-level selectors are exported.
+export const EMPTY_MESSAGES: Message[] = [];
+export const EMPTY_TRACE_STEPS: TraceStep[] = [];
+const EMPTY_PENDING_TURNS: string[] = [];
+const EMPTY_COMPACTION_HISTORY: CompactionEvent[] = [];
+
 // ---------------------------------------------------------------------------
 // Session domain
 // ---------------------------------------------------------------------------
@@ -61,7 +71,9 @@ export function useIsSessionRunning(): boolean {
 /** Returns the committed messages for the active session. */
 export function useActiveSessionMessages(): Message[] {
   return useAppStore((s) =>
-    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.messages ?? []) : []
+    s.activeSessionId
+      ? (s.sessionStates[s.activeSessionId]?.messages ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES
   );
 }
 
@@ -70,7 +82,7 @@ export function useActiveSessionMessages(): Message[] {
  * Useful in list components that render session previews.
  */
 export function useSessionMessages(sessionId: string): Message[] {
-  return useAppStore((s) => s.sessionStates[sessionId]?.messages ?? []);
+  return useAppStore((s) => s.sessionStates[sessionId]?.messages ?? EMPTY_MESSAGES);
 }
 
 /** Returns the in-progress (streaming) text of the active session's response. */
@@ -118,7 +130,9 @@ export function useActiveTurn(): { stepId: string; userMessageId: string } | nul
 /** Returns the list of pending turn message IDs for the active session. */
 export function usePendingTurns(): string[] {
   return useAppStore((s) =>
-    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.pendingTurns ?? []) : []
+    s.activeSessionId
+      ? (s.sessionStates[s.activeSessionId]?.pendingTurns ?? EMPTY_PENDING_TURNS)
+      : EMPTY_PENDING_TURNS
   );
 }
 
@@ -164,7 +178,9 @@ export function useActiveExecutionClock(): SessionExecutionClock | undefined {
 /** Returns the trace steps for the active session. */
 export function useActiveTraceSteps(): TraceStep[] {
   return useAppStore((s) =>
-    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.traceSteps ?? []) : []
+    s.activeSessionId
+      ? (s.sessionStates[s.activeSessionId]?.traceSteps ?? EMPTY_TRACE_STEPS)
+      : EMPTY_TRACE_STEPS
   );
 }
 
@@ -299,6 +315,8 @@ export function usePendingDialogs() {
 /** Returns the compaction event history for the active session. */
 export function useActiveCompactionHistory(): CompactionEvent[] {
   return useAppStore((s) =>
-    s.activeSessionId ? (s.sessionStates[s.activeSessionId]?.compactionHistory ?? []) : []
+    s.activeSessionId
+      ? (s.sessionStates[s.activeSessionId]?.compactionHistory ?? EMPTY_COMPACTION_HISTORY)
+      : EMPTY_COMPACTION_HISTORY
   );
 }
