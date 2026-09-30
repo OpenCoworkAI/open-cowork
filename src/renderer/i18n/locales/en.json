@@ -946,6 +946,8 @@
     "retry": "Try again"
   },
   "subagentSettings": {
+    "invalidConfig": "Stored subagent settings are invalid: {{error}}. Save valid settings to repair them.",
+    "noTools": "No tools allowed",
     "model": "Default child model (active API provider)",
     "concurrency": "Concurrent children per session",
     "defaultRole": "Default role",

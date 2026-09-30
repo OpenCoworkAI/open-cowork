@@ -42,11 +42,29 @@ vi.mock('electron-store', () => {
 });
 
 import { ConfigStore } from '../src/main/config/config-store';
+import { normalizeSubagentConfig } from '../src/shared/subagent-config';
 
 describe('ConfigStore config sets', () => {
   beforeEach(() => {
     mocks.seed = {};
   });
+
+  it.each([null, { maxConcurrent: 0 }])(
+    'keeps invalid persisted subagents recoverable: %j',
+    (subagent) => {
+      mocks.seed = { subagent };
+      const store = new ConfigStore();
+      expect(store.getAll().subagent).toBeUndefined();
+      expect(store.getAll().subagentConfigError).toContain('Invalid subagent');
+      const raw = (store as unknown as { store: { store: Record<string, unknown> } }).store.store;
+      expect(raw.subagent).toEqual(subagent);
+      expect(() => store.update({ theme: 'dark' })).toThrow('Repair subagent');
+      expect(raw.subagent).toEqual(subagent);
+      store.update({ subagent: normalizeSubagentConfig() });
+      expect(store.getAll().subagentConfigError).toBeUndefined();
+      expect(store.getAll().subagent?.maxConcurrent).toBe(3);
+    }
+  );
 
   it('migrates legacy fields into default config set transparently', () => {
     mocks.seed = {

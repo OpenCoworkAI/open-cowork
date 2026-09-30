@@ -81,7 +81,7 @@ export function normalizeSubagentConfig(input: unknown = DEFAULT_SUBAGENT_CONFIG
       ...preset,
       name,
       model: preset.model.trim(),
-      allowedTools: preset.allowedTools?.map((tool) => tool.trim()),
+      allowedTools: preset.allowedTools?.map((tool) => tool.trim()).filter(Boolean),
     };
   });
   const defaultAgent = config.defaultAgent.trim();

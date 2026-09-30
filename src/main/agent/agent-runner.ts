@@ -1839,6 +1839,7 @@ ${hints.join('\n')}
             prompt,
             existingMessages,
             isColdStart: !cachedSession,
+            sandboxIsolated: useSandboxIsolation,
           })
         : { promptPrefix: undefined, customTools: [] };
 

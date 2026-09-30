@@ -702,6 +702,7 @@ export interface MemoryRuntimeConfig {
 
 export interface AppConfig {
   subagent?: SubagentConfig;
+  subagentConfigError?: string;
   provider: ProviderType;
   apiKey: string;
   baseUrl?: string;

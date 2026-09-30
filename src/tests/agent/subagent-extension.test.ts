@@ -61,6 +61,102 @@ describe('SubagentExtension', () => {
     expect(extension.name).toBe('subagent');
   });
 
+  it('refuses host-tool child execution in an isolated sandbox', async () => {
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun({
+      ...mockContext,
+      sandboxIsolated: true,
+    } as never);
+    const output = await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+      task: 'write file',
+    });
+    expect(JSON.stringify(output)).toContain('sandbox');
+    expect(mockCreateAgentSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps parent sessions usable when child configuration is invalid', async () => {
+    mockGetAll.mockReturnValue({
+      ...mockGetAll(),
+      subagentConfigError: 'Invalid subagent configuration',
+    });
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun(mockContext as never);
+    const output = await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+      task: 'inspect',
+    });
+    expect(JSON.stringify(output)).toContain('Invalid subagent');
+    expect(mockCreateAgentSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects a child override from another fixed provider', async () => {
+    mockGetAll.mockReturnValue({
+      ...mockGetAll(),
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5-mini',
+    });
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun(mockContext as never);
+    const output = await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+      task: 'inspect',
+      model: 'anthropic/claude-sonnet-4-6',
+    });
+    expect(JSON.stringify(output)).toContain('active provider');
+    expect(mockCreateAgentSession).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to a different registry provider for bare model IDs', async () => {
+    mockGetAll.mockReturnValue({
+      ...mockGetAll(),
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5-mini',
+    });
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun(mockContext as never);
+    await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+      task: 'inspect',
+      model: 'claude-sonnet-4-6',
+    });
+    expect(mockCreateAgentSession.mock.calls[0][0].model).toMatchObject({
+      provider: 'openai',
+      api: 'openai-completions',
+    });
+  });
+
+  it.each(['custom', 'openrouter', 'openai', 'ollama'])(
+    'preserves slash IDs on %s endpoints',
+    async (provider) => {
+      mockGetAll.mockReturnValue({ ...mockGetAll(), provider });
+      const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+      const result = await extension.beforeSessionRun(mockContext as never);
+      await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+        task: 'inspect',
+        model: 'anthropic/claude-sonnet-4-6',
+      });
+      expect(mockCreateAgentSession.mock.calls[0][0].model).toMatchObject({
+        id: 'anthropic/claude-sonnet-4-6',
+        api: 'openai-completions',
+        baseUrl: 'http://localhost:9999/v1',
+      });
+    }
+  );
+
+  it('keeps a bare child model on the active OpenRouter endpoint', async () => {
+    mockGetAll.mockReturnValue({ ...mockGetAll(), provider: 'openrouter' });
+    const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);
+    const result = await extension.beforeSessionRun(mockContext as never);
+    await (result.customTools![0].execute as unknown as ToolExecuteFn)('child', {
+      task: 'inspect',
+      model: 'claude-sonnet-4-6',
+    });
+    expect(mockCreateAgentSession.mock.calls[0][0].model).toMatchObject({
+      provider: 'openrouter',
+      api: 'openai-completions',
+      baseUrl: 'http://localhost:9999/v1',
+    });
+  });
+
   describe('spawn_subagent tool', () => {
     it('rejects empty task parameter', async () => {
       const extension = new SubagentExtension(() => null, noopSend, noopPermission, noopSignal);

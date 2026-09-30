@@ -80,6 +80,7 @@ export interface ApiConfigSet {
 
 export interface AppConfig {
   subagent?: SubagentConfig;
+  subagentConfigError?: string;
   // API Provider
   provider: ProviderType;
 
@@ -610,7 +611,7 @@ export class ConfigStore {
 
   private ensureNormalized(): void {
     const normalized = this.normalizeConfig(this.store.store as Partial<AppConfig>);
-    this.store.set(normalized);
+    if (!normalized.subagentConfigError) this.store.set(normalized);
   }
 
   /**
@@ -1017,6 +1018,14 @@ export class ConfigStore {
     const activeConfigSet = configSets.find((set) => set.id === activeConfigSetId) || configSets[0];
     const projected = this.projectFromConfigSet(activeConfigSet);
 
+    let subagent: SubagentConfig | undefined;
+    let subagentConfigError: string | undefined;
+    try {
+      subagent = normalizeSubagentConfig(raw.subagent);
+    } catch (error) {
+      subagentConfigError = error instanceof Error ? error.message : String(error);
+    }
+
     const result: AppConfig = {
       provider: projected.provider,
       customProtocol: projected.customProtocol,
@@ -1040,7 +1049,8 @@ export class ConfigStore {
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
-      subagent: normalizeSubagentConfig(raw.subagent),
+      subagent,
+      ...(subagentConfigError ? { subagentConfigError } : {}),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
@@ -1059,6 +1069,11 @@ export class ConfigStore {
   }
 
   private saveConfig(config: AppConfig): void {
+    if (config.subagentConfigError) {
+      throw new Error(
+        `Repair subagent settings before saving configuration: ${config.subagentConfigError}`
+      );
+    }
     const normalized = this.normalizeConfig(config);
     this.store.set(normalized);
   }
@@ -1466,7 +1481,11 @@ export class ConfigStore {
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
           : current.memoryRuntime,
-      subagent: normalizeSubagentConfig(updates.subagent ?? current.subagent),
+      subagent:
+        updates.subagent === undefined
+          ? current.subagent
+          : normalizeSubagentConfig(updates.subagent),
+      subagentConfigError: updates.subagent === undefined ? current.subagentConfigError : undefined,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

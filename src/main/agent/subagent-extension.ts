@@ -23,8 +23,9 @@ import {
   resolvePiRouteProtocol,
   resolvePiModelString,
   buildSyntheticPiModelFromRuntimeConfig,
+  applyPiModelRuntimeOverrides,
 } from './pi-model-resolution';
-import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
+import { isOfficialOpenAIBaseUrl, normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
 import { normalizeSubagentConfig } from '../../shared/subagent-config';
 import type { ServerEvent } from '../../renderer/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -101,9 +102,13 @@ function createSpawnSubagentTool(
   requestPermission: PermissionHandler | null,
   getParentAbortSignal: () => AbortSignal | null,
   activeCounts: Map<string, number>,
-  cwd: string
+  cwd: string,
+  sandboxIsolated: boolean
 ): AgentRuntimeCustomTool {
-  const settings = normalizeSubagentConfig(configStore.getAll()?.subagent);
+  const config = configStore.getAll();
+  const settings = config.subagentConfigError
+    ? undefined
+    : normalizeSubagentConfig(config.subagent);
   return {
     name: 'spawn_subagent',
     label: 'spawn_subagent',
@@ -125,7 +130,7 @@ function createSpawnSubagentTool(
       ),
       agent: Type.Optional(
         Type.String({
-          description: `Named role preset. Available: ${settings.presets.map((preset) => `${preset.name}: ${preset.description}`).join('; ')}. Default: ${settings.defaultAgent || 'general'}.`,
+          description: `Named role preset. Available: ${settings?.presets.map((preset) => preset.name).join(', ') || 'none'}. Default: ${settings?.defaultAgent || 'general'}.`,
         })
       ),
       result_format: Type.Optional(
@@ -173,6 +178,19 @@ function createSpawnSubagentTool(
 
       // Concurrency guard
       const config = configStore.getAll();
+      if (sandboxIsolated || config.subagentConfigError) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: sandboxIsolated
+                ? 'Subagents are unavailable in sandbox sessions until child tools support sandbox isolation.'
+                : `Subagent configuration error: ${config.subagentConfigError}. Repair it in settings.`,
+            },
+          ],
+          details: undefined,
+        };
+      }
       const childConfig = normalizeSubagentConfig(config.subagent);
       const agentName = agent ?? childConfig.defaultAgent;
       const preset = childConfig.presets.find((candidate) => candidate.name === agentName);
@@ -221,22 +239,39 @@ function createSpawnSubagentTool(
         const modelRegistry = new ModelRegistry(authStorage);
 
         const selectedModel = model?.trim() || preset?.model || childConfig.model || config.model;
+        const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
+        const registryProvider = configProtocol === 'gemini' ? 'google' : configProtocol;
+        const acceptsVendorIds =
+          config.provider === 'custom' ||
+          config.provider === 'openrouter' ||
+          config.provider === 'ollama' ||
+          (config.provider === 'openai' &&
+            !!config.baseUrl &&
+            !isOfficialOpenAIBaseUrl(config.baseUrl));
+        if (!acceptsVendorIds && selectedModel.includes('/')) {
+          const prefix = selectedModel.split('/')[0];
+          if (prefix !== config.provider && prefix !== registryProvider) {
+            throw new Error(`Child model must use the active provider (${config.provider}).`);
+          }
+        }
         const modelString = resolvePiModelString({
           provider: config.provider,
           customProtocol: config.customProtocol,
-          model: selectedModel,
+          model: acceptsVendorIds
+            ? selectedModel
+            : `${registryProvider}/${selectedModel.replace(/^[^/]+\//, '')}`,
         });
-        const configProtocol = resolvePiRouteProtocol(config.provider, config.customProtocol);
         const effectiveBaseUrl =
           configProtocol === 'openai'
             ? normalizeOpenAICompatibleBaseUrl(config.baseUrl) || config.baseUrl
             : config.baseUrl;
-        const piModel =
+        let piModel =
           resolvePiRegistryModel(modelString, {
-            configProvider: configProtocol,
+            configProvider: registryProvider,
             customBaseUrl: effectiveBaseUrl,
             rawProvider: config.provider,
             customProtocol: config.customProtocol,
+            restrictToProvider: !acceptsVendorIds,
           }) ??
           buildSyntheticPiModelFromRuntimeConfig(
             {
@@ -247,6 +282,32 @@ function createSpawnSubagentTool(
             },
             { resolvedModelString: modelString, routeProtocol: configProtocol, effectiveBaseUrl }
           );
+        if (acceptsVendorIds) {
+          const routedModel = buildSyntheticPiModelFromRuntimeConfig(
+            {
+              ...config,
+              model: selectedModel,
+              contextWindow: selectedModel === config.model ? config.contextWindow : undefined,
+              maxTokens: selectedModel === config.model ? config.maxTokens : undefined,
+            },
+            { resolvedModelString: modelString, routeProtocol: configProtocol, effectiveBaseUrl }
+          );
+          piModel = applyPiModelRuntimeOverrides(
+            {
+              ...piModel,
+              id: selectedModel,
+              provider: config.provider === 'custom' ? configProtocol : config.provider,
+              api: routedModel.api,
+              baseUrl: routedModel.baseUrl,
+            },
+            {
+              configProvider: registryProvider,
+              rawProvider: config.provider,
+              customBaseUrl: effectiveBaseUrl,
+              customProtocol: config.customProtocol,
+            }
+          );
+        }
         const apiKey = config.apiKey?.trim();
         if (apiKey) authStorage.setRuntimeApiKey(piModel.provider, apiKey);
 
@@ -512,7 +573,8 @@ export class SubagentExtension implements AgentRuntimeExtension {
           this.requestPermission,
           this.getParentAbortSignal,
           this.activeCounts,
-          context.session.cwd || configStore.getAll()?.defaultWorkdir || process.cwd()
+          context.session.cwd || configStore.getAll()?.defaultWorkdir || process.cwd(),
+          context.sandboxIsolated ?? false
         ),
       ],
     };

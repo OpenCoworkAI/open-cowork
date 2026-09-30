@@ -58,6 +58,11 @@ export function SettingsSubagents() {
 
   return (
     <div className="space-y-5">
+      {appConfig?.subagentConfigError && (
+        <p role="alert" className="text-sm text-error break-words">
+          {t('subagentSettings.invalidConfig', { error: appConfig.subagentConfigError })}
+        </p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <label className="space-y-1 text-sm">
           <span>{t('subagentSettings.model')}</span>
@@ -216,6 +221,11 @@ export function SettingsSubagents() {
                     })
                   }
                 />
+                {preset.allowedTools.every((name) => !name.trim()) && (
+                  <span role="status" className="block text-xs text-text-muted">
+                    {t('subagentSettings.noTools')}
+                  </span>
+                )}
               </label>
             )}
           </>

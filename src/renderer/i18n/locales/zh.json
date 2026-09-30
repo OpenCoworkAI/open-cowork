@@ -946,6 +946,8 @@
     "retry": "重试"
   },
   "subagentSettings": {
+    "invalidConfig": "已保存的子代理配置无效：{{error}}。保存有效配置可修复此问题。",
+    "noTools": "不允许使用任何工具",
     "model": "默认子代理模型（当前 API 供应商）",
     "concurrency": "单会话并发子代理数",
     "defaultRole": "默认角色",
