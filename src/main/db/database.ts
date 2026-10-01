@@ -114,6 +114,46 @@ export interface ScheduledTaskRow {
 let db: DatabaseInstance | null = null;
 const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'utf8');
 
+export class DatabaseClosedError extends Error {
+  constructor() {
+    super('Database is closed');
+    this.name = 'DatabaseClosedError';
+  }
+}
+
+function guardClosedDatabase<T extends object>(target: T, isClosed: () => boolean): T {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      const value: unknown = Reflect.get(obj, prop, receiver);
+      if (prop === 'close') {
+        return value;
+      }
+      if (typeof value === 'function') {
+        const method = value as (...args: unknown[]) => unknown;
+        return (...args: unknown[]) => {
+          if (isClosed()) {
+            throw new DatabaseClosedError();
+          }
+          return method.apply(obj, args);
+        };
+      }
+      if (value !== null && typeof value === 'object') {
+        if (prop === 'raw') {
+          if (isClosed()) {
+            throw new DatabaseClosedError();
+          }
+          return value;
+        }
+        return guardClosedDatabase(value, isClosed);
+      }
+      if (isClosed()) {
+        throw new DatabaseClosedError();
+      }
+      return value;
+    },
+  }) as T;
+}
+
 function buildBackupPath(targetPath: string, suffix: string): string {
   return `${targetPath}.${suffix}-${Date.now()}`;
 }
@@ -508,7 +548,9 @@ export function initDatabase(): DatabaseInstance {
     DELETE FROM scheduled_tasks WHERE id = ?
   `);
 
-  db = {
+  let closed = false;
+
+  const api: DatabaseInstance = {
     raw: rawDb,
 
     sessions: {
@@ -710,13 +752,21 @@ export function initDatabase(): DatabaseInstance {
     exec: (sql: string) => rawDb.exec(sql),
     pragma: (pragma: string) => rawDb.pragma(pragma),
     close: () => {
+      if (closed) {
+        return;
+      }
+      // Latch first so a re-entrant caller cannot use statements while
+      // better-sqlite3 is tearing the connection down.
+      closed = true;
       rawDb.close();
       db = null;
     },
   };
 
+  db = guardClosedDatabase(api, () => closed);
+
   log('[Database] SQLite database initialized successfully');
-  return db!;
+  return db;
 }
 
 /**
@@ -733,9 +783,13 @@ export function getDatabase(): DatabaseInstance {
  * Close the database connection
  */
 export function closeDatabase(): void {
-  if (db) {
-    db.close();
-    db = null;
-    log('[Database] Database closed');
+  if (!db) {
+    return;
   }
+  try {
+    db.close();
+  } finally {
+    db = null;
+  }
+  log('[Database] Database closed');
 }
