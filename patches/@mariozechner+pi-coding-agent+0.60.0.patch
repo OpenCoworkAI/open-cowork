@@ -26,3 +26,67 @@ index 438ac8c..96d0236 100644
          extensionRunnerRef,
      });
      const extensionsResult = resourceLoader.getExtensions();
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
+index 0781652..95d3775 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
+@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
+ import { createWriteStream, existsSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
++import { finished } from "node:stream/promises";
+ import { Type } from "@sinclair/typebox";
+ import { spawn } from "child_process";
+ import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+@@ -124,6 +125,12 @@ export function createBashTool(cwd, options) {
+                 // We'll stream to a temp file if output gets large
+                 let tempFilePath;
+                 let tempFileStream;
++                const finishOutput = async () => {
++                    if (tempFileStream) {
++                        tempFileStream.end();
++                        await finished(tempFileStream, { cleanup: true });
++                    }
++                };
+                 let totalBytes = 0;
+                 // Keep a rolling buffer of the last chunk for tail truncation
+                 const chunks = [];
+@@ -136,6 +143,7 @@ export function createBashTool(cwd, options) {
+                     if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+                         tempFilePath = getTempFilePath();
+                         tempFileStream = createWriteStream(tempFilePath);
++                        tempFileStream.once("error", reject);
+                         // Write all buffered chunks to the file
+                         for (const chunk of chunks) {
+                             tempFileStream.write(chunk);
+@@ -173,11 +181,8 @@ export function createBashTool(cwd, options) {
+                     timeout,
+                     env: spawnContext.env,
+                 })
+-                    .then(({ exitCode }) => {
+-                    // Close temp file stream
+-                    if (tempFileStream) {
+-                        tempFileStream.end();
+-                    }
++                    .then(async ({ exitCode }) => {
++                    await finishOutput();
+                     // Combine all buffered chunks
+                     const fullBuffer = Buffer.concat(chunks);
+                     const fullOutput = fullBuffer.toString("utf-8");
+@@ -214,10 +219,12 @@ export function createBashTool(cwd, options) {
+                         resolve({ content: [{ type: "text", text: outputText }], details });
+                     }
+                 })
+-                    .catch((err) => {
+-                    // Close temp file stream
+-                    if (tempFileStream) {
+-                        tempFileStream.end();
++                    .catch(async (err) => {
++                    try {
++                        await finishOutput();
++                    } catch (writeError) {
++                        reject(writeError);
++                        return;
+                     }
+                     // Combine all buffered chunks for error output
+                     const fullBuffer = Buffer.concat(chunks);

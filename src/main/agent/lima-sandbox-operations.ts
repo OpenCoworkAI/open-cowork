@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import { access, readFile } from 'fs/promises';
 import {
   createBashTool,
   createEditTool,
@@ -15,7 +16,8 @@ export const VIRTUAL_WORKSPACE_PATH = '/workspace';
 
 export const LIMA_SANDBOX_INSTANCE = 'claude-sandbox';
 
-const VIRTUAL_WORKSPACE_PATTERN = /(^|[^A-Za-z0-9_./-])\/workspace(?![A-Za-z0-9_-])/g;
+const VIRTUAL_WORKSPACE_PATTERN = /(^|[\s'"`=;|&()<>])\/workspace(?=\/|$|[\s'"`;|&()<>])/g;
+const GUEST_FILE_MISSING_EXIT_CODE = 44;
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
@@ -125,7 +127,7 @@ function runGuestScript(
     let child: ChildProcess;
     try {
       child = spawnProcess('limactl', ['shell', validatedInstance, '--', 'bash', '-c', script], {
-        env: options.env,
+        env: { ...process.env, ...options.env },
         stdio: [options.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
@@ -164,15 +166,16 @@ function runGuestScript(
 
     const takeChunk = (target: Buffer[], data: Buffer | string) => {
       const chunk = asBuffer(data);
-      target.push(chunk);
-      options.onData?.(chunk);
+      if (options.onData) {
+        options.onData(chunk);
+      } else {
+        target.push(chunk);
+      }
     };
 
     child.stdout?.on('data', (data: Buffer | string) => takeChunk(stdoutChunks, data));
     child.stderr?.on('data', (data: Buffer | string) => takeChunk(stderrChunks, data));
-    child.stdin?.on('error', () => {
-      // The guest can close stdin before the write finishes. close/error settles the run.
-    });
+    child.stdin?.on('error', (error: Error) => finishReject(error));
     child.once('error', (error: Error) => finishReject(error));
     child.once('close', (code: number | null) => {
       if (options.signal?.aborted) {
@@ -187,11 +190,7 @@ function runGuestScript(
     });
 
     const killChild = () => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // The process may already have exited.
-      }
+      child.kill('SIGKILL');
     };
 
     function onAbort() {
@@ -219,9 +218,16 @@ async function runGuestOrThrow(
   spawnProcess: SpawnProcess,
   instanceName: string,
   script: string,
-  stdin?: Buffer
+  stdin?: Buffer,
+  missingPath?: string
 ): Promise<Buffer> {
   const result = await runGuestScript(spawnProcess, instanceName, script, { stdin });
+  if (result.exitCode === GUEST_FILE_MISSING_EXIT_CODE && missingPath !== undefined) {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, '${missingPath}'`), {
+      code: 'ENOENT',
+      path: missingPath,
+    });
+  }
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || result.stdout.toString().trim();
     throw new Error(detail || `Lima command failed with code ${result.exitCode}`);
@@ -261,9 +267,13 @@ export function createLimaSandboxFileOperations(
 
   const read: ReadOperations = {
     access: (absolutePath) =>
-      runGuestOrThrow(spawnProcess, instanceName, `test -e '${guestPath(absolutePath)}'`).then(
-        () => undefined
-      ),
+      runGuestOrThrow(
+        spawnProcess,
+        instanceName,
+        `test -e '${guestPath(absolutePath)}' || exit ${GUEST_FILE_MISSING_EXIT_CODE}`,
+        undefined,
+        absolutePath
+      ).then(() => undefined),
     readFile: (absolutePath) =>
       runGuestOrThrow(spawnProcess, instanceName, `cat -- '${guestPath(absolutePath)}'`),
   };
@@ -304,13 +314,44 @@ export function createLimaSandboxFileOperations(
 export function createLimaSandboxCodingTools(
   sandboxPath: string,
   options: LimaSandboxOperationsOptions = {}
-) {
+): [
+  ReturnType<typeof createReadTool>,
+  ReturnType<typeof createBashTool>,
+  ReturnType<typeof createEditTool>,
+  ReturnType<typeof createWriteTool>,
+] {
   const files = createLimaSandboxFileOperations(sandboxPath, options);
+  const hostOutputPaths = new Set<string>();
+  const bash = createBashTool(sandboxPath, {
+    operations: createLimaSandboxBashOperations(sandboxPath, options),
+  });
+
   return [
-    createReadTool(sandboxPath, { operations: files.read }),
-    createBashTool(sandboxPath, {
-      operations: createLimaSandboxBashOperations(sandboxPath, options),
+    createReadTool(sandboxPath, {
+      // Only output paths emitted by this SDK tool can be read on the host.
+      operations: {
+        access: (absolutePath) =>
+          hostOutputPaths.has(absolutePath)
+            ? access(absolutePath)
+            : files.read.access(absolutePath),
+        readFile: (absolutePath) =>
+          hostOutputPaths.has(absolutePath)
+            ? readFile(absolutePath)
+            : files.read.readFile(absolutePath),
+      },
     }),
+    {
+      ...bash,
+      execute: async (...args: Parameters<typeof bash.execute>) => {
+        const [toolCallId, params, signal, onUpdate] = args;
+        const result = await bash.execute(toolCallId, params, signal, (update) => {
+          if (update.details?.fullOutputPath) hostOutputPaths.add(update.details.fullOutputPath);
+          onUpdate?.(update);
+        });
+        if (result.details?.fullOutputPath) hostOutputPaths.add(result.details.fullOutputPath);
+        return result;
+      },
+    },
     createEditTool(sandboxPath, { operations: files.edit }),
     createWriteTool(sandboxPath, { operations: files.write }),
   ];

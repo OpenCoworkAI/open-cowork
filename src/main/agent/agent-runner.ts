@@ -1049,9 +1049,11 @@ ${hints.join('\n')}
   private wrapBashToolForSudo(
     tools: ToolDefinition[],
     sessionId: string,
-    effectiveCwd: string
+    effectiveCwd: string,
+    useLimaSandbox: boolean
   ): ToolDefinition[] {
-    if (!this.requestSudoPassword) return tools;
+    // Lima commands, including sudo, stay in the guest tool backend.
+    if (useLimaSandbox || !this.requestSudoPassword) return tools;
 
     const requestSudoPassword = this.requestSudoPassword;
 
@@ -2162,7 +2164,12 @@ Tool routing:
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const wrappedTools = this.wrapBashToolForSudo(
+        withTimeout,
+        session.id,
+        effectiveCwd,
+        Boolean(guestSandboxPath)
+      );
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
