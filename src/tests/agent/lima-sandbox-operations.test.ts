@@ -102,10 +102,15 @@ describe('lima sandbox paths', () => {
         `printf '%s\\n' /workspace '/workspace/a.txt' "/workspace/b.txt"`,
         `"$(printf '%s' /workspace)"`,
         '"`printf \'%s\' /workspace`"',
+        '"$(printf \'%s\' "`printf \'%s\' /workspace`")"',
+        '"$(printf \'%s\' "$(printf \'%s\' /workspace)")"',
+        '"`printf \'%s\' "$(printf \'%s\' /workspace)"`"',
       ].join(' ');
-      const rewritten = rewriteVirtualWorkspaceCommand(command, root);
-      const output = execFileSync('bash', ['-c', rewritten], { encoding: 'utf8' });
-      expect(output).toBe(`${root}\n${root}/a.txt\n${root}/b.txt\n${root}\n${root}\n`);
+      const script = buildLimaGuestShellScript(tmpdir(), command, root);
+      const output = execFileSync('bash', ['-c', script], { encoding: 'utf8' });
+      expect(output).toBe(
+        `${root}\n${root}/a.txt\n${root}/b.txt\n${Array.from({ length: 5 }, () => root).join('\n')}\n`
+      );
     }
   );
 });

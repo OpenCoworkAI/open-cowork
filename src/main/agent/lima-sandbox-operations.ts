@@ -174,6 +174,8 @@ function runGuestScript(
 
     let child: ChildProcess;
     try {
+      // limactl needs the host HOME/PATH to locate its VM and SSH. Full guest
+      // environment forwarding is opt-in on Lima 2+; this command does not enable it.
       child = spawnProcess('limactl', ['shell', validatedInstance, '--', 'bash', '-c', script], {
         env: { ...process.env, ...options.env },
         stdio: [options.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
