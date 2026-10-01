@@ -78,7 +78,7 @@ The project documentation lists these provider examples:
 - OpenRouter: base URL `https://openrouter.ai/api`, recommended model `claude-4-5-sonnet`
 - Anthropic: default base URL, recommended model `claude-4-5-sonnet`
 - Zhipu AI / GLM: base URL `https://open.bigmodel.cn/api/anthropic`, recommended models `glm-4.7` and `glm-4.6`
-- MiniMax: base URL `https://api.minimaxi.com/anthropic`, recommended model `minimax-m2`
+- MiniMax: base URL `https://api.minimax.io/v1`, recommended model `MiniMax-M3`
 - Kimi: base URL `https://api.kimi.com/coding/`, recommended model `kimi-k2`
 
 Any provider with an OpenAI-compatible API can be configured when compatible with the app's model settings.
