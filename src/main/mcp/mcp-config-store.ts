@@ -10,7 +10,13 @@ import { log, logError } from '../utils/logger';
  * Preset MCP Server Configurations
  * These are common MCP servers that users can quickly add
  */
-export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'enabled'> & { requiresEnv?: string[]; envDescription?: Record<string, string> }> = {
+export const MCP_SERVER_PRESETS: Record<
+  string,
+  Omit<MCPServerConfig, 'id' | 'enabled'> & {
+    requiresEnv?: string[];
+    envDescription?: Record<string, string>;
+  }
+> = {
   chrome: {
     name: 'Chrome',
     type: 'stdio',
@@ -44,6 +50,16 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
       WORKSPACE_DIR: 'Workspace directory for code development (optional)',
       TEST_ENV: 'Test environment: development, staging, or production (optional)',
     },
+  },
+  'you-search': {
+    // Keyless remote web search (You.com free profile). Intentionally disabled
+    // until the user opts in; queries are sent to You.com only when enabled.
+    name: 'You',
+    type: 'streamable-http',
+    url: 'https://api.you.com/mcp?profile=free',
+    env: {},
+    requiresEnv: [],
+    envDescription: {},
   },
   'gui-operate': {
     name: 'GUI_Operate',
@@ -97,13 +113,13 @@ class MCPConfigStore {
   saveServer(config: MCPServerConfig): void {
     const servers = this.getServers();
     const index = servers.findIndex((s) => s.id === config.id);
-    
+
     if (index >= 0) {
       servers[index] = config;
     } else {
       servers.push(config);
     }
-    
+
     this.store.set('servers', servers);
   }
 
@@ -141,7 +157,6 @@ class MCPConfigStore {
    * Get the path to a MCP server file in the mcp directory
    */
   private getMcpServerPath(filename: string): string | null {
-
     // In development: __dirname points to dist-electron/main
     // In production: appPath points to the app.asar or unpacked app
     if (app.isPackaged) {
@@ -225,7 +240,7 @@ class MCPConfigStore {
     if (preset.args) {
       resolvedPreset = {
         ...preset,
-        args: preset.args.map(arg => {
+        args: preset.args.map((arg) => {
           // Software Development server path
           if (arg === '{SOFTWARE_DEV_SERVER_PATH}') {
             return this.getSoftwareDevServerPath() || arg;

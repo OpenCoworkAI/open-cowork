@@ -194,6 +194,7 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
     ```
 2.  **Network Access**: For tools like `WebSearch`, you may need to enable "Virtual Network Interface" (TUN Mode) in your proxy settings to ensure connectivity.
 3.  **Notion Connector**: Besides setting the integration token, you also need to add connections in a root page. See https://www.notion.com/help/add-and-manage-connections-with-the-api for more details.
+4.  **You.com Web Search**: The `You` connector preset connects to You.com's remote MCP server (`https://api.you.com/mcp?profile=free`) for keyless web search — no token needed. For the full toolset (search + URL content extraction with citations), create a key at [you.com/platform/api-keys](https://you.com/platform/api-keys) and add a custom Streamable HTTP connector to `https://api.you.com/mcp` with an `Authorization: Bearer <YDC_API_KEY>` header.
 
 ---
 

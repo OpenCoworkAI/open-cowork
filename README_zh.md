@@ -187,6 +187,7 @@ brew install lima
     或者前往 **系统设置 > 隐私与安全性** 点击”仍要打开”。
 2.  **网络连接**：对于 `WebSearch` 等联网工具，可能需要开启代理软件的“虚拟网卡 (TUN模式)”功能才能正常访问。
 3.  **Notion连接器使用**: 除了设置Notion token之外，还需要在根页面添加连接。更多指引请看https://www.notion.com/help/add-and-manage-connections-with-the-api。
+4.  **You.com 网页搜索**: `You` 连接器预设接入 You.com 远程 MCP 服务器（`https://api.you.com/mcp?profile=free`），提供免密钥的网页搜索，无需任何 token。如需完整工具集（搜索 + 带引用的网页内容提取），请前往 [you.com/platform/api-keys](https://you.com/platform/api-keys) 创建密钥，然后添加一个自定义 Streamable HTTP 连接器指向 `https://api.you.com/mcp`，并设置 `Authorization: Bearer <YDC_API_KEY>` 请求头。
 
 <a id="技能库"></a>
 
