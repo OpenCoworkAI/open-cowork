@@ -21,6 +21,7 @@ export const LIMA_SANDBOX_INSTANCE = 'claude-sandbox';
 
 const VIRTUAL_WORKSPACE_PATTERN = /(^|[\s'"`=;|&()<>])\/workspace(?=\/|$|[\s'"`;|&()<>])/g;
 const GUEST_FILE_MISSING_EXIT_CODE = 44;
+const GUEST_FILE_PERMISSION_EXIT_CODE = 45;
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
@@ -91,7 +92,31 @@ export function mapVirtualWorkspacePath(pathValue: string, sandboxPath: string):
 /** Rewrite `/workspace` tokens inside a guest command without touching lookalike paths. */
 export function rewriteVirtualWorkspaceCommand(command: string, sandboxPath: string): string {
   const root = assertSandboxPath(sandboxPath);
-  return command.replace(VIRTUAL_WORKSPACE_PATTERN, (_match, prefix: string) => `${prefix}${root}`);
+  return command.replace(VIRTUAL_WORKSPACE_PATTERN, (_match, prefix: string, offset: number) => {
+    if (/^[A-Za-z0-9_./-]+$/.test(root)) return `${prefix}${root}`;
+
+    // Preserve the quoting of the original shell argument when inserting a guest path.
+    let quote: string | undefined;
+    for (let index = 0; index < offset + prefix.length; index++) {
+      const character = command[index];
+      if (quote === "'") {
+        if (character === "'") quote = undefined;
+      } else if (character === '\\') {
+        index++;
+      } else if (quote === '"') {
+        if (character === '"') quote = undefined;
+      } else if (character === "'" || character === '"') {
+        quote = character;
+      }
+    }
+    const escapedRoot =
+      quote === "'"
+        ? shellEscapePath(root)
+        : quote === '"'
+          ? root.replace(/[\\$"`]/g, '\\$&')
+          : `'${shellEscapePath(root)}'`;
+    return `${prefix}${escapedRoot}`;
+  });
 }
 
 export function buildLimaGuestShellScript(
@@ -233,13 +258,19 @@ async function runGuestOrThrow(
   instanceName: string,
   script: string,
   stdin?: Buffer,
-  missingPath?: string
+  checkedPath?: string
 ): Promise<Buffer> {
   const result = await runGuestScript(spawnProcess, instanceName, script, { stdin });
-  if (result.exitCode === GUEST_FILE_MISSING_EXIT_CODE && missingPath !== undefined) {
-    throw Object.assign(new Error(`ENOENT: no such file or directory, '${missingPath}'`), {
+  if (result.exitCode === GUEST_FILE_MISSING_EXIT_CODE && checkedPath !== undefined) {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, '${checkedPath}'`), {
       code: 'ENOENT',
-      path: missingPath,
+      path: checkedPath,
+    });
+  }
+  if (result.exitCode === GUEST_FILE_PERMISSION_EXIT_CODE && checkedPath !== undefined) {
+    throw Object.assign(new Error(`EACCES: permission denied, '${checkedPath}'`), {
+      code: 'EACCES',
+      path: checkedPath,
     });
   }
   if (result.exitCode !== 0) {
@@ -312,7 +343,8 @@ export function createLimaSandboxFileOperations(
         spawnProcess,
         instanceName,
         `test -e '${guestPath(absolutePath)}' || exit ${GUEST_FILE_MISSING_EXIT_CODE}; ` +
-          `test -r '${guestPath(absolutePath)}' && test -w '${guestPath(absolutePath)}'`,
+          `{ test -r '${guestPath(absolutePath)}' && test -w '${guestPath(absolutePath)}'; } ` +
+          `|| exit ${GUEST_FILE_PERMISSION_EXIT_CODE}`,
         undefined,
         absolutePath
       ).then(() => undefined),

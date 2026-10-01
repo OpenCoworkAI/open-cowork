@@ -40,7 +40,7 @@ index 23227a3..1fa12c4 100644
      commandPrefix?: string;
      /** Hook to adjust command, cwd, or env before execution */
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
-index 0781652..2eb6051 100644
+index 0781652..4de4bc2 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 @@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
@@ -63,10 +63,14 @@ index 0781652..2eb6051 100644
  }
  const bashSchema = Type.Object({
      command: Type.String({ description: "Bash command to execute" }),
-@@ -124,6 +125,12 @@ export function createBashTool(cwd, options) {
+@@ -124,6 +125,16 @@ export function createBashTool(cwd, options) {
                  // We'll stream to a temp file if output gets large
                  let tempFilePath;
                  let tempFileStream;
++                const outputAbort = new AbortController();
++                const executionSignal = signal
++                    ? AbortSignal.any([signal, outputAbort.signal])
++                    : outputAbort.signal;
 +                const finishOutput = async () => {
 +                    if (tempFileStream) {
 +                        tempFileStream.end();
@@ -76,18 +80,26 @@ index 0781652..2eb6051 100644
                  let totalBytes = 0;
                  // Keep a rolling buffer of the last chunk for tail truncation
                  const chunks = [];
-@@ -134,8 +141,9 @@ export function createBashTool(cwd, options) {
+@@ -134,8 +145,12 @@ export function createBashTool(cwd, options) {
                      totalBytes += data.length;
                      // Start writing to temp file once we exceed the threshold
                      if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
 -                        tempFilePath = getTempFilePath();
 +                        tempFilePath = getTempFilePath(options?.outputFilePrefix);
                          tempFileStream = createWriteStream(tempFilePath);
-+                        tempFileStream.once("error", reject);
++                        tempFileStream.once("error", (error) => {
++                            outputAbort.abort();
++                            reject(error);
++                        });
                          // Write all buffered chunks to the file
                          for (const chunk of chunks) {
                              tempFileStream.write(chunk);
-@@ -173,10 +181,12 @@ export function createBashTool(cwd, options) {
+@@ -169,14 +184,16 @@ export function createBashTool(cwd, options) {
+                 };
+                 ops.exec(spawnContext.command, spawnContext.cwd, {
+                     onData: handleData,
+-                    signal,
++                    signal: executionSignal,
                      timeout,
                      env: spawnContext.env,
                  })
@@ -104,7 +116,7 @@ index 0781652..2eb6051 100644
                      }
                      // Combine all buffered chunks
                      const fullBuffer = Buffer.concat(chunks);
-@@ -214,10 +224,12 @@ export function createBashTool(cwd, options) {
+@@ -214,10 +231,12 @@ export function createBashTool(cwd, options) {
                          resolve({ content: [{ type: "text", text: outputText }], details });
                      }
                  })

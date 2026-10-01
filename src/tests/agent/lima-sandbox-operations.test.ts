@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChildProcess, SpawnOptions } from 'child_process';
+import { execFileSync } from 'child_process';
 import {
   createLocalBashOperations,
   createAgentSession,
@@ -93,6 +94,16 @@ describe('lima sandbox paths', () => {
     expect(script).toContain(`cd -- '${shellEscapePath(`/tmp/a'b`)}'`);
     expect(script.endsWith('pwd')).toBe(true);
   });
+
+  it.each(['/tmp/guest space', '/tmp/guest\'"$HOME`uname`\\literal'])(
+    'preserves shell arguments with sandbox root %s',
+    (root) => {
+      const command = `printf '%s\\n' /workspace '/workspace/a.txt' "/workspace/b.txt"`;
+      const rewritten = rewriteVirtualWorkspaceCommand(command, root);
+      const output = execFileSync('bash', ['-c', rewritten], { encoding: 'utf8' });
+      expect(output).toBe(`${root}\n${root}/a.txt\n${root}/b.txt\n`);
+    }
+  );
 });
 
 describe('lima sandbox bash', () => {
@@ -454,7 +465,11 @@ describe('lima sandbox coding tools', () => {
       child.emit('close', exitCode);
       await expect(pending).rejects.toMatchObject({ code: 'ENOENT' });
       await new Promise<void>((resolve) => setImmediate(resolve));
-      expect(end).toHaveBeenCalledTimes(1);
+      expect(
+        end.mock.contexts.filter(
+          (stream) => dirname(String((stream as WriteStream).path)) === join(directory, 'missing')
+        )
+      ).toHaveLength(1);
     } finally {
       end.mockRestore();
       vi.unstubAllEnvs();
@@ -474,6 +489,33 @@ describe('lima sandbox coding tools', () => {
       ).rejects.toMatchObject({ code: 'ENOENT' });
       await new Promise<void>((resolve) => setImmediate(resolve));
     } finally {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it('cancels a running guest when its output file fails', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cowork-lima-cancel-output-'));
+    const child = new FakeChildProcess();
+    const end = vi.spyOn(WriteStream.prototype, 'end');
+    try {
+      vi.stubEnv('TMPDIR', join(directory, 'missing'));
+      const [, bash] = createLimaSandboxCodingTools(SANDBOX, {
+        spawnProcess: createSpawnMock([child]),
+      });
+      const pending = bash.execute('cancel-output-error', { command: 'generate-output' });
+      child.stdout.emit('data', Buffer.alloc(65536, 'x'));
+      await expect(pending).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+      child.emit('close', null);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(
+        end.mock.contexts.filter(
+          (stream) => dirname(String((stream as WriteStream).path)) === join(directory, 'missing')
+        )
+      ).toHaveLength(1);
+    } finally {
+      end.mockRestore();
       vi.unstubAllEnvs();
       await rm(directory, { recursive: true });
     }
@@ -536,6 +578,20 @@ describe('lima sandbox file tools', () => {
     const pending = files.edit.access('/workspace/missing.txt');
     child.emit('close', 44);
     await expect(pending).rejects.toMatchObject({ code: 'ENOENT', path: '/workspace/missing.txt' });
+  });
+
+  it('reports a guest permission failure as EACCES before editing', async () => {
+    const child = new FakeChildProcess();
+    const files = createLimaSandboxFileOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = files.edit.access('/workspace/read-only.txt');
+    child.emit('close', 45);
+    await expect(pending).rejects.toMatchObject({
+      code: 'EACCES',
+      path: '/workspace/read-only.txt',
+      message: expect.stringContaining('permission denied'),
+    });
   });
 
   it('reports a missing guest file as ENOENT', async () => {
@@ -618,7 +674,7 @@ describe('lima sandbox file tools', () => {
 
     await expect(pending).rejects.toThrow('denied');
     expect(scriptFrom(spawnProcess)).toBe(
-      `test -e '${SANDBOX}/notes.txt' || exit 44; test -r '${SANDBOX}/notes.txt' && test -w '${SANDBOX}/notes.txt'`
+      `test -e '${SANDBOX}/notes.txt' || exit 44; { test -r '${SANDBOX}/notes.txt' && test -w '${SANDBOX}/notes.txt'; } || exit 45`
     );
   });
 });
