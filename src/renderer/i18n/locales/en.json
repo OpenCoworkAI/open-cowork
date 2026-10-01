@@ -499,7 +499,10 @@
     "commandRequired": "Command is required",
     "urlRequired": "URL is required",
     "toolCount": "{{count}} tools",
-    "callCount": "{{count}} calls"
+    "callCount": "{{count}} calls",
+    "pageErrorTitle": "MCP Connectors failed to render",
+    "pageErrorDescription": "Your connector config is still on disk. Retry this tab, or check mcp-config.json for unexpected shapes (for example Claude-style mcpServers maps).",
+    "pageErrorRetry": "Retry"
   },
   "credentials": {
     "envVars": "Environment Variables",

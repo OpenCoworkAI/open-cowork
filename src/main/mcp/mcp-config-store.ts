@@ -5,12 +5,27 @@ import * as crypto from 'crypto';
 import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
 import { log, logError } from '../utils/logger';
+import {
+  deleteServerFromMcpDocument,
+  normalizeMcpConfigDocument,
+  normalizeMcpConfigInput,
+  normalizeMcpServerEntry,
+  replaceRecognizedServersInMcpDocument,
+  upsertServerInMcpDocument,
+  type McpConfigWriteResult,
+} from '../../shared/mcp-config';
 
 /**
  * Preset MCP Server Configurations
  * These are common MCP servers that users can quickly add
  */
-export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'enabled'> & { requiresEnv?: string[]; envDescription?: Record<string, string> }> = {
+export const MCP_SERVER_PRESETS: Record<
+  string,
+  Omit<MCPServerConfig, 'id' | 'enabled'> & {
+    requiresEnv?: string[];
+    envDescription?: Record<string, string>;
+  }
+> = {
   chrome: {
     name: 'Chrome',
     type: 'stdio',
@@ -60,27 +75,73 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
 
 /**
  * MCP Server Configuration Store
+ *
+ * `servers` is optional on purpose. electron-store writes `defaults` into the
+ * JSON file when the store is constructed, so a default `servers: []` would
+ * rewrite Claude-style documents at startup.
  */
+type McpConfigStoreShape = {
+  servers?: unknown;
+  mcpServers?: unknown;
+  mcp_servers?: unknown;
+};
+
 class MCPConfigStore {
-  private store: Store<{ servers: MCPServerConfig[] }>;
+  private store: Store<McpConfigStoreShape>;
 
   constructor() {
-    const storeOptions: StoreOptions<{ servers: MCPServerConfig[] }> & { projectName?: string } = {
+    const storeOptions: StoreOptions<McpConfigStoreShape> & { projectName?: string } = {
       name: 'mcp-config',
       projectName: 'open-cowork',
-      defaults: {
-        servers: [],
-      },
     };
 
-    this.store = new Store<{ servers: MCPServerConfig[] }>(storeOptions);
+    this.store = new Store<McpConfigStoreShape>(storeOptions);
   }
 
   /**
-   * Get all MCP server configurations
+   * Get all MCP server configurations.
+   *
+   * Agent-installed or Claude-style documents are normalized in memory so
+   * callers never receive a non-array. This method does not write. Unknown
+   * entries and the original document shape stay in the file.
    */
   getServers(): MCPServerConfig[] {
-    return this.store.get('servers', []);
+    try {
+      const document = this.readStoreDocument();
+      const normalized = normalizeMcpConfigDocument(document);
+      if (normalized.error) {
+        logError('[MCPConfigStore] MCP config could not be normalized:', normalized.error);
+      }
+      return normalized.servers;
+    } catch (error) {
+      logError('[MCPConfigStore] Failed to read MCP servers, returning empty list:', error);
+      return [];
+    }
+  }
+
+  private readStoreDocument(): unknown {
+    try {
+      return this.store.store;
+    } catch (error) {
+      logError('[MCPConfigStore] Failed to read MCP store document:', error);
+      try {
+        return { servers: this.store.get('servers', []) };
+      } catch {
+        return { servers: [] };
+      }
+    }
+  }
+
+  private commitMcpConfigWrite(result: McpConfigWriteResult): void {
+    if (!result.ok) {
+      const message = result.error ?? 'MCP config was left unchanged.';
+      logError('[MCPConfigStore] Refusing to modify MCP config:', message);
+      throw new Error(message);
+    }
+    if (!result.changed || result.field === undefined) {
+      return;
+    }
+    this.store.set(result.field, result.value);
   }
 
   /**
@@ -95,39 +156,47 @@ class MCPConfigStore {
    * Add or update a server configuration
    */
   saveServer(config: MCPServerConfig): void {
-    const servers = this.getServers();
-    const index = servers.findIndex((s) => s.id === config.id);
-    
-    if (index >= 0) {
-      servers[index] = config;
-    } else {
-      servers.push(config);
+    const { server } = normalizeMcpServerEntry(config, undefined, new Set());
+    if (!server) {
+      logError('[MCPConfigStore] Refusing to save invalid MCP server config');
+      return;
     }
-    
-    this.store.set('servers', servers);
+
+    this.commitMcpConfigWrite(upsertServerInMcpDocument(this.readStoreDocument(), server));
   }
 
   /**
    * Delete a server configuration
    */
   deleteServer(serverId: string): void {
-    const servers = this.getServers();
-    const filtered = servers.filter((s) => s.id !== serverId);
-    this.store.set('servers', filtered);
+    this.commitMcpConfigWrite(deleteServerFromMcpDocument(this.readStoreDocument(), serverId));
   }
 
   /**
-   * Update all server configurations
+   * Replace recognized server configurations.
+   * Unrecognized entries and the original collection shape are kept.
    */
   setServers(servers: MCPServerConfig[]): void {
-    this.store.set('servers', servers);
+    const normalized = normalizeMcpConfigInput(servers);
+    if (normalized.error) {
+      this.commitMcpConfigWrite({ ok: false, changed: false, error: normalized.error });
+      return;
+    }
+    this.commitMcpConfigWrite(
+      replaceRecognizedServersInMcpDocument(this.readStoreDocument(), normalized.servers)
+    );
   }
 
   /**
    * Get enabled servers only
    */
   getEnabledServers(): MCPServerConfig[] {
-    return this.getServers().filter((s) => s.enabled);
+    try {
+      return this.getServers().filter((s) => s.enabled);
+    } catch (error) {
+      logError('[MCPConfigStore] Failed to read enabled MCP servers:', error);
+      return [];
+    }
   }
 
   /**
@@ -141,7 +210,6 @@ class MCPConfigStore {
    * Get the path to a MCP server file in the mcp directory
    */
   private getMcpServerPath(filename: string): string | null {
-
     // In development: __dirname points to dist-electron/main
     // In production: appPath points to the app.asar or unpacked app
     if (app.isPackaged) {
@@ -225,7 +293,7 @@ class MCPConfigStore {
     if (preset.args) {
       resolvedPreset = {
         ...preset,
-        args: preset.args.map(arg => {
+        args: preset.args.map((arg) => {
           // Software Development server path
           if (arg === '{SOFTWARE_DEV_SERVER_PATH}') {
             return this.getSoftwareDevServerPath() || arg;
