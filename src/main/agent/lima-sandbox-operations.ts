@@ -193,6 +193,7 @@ function runGuestScript(
     const stderrChunks: Buffer[] = [];
     let settled = false;
     let timedOut = false;
+    let aborted = false;
     let stdinError: NodeJS.ErrnoException | undefined;
     let timeoutHandle: NodeJS.Timeout | undefined;
 
@@ -238,8 +239,9 @@ function runGuestScript(
       }
     });
     child.once('error', (error: Error) => finishReject(error));
+    child.once('exit', cleanup);
     child.once('close', (code: number | null) => {
-      if (options.signal?.aborted) {
+      if (aborted) {
         finishReject(new Error('aborted'));
         return;
       }
@@ -259,6 +261,7 @@ function runGuestScript(
     };
 
     function onAbort() {
+      aborted = true;
       killChild();
     }
 

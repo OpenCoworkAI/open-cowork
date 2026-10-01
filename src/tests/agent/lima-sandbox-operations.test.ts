@@ -127,6 +127,40 @@ describe('lima sandbox paths', () => {
 });
 
 describe('lima sandbox bash', () => {
+  it('preserves a guest result when cancellation arrives between exit and close', async () => {
+    const child = new FakeChildProcess();
+    const controller = new AbortController();
+    const operations = createLimaSandboxBashOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = operations.exec('true', SANDBOX, {
+      onData: vi.fn(),
+      signal: controller.signal,
+    });
+    child.emit('exit', 0);
+    controller.abort();
+    child.emit('close', 0);
+    await expect(pending).resolves.toEqual({ exitCode: 0 });
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it('keeps active cancellation rejected even if the child later reports exit zero', async () => {
+    const child = new FakeChildProcess();
+    const controller = new AbortController();
+    const operations = createLimaSandboxBashOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = operations.exec('true', SANDBOX, {
+      onData: vi.fn(),
+      signal: controller.signal,
+    });
+    controller.abort();
+    child.emit('exit', 0);
+    child.emit('close', 0);
+    await expect(pending).rejects.toThrow('aborted');
+    expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+  });
+
   it('preserves a completed guest result when the caller aborts after close', async () => {
     const child = new FakeChildProcess();
     const controller = new AbortController();
