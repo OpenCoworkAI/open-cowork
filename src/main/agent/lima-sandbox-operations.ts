@@ -1,0 +1,430 @@
+import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import { randomUUID } from 'crypto';
+import { access, readFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { basename, dirname, posix } from 'path';
+import {
+  createBashTool,
+  createEditTool,
+  createReadTool,
+  createWriteTool,
+  type BashOperations,
+  type EditOperations,
+  type ReadOperations,
+  type WriteOperations,
+} from '@mariozechner/pi-coding-agent';
+
+/** Display path the model sees. The guest directory is the Lima sandbox path. */
+export const VIRTUAL_WORKSPACE_PATH = '/workspace';
+
+export const LIMA_SANDBOX_INSTANCE = 'claude-sandbox';
+
+const VIRTUAL_WORKSPACE_PATTERN = /(^|[\s'"`=;|&()<>])\/workspace(?=\/|$|[\s'"`;|&()<>])/g;
+const GUEST_FILE_MISSING_EXIT_CODE = 44;
+const GUEST_FILE_PERMISSION_EXIT_CODE = 45;
+
+type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
+
+export interface LimaSandboxOperationsOptions {
+  spawnProcess?: SpawnProcess;
+  instanceName?: string;
+}
+
+interface GuestRunOptions {
+  stdin?: Buffer;
+  timeoutSeconds?: number;
+  onData?: (chunk: Buffer) => void;
+  signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
+}
+
+function defaultSpawn(command: string, args: string[], options: SpawnOptions): ChildProcess {
+  return spawn(command, args, options);
+}
+
+function assertInstanceName(instanceName: string): string {
+  if (!/^[A-Za-z0-9._-]+$/.test(instanceName)) {
+    throw new Error(`Invalid Lima instance name: ${instanceName}`);
+  }
+  return instanceName;
+}
+
+function assertSandboxPath(sandboxPath: string): string {
+  if (!sandboxPath.startsWith('/')) {
+    throw new Error(`Lima sandbox path must be absolute: ${sandboxPath}`);
+  }
+  return sandboxPath.replace(/\/+$/, '') || '/';
+}
+
+/** POSIX single-quote escaping. The result does not include the surrounding quotes. */
+export function shellEscapePath(pathValue: string): string {
+  return pathValue.replace(/'/g, `'\\''`);
+}
+
+/**
+ * Map the virtual `/workspace` root onto the guest sandbox directory.
+ * Paths that would leave that directory are rejected. Other absolute guest
+ * paths are left unchanged so a command can still name the real sandbox path.
+ */
+export function mapVirtualWorkspacePath(pathValue: string, sandboxPath: string): string {
+  const root = assertSandboxPath(sandboxPath);
+  if (pathValue !== VIRTUAL_WORKSPACE_PATH && !pathValue.startsWith(`${VIRTUAL_WORKSPACE_PATH}/`)) {
+    return pathValue;
+  }
+
+  const relative = pathValue.slice(VIRTUAL_WORKSPACE_PATH.length).replace(/^\/+/, '');
+  const segments = relative.split('/').filter((segment) => segment.length > 0);
+  const resolved = [root];
+  for (const segment of segments) {
+    if (segment === '.') continue;
+    if (segment === '..') {
+      if (resolved.length === 1) {
+        throw new Error(`Path escapes sandbox workspace: ${pathValue}`);
+      }
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+  return posix.join(...resolved);
+}
+
+/** Rewrite `/workspace` tokens inside a guest command without touching lookalike paths. */
+export function rewriteVirtualWorkspaceCommand(command: string, sandboxPath: string): string {
+  const root = assertSandboxPath(sandboxPath);
+  return command.replace(VIRTUAL_WORKSPACE_PATTERN, (_match, prefix: string, offset: number) => {
+    if (/^[A-Za-z0-9_./-]+$/.test(root)) {
+      const suffix = command[offset + prefix.length + VIRTUAL_WORKSPACE_PATH.length];
+      return `${prefix}${root === '/' && suffix === '/' ? '' : root}`;
+    }
+
+    // Preserve the quoting of the original shell argument when inserting a guest path.
+    let quote: string | undefined;
+    const substitutions: { quote: string | undefined; closing: string; depth: number }[] = [];
+    for (let index = 0; index < offset + prefix.length; index++) {
+      const character = command[index];
+      const substitution = substitutions.at(-1);
+      if (quote === "'") {
+        if (character === "'") quote = undefined;
+      } else if (character === '\\') {
+        index++;
+      } else if (character === '`') {
+        if (substitution?.closing === '`') {
+          quote = substitutions.pop()!.quote;
+        } else {
+          substitutions.push({ quote, closing: '`', depth: 1 });
+          quote = undefined;
+        }
+      } else if (character === '$' && command[index + 1] === '(') {
+        substitutions.push({ quote, closing: ')', depth: 1 });
+        quote = undefined;
+        index++;
+      } else if (!quote && substitution?.closing === ')' && character === '(') {
+        substitution.depth++;
+      } else if (!quote && substitution?.closing === ')' && character === ')') {
+        if (--substitution.depth === 0) quote = substitutions.pop()!.quote;
+      } else if (quote === '"') {
+        if (character === '"') quote = undefined;
+      } else if (character === "'" || character === '"') {
+        quote = character;
+      }
+    }
+    let escapedRoot =
+      quote === "'"
+        ? shellEscapePath(root)
+        : quote === '"'
+          ? root.replace(/[\\$"`]/g, '\\$&')
+          : `'${shellEscapePath(root)}'`;
+    for (const substitution of substitutions) {
+      if (substitution.closing === '`') escapedRoot = escapedRoot.replace(/[\\`]/g, '\\$&');
+    }
+    return `${prefix}${escapedRoot}`;
+  });
+}
+
+export function buildLimaGuestShellScript(
+  cwd: string,
+  command: string,
+  sandboxPath: string
+): string {
+  const guestCwd = mapVirtualWorkspacePath(cwd, sandboxPath);
+  const guestCommand = rewriteVirtualWorkspaceCommand(command, sandboxPath);
+  const escapedCwd = shellEscapePath(guestCwd);
+  return [
+    `mkdir -p -- '${escapedCwd}' && cd -- '${escapedCwd}'`,
+    `|| { echo 'Working directory does not exist: ${escapedCwd}' >&2;`,
+    `echo 'Cannot execute bash commands.' >&2; exit 1; };`,
+    guestCommand,
+  ].join(' ');
+}
+
+function asBuffer(data: Buffer | string): Buffer {
+  return Buffer.isBuffer(data) ? data : Buffer.from(data);
+}
+
+function runGuestScript(
+  spawnProcess: SpawnProcess,
+  instanceName: string,
+  script: string,
+  options: GuestRunOptions = {}
+): Promise<{ exitCode: number | null; stdout: Buffer; stderr: Buffer }> {
+  const validatedInstance = assertInstanceName(instanceName);
+  return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new Error('aborted'));
+      return;
+    }
+
+    let child: ChildProcess;
+    try {
+      // limactl needs the host HOME/PATH to locate its VM and SSH. Full guest
+      // environment forwarding is opt-in on Lima 2+; this command does not enable it.
+      // https://github.com/lima-vm/lima/blob/v2.0.0/cmd/limactl/shell.go (--preserve-env)
+      child = spawnProcess('limactl', ['shell', validatedInstance, '--', 'bash', '-c', script], {
+        env: { ...process.env, ...options.env },
+        stdio: [options.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+    let timedOut = false;
+    let aborted = false;
+    let stdinError: NodeJS.ErrnoException | undefined;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
+    const cleanup = () => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      options.signal?.removeEventListener('abort', onAbort);
+    };
+
+    const finishResolve = (exitCode: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({
+        exitCode,
+        stdout: Buffer.concat(stdoutChunks),
+        stderr: Buffer.concat(stderrChunks),
+      });
+    };
+
+    const finishReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const takeChunk = (target: Buffer[], data: Buffer | string) => {
+      const chunk = asBuffer(data);
+      if (options.onData) {
+        options.onData(chunk);
+      } else {
+        target.push(chunk);
+      }
+    };
+
+    child.stdout?.on('data', (data: Buffer | string) => takeChunk(stdoutChunks, data));
+    child.stderr?.on('data', (data: Buffer | string) => takeChunk(stderrChunks, data));
+    child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EPIPE') {
+        stdinError = error;
+      } else {
+        finishReject(error);
+      }
+    });
+    child.once('error', (error: Error) => finishReject(error));
+    child.once('exit', cleanup);
+    child.once('close', (code: number | null) => {
+      if (aborted) {
+        finishReject(new Error('aborted'));
+        return;
+      }
+      if (timedOut) {
+        finishReject(new Error(`timeout:${options.timeoutSeconds}`));
+        return;
+      }
+      if (stdinError && (code === 0 || stderrChunks.length === 0)) {
+        finishReject(stdinError);
+        return;
+      }
+      finishResolve(code);
+    });
+
+    const killChild = () => {
+      child.kill('SIGKILL');
+    };
+
+    function onAbort() {
+      aborted = true;
+      killChild();
+    }
+
+    if (options.timeoutSeconds !== undefined && options.timeoutSeconds > 0) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        killChild();
+      }, options.timeoutSeconds * 1000);
+      timeoutHandle.unref?.();
+    }
+
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+
+    if (options.stdin && child.stdin) {
+      child.stdin.write(options.stdin);
+      child.stdin.end();
+    }
+  });
+}
+
+async function runGuestOrThrow(
+  spawnProcess: SpawnProcess,
+  instanceName: string,
+  script: string,
+  stdin?: Buffer,
+  checkedPath?: string
+): Promise<Buffer> {
+  const result = await runGuestScript(spawnProcess, instanceName, script, { stdin });
+  if (result.exitCode === GUEST_FILE_MISSING_EXIT_CODE && checkedPath !== undefined) {
+    throw Object.assign(new Error(`ENOENT: no such file or directory, '${checkedPath}'`), {
+      code: 'ENOENT',
+      path: checkedPath,
+    });
+  }
+  if (result.exitCode === GUEST_FILE_PERMISSION_EXIT_CODE && checkedPath !== undefined) {
+    throw Object.assign(new Error(`EACCES: permission denied, '${checkedPath}'`), {
+      code: 'EACCES',
+      path: checkedPath,
+    });
+  }
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.toString().trim() || result.stdout.toString().trim();
+    throw new Error(detail || `Lima command failed with code ${result.exitCode}`);
+  }
+  return result.stdout;
+}
+
+export function createLimaSandboxBashOperations(
+  sandboxPath: string,
+  options: LimaSandboxOperationsOptions = {}
+): BashOperations {
+  const root = assertSandboxPath(sandboxPath);
+  const instanceName = options.instanceName ?? LIMA_SANDBOX_INSTANCE;
+  const spawnProcess = options.spawnProcess ?? defaultSpawn;
+
+  return {
+    exec: (command, cwd, { onData, signal, timeout, env }) =>
+      runGuestScript(spawnProcess, instanceName, buildLimaGuestShellScript(cwd, command, root), {
+        onData,
+        signal,
+        timeoutSeconds: timeout,
+        env,
+      }).then(({ exitCode }) => ({ exitCode })),
+  };
+}
+
+export function createLimaSandboxFileOperations(
+  sandboxPath: string,
+  options: LimaSandboxOperationsOptions = {}
+): { read: ReadOperations; write: WriteOperations; edit: EditOperations } {
+  const root = assertSandboxPath(sandboxPath);
+  const instanceName = options.instanceName ?? LIMA_SANDBOX_INSTANCE;
+  const spawnProcess = options.spawnProcess ?? defaultSpawn;
+
+  const guestPath = (pathValue: string) =>
+    shellEscapePath(mapVirtualWorkspacePath(pathValue, root));
+
+  const read: ReadOperations = {
+    access: (absolutePath) =>
+      runGuestOrThrow(
+        spawnProcess,
+        instanceName,
+        `test -e '${guestPath(absolutePath)}' || exit ${GUEST_FILE_MISSING_EXIT_CODE}`,
+        undefined,
+        absolutePath
+      ).then(() => undefined),
+    readFile: (absolutePath) =>
+      runGuestOrThrow(spawnProcess, instanceName, `cat -- '${guestPath(absolutePath)}'`),
+  };
+
+  const write: WriteOperations = {
+    mkdir: (dir) =>
+      runGuestOrThrow(spawnProcess, instanceName, `mkdir -p -- '${guestPath(dir)}'`).then(
+        () => undefined
+      ),
+    writeFile: (absolutePath, content) =>
+      runGuestOrThrow(
+        spawnProcess,
+        instanceName,
+        `cat > '${guestPath(absolutePath)}'`,
+        Buffer.from(content)
+      ).then(() => undefined),
+  };
+
+  const edit: EditOperations = {
+    access: (absolutePath) =>
+      runGuestOrThrow(
+        spawnProcess,
+        instanceName,
+        `test -e '${guestPath(absolutePath)}' || exit ${GUEST_FILE_MISSING_EXIT_CODE}; ` +
+          `{ test -r '${guestPath(absolutePath)}' && test -w '${guestPath(absolutePath)}'; } ` +
+          `|| exit ${GUEST_FILE_PERMISSION_EXIT_CODE}`,
+        undefined,
+        absolutePath
+      ).then(() => undefined),
+    readFile: read.readFile,
+    writeFile: write.writeFile,
+  };
+
+  return { read, write, edit };
+}
+
+/**
+ * Coding tools whose bash, read, write, and edit calls run inside Lima.
+ * The pi SDK checks the working directory on the host before local bash, and
+ * the Lima sandbox path is not a host path, so these tools must not use that backend.
+ */
+export function createLimaSandboxCodingTools(
+  sandboxPath: string,
+  options: LimaSandboxOperationsOptions = {}
+): [
+  ReturnType<typeof createReadTool>,
+  ReturnType<typeof createBashTool>,
+  ReturnType<typeof createEditTool>,
+  ReturnType<typeof createWriteTool>,
+] {
+  const files = createLimaSandboxFileOperations(sandboxPath, options);
+  const hostOutputDirectory = tmpdir();
+  const hostOutputPrefix = `cowork-lima-${randomUUID()}`;
+  // A private filename namespace keeps old outputs readable without retaining every path.
+  const hostOutputPattern = new RegExp(`^${hostOutputPrefix}-[0-9a-f]{16}\\.log$`);
+  const isHostOutputPath = (absolutePath: string) =>
+    dirname(absolutePath) === hostOutputDirectory && hostOutputPattern.test(basename(absolutePath));
+  const bash = createBashTool(sandboxPath, {
+    operations: createLimaSandboxBashOperations(sandboxPath, options),
+    outputFilePrefix: hostOutputPrefix,
+    outputDirectory: hostOutputDirectory,
+  });
+
+  return [
+    createReadTool(sandboxPath, {
+      // Host reads stay within this tool instance's SDK output namespace.
+      operations: {
+        access: (absolutePath) =>
+          isHostOutputPath(absolutePath) ? access(absolutePath) : files.read.access(absolutePath),
+        readFile: (absolutePath) =>
+          isHostOutputPath(absolutePath)
+            ? readFile(absolutePath)
+            : files.read.readFile(absolutePath),
+      },
+    }),
+    bash,
+    createEditTool(sandboxPath, { operations: files.edit }),
+    createWriteTool(sandboxPath, { operations: files.write }),
+  ];
+}
