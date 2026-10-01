@@ -48,6 +48,7 @@ import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { wrapReadToolForImageResizeErrors } from './image-resize-packaging';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
@@ -2139,15 +2140,15 @@ Tool routing:
 
       const bashOptions: BashToolOptions | undefined =
         process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
-      const codingTools = createCodingTools(
-        effectiveCwd,
-        bashOptions ? { bash: bashOptions } : undefined
+      const codingTools = wrapReadToolForImageResizeErrors(
+        createCodingTools(
+          effectiveCwd,
+          bashOptions ? { bash: bashOptions } : undefined
+        ) as ToolDefinition[]
       );
 
       // Inject a default 120s timeout for bash commands when the model omits one
-      const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(
-        codingTools as ToolDefinition[]
-      );
+      const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(codingTools);
 
       // Wrap the bash tool to intercept sudo commands and request passwords
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but

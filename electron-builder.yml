@@ -15,6 +15,8 @@ files:
   - dist-electron/**/*
   - package.json
   - node_modules/@img/**/*
+  - node_modules/sharp/**/*
+  - node_modules/@silvia-odwyer/**/*
   - node_modules/better-sqlite3/**/*
   - node_modules/@anthropic-ai/sdk/**/*
   # Externalized from the Electron main bundle; keep the runtime package in installers.
@@ -51,13 +53,16 @@ files:
 # extraResources section below (win/mac/linux).
 
 # Skills are extracted via extraResources (per-platform) to avoid asar symlink issues.
-# Sharp native modules must also be unpacked for image processing.
+# Image reads run image-resize-worker.js on worker_threads and load sharp / @img
+# natives plus @silvia-odwyer/photon-node (wasm). worker_threads cannot execute a
+# script from inside app.asar, and ESM import() does not use the asar fs patch,
+# so the worker script and those packages must live in app.asar.unpacked.
 # Note: MCP servers are bundled with esbuild (all deps inlined), so no need to unpack MCP SDK
 asarUnpack:
-  - node_modules/@img/**/*.node
-  - node_modules/@img/**/*.dll
-  - node_modules/@img/**/*.dylib
-  - node_modules/@img/**/*.so
+  - '**/image-resize-worker*.js'
+  - '**/node_modules/sharp/**/*'
+  - '**/node_modules/@img/**/*'
+  - '**/node_modules/@silvia-odwyer/**/*'
   - node_modules/better-sqlite3/**/*.node
   - node_modules/bufferutil/**/*.node
   - node_modules/utf-8-validate/**/*.node

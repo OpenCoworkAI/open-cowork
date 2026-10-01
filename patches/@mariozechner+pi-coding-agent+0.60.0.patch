@@ -1,0 +1,50 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/utils/image-resize.js b/node_modules/@mariozechner/pi-coding-agent/dist/utils/image-resize.js
+index cf99e4b..985504e 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/utils/image-resize.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/utils/image-resize.js
+@@ -154,8 +154,16 @@ export async function resizeImage(img, options) {
+             wasResized: true,
+         };
+     }
+-    catch {
+-        // Failed to load image
++    catch (error) {
++        // Failed to load or resize the image. Keep the original bytes so a
++        // processor failure does not drop a small image, but record the cause.
++        const report = globalThis.__openCoworkReportImageResizeError;
++        if (typeof report === "function") {
++            report(error);
++        }
++        else {
++            console.error("[ImageResize] In-process resize failed:", error);
++        }
+         return {
+             data: img.data,
+             mimeType: img.mimeType,
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/utils/photon.js b/node_modules/@mariozechner/pi-coding-agent/dist/utils/photon.js
+index 3078895..ee26740 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/utils/photon.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/utils/photon.js
+@@ -105,10 +105,20 @@ export async function loadPhoton() {
+     loadPromise = (async () => {
+         const restoreReadFileSync = patchPhotonWasmRead();
+         try {
+-            photonModule = await import("@silvia-odwyer/photon-node");
++            const loadPackagedPhoton = globalThis.__openCoworkLoadPhoton;
++            photonModule = typeof loadPackagedPhoton === "function"
++                ? await loadPackagedPhoton()
++                : await import("@silvia-odwyer/photon-node");
+             return photonModule;
+         }
+-        catch {
++        catch (error) {
++            const report = globalThis.__openCoworkReportImageResizeError;
++            if (typeof report === "function") {
++                report(error);
++            }
++            else {
++                console.error("[ImageResize] Failed to load @silvia-odwyer/photon-node:", error);
++            }
+             photonModule = null;
+             return photonModule;
+         }
