@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import {
@@ -267,6 +267,7 @@ describe('lima sandbox coding tools', () => {
     const result = await pending;
     const outputPath = result.details!.fullOutputPath!;
     try {
+      expect(basename(outputPath)).toMatch(/^cowork-lima-[0-9a-f-]{36}-[0-9a-f]{16}\.log$/);
       const reading = read.execute('read-output', { path: outputPath, limit: 1 });
       await expect(reading).resolves.toMatchObject({
         content: [{ type: 'text', text: expect.stringContaining('guest-output') }],
@@ -293,6 +294,83 @@ describe('lima sandbox coding tools', () => {
     }
   });
 
+  it('keeps the oldest overflow output readable after more than 64 commands', async () => {
+    const children = Array.from({ length: 70 }, () => new FakeChildProcess());
+    const spawnProcess = createSpawnMock([...children]);
+    const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
+    const outputPaths: string[] = [];
+    try {
+      for (const [index, child] of children.entries()) {
+        const pending = bash.execute(`output-${index}`, { command: 'generate-output' });
+        child.stdout.emit('data', Buffer.from(`output-${index}\n`.repeat(12000)));
+        child.emit('close', 0);
+        const result = await pending;
+        outputPaths.push(result.details!.fullOutputPath!);
+      }
+
+      const firstPath = outputPaths[0];
+      expect(basename(firstPath)).toMatch(/^cowork-lima-[0-9a-f-]{36}-[0-9a-f]{16}\.log$/);
+      await expect(
+        read.execute('first-page', { path: firstPath, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('output-0') }],
+      });
+      await expect(
+        read.execute('second-page', { path: firstPath, offset: 2, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('output-0') }],
+      });
+      expect(
+        new Set(outputPaths.map((path) => basename(path).replace(/-[0-9a-f]{16}\.log$/, ''))).size
+      ).toBe(1);
+      expect(spawnProcess).toHaveBeenCalledTimes(70);
+    } finally {
+      await Promise.all(outputPaths.map((path) => rm(path, { force: true })));
+    }
+  });
+
+  it('routes other sessions and lookalike output paths through the guest', async () => {
+    const firstChild = new FakeChildProcess();
+    const firstSpawn = createSpawnMock([firstChild]);
+    const [, firstBash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess: firstSpawn });
+    const firstPending = firstBash.execute('first-session', { command: 'generate-output' });
+    firstChild.stdout.emit('data', Buffer.from('first-session\n'.repeat(12000)));
+    firstChild.emit('close', 0);
+    const firstResult = await firstPending;
+    const firstPath = firstResult.details!.fullOutputPath!;
+    let secondPath: string | undefined;
+    try {
+      const secondChild = new FakeChildProcess();
+      const guestChecks = Array.from({ length: 3 }, () => new FakeChildProcess());
+      const secondSpawn = createSpawnMock([secondChild, ...guestChecks]);
+      const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess: secondSpawn });
+      const secondPending = bash.execute('second-session', { command: 'generate-output' });
+      secondChild.stdout.emit('data', Buffer.from('second-session\n'.repeat(12000)));
+      secondChild.emit('close', 0);
+      const secondResult = await secondPending;
+      const ownPath = secondResult.details!.fullOutputPath!;
+      secondPath = ownPath;
+      expect(basename(ownPath).replace(/-[0-9a-f]{16}\.log$/, '')).not.toBe(
+        basename(firstPath).replace(/-[0-9a-f]{16}\.log$/, '')
+      );
+
+      const blockedPaths = [
+        firstPath,
+        `${ownPath}.backup`,
+        join(dirname(ownPath), 'other', basename(ownPath)),
+      ];
+      for (const [index, path] of blockedPaths.entries()) {
+        const pending = read.execute(`blocked-${index}`, { path });
+        guestChecks[index].emit('close', 44);
+        await expect(pending).rejects.toMatchObject({ code: 'ENOENT', path });
+        expect(scriptFrom(secondSpawn, index + 1)).toBe(`test -e '${path}' || exit 44`);
+      }
+    } finally {
+      await rm(firstPath, { force: true });
+      if (secondPath) await rm(secondPath, { force: true });
+    }
+  });
+
   it('finalizes overflow files from the real host SDK backend before returning', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cowork-host-output-'));
     let outputPath: string | undefined;
@@ -304,6 +382,7 @@ describe('lima sandbox coding tools', () => {
       const fullOutputPath = result.details!.fullOutputPath!;
       outputPath = fullOutputPath;
       expect(fullOutputPath).toBeTypeOf('string');
+      expect(basename(fullOutputPath)).toMatch(/^pi-bash-[0-9a-f]{16}\.log$/);
       expect(await readFile(fullOutputPath, 'utf8')).toBe('host-output\n'.repeat(12000));
     } finally {
       if (outputPath) await rm(outputPath, { force: true });

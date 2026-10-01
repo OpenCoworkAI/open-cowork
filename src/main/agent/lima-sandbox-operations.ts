@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import { randomUUID } from 'crypto';
 import { access, readFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { basename, dirname } from 'path';
 import {
   createBashTool,
   createEditTool,
@@ -335,37 +338,30 @@ export function createLimaSandboxCodingTools(
   ReturnType<typeof createWriteTool>,
 ] {
   const files = createLimaSandboxFileOperations(sandboxPath, options);
-  const hostOutputPaths = new Set<string>();
+  const hostOutputDirectory = tmpdir();
+  const hostOutputPrefix = `cowork-lima-${randomUUID()}`;
+  // A private filename namespace keeps old outputs readable without retaining every path.
+  const hostOutputPattern = new RegExp(`^${hostOutputPrefix}-[0-9a-f]{16}\\.log$`);
+  const isHostOutputPath = (absolutePath: string) =>
+    dirname(absolutePath) === hostOutputDirectory && hostOutputPattern.test(basename(absolutePath));
   const bash = createBashTool(sandboxPath, {
     operations: createLimaSandboxBashOperations(sandboxPath, options),
+    outputFilePrefix: hostOutputPrefix,
   });
 
   return [
     createReadTool(sandboxPath, {
-      // Only output paths emitted by this SDK tool can be read on the host.
+      // Host reads stay within this tool instance's SDK output namespace.
       operations: {
         access: (absolutePath) =>
-          hostOutputPaths.has(absolutePath)
-            ? access(absolutePath)
-            : files.read.access(absolutePath),
+          isHostOutputPath(absolutePath) ? access(absolutePath) : files.read.access(absolutePath),
         readFile: (absolutePath) =>
-          hostOutputPaths.has(absolutePath)
+          isHostOutputPath(absolutePath)
             ? readFile(absolutePath)
             : files.read.readFile(absolutePath),
       },
     }),
-    {
-      ...bash,
-      execute: async (...args: Parameters<typeof bash.execute>) => {
-        const [toolCallId, params, signal, onUpdate] = args;
-        const result = await bash.execute(toolCallId, params, signal, (update) => {
-          if (update.details?.fullOutputPath) hostOutputPaths.add(update.details.fullOutputPath);
-          onUpdate?.(update);
-        });
-        if (result.details?.fullOutputPath) hostOutputPaths.add(result.details.fullOutputPath);
-        return result;
-      },
-    },
+    bash,
     createEditTool(sandboxPath, { operations: files.edit }),
     createWriteTool(sandboxPath, { operations: files.write }),
   ];
