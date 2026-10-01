@@ -11,6 +11,7 @@ import {
 import type { PathResolver } from '../../main/sandbox/path-resolver';
 import { EventEmitter } from 'events';
 import type { ChildProcess } from 'child_process';
+import { rm } from 'fs/promises';
 
 vi.mock('@mariozechner/pi-ai', () => ({
   completeSimple: vi.fn(),
@@ -25,6 +26,48 @@ vi.mock('../../main/agent/shared-auth', () => ({
 import { CoworkAgentRunner } from '../../main/agent/agent-runner';
 
 describe('Lima sudo routing', () => {
+  it('forwards overflow output updates through the real default-timeout wrapper', async () => {
+    const child = new EventEmitter();
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const spawnProcess = vi.fn<NonNullable<LimaSandboxOperationsOptions['spawnProcess']>>(
+      () => Object.assign(child, { stdout, stderr, kill: vi.fn() }) as unknown as ChildProcess
+    );
+    const tools = createLimaSandboxCodingTools('/home/lima/workspace', { spawnProcess });
+    const runner = CoworkAgentRunner as unknown as {
+      wrapBashToolWithDefaultTimeout: (tools: ToolDefinition[]) => ToolDefinition[];
+    };
+    const wrapped = runner.wrapBashToolWithDefaultTimeout(tools as ToolDefinition[]);
+    const bash = wrapped.find((tool) => tool.name === 'bash')!;
+    const onUpdate = vi.fn();
+    const pending = bash.execute(
+      'wrapped-output',
+      { command: 'generate-output' },
+      undefined,
+      onUpdate,
+      {} as ExtensionContext
+    );
+    stdout.emit('data', Buffer.from('wrapped-output\n'.repeat(12000)));
+    child.emit('close', 0);
+    const result = await pending;
+    const outputPath = (result.details as { fullOutputPath: string }).fullOutputPath;
+    try {
+      expect(onUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({ fullOutputPath: outputPath }),
+        })
+      );
+      await expect(
+        tools[0].execute('read-wrapped-output', { path: outputPath, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('wrapped-output') }],
+      });
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(outputPath, { force: true });
+    }
+  });
+
   it('runs sudo through the guest backend without asking for a host password', async () => {
     const requestSudoPassword = vi.fn();
     const runner = new CoworkAgentRunner(

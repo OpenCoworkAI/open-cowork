@@ -7,6 +7,7 @@ import type { ChildProcess, SpawnOptions } from 'child_process';
 import {
   createLocalBashOperations,
   createAgentSession,
+  createBashTool,
   createReadTool,
   createWriteTool,
   AuthStorage,
@@ -271,6 +272,11 @@ describe('lima sandbox coding tools', () => {
         content: [{ type: 'text', text: expect.stringContaining('guest-output') }],
       });
       expect(await readFile(outputPath, 'utf8')).toBe(output);
+      await expect(
+        read.execute('read-output-again', { path: outputPath, offset: 2, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('guest-output') }],
+      });
       expect(spawnProcess).toHaveBeenCalledTimes(1);
 
       const guestReading = read.execute('guest-file', { path: '/etc/hosts' });
@@ -284,6 +290,24 @@ describe('lima sandbox coding tools', () => {
       expect(scriptFrom(spawnProcess, 1)).toBe("test -e '/etc/hosts' || exit 44");
     } finally {
       await rm(outputPath, { force: true });
+    }
+  });
+
+  it('finalizes overflow files from the real host SDK backend before returning', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cowork-host-output-'));
+    let outputPath: string | undefined;
+    try {
+      const bash = createBashTool(directory);
+      const result = await bash.execute('host-output', {
+        command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("host-output\\n".repeat(12000))'`,
+      });
+      const fullOutputPath = result.details!.fullOutputPath!;
+      outputPath = fullOutputPath;
+      expect(fullOutputPath).toBeTypeOf('string');
+      expect(await readFile(fullOutputPath, 'utf8')).toBe('host-output\n'.repeat(12000));
+    } finally {
+      if (outputPath) await rm(outputPath, { force: true });
+      await rm(directory, { recursive: true });
     }
   });
 
@@ -340,7 +364,54 @@ describe('lima sandbox file tools', () => {
     const pending = files.write.writeFile('/workspace/note.txt', 'contents');
     const error = Object.assign(new Error('guest stdin closed'), { code: 'EPIPE' });
     child.stdin.emit('error', error);
+    child.emit('close', 0);
     await expect(pending).rejects.toBe(error);
+  });
+
+  it('preserves the guest failure after stdin closes with EPIPE', async () => {
+    const child = new FakeChildProcess();
+    const files = createLimaSandboxFileOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = files.write.writeFile('/workspace/note.txt', 'contents');
+    const assertion = expect(pending).rejects.toThrow('Permission denied');
+    child.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    child.stderr.emit('data', Buffer.from('bash: note.txt: Permission denied'));
+    child.emit('close', 1);
+    await assertion;
+  });
+
+  it('preserves EPIPE when the guest provides no failure details', async () => {
+    const child = new FakeChildProcess();
+    const files = createLimaSandboxFileOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = files.write.writeFile('/workspace/note.txt', 'contents');
+    const error = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    child.stdin.emit('error', error);
+    child.emit('close', 1);
+    await expect(pending).rejects.toBe(error);
+  });
+
+  it('propagates other stdin errors immediately', async () => {
+    const child = new FakeChildProcess();
+    const files = createLimaSandboxFileOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = files.write.writeFile('/workspace/note.txt', 'contents');
+    const error = Object.assign(new Error('stdin I/O error'), { code: 'EIO' });
+    child.stdin.emit('error', error);
+    await expect(pending).rejects.toBe(error);
+  });
+
+  it('reports a missing guest file as ENOENT before editing', async () => {
+    const child = new FakeChildProcess();
+    const files = createLimaSandboxFileOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = files.edit.access('/workspace/missing.txt');
+    child.emit('close', 44);
+    await expect(pending).rejects.toMatchObject({ code: 'ENOENT', path: '/workspace/missing.txt' });
   });
 
   it('reports a missing guest file as ENOENT', async () => {
@@ -423,7 +494,7 @@ describe('lima sandbox file tools', () => {
 
     await expect(pending).rejects.toThrow('denied');
     expect(scriptFrom(spawnProcess)).toBe(
-      `test -r '${SANDBOX}/notes.txt' && test -w '${SANDBOX}/notes.txt'`
+      `test -e '${SANDBOX}/notes.txt' || exit 44; test -r '${SANDBOX}/notes.txt' && test -w '${SANDBOX}/notes.txt'`
     );
   });
 });

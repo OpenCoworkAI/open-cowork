@@ -139,6 +139,7 @@ function runGuestScript(
     const stderrChunks: Buffer[] = [];
     let settled = false;
     let timedOut = false;
+    let stdinError: NodeJS.ErrnoException | undefined;
     let timeoutHandle: NodeJS.Timeout | undefined;
 
     const cleanup = () => {
@@ -175,7 +176,13 @@ function runGuestScript(
 
     child.stdout?.on('data', (data: Buffer | string) => takeChunk(stdoutChunks, data));
     child.stderr?.on('data', (data: Buffer | string) => takeChunk(stderrChunks, data));
-    child.stdin?.on('error', (error: Error) => finishReject(error));
+    child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EPIPE') {
+        stdinError = error;
+      } else {
+        finishReject(error);
+      }
+    });
     child.once('error', (error: Error) => finishReject(error));
     child.once('close', (code: number | null) => {
       if (options.signal?.aborted) {
@@ -184,6 +191,10 @@ function runGuestScript(
       }
       if (timedOut) {
         finishReject(new Error(`timeout:${options.timeoutSeconds}`));
+        return;
+      }
+      if (stdinError && (code === 0 || stderrChunks.length === 0)) {
+        finishReject(stdinError);
         return;
       }
       finishResolve(code);
@@ -297,7 +308,10 @@ export function createLimaSandboxFileOperations(
       runGuestOrThrow(
         spawnProcess,
         instanceName,
-        `test -r '${guestPath(absolutePath)}' && test -w '${guestPath(absolutePath)}'`
+        `test -e '${guestPath(absolutePath)}' || exit ${GUEST_FILE_MISSING_EXIT_CODE}; ` +
+          `test -r '${guestPath(absolutePath)}' && test -w '${guestPath(absolutePath)}'`,
+        undefined,
+        absolutePath
       ).then(() => undefined),
     readFile: read.readFile,
     writeFile: write.writeFile,
