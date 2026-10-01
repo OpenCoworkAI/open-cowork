@@ -2,7 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import { randomUUID } from 'crypto';
 import { access, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { basename, dirname } from 'path';
+import { basename, dirname, posix } from 'path';
 import {
   createBashTool,
   createEditTool,
@@ -53,7 +53,7 @@ function assertSandboxPath(sandboxPath: string): string {
   if (!sandboxPath.startsWith('/')) {
     throw new Error(`Lima sandbox path must be absolute: ${sandboxPath}`);
   }
-  return sandboxPath;
+  return sandboxPath.replace(/\/+$/, '') || '/';
 }
 
 /** POSIX single-quote escaping. The result does not include the surrounding quotes. */
@@ -67,7 +67,7 @@ export function shellEscapePath(pathValue: string): string {
  * paths are left unchanged so a command can still name the real sandbox path.
  */
 export function mapVirtualWorkspacePath(pathValue: string, sandboxPath: string): string {
-  const root = assertSandboxPath(sandboxPath).replace(/\/+$/, '');
+  const root = assertSandboxPath(sandboxPath);
   if (pathValue !== VIRTUAL_WORKSPACE_PATH && !pathValue.startsWith(`${VIRTUAL_WORKSPACE_PATH}/`)) {
     return pathValue;
   }
@@ -86,14 +86,17 @@ export function mapVirtualWorkspacePath(pathValue: string, sandboxPath: string):
     }
     resolved.push(segment);
   }
-  return resolved.join('/');
+  return posix.join(...resolved);
 }
 
 /** Rewrite `/workspace` tokens inside a guest command without touching lookalike paths. */
 export function rewriteVirtualWorkspaceCommand(command: string, sandboxPath: string): string {
   const root = assertSandboxPath(sandboxPath);
   return command.replace(VIRTUAL_WORKSPACE_PATTERN, (_match, prefix: string, offset: number) => {
-    if (/^[A-Za-z0-9_./-]+$/.test(root)) return `${prefix}${root}`;
+    if (/^[A-Za-z0-9_./-]+$/.test(root)) {
+      const suffix = command[offset + prefix.length + VIRTUAL_WORKSPACE_PATH.length];
+      return `${prefix}${root === '/' && suffix === '/' ? '' : root}`;
+    }
 
     // Preserve the quoting of the original shell argument when inserting a guest path.
     let quote: string | undefined;
@@ -176,6 +179,7 @@ function runGuestScript(
     try {
       // limactl needs the host HOME/PATH to locate its VM and SSH. Full guest
       // environment forwarding is opt-in on Lima 2+; this command does not enable it.
+      // https://github.com/lima-vm/lima/blob/v2.0.0/cmd/limactl/shell.go (--preserve-env)
       child = spawnProcess('limactl', ['shell', validatedInstance, '--', 'bash', '-c', script], {
         env: { ...process.env, ...options.env },
         stdio: [options.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],

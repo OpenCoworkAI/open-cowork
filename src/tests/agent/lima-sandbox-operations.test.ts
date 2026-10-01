@@ -73,6 +73,17 @@ describe('lima sandbox paths', () => {
     );
   });
 
+  it.each([`${SANDBOX}///`, '/'])('normalizes guest cwd and command paths for root %s', (root) => {
+    const mappedPath = mapVirtualWorkspacePath('/workspace/notes.txt', root);
+    expect(mappedPath).toBe(root === '/' ? '/notes.txt' : `${SANDBOX}/notes.txt`);
+    expect(rewriteVirtualWorkspaceCommand('cat /workspace/notes.txt', root)).toBe(
+      `cat ${mappedPath}`
+    );
+    const script = buildLimaGuestShellScript('/workspace', 'cat /workspace/notes.txt', root);
+    expect(script).toContain(`cd -- '${root === '/' ? '/' : SANDBOX}'`);
+    expect(script.endsWith(`cat ${mappedPath}`)).toBe(true);
+  });
+
   it('rewrites workspace tokens without touching lookalike paths', () => {
     const command = `ls /workspace && cat '/workspace/a.txt' /workspace-other /workspace.txt /mnt/workspace`;
     expect(rewriteVirtualWorkspaceCommand(command, SANDBOX)).toBe(
@@ -116,6 +127,22 @@ describe('lima sandbox paths', () => {
 });
 
 describe('lima sandbox bash', () => {
+  it('preserves a completed guest result when the caller aborts after close', async () => {
+    const child = new FakeChildProcess();
+    const controller = new AbortController();
+    const operations = createLimaSandboxBashOperations(SANDBOX, {
+      spawnProcess: createSpawnMock([child]),
+    });
+    const pending = operations.exec('true', SANDBOX, {
+      onData: vi.fn(),
+      signal: controller.signal,
+    });
+    child.emit('close', 0);
+    controller.abort();
+    await expect(pending).resolves.toEqual({ exitCode: 0 });
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it('rejects the missing guest path when bash runs on the host', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cowork-lima-host-'));
     try {
