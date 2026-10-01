@@ -27,20 +27,22 @@ index 438ac8c..96d0236 100644
      });
      const extensionsResult = resourceLoader.getExtensions();
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
-index 23227a3..1fa12c4 100644
+index 23227a3..c7edc4b 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
-@@ -48,6 +48,8 @@ export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
+@@ -48,6 +48,10 @@ export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
  export interface BashToolOptions {
      /** Custom operations for command execution. Default: local shell */
      operations?: BashOperations;
 +    /** Filename prefix for SDK overflow output files. Default: pi-bash. */
 +    outputFilePrefix?: string;
++    /** Directory for SDK overflow output files. Default: os.tmpdir(). */
++    outputDirectory?: string;
      /** Command prefix prepended to every command (e.g., "shopt -s expand_aliases" for alias support) */
      commandPrefix?: string;
      /** Hook to adjust command, cwd, or env before execution */
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
-index 0781652..4de4bc2 100644
+index 0781652..dfc1eee 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 @@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
@@ -56,10 +58,10 @@ index 0781652..4de4bc2 100644
   * Generate a unique temp file path for bash output
   */
 -function getTempFilePath() {
-+function getTempFilePath(prefix = "pi-bash") {
++function getTempFilePath(prefix = "pi-bash", directory = tmpdir()) {
      const id = randomBytes(8).toString("hex");
 -    return join(tmpdir(), `pi-bash-${id}.log`);
-+    return join(tmpdir(), `${prefix}-${id}.log`);
++    return join(directory, `${prefix}-${id}.log`);
  }
  const bashSchema = Type.Object({
      command: Type.String({ description: "Bash command to execute" }),
@@ -85,7 +87,7 @@ index 0781652..4de4bc2 100644
                      // Start writing to temp file once we exceed the threshold
                      if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
 -                        tempFilePath = getTempFilePath();
-+                        tempFilePath = getTempFilePath(options?.outputFilePrefix);
++                        tempFilePath = getTempFilePath(options?.outputFilePrefix, options?.outputDirectory);
                          tempFileStream = createWriteStream(tempFilePath);
 +                        tempFileStream.once("error", (error) => {
 +                            outputAbort.abort();

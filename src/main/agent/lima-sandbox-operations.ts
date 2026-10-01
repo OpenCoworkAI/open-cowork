@@ -97,24 +97,44 @@ export function rewriteVirtualWorkspaceCommand(command: string, sandboxPath: str
 
     // Preserve the quoting of the original shell argument when inserting a guest path.
     let quote: string | undefined;
+    const substitutions: { quote: string | undefined; closing: string; depth: number }[] = [];
     for (let index = 0; index < offset + prefix.length; index++) {
       const character = command[index];
+      const substitution = substitutions.at(-1);
       if (quote === "'") {
         if (character === "'") quote = undefined;
       } else if (character === '\\') {
         index++;
+      } else if (character === '`') {
+        if (substitution?.closing === '`') {
+          quote = substitutions.pop()!.quote;
+        } else {
+          substitutions.push({ quote, closing: '`', depth: 1 });
+          quote = undefined;
+        }
+      } else if (character === '$' && command[index + 1] === '(') {
+        substitutions.push({ quote, closing: ')', depth: 1 });
+        quote = undefined;
+        index++;
+      } else if (!quote && substitution?.closing === ')' && character === '(') {
+        substitution.depth++;
+      } else if (!quote && substitution?.closing === ')' && character === ')') {
+        if (--substitution.depth === 0) quote = substitutions.pop()!.quote;
       } else if (quote === '"') {
         if (character === '"') quote = undefined;
       } else if (character === "'" || character === '"') {
         quote = character;
       }
     }
-    const escapedRoot =
+    let escapedRoot =
       quote === "'"
         ? shellEscapePath(root)
         : quote === '"'
           ? root.replace(/[\\$"`]/g, '\\$&')
           : `'${shellEscapePath(root)}'`;
+    for (const substitution of substitutions) {
+      if (substitution.closing === '`') escapedRoot = escapedRoot.replace(/[\\`]/g, '\\$&');
+    }
     return `${prefix}${escapedRoot}`;
   });
 }
@@ -379,6 +399,7 @@ export function createLimaSandboxCodingTools(
   const bash = createBashTool(sandboxPath, {
     operations: createLimaSandboxBashOperations(sandboxPath, options),
     outputFilePrefix: hostOutputPrefix,
+    outputDirectory: hostOutputDirectory,
   });
 
   return [

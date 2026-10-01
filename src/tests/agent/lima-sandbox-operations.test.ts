@@ -98,10 +98,14 @@ describe('lima sandbox paths', () => {
   it.each(['/tmp/guest space', '/tmp/guest\'"$HOME`uname`\\literal'])(
     'preserves shell arguments with sandbox root %s',
     (root) => {
-      const command = `printf '%s\\n' /workspace '/workspace/a.txt' "/workspace/b.txt"`;
+      const command = [
+        `printf '%s\\n' /workspace '/workspace/a.txt' "/workspace/b.txt"`,
+        `"$(printf '%s' /workspace)"`,
+        '"`printf \'%s\' /workspace`"',
+      ].join(' ');
       const rewritten = rewriteVirtualWorkspaceCommand(command, root);
       const output = execFileSync('bash', ['-c', rewritten], { encoding: 'utf8' });
-      expect(output).toBe(`${root}\n${root}/a.txt\n${root}/b.txt\n`);
+      expect(output).toBe(`${root}\n${root}/a.txt\n${root}/b.txt\n${root}\n${root}\n`);
     }
   );
 });
@@ -444,6 +448,32 @@ describe('lima sandbox coding tools', () => {
         read.execute('trailing-read', { path: result.details!.fullOutputPath!, limit: 1 })
       ).resolves.toMatchObject({
         content: [{ type: 'text', text: expect.stringContaining('trailing-output') }],
+      });
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it('keeps output generation and reads in the original directory when TMPDIR changes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cowork-lima-directory-'));
+    const child = new FakeChildProcess();
+    const spawnProcess = createSpawnMock([child]);
+    try {
+      vi.stubEnv('TMPDIR', directory);
+      const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
+      vi.stubEnv('TMPDIR', join(directory, 'missing'));
+      const pending = bash.execute('fixed-directory', { command: 'generate-output' });
+      child.stdout.emit('data', Buffer.from('fixed-directory\n'.repeat(12000)));
+      child.emit('close', 0);
+      const result = await pending;
+      const outputPath = result.details!.fullOutputPath!;
+      expect(dirname(outputPath)).toBe(directory);
+      await expect(
+        read.execute('fixed-directory-read', { path: outputPath, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('fixed-directory') }],
       });
       expect(spawnProcess).toHaveBeenCalledTimes(1);
     } finally {
