@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { WriteStream } from 'fs';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
@@ -417,17 +418,61 @@ describe('lima sandbox coding tools', () => {
     }
   });
 
-  it('reports SDK output-file write failures', async () => {
+  it('reads overflow output when TMPDIR has a trailing separator', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cowork-lima-trailing-'));
+    const child = new FakeChildProcess();
+    const spawnProcess = createSpawnMock([child]);
+    try {
+      vi.stubEnv('TMPDIR', `${directory}/`);
+      const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
+      const pending = bash.execute('trailing-output', { command: 'generate-output' });
+      child.stdout.emit('data', Buffer.from('trailing-output\n'.repeat(12000)));
+      child.emit('close', 0);
+      const result = await pending;
+      await expect(
+        read.execute('trailing-read', { path: result.details!.fullOutputPath!, limit: 1 })
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: expect.stringContaining('trailing-output') }],
+      });
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it.each([0, 7])('finalizes a failed output stream once after guest exit %i', async (exitCode) => {
     const directory = await mkdtemp(join(tmpdir(), 'cowork-lima-output-'));
     const child = new FakeChildProcess();
     const spawnProcess = createSpawnMock([child]);
+    const end = vi.spyOn(WriteStream.prototype, 'end');
     try {
       vi.stubEnv('TMPDIR', join(directory, 'missing'));
       const [, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
       const pending = bash.execute('output-error', { command: 'generate-output' });
       child.stdout.emit('data', Buffer.alloc(65536, 'x'));
-      child.emit('close', 0);
+      child.emit('close', exitCode);
       await expect(pending).rejects.toMatchObject({ code: 'ENOENT' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(end).toHaveBeenCalledTimes(1);
+    } finally {
+      end.mockRestore();
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it('reports output-file failures from the real host backend without crashing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cowork-host-write-error-'));
+    try {
+      vi.stubEnv('TMPDIR', join(directory, 'missing'));
+      const bash = createBashTool(directory);
+      await expect(
+        bash.execute('host-write-error', {
+          command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(65536))'`,
+        })
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
     } finally {
       vi.unstubAllEnvs();
       await rm(directory, { recursive: true });

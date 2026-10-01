@@ -27,7 +27,7 @@ index 438ac8c..96d0236 100644
      });
      const extensionsResult = resourceLoader.getExtensions();
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
-index 23227a3..12c72dd 100644
+index 23227a3..1fa12c4 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
 @@ -48,6 +48,8 @@ export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
@@ -40,7 +40,7 @@ index 23227a3..12c72dd 100644
      commandPrefix?: string;
      /** Hook to adjust command, cwd, or env before execution */
 diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
-index 0781652..48194ba 100644
+index 0781652..2eb6051 100644
 --- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 +++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
 @@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
@@ -87,7 +87,7 @@ index 0781652..48194ba 100644
                          // Write all buffered chunks to the file
                          for (const chunk of chunks) {
                              tempFileStream.write(chunk);
-@@ -173,11 +181,8 @@ export function createBashTool(cwd, options) {
+@@ -173,10 +181,12 @@ export function createBashTool(cwd, options) {
                      timeout,
                      env: spawnContext.env,
                  })
@@ -95,13 +95,16 @@ index 0781652..48194ba 100644
 -                    // Close temp file stream
 -                    if (tempFileStream) {
 -                        tempFileStream.end();
--                    }
 +                    .then(async ({ exitCode }) => {
-+                    await finishOutput();
++                    try {
++                        await finishOutput();
++                    } catch (writeError) {
++                        reject(writeError);
++                        return;
+                     }
                      // Combine all buffered chunks
                      const fullBuffer = Buffer.concat(chunks);
-                     const fullOutput = fullBuffer.toString("utf-8");
-@@ -214,10 +219,12 @@ export function createBashTool(cwd, options) {
+@@ -214,10 +224,12 @@ export function createBashTool(cwd, options) {
                          resolve({ content: [{ type: "text", text: outputText }], details });
                      }
                  })
