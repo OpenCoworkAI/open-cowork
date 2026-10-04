@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { WriteStream } from 'fs';
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
@@ -339,8 +339,9 @@ describe('lima sandbox coding tools', () => {
   it('reads only SDK-generated host output files without sending them to Lima', async () => {
     const child = new FakeChildProcess();
     const guestAccess = new FakeChildProcess();
+    const guestSniff = new FakeChildProcess();
     const guestRead = new FakeChildProcess();
-    const spawnProcess = createSpawnMock([child, guestAccess, guestRead]);
+    const spawnProcess = createSpawnMock([child, guestAccess, guestSniff, guestRead]);
     const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
     const output = 'guest-output\n'.repeat(12000);
     const pending = bash.execute('large-output', { command: 'generate-output' });
@@ -365,6 +366,9 @@ describe('lima sandbox coding tools', () => {
       const guestReading = read.execute('guest-file', { path: '/etc/hosts' });
       guestAccess.emit('close', 0);
       await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(3));
+      guestSniff.stdout.emit('data', Buffer.from('guest hosts'));
+      guestSniff.emit('close', 0);
+      await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(4));
       guestRead.stdout.emit('data', Buffer.from('guest hosts'));
       guestRead.emit('close', 0);
       await expect(guestReading).resolves.toMatchObject({
@@ -712,16 +716,104 @@ describe('lima sandbox file tools', () => {
     await expect(pending).rejects.toThrow('Lima instance unavailable');
   });
 
+  it.each([
+    [
+      'PNG',
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      ),
+      'image/png',
+    ],
+    [
+      'JPEG',
+      Buffer.from(
+        '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA//2Q==',
+        'base64'
+      ),
+      'image/jpeg',
+    ],
+    [
+      'GIF',
+      Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'),
+      'image/gif',
+    ],
+    [
+      'WebP',
+      Buffer.from('UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=', 'base64'),
+      'image/webp',
+    ],
+  ] as const)(
+    'returns a guest %s through the Lima read tool as an image',
+    async (_label, bytes, mimeType) => {
+      const access = new FakeChildProcess();
+      const sniff = new FakeChildProcess();
+      const readFileProcess = new FakeChildProcess();
+      const spawnProcess = createSpawnMock([access, sniff, readFileProcess]);
+      const [read] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
+
+      const pending = read.execute('read-image', { path: '/workspace/picture' });
+      access.emit('close', 0);
+      await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2));
+      sniff.stdout.emit('data', bytes.subarray(0, 4100));
+      sniff.emit('close', 0);
+      await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(3));
+      readFileProcess.stdout.emit('data', bytes);
+      readFileProcess.emit('close', 0);
+
+      const result = await pending;
+      expect(result.content).toEqual([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining(`Read image file [${mimeType}]`),
+        }),
+        expect.objectContaining({ type: 'image', mimeType }),
+      ]);
+      expect(scriptFrom(spawnProcess, 1)).toBe(`head -c 4100 -- '${SANDBOX}/picture'`);
+      expect(scriptFrom(spawnProcess, 2)).toBe(`cat -- '${SANDBOX}/picture'`);
+    }
+  );
+
+  it('keeps a host overflow log as text when its bytes look like a PNG', async () => {
+    const child = new FakeChildProcess();
+    const spawnProcess = createSpawnMock([child]);
+    const [read, bash] = createLimaSandboxCodingTools(SANDBOX, { spawnProcess });
+    const pending = bash.execute('png-log', { command: 'generate-output' });
+    child.stdout.emit('data', Buffer.from('guest-output\n'.repeat(12000)));
+    child.emit('close', 0);
+    const result = await pending;
+    const outputPath = result.details!.fullOutputPath!;
+    try {
+      await writeFile(
+        outputPath,
+        Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          'base64'
+        )
+      );
+      const reading = await read.execute('read-png-log', { path: outputPath });
+      expect(reading.content).toEqual([expect.objectContaining({ type: 'text' })]);
+      expect(reading.content.some((block) => block.type === 'image')).toBe(false);
+      expect(spawnProcess).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(outputPath, { force: true });
+    }
+  });
+
   it('reads a virtual workspace file from the guest sandbox', async () => {
     const access = new FakeChildProcess();
+    const sniff = new FakeChildProcess();
     const read = new FakeChildProcess();
-    const spawnProcess = createSpawnMock([access, read]);
+    const spawnProcess = createSpawnMock([access, sniff, read]);
     const files = createLimaSandboxFileOperations(SANDBOX, { spawnProcess });
     const readTool = createReadTool(SANDBOX, { operations: files.read });
 
     const pending = readTool.execute('call-1', { path: '/workspace/notes.txt' });
     access.emit('close', 0);
     await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2));
+    sniff.stdout.emit('data', Buffer.from('hello from sandbox'));
+    sniff.emit('close', 0);
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(3));
     read.stdout.emit('data', Buffer.from('hello from sandbox'));
     read.emit('close', 0);
 
@@ -733,7 +825,8 @@ describe('lima sandbox file tools', () => {
       }),
     ]);
     expect(scriptFrom(spawnProcess, 0)).toBe(`test -e '${SANDBOX}/notes.txt' || exit 44`);
-    expect(scriptFrom(spawnProcess, 1)).toBe(`cat -- '${SANDBOX}/notes.txt'`);
+    expect(scriptFrom(spawnProcess, 1)).toBe(`head -c 4100 -- '${SANDBOX}/notes.txt'`);
+    expect(scriptFrom(spawnProcess, 2)).toBe(`cat -- '${SANDBOX}/notes.txt'`);
   });
 
   it('writes a virtual workspace file through the guest shell', async () => {

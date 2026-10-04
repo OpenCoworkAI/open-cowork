@@ -22,6 +22,32 @@ export const LIMA_SANDBOX_INSTANCE = 'claude-sandbox';
 const VIRTUAL_WORKSPACE_PATTERN = /(^|[\s'"`=;|&()<>])\/workspace(?=\/|$|[\s'"`;|&()<>])/g;
 const GUEST_FILE_MISSING_EXIT_CODE = 44;
 const GUEST_FILE_PERMISSION_EXIT_CODE = 45;
+const IMAGE_SNIFF_BYTES = 4100;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function imageMimeTypeFromHeader(header: Buffer): string | null {
+  if (
+    header.length >= PNG_SIGNATURE.length &&
+    header.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)
+  ) {
+    return 'image/png';
+  }
+  if (header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (header.length >= 6) {
+    const gif = header.subarray(0, 6).toString('ascii');
+    if (gif === 'GIF87a' || gif === 'GIF89a') return 'image/gif';
+  }
+  if (
+    header.length >= 12 &&
+    header.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    header.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
@@ -350,6 +376,14 @@ export function createLimaSandboxFileOperations(
       ).then(() => undefined),
     readFile: (absolutePath) =>
       runGuestOrThrow(spawnProcess, instanceName, `cat -- '${guestPath(absolutePath)}'`),
+    detectImageMimeType: async (absolutePath) => {
+      const header = await runGuestOrThrow(
+        spawnProcess,
+        instanceName,
+        `head -c ${IMAGE_SNIFF_BYTES} -- '${guestPath(absolutePath)}'`
+      );
+      return imageMimeTypeFromHeader(header.subarray(0, IMAGE_SNIFF_BYTES));
+    },
   };
 
   const write: WriteOperations = {
@@ -421,6 +455,11 @@ export function createLimaSandboxCodingTools(
           isHostOutputPath(absolutePath)
             ? readFile(absolutePath)
             : files.read.readFile(absolutePath),
+        // SDK overflow logs stay local text, including bytes that look like an image.
+        detectImageMimeType: (absolutePath) =>
+          isHostOutputPath(absolutePath)
+            ? Promise.resolve(null)
+            : files.read.detectImageMimeType!(absolutePath),
       },
     }),
     bash,
