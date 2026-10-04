@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 /**
- * Regression tests for src/main/remote/remote-manager.ts multi-turn session
- * id mapping (issue #291).
+ * Regression tests for src/main/remote/remote-manager.ts remote session id
+ * mapping lifecycle:
  *
- * The bug: clearSessionBuffer() ran on every turn completion and tore down the
- * persistent session id mappings, while remoteSessionIds (only ever added to)
- * kept the remote id. The next turn saw isNewSession === false but could not
- * resolve the actual session id and threw "No actual session ID found".
+ * - Issue #291: clearSessionBuffer() ran on every turn completion and tore down
+ *   the persistent session id mappings, while remoteSessionIds (only ever added
+ *   to) kept the remote id. The next turn saw isNewSession === false but could
+ *   not resolve the actual session id and threw "No actual session ID found".
+ * - Stale binding after session deletion: deleting a channel-bound session from
+ *   the desktop UI removed it from cowork.db while the in-memory mapping
+ *   survived, so every later channel message threw "Session not found" and the
+ *   bot replied "internal error" until restart. executeAgent now self-heals,
+ *   and handleSessionDeleted (onSessionDeleted hook) clears bindings eagerly.
  */
 
 vi.mock('electron', () => {
@@ -32,6 +37,8 @@ vi.mock('../src/main/utils/logger', () => ({
 }));
 
 import { RemoteManager, type AgentExecutor } from '../src/main/remote/remote-manager';
+import { SessionNotFoundError } from '../src/main/session/session-errors';
+import { AgentRuntimeExtensionManager } from '../src/main/extensions/agent-runtime-extension-manager';
 import type { RemoteMessage } from '../src/main/remote/types';
 
 /** Route a message the way channels do (via the public RemoteManager API). */
@@ -56,6 +63,7 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
   let manager: RemoteManager;
   let startSession: Mock;
   let continueSession: Mock;
+  let hasSession: Mock;
   let sessionCounter: number;
 
   beforeEach(() => {
@@ -71,11 +79,13 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
       } as unknown as Awaited<ReturnType<AgentExecutor['startSession']>>;
     });
     continueSession = vi.fn(async () => {});
+    hasSession = vi.fn(() => true);
 
     const executor = {
       startSession,
       continueSession,
       stopSession: vi.fn(async () => {}),
+      hasSession,
     } as unknown as AgentExecutor;
     manager.setAgentExecutor(executor);
     // No renderer callback needed; emitRemoteUserMessage no-ops without one.
@@ -179,5 +189,197 @@ describe('RemoteManager multi-turn session mapping (issue #291)', () => {
     await route(manager, makeMessage('stdio-unknown', 'again'));
     expect(continueSession).toHaveBeenCalledTimes(1);
     expect(startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('self-heals a stale binding when the actual session was deleted', async () => {
+    await route(manager, makeMessage('stdio-stale', 'hi'));
+    expect(startSession).toHaveBeenCalledTimes(1);
+
+    // The desktop UI deleted actual-session-1 (gone from cowork.db), but the
+    // in-memory mapping survives — the regression this guards against is the
+    // channel replying "internal error" forever until restart. This exercises
+    // the catch path (probe said alive, continue failed) via the string
+    // fallback used by executors that predate SessionNotFoundError.
+    continueSession.mockRejectedValueOnce(new Error('Session not found: actual-session-1'));
+
+    await route(manager, makeMessage('stdio-stale', 'again'));
+    // The stale binding was dropped and a fresh session created in one turn.
+    expect(startSession).toHaveBeenCalledTimes(2);
+    expect(manager.isRemoteSession('actual-session-1')).toBe(false);
+    expect(manager.isRemoteSession('actual-session-2')).toBe(true);
+
+    // Subsequent turns continue the healed session.
+    await route(manager, makeMessage('stdio-stale', 'once more'));
+    expect(continueSession).toHaveBeenLastCalledWith(
+      'actual-session-2',
+      'once more',
+      expect.anything(),
+      undefined
+    );
+  });
+
+  it('self-heals on a typed SessionNotFoundError (no string matching needed)', async () => {
+    await route(manager, makeMessage('stdio-typed', 'hi'));
+
+    continueSession.mockRejectedValueOnce(new SessionNotFoundError('actual-session-1'));
+
+    await route(manager, makeMessage('stdio-typed', 'again'));
+    expect(startSession).toHaveBeenCalledTimes(2);
+    expect(manager.isRemoteSession('actual-session-2')).toBe(true);
+  });
+
+  it('probe path rebinds without emitting a user message to the deleted session', async () => {
+    const userEmits: string[] = [];
+    manager.setRendererCallback((event) => {
+      if (event.type === 'stream.message') {
+        const message = event.payload.message;
+        if (message.role === 'user') userEmits.push(message.sessionId);
+      }
+    });
+
+    await route(manager, makeMessage('stdio-probe', 'hi'));
+
+    // Desktop UI deleted the session; the probe sees it BEFORE any emission or
+    // continuation attempt.
+    hasSession.mockReturnValueOnce(false);
+
+    await route(manager, makeMessage('stdio-probe', 'again'));
+    expect(startSession).toHaveBeenCalledTimes(2);
+    expect(continueSession).not.toHaveBeenCalled();
+
+    // Exactly one user emission per turn; the second targets the healed
+    // session — no spurious user message aimed at the deleted session.
+    expect(userEmits).toEqual(['actual-session-1', 'actual-session-2']);
+  });
+
+  it('pins the catch-path emission sequence (deliberate residual)', async () => {
+    const userEmits: string[] = [];
+    manager.setRendererCallback((event) => {
+      if (event.type === 'stream.message') {
+        const message = event.payload.message;
+        if (message.role === 'user') userEmits.push(message.sessionId);
+      }
+    });
+
+    await route(manager, makeMessage('stdio-seq', 'hi'));
+
+    // Probe says alive, but the session is deleted before continueSession runs
+    // (probe→continue race), so the catch path heals.
+    continueSession.mockRejectedValueOnce(new SessionNotFoundError('actual-session-1'));
+
+    await route(manager, makeMessage('stdio-seq', 'again'));
+
+    // Deliberate residual, pinned: the optimistic pre-emit for turn 2 went to
+    // the just-reported-dead session (the renderer drops it into an orphaned
+    // in-memory entry; the sidebar is DB-driven so nothing resurfaces), while
+    // the healed session still gets its own user turn. Suppressing the last
+    // emission would drop the user turn from the healed session's live UI.
+    expect(userEmits).toEqual(['actual-session-1', 'actual-session-1', 'actual-session-2']);
+    expect(startSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('handleSessionDeleted is idempotent and non-throwing when the binding is already gone', async () => {
+    await route(manager, makeMessage('stdio-idem', 'hi'));
+    await manager.handleSessionDeleted('actual-session-1');
+
+    // A repeated call (e.g. delete + batch-delete overlap, or a hook replay)
+    // must be a harmless no-op: the deletion flow must never reject because
+    // of binding cleanup.
+    await expect(manager.handleSessionDeleted('actual-session-1')).resolves.toBeUndefined();
+    expect(manager.isRemoteSession('actual-session-1')).toBe(false);
+  });
+
+  it('onSessionDeleted extension hook clears the binding using the actual session id', async () => {
+    await route(manager, makeMessage('stdio-hook', 'hi'));
+    expect(manager.isRemoteSession('actual-session-1')).toBe(true);
+
+    // Mirrors the index.ts wiring: SessionManager dispatches onSessionDeleted
+    // with the actual agent session id (the same id passed to
+    // db.sessions.delete).
+    const extensions = new AgentRuntimeExtensionManager([]);
+    extensions.register({
+      name: 'remote-session-binding',
+      onSessionDeleted: async ({ sessionId }) => {
+        await manager.handleSessionDeleted(sessionId);
+      },
+    });
+    await extensions.onSessionDeleted({ sessionId: 'actual-session-1', session: null });
+
+    expect(manager.isRemoteSession('actual-session-1')).toBe(false);
+    await route(manager, makeMessage('stdio-hook', 'again'));
+    expect(startSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('handleSessionDeleted clears the channel binding so the next message starts fresh', async () => {
+    await route(manager, makeMessage('stdio-del', 'hi'));
+    const actualSessionId = 'actual-session-1';
+
+    await manager.handleSessionDeleted(actualSessionId);
+
+    expect(manager.isRemoteSession(actualSessionId)).toBe(false);
+    expect(manager.getRemoteSessionId(actualSessionId)).toBeUndefined();
+
+    await route(manager, makeMessage('stdio-del', 'again'));
+    expect(startSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('handleSessionDeleted is a no-op for sessions without a channel binding', async () => {
+    await route(manager, makeMessage('stdio-keep', 'hi'));
+    const actualSessionId = 'actual-session-1';
+
+    await manager.handleSessionDeleted('some-unrelated-session');
+
+    expect(manager.isRemoteSession(actualSessionId)).toBe(true);
+    await manager.clearSessionBuffer(actualSessionId);
+    await route(manager, makeMessage('stdio-keep', 'again'));
+    expect(continueSession).toHaveBeenCalledTimes(1);
+    expect(startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not self-heal on failures other than "Session not found"', async () => {
+    await route(manager, makeMessage('stdio-err', 'hi'));
+    const actualSessionId = 'actual-session-1';
+
+    continueSession.mockRejectedValueOnce(new Error('LLM provider timeout'));
+    await route(manager, makeMessage('stdio-err', 'again'));
+
+    // The binding must survive: only a deleted session justifies a rebuild.
+    expect(startSession).toHaveBeenCalledTimes(1);
+    expect(manager.isRemoteSession(actualSessionId)).toBe(true);
+
+    // The next turn recovers on the same session.
+    await route(manager, makeMessage('stdio-err', 'once more'));
+    expect(continueSession).toHaveBeenLastCalledWith(
+      actualSessionId,
+      'once more',
+      expect.anything(),
+      undefined
+    );
+  });
+
+  it('does not rebuild on an unrelated error merely containing "session not found"', async () => {
+    await route(manager, makeMessage('stdio-fp', 'hi'));
+    const actualSessionId = 'actual-session-1';
+
+    // A transport/gateway failure whose message happens to contain the phrase
+    // mid-sentence — the anchored, case-sensitive fallback must not treat it
+    // as a deleted session (rebuilding here would silently drop the binding
+    // and the conversation context).
+    continueSession.mockRejectedValueOnce(
+      new Error('upstream gateway reported session not found in pool')
+    );
+
+    await route(manager, makeMessage('stdio-fp', 'again'));
+
+    expect(startSession).toHaveBeenCalledTimes(1);
+    expect(manager.isRemoteSession(actualSessionId)).toBe(true);
+
+    await route(manager, makeMessage('stdio-fp', 'once more'));
+    expect(continueSession).toHaveBeenLastCalledWith(
+      actualSessionId,
+      'once more',
+      expect.anything(),
+      undefined
+    );
   });
 });

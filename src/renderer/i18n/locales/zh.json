@@ -49,6 +49,8 @@
     "goToSettings": "前往设置"
   },
   "settings": {
+    "subagents": "子代理",
+    "subagentsDesc": "子代理模型、角色和工具权限",
     "title": "设置",
     "apiSettings": "API 设置",
     "apiSettingsDesc": "配置 API 提供商和密钥",
@@ -958,6 +960,28 @@
     "description": "应用遇到了意外错误。你可以点击下方按钮尝试恢复。",
     "details": "错误详情",
     "retry": "重试"
+  },
+  "subagentSettings": {
+    "invalidConfig": "已保存的子代理配置无效：{{error}}。保存有效配置可修复此问题。",
+    "noTools": "不允许使用任何工具",
+    "model": "默认子代理模型（当前 API 供应商）",
+    "concurrency": "单会话并发子代理数",
+    "concurrencyInvalid": "请输入 1 到 8 之间的整数。",
+    "defaultRole": "默认角色",
+    "generalRole": "通用",
+    "roles": "命名代理",
+    "add": "添加代理",
+    "remove": "删除代理",
+    "name": "代理名称",
+    "description": "任务描述",
+    "roleModel": "角色模型",
+    "instructions": "角色指令",
+    "instructionsRequired": "请填写角色指令。",
+    "incompleteAgents": "以下代理缺少角色指令：{{agents}}",
+    "restrictTools": "限制工具",
+    "tools": "允许的工具名称（逗号分隔）",
+    "save": "保存子代理设置",
+    "saved": "子代理设置已保存"
   },
   "subagent": {
     "label": "子代理",

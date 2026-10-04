@@ -1798,6 +1798,7 @@ ${hints.join('\n')}
         modelBaseUrl: piModel.baseUrl,
         effectiveCwd,
         apiKey,
+        subagent: configStore.getAll().subagent,
       });
       const skillPaths = await this.resolveSkillPaths(session.id);
       const skillsSignature = JSON.stringify(skillPaths);
@@ -1838,6 +1839,7 @@ ${hints.join('\n')}
             prompt,
             existingMessages,
             isColdStart: !cachedSession,
+            sandboxIsolated: useSandboxIsolation,
           })
         : { promptPrefix: undefined, customTools: [] };
 

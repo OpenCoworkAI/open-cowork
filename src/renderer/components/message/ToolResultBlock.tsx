@@ -2,6 +2,7 @@
 import { useState, memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { EMPTY_MESSAGES, EMPTY_TRACE_STEPS } from '../../store/selectors';
 import {
   shouldPreferToolResultImages,
   shouldRenderToolResultText,
@@ -25,10 +26,14 @@ export const ToolResultBlock = memo(function ToolResultBlock({
   message,
 }: ToolResultBlockProps) {
   const traceSteps = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.traceSteps ?? []) : []
+    message?.sessionId
+      ? (s.sessionStates[message.sessionId]?.traceSteps ?? EMPTY_TRACE_STEPS)
+      : EMPTY_TRACE_STEPS
   );
   const allMessages = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.messages ?? []) : []
+    message?.sessionId
+      ? (s.sessionStates[message.sessionId]?.messages ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES
   );
   const [expanded, setExpanded] = useState(false);
 

@@ -1179,9 +1179,22 @@ app
           validateWorkingDirectory: (cwd) => {
             return getWorkspacePathUnsupportedReason(cwd) || null;
           },
+          hasSession: (sessionId) => {
+            if (!sessionManager) throw new Error('Session manager not initialized');
+            return sessionManager.hasSession(sessionId);
+          },
         };
         remoteManager.setAgentExecutor(stdioAgentExecutor);
         remoteManager.setRendererCallback(headlessSendWithPermission);
+
+        // Cascade channel-binding cleanup when a session is deleted, so a
+        // deleted channel session cannot leave a stale in-memory binding.
+        headlessExtensionManager.register({
+          name: 'remote-session-binding',
+          onSessionDeleted: async ({ sessionId }) => {
+            await remoteManager.handleSessionDeleted(sessionId);
+          },
+        });
 
         const stdioChannel = await remoteManager.startStdioMode(headlessArgs.cwd);
 
@@ -1482,8 +1495,22 @@ app
         }
         return null;
       },
+      hasSession: (sessionId) => {
+        if (!sessionManager) throw new Error('Session manager not initialized');
+        return sessionManager.hasSession(sessionId);
+      },
     };
     remoteManager.setAgentExecutor(agentExecutor);
+
+    // Cascade channel-binding cleanup when a session is deleted from the
+    // desktop UI, so a deleted channel session cannot leave a stale in-memory
+    // binding (channel would otherwise keep failing until restart).
+    extensionManager.register({
+      name: 'remote-session-binding',
+      onSessionDeleted: async ({ sessionId }) => {
+        await remoteManager.handleSessionDeleted(sessionId);
+      },
+    });
 
     // 远程控制启用时启动
     if (remoteConfigStore.isEnabled()) {

@@ -26,6 +26,7 @@ import type {
 } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
+import { SessionNotFoundError } from './session-errors';
 import {
   SandboxAdapter,
   getSandboxAdapter,
@@ -381,6 +382,14 @@ export class SessionManager {
     };
   }
 
+  /**
+   * Existence check used by RemoteManager's stale-binding probe: a session may
+   * be deleted from the desktop UI while a channel binding still points at it.
+   */
+  hasSession(sessionId: string): boolean {
+    return Boolean(this.loadSession(sessionId));
+  }
+
   // List all sessions
   listSessions(): Session[] {
     const rows = this.db.sessions.getAll();
@@ -429,7 +438,7 @@ export class SessionManager {
 
     const session = this.loadSession(sessionId);
     if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
+      throw new SessionNotFoundError(sessionId);
     }
 
     this.enqueuePrompt(session, prompt, content);
