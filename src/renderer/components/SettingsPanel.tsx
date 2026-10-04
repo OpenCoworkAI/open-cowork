@@ -11,6 +11,7 @@ import {
   Globe,
   ChevronRight,
   BrainCircuit,
+  UsersRound,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -24,6 +25,7 @@ import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
+import { SettingsSubagents } from './settings/SettingsSubagents';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -33,6 +35,7 @@ interface SettingsPanelProps {
     | 'connectors'
     | 'skills'
     | 'memory'
+    | 'subagents'
     | 'schedule'
     | 'remote'
     | 'logs'
@@ -45,6 +48,7 @@ type TabId =
   | 'connectors'
   | 'skills'
   | 'memory'
+  | 'subagents'
   | 'schedule'
   | 'remote'
   | 'logs'
@@ -56,6 +60,7 @@ const VALID_TABS = new Set<TabId>([
   'connectors',
   'skills',
   'memory',
+  'subagents',
   'schedule',
   'remote',
   'logs',
@@ -103,6 +108,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   }, [activeTab]);
 
   const tabs = [
+    {
+      id: 'subagents' as TabId,
+      label: t('settings.subagents'),
+      icon: UsersRound,
+      description: t('settings.subagentsDesc'),
+    },
     {
       id: 'api' as TabId,
       label: t('settings.apiSettings'),
@@ -164,10 +175,10 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
     <div className="flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
       <div
-        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}
+        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0 min-h-0`}
       >
         {!compactSidebar && (
-          <div className="px-4 pt-5 pb-4 border-b border-border-muted">
+          <div className="px-4 pt-5 pb-4 border-b border-border-muted flex-shrink-0">
             <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
               {t('settings.title')}
             </p>
@@ -177,7 +188,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
           </div>
         )}
-        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}
+        >
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -204,7 +217,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             </button>
           ))}
         </div>
-        <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
+        <div
+          className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted flex-shrink-0`}
+        >
           <button
             onClick={onClose}
             className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-background transition-colors text-text-secondary text-sm`}
@@ -266,6 +281,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'memory' ? '' : 'hidden'}>
                 {viewedTabs.has('memory') && <SettingsMemory />}
+              </div>
+              <div className={activeTab === 'subagents' ? '' : 'hidden'}>
+                {viewedTabs.has('subagents') && <SettingsSubagents />}
               </div>
               <div className={activeTab === 'schedule' ? '' : 'hidden'}>
                 {viewedTabs.has('schedule') && (

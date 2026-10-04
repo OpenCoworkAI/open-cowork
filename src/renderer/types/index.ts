@@ -1,3 +1,5 @@
+import type { SubagentConfig } from '../../shared/subagent-config';
+
 // Session types
 export interface Session {
   id: string;
@@ -699,6 +701,8 @@ export interface MemoryRuntimeConfig {
 }
 
 export interface AppConfig {
+  subagent?: SubagentConfig;
+  subagentConfigError?: string;
   provider: ProviderType;
   apiKey: string;
   baseUrl?: string;
