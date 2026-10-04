@@ -182,7 +182,7 @@ describe('deepseek-common structured response parsing', () => {
     vi.unstubAllGlobals();
   });
 
-  it('uses reasoning_content when DeepSeek returns an empty content field', async () => {
+  it('rejects reasoning-only output even when it contains valid review JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -203,29 +203,26 @@ describe('deepseek-common structured response parsing', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { callDeepSeekJson } = await import('../.github/scripts/deepseek-common.mjs');
 
-    const result = await callDeepSeekJson({
-      apiKey: 'test-key',
-      baseUrl: 'https://api.deepseek.com',
-      effort: 'high',
-      model: 'deepseek-v4-flash',
-      systemPrompt: 'Review the pull request.',
-      userPrompt: 'Return JSON.',
-    });
-
-    expect(result.parsed).toEqual({
-      body: 'No findings.\n\n*Open Cowork Bot*',
-    });
-    expect(result.content).toContain('No findings.');
+    await expect(
+      callDeepSeekJson({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.deepseek.com',
+        effort: 'high',
+        model: 'deepseek-v4-flash',
+        systemPrompt: 'Review the pull request.',
+        userPrompt: 'Return JSON.',
+      })
+    ).rejects.toThrow('DeepSeek API returned no message content.');
   });
 
-  it('extracts the final JSON object from reasoning prose', async () => {
+  it('uses the final answer instead of JSON examples in reasoning prose', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           choices: [
             {
               message: {
-                content: null,
+                content: '{"body":"No findings."}',
                 reasoning_content: [
                   'I should return an object such as {"example":true}.',
                   'The review is complete.',
@@ -252,7 +249,7 @@ describe('deepseek-common structured response parsing', () => {
     });
 
     expect(result.parsed).toEqual({
-      body: 'Review mode: initial\n\nNo findings.',
+      body: 'No findings.',
     });
   });
 
@@ -281,8 +278,8 @@ describe('deepseek-common structured response parsing', () => {
             choices: [
               {
                 message: {
-                  content: '',
-                  reasoning_content: '{"body":"No findings."}',
+                  content: '{"body":"No findings."}',
+                  reasoning_content: 'Private reasoning must not be parsed.',
                   role: 'assistant',
                 },
               },
@@ -310,10 +307,72 @@ describe('deepseek-common structured response parsing', () => {
 
     const requestBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
     expect(requestBodies.map((body) => body.max_tokens)).toEqual([8192, 16384]);
-    expect(requestBodies[1].messages[1].content).toContain('PRIOR MODEL ANALYSIS:');
-    expect(requestBodies[1].messages[1].content).toContain(
-      'Analysis was truncated before the final JSON object.'
-    );
-    expect(requestBodies[1].messages[1].content).not.toContain('ORIGINAL LARGE PR PROMPT');
+    expect(requestBodies[1].messages[1].content).toContain('ORIGINAL LARGE PR PROMPT');
+    expect(requestBodies[1].messages[1].content).toContain('AUTOMATION RETRY NOTE:');
+    expect(requestBodies[1].messages[1].content).not.toContain('PRIOR MODEL ANALYSIS:');
   });
+
+  it.each([
+    '...',
+    '…',
+    '***',
+    '*Open Cowork Bot*',
+    '...\n\n*Open Cowork Bot*',
+    'TODO',
+    'TBD',
+    'FULL_MARKDOWN_REVIEW_BODY',
+  ])('rejects the placeholder body %j', async (body) => {
+    const { assertNonEmptyParsedString } = await import('../.github/scripts/deepseek-common.mjs');
+    expect(() => assertNonEmptyParsedString({ body })).toThrow('placeholder body');
+  });
+
+  it('accepts a concise completed review', async () => {
+    const { assertNonEmptyParsedString } = await import('../.github/scripts/deepseek-common.mjs');
+    expect(assertNonEmptyParsedString({ body: 'No findings.' })).toBe('No findings.');
+  });
+
+  it.each(['reasoning-only', 'placeholder', 'truncated'])(
+    'fails after three %s responses instead of returning a publishable review',
+    async (kind) => {
+      const fetchMock = vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  finish_reason: kind === 'truncated' ? 'length' : 'stop',
+                  message: {
+                    content:
+                      kind === 'reasoning-only'
+                        ? ''
+                        : JSON.stringify({ body: kind === 'placeholder' ? '...' : 'No findings.' }),
+                    reasoning_content: '{"body":"..."}',
+                  },
+                },
+              ],
+            }),
+            { status: 200 }
+          )
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { callDeepSeekJsonWithRetries } =
+        await import('../.github/scripts/deepseek-common.mjs');
+      await expect(
+        callDeepSeekJsonWithRetries({
+          apiKey: 'test-key',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-flash',
+          systemPrompt: 'Review the pull request.',
+          userPrompt: 'AUTHORITATIVE PR DIFF',
+        })
+      ).rejects.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(JSON.parse(String(init?.body)).messages[1].content).toContain(
+          'AUTHORITATIVE PR DIFF'
+        );
+      }
+    }
+  );
 });
