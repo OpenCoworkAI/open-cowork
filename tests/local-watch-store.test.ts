@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ScheduledTaskManager } from '../src/main/schedule/scheduled-task-manager';
+import { watchConfigForTaskUpdate } from '../src/shared/schedule/watch-config-update';
 import { createScheduledTaskStore } from '../src/main/schedule/scheduled-task-store';
 import type { ScheduledTaskRow } from '../src/main/db/database';
 import type { LocalWatchConfig } from '../src/shared/schedule/local-watch-task';
@@ -79,5 +81,71 @@ describe('conditional task persistence', () => {
     expect(loaded.watchConfig).toBeNull();
     expect(loaded.watchConfigError).toBeNull();
     expect(loaded.lastState).toBeNull();
+  });
+
+  it('keeps a corrupt watch configuration when an edit does not change the condition', async () => {
+    const database = createDatabase();
+    const store = createScheduledTaskStore(database);
+    let executed = false;
+    const manager = new ScheduledTaskManager({
+      store,
+      executeTask: async () => {
+        executed = true;
+        return { sessionId: 'session' };
+      },
+      checkCondition: async () => 'unused',
+    });
+    const created = manager.create({
+      prompt: 'react',
+      cwd: '/tmp/project',
+      runAt: Date.now() + 60_000,
+      repeatEvery: 1,
+      repeatUnit: 'minute',
+      watchConfig,
+    });
+    database.scheduledTasks.update(created.id, { watch_config: 'broken JSON' });
+    const loaded = store.get(created.id)!;
+    const submittedWatchConfig = watchConfigForTaskUpdate(
+      loaded.watchConfigError,
+      false,
+      loaded.watchConfig ?? null
+    );
+    manager.update(created.id, {
+      cwd: '/tmp/other',
+      ...(submittedWatchConfig !== undefined ? { watchConfig: submittedWatchConfig } : {}),
+    });
+    expect(database.rows.get(created.id)!.watch_config).toBe('broken JSON');
+    expect(store.get(created.id)!.cwd).toBe('/tmp/other');
+    await expect(manager.runNow(created.id)).rejects.toThrow(loaded.watchConfigError!);
+    expect(executed).toBe(false);
+  });
+
+  it('clears a corrupt watch configuration when the edit explicitly removes it', async () => {
+    const database = createDatabase();
+    const store = createScheduledTaskStore(database);
+    let executed = false;
+    const manager = new ScheduledTaskManager({
+      store,
+      executeTask: async () => {
+        executed = true;
+        return { sessionId: 'session' };
+      },
+      checkCondition: async () => 'unused',
+    });
+    const created = manager.create({
+      prompt: 'react',
+      cwd: '/tmp/project',
+      runAt: Date.now() + 60_000,
+      repeatEvery: 1,
+      repeatUnit: 'minute',
+      watchConfig,
+    });
+    database.scheduledTasks.update(created.id, { watch_config: '{"checkType":"http"}' });
+    const loaded = store.get(created.id)!;
+    const submittedWatchConfig = watchConfigForTaskUpdate(loaded.watchConfigError, true, null);
+    manager.update(created.id, { watchConfig: submittedWatchConfig });
+    expect(database.rows.get(created.id)!.watch_config).toBeNull();
+    await expect(manager.runNow(created.id)).resolves.toMatchObject({ outcome: 'started' });
+    expect(executed).toBe(true);
   });
 });

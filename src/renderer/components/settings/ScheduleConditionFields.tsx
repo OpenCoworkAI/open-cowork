@@ -3,9 +3,11 @@ import type { LocalWatchConfig } from '../../../shared/schedule/local-watch-task
 
 export function ScheduleConditionFields({
   value,
+  error,
   onChange,
 }: {
   value: LocalWatchConfig | null;
+  error?: string | null;
   onChange: (value: LocalWatchConfig | null) => void;
 }) {
   const { t } = useTranslation();
@@ -40,6 +42,7 @@ export function ScheduleConditionFields({
           <option value="command">{t('schedule.watchCommand')}</option>
         </select>
       </label>
+      {error && <div className="text-xs text-error break-words">{error}</div>}
       {value?.checkType === 'file' && (
         <label className="block text-sm space-y-1">
           <span>{t('schedule.watchPath')}</span>

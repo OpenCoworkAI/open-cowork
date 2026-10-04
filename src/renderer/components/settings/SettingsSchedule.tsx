@@ -15,6 +15,7 @@ import { formatAppDateTime, joinAppList } from '../../utils/i18n-format';
 import { renderLocalizedBannerMessage, getWeekdayOptions, getScheduleModeOptions } from './shared';
 import type { LocalizedBanner, ScheduleFormMode } from './shared';
 import type { LocalWatchConfig } from '../../../shared/schedule/local-watch-task';
+import { watchConfigForTaskUpdate } from '../../../shared/schedule/watch-config-update';
 import { ScheduleConditionFields } from './ScheduleConditionFields';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -54,6 +55,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   const [repeatEvery, setRepeatEvery] = useState(1);
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
   const [watchConfig, setWatchConfig] = useState<LocalWatchConfig | null>(null);
+  const [watchConditionEdited, setWatchConditionEdited] = useState(false);
   const timeoutSeconds =
     watchConfig?.checkType === 'command' ? (watchConfig.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
   const timeoutValid =
@@ -192,8 +194,13 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           setError({ key: 'schedule.futureTimeRequired' });
           return;
         }
+        const nextWatchConfig = watchConfigForTaskUpdate(
+          editingTaskSnapshot?.watchConfigError,
+          watchConditionEdited,
+          watchConfig
+        );
         const payload: ScheduleUpdateInput = {
-          watchConfig,
+          ...(nextWatchConfig !== undefined ? { watchConfig: nextWatchConfig } : {}),
           cwd: cwd.trim() || workingDir || '',
           enabled,
           scheduleConfig,
@@ -352,6 +359,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setRepeatEvery(task.repeatEvery ?? 1);
     setRepeatUnit(task.repeatUnit ?? 'day');
     setWatchConfig(task.watchConfig ?? null);
+    setWatchConditionEdited(false);
     setError(null);
     setSuccess(null);
   }
@@ -370,6 +378,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setRepeatEvery(1);
     setRepeatUnit('day');
     setWatchConfig(null);
+    setWatchConditionEdited(false);
   }
 
   return (
@@ -417,7 +426,9 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         />
         <ScheduleConditionFields
           value={watchConfig}
+          error={watchConditionEdited ? null : editingTaskSnapshot?.watchConfigError}
           onChange={(value) => {
+            setWatchConditionEdited(true);
             setWatchConfig(value);
             if (value && scheduleMode === 'once') {
               setScheduleMode('legacy-interval');
