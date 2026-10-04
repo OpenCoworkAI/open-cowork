@@ -328,7 +328,12 @@ export async function callDeepSeekJson({
   const payload = JSON.parse(rawText);
   const choice = payload.choices?.[0];
   if (choice?.finish_reason === 'length') {
-    throw new Error('DeepSeek response was truncated before completion.');
+    const usage = payload.usage;
+    throw new Error(
+      'DeepSeek response was truncated before completion. ' +
+        `max_tokens=${maxTokens}, completion_tokens=${usage?.completion_tokens ?? 'unknown'}, ` +
+        `reasoning_tokens=${usage?.completion_tokens_details?.reasoning_tokens ?? 'unknown'}`
+    );
   }
   const message = choice?.message;
   const standardContent =
@@ -407,7 +412,9 @@ export async function callDeepSeekJsonWithRetries(options) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const attemptMaxTokens = attempt === 1 ? maxTokens : Math.max(maxTokens, 16384);
+    // Reasoning and the final answer share the output budget. Each retry needs
+    // more room; repeating the second attempt's cap cannot recover from length.
+    const attemptMaxTokens = maxTokens * 2 ** (attempt - 1);
     const retryInstructions = [
       'AUTOMATION RETRY NOTE:',
       '- Return ONLY valid JSON.',
@@ -416,6 +423,7 @@ export async function callDeepSeekJsonWithRetries(options) {
       `- Do not return an empty, null, or missing "${fieldName}" field.`,
       '- Write the complete answer in message content; reasoning is not published.',
       '- Do not return placeholder text such as "...", "TODO", or "TBD".',
+      '- Avoid repeating the supplied context or quoting entire diffs.',
     ];
     const attemptPrompt =
       attempt === 1 ? userPrompt : [userPrompt, '', ...retryInstructions].join('\n');

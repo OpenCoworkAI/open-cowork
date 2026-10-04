@@ -33,9 +33,7 @@ function serializeDocs(docs) {
   if (docs.length === 0) {
     return 'No repo docs were found in this checkout.';
   }
-  return docs
-    .map((doc) => `## ${doc.path}\n${doc.content}`)
-    .join('\n\n');
+  return docs.map((doc) => `## ${doc.path}\n${doc.content}`).join('\n\n');
 }
 
 function serializeFiles(files) {
@@ -59,9 +57,7 @@ function serializeExcerpts(excerpts) {
   if (excerpts.length === 0) {
     return 'No PR-head file excerpts available.';
   }
-  return excerpts
-    .map((entry) => `## ${entry.path}\n${entry.content}`)
-    .join('\n\n');
+  return excerpts.map((entry) => `## ${entry.path}\n${entry.content}`).join('\n\n');
 }
 
 async function main() {
@@ -202,6 +198,8 @@ async function main() {
     effort,
     systemPrompt: buildSystemPrompt(prompt),
     userPrompt,
+    // Leave room for reasoning on large PRs; retries grow to 32K and 64K.
+    maxTokens: 16384,
   });
 
   const body = ensureBotSignature(assertNonEmptyParsedString(parsed, 'body'));
@@ -227,7 +225,14 @@ async function main() {
     body,
   });
 
-  runGh(['api', `repos/${repo}/pulls/${prNumber}/reviews`, '--method', 'POST', '--input', reviewPayload]);
+  runGh([
+    'api',
+    `repos/${repo}/pulls/${prNumber}/reviews`,
+    '--method',
+    'POST',
+    '--input',
+    reviewPayload,
+  ]);
   printUsage('DeepSeek PR review', usage);
 }
 

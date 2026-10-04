@@ -331,6 +331,52 @@ describe('deepseek-common structured response parsing', () => {
     expect(assertNonEmptyParsedString({ body: 'No findings.' })).toBe('No findings.');
   });
 
+  it('recovers after two length-limited PR reviews by increasing every retry budget', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+      const budget = JSON.parse(String(init.body)).max_tokens;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: budget < 65536 ? 'length' : 'stop',
+              message: {
+                content: budget < 65536 ? '' : '{"body":"No findings."}',
+                reasoning_content: '{"body":"..."}',
+              },
+            },
+          ],
+          usage: {
+            completion_tokens: budget,
+            completion_tokens_details: { reasoning_tokens: budget - 10 },
+          },
+        }),
+        { status: 200 }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { callDeepSeekJsonWithRetries } = await import('../.github/scripts/deepseek-common.mjs');
+    await expect(
+      callDeepSeekJsonWithRetries({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-flash',
+        effort: 'high',
+        maxTokens: 16384,
+        systemPrompt: 'Review the pull request.',
+        userPrompt: 'AUTHORITATIVE PR DIFF',
+      })
+    ).resolves.toMatchObject({ parsed: { body: 'No findings.' } });
+    const requests = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init.body)));
+    expect(requests.map((request) => request.max_tokens)).toEqual([16384, 32768, 65536]);
+    expect(
+      requests.every((request) => request.messages[1].content.includes('AUTHORITATIVE PR DIFF'))
+    ).toBe(true);
+    expect(requests.every((request) => request.reasoning_effort === 'high')).toBe(true);
+    expect(warn.mock.calls[0][0]).toContain('max_tokens=16384');
+    expect(warn.mock.calls[0][0]).toContain('reasoning_tokens=16374');
+  });
+
   it.each(['reasoning-only', 'placeholder', 'truncated'])(
     'fails after three %s responses instead of returning a publishable review',
     async (kind) => {
