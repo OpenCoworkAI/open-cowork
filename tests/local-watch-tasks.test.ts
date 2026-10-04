@@ -69,8 +69,16 @@ beforeEach(async () => {
 afterEach(async () => {
   manager.stop();
   vi.useRealTimers();
-  await rm(cwd, { recursive: true });
+  await rm(cwd, { recursive: true, maxRetries: 5, retryDelay: 100 });
 });
+
+let watchScriptSerial = 0;
+
+async function shellNodeScript(source: string): Promise<string> {
+  const scriptPath = join(cwd, `watch-command-${++watchScriptSerial}.cjs`);
+  await writeFile(scriptPath, source);
+  return `"${process.execPath}" "${scriptPath}"`;
+}
 
 describe('local conditional scheduled tasks', () => {
   it('establishes a baseline, skips unchanged content, and starts exactly once per change', async () => {
@@ -202,13 +210,16 @@ describe('local conditional scheduled tasks', () => {
 
   it('stops command descendants on timeout', async () => {
     const marker = join(cwd, 'late-write.txt');
-    const child = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 1500)`;
-    const parent = `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' }); setTimeout(() => {}, 10000)`;
+    const command = await shellNodeScript(`
+      const { spawn } = require('child_process');
+      spawn(process.execPath, ['-e', ${JSON.stringify(`setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 1500)`)}], { stdio: 'inherit' });
+      setTimeout(() => {}, 10000);
+    `);
     task.watchConfig = {
       checkType: 'command',
       compareMode: 'output',
       checkConfig: {
-        command: `"${process.execPath}" -e ${JSON.stringify(parent)}`,
+        command,
         timeoutMs: 1000,
       },
     };
@@ -219,13 +230,16 @@ describe('local conditional scheduled tasks', () => {
 
   it('rejects promptly and stops detached descendants holding output pipes open', async () => {
     const marker = join(cwd, 'detached-write.txt');
-    const child = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 2500)`;
-    const parent = `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(child)}], { detached: true, stdio: 'inherit' }); setTimeout(() => {}, 10000)`;
+    const command = await shellNodeScript(`
+      const { spawn } = require('child_process');
+      spawn(process.execPath, ['-e', ${JSON.stringify(`setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 2500)`)}], { detached: true, stdio: 'inherit' });
+      setTimeout(() => {}, 10000);
+    `);
     task.watchConfig = {
       checkType: 'command',
       compareMode: 'output',
       checkConfig: {
-        command: `"${process.execPath}" -e ${JSON.stringify(parent)}`,
+        command,
         timeoutMs: 1000,
       },
     };
