@@ -826,7 +826,8 @@ export class LimaBridge implements SandboxExecutor {
   async executeCommand(
     command: string,
     cwd?: string,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ExecutionResult> {
     if (!this.isInitialized) {
       throw new Error('Lima bridge not initialized');
@@ -842,8 +843,9 @@ export class LimaBridge implements SandboxExecutor {
         command,
         cwd,
         env,
+        timeout: timeoutMs || this.config?.timeout || 60000,
       },
-      this.config?.timeout || 60000
+      timeoutMs || this.config?.timeout || 60000
     );
 
     return {

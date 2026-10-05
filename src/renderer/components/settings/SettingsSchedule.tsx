@@ -17,6 +17,7 @@ import type { LocalizedBanner, ScheduleFormMode } from './shared';
 import {
   isLocalWatchConditionComplete,
   isLocalWatchTimeoutValid,
+  localizeWatchConfigError,
   type LocalWatchConfig,
 } from '../../../shared/schedule/local-watch-task';
 import { watchConfigForTaskUpdate } from '../../../shared/schedule/watch-config-update';
@@ -428,7 +429,13 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         />
         <ScheduleConditionFields
           value={watchConfig}
-          error={watchConditionEdited ? null : editingTaskSnapshot?.watchConfigError}
+          error={
+            watchConditionEdited
+              ? null
+              : editingTaskSnapshot?.watchConfigError
+                ? localizeWatchConfigError(editingTaskSnapshot.watchConfigError, t)
+                : null
+          }
           onChange={(value) => {
             setWatchConditionEdited(true);
             setWatchConfig(value);
@@ -636,7 +643,9 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                       </div>
                     )}
                     {task.watchConfigError && (
-                      <div className="text-xs text-error break-words">{task.watchConfigError}</div>
+                      <div className="text-xs text-error break-words">
+                        {localizeWatchConfigError(task.watchConfigError, t)}
+                      </div>
                     )}
                     <div className="text-xs text-text-muted">
                       {t('schedule.sessionStatus', { value: lastRunStatusLabel })}
@@ -646,7 +655,9 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                     </div>
                     {task.lastError && (
                       <div className="text-xs text-error break-all">
-                        {t('schedule.lastError', { value: task.lastError })}
+                        {t('schedule.lastError', {
+                          value: localizeWatchConfigError(task.lastError, t),
+                        })}
                       </div>
                     )}
                     <div className="flex items-center gap-2 flex-wrap">

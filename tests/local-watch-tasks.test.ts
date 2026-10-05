@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   ScheduledTaskManager,
   type ScheduledTask,
   type ScheduledTaskStore,
 } from '../src/main/schedule/scheduled-task-manager';
-import { checkLocalCondition } from '../src/main/schedule/local-condition-checker';
 import {
+  checkLocalCondition,
+  watchCommandExecution,
+} from '../src/main/schedule/local-condition-checker';
+import {
+  LOCAL_WATCH_CONFIG_ERRORS,
   isLocalWatchConditionComplete,
   isLocalWatchTimeoutValid,
+  localizeWatchConfigError,
   normalizeLocalWatchConfig,
   type LocalWatchConfig,
 } from '../src/shared/schedule/local-watch-task';
@@ -381,8 +386,19 @@ describe('local conditional scheduled tasks', () => {
       manager.create({ prompt: 'watch', cwd, runAt: Date.now(), watchConfig: fileWatch })
     ).toThrow('repeating');
     expect(() => normalizeLocalWatchConfig({ ...fileWatch, checkConfig: { path: ' ' } })).toThrow(
-      'path'
+      LOCAL_WATCH_CONFIG_ERRORS.fileRequired
     );
+    expect(() =>
+      normalizeLocalWatchConfig({
+        checkType: 'command',
+        compareMode: 'output',
+        checkConfig: { command: ' ' },
+      })
+    ).toThrow(LOCAL_WATCH_CONFIG_ERRORS.commandRequired);
+    expect(localizeWatchConfigError(LOCAL_WATCH_CONFIG_ERRORS.invalid, () => '配置无效')).toBe(
+      '配置无效'
+    );
+    expect(localizeWatchConfigError('Unexpected token', (key) => key)).toBe('Unexpected token');
     expect(() =>
       normalizeLocalWatchConfig({
         checkType: 'command',
@@ -419,5 +435,51 @@ describe('local conditional scheduled tasks', () => {
         checkConfig: { command: ' ', timeoutMs: 1500 },
       })
     ).toBe(false);
+  });
+
+  it('rejects watch files that leave the task workspace', async () => {
+    const outside = join(dirname(cwd), 'watch-secret.txt');
+    await writeFile(outside, 'secret');
+    try {
+      task.watchConfig = { ...fileWatch, checkConfig: { path: outside } };
+      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+      task.watchConfig = { ...fileWatch, checkConfig: { path: '../watch-secret.txt' } };
+      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+      await symlink(outside, join(cwd, 'watched.txt'));
+      task.watchConfig = fileWatch;
+      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+    } finally {
+      await unlink(outside).catch(() => undefined);
+    }
+  });
+
+  it('uses the sandbox command result and does not run the command on the host', async () => {
+    const marker = join(cwd, 'host-ran.txt');
+    task.watchConfig = {
+      checkType: 'command',
+      compareMode: 'output',
+      checkConfig: {
+        command: `"${process.execPath}" -e "require('fs').writeFileSync(${JSON.stringify(marker)}, 'host')"`,
+        timeoutMs: 1000,
+      },
+    };
+    const state = await checkLocalCondition(task, async () => ({ stdout: 'vm', stderr: '' }));
+    expect(state.startsWith('output:')).toBe(true);
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      checkLocalCondition(task, async () => {
+        throw new Error('sandbox offline');
+      })
+    ).rejects.toThrow('sandbox offline');
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps host commands only when the sandbox is off or native', () => {
+    expect(watchCommandExecution(false, 'lima', true)).toBe('host');
+    expect(watchCommandExecution(true, 'native', true)).toBe('host');
+    expect(watchCommandExecution(true, 'lima', true)).toBe('sandbox');
+    expect(watchCommandExecution(true, 'wsl', true)).toBe('sandbox');
+    expect(watchCommandExecution(true, 'lima', false)).toBe('blocked');
+    expect(watchCommandExecution(true, 'none', false)).toBe('blocked');
   });
 });

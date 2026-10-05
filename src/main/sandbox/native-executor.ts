@@ -117,7 +117,8 @@ export class NativeExecutor implements SandboxExecutor {
   async executeCommand(
     command: string,
     cwd?: string,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ExecutionResult> {
     if (!this.isInitialized) {
       throw new Error('Executor not initialized');
@@ -163,7 +164,7 @@ export class NativeExecutor implements SandboxExecutor {
           ...env,
           WORKSPACE: this.workspacePath,
         },
-        timeout: this.config?.timeout || 60000,
+        timeout: timeoutMs || this.config?.timeout || 60000,
       });
 
       let stdout = '';

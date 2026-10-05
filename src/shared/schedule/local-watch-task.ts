@@ -8,6 +8,21 @@ export type ScheduledTaskRunOutcome =
   | 'started'
   | 'skipped';
 
+export const LOCAL_WATCH_CONFIG_ERRORS = {
+  invalid: 'schedule.watchInvalid',
+  fileRequired: 'schedule.watchFileRequired',
+  commandRequired: 'schedule.watchCommandRequired',
+} as const;
+
+const localWatchErrorKeys = new Set<string>(Object.values(LOCAL_WATCH_CONFIG_ERRORS));
+
+export function localizeWatchConfigError(
+  message: string,
+  translate: (key: string) => string
+): string {
+  return localWatchErrorKeys.has(message) ? translate(message) : message;
+}
+
 export type LocalWatchConfig =
   | { checkType: 'file'; compareMode: 'content'; checkConfig: { path: string } }
   | {
@@ -46,18 +61,16 @@ const watchSchema = Type.Union([
 
 export function normalizeLocalWatchConfig(input: unknown): LocalWatchConfig {
   if (!Value.Check(watchSchema, input)) {
-    throw new Error(
-      'Invalid watch configuration: select a file or command and a timeout from 1000 to 30000 ms.'
-    );
+    throw new Error(LOCAL_WATCH_CONFIG_ERRORS.invalid);
   }
   const config = input as LocalWatchConfig;
   if (config.checkType === 'file') {
     const path = config.checkConfig.path.trim();
-    if (!path) throw new Error('Watch file path is required.');
+    if (!path) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.fileRequired);
     return { checkType: 'file', compareMode: 'content', checkConfig: { path } };
   }
   const command = config.checkConfig.command.trim();
-  if (!command) throw new Error('Watch command is required.');
+  if (!command) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.commandRequired);
   return {
     checkType: 'command',
     compareMode: 'output',

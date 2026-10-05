@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { open, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import type { ScheduledTask } from './scheduled-task-manager';
 import { normalizeLocalWatchConfig } from '../../shared/schedule/local-watch-task';
+import { isPathWithinRoot } from '../tools/path-containment';
 import { logError } from '../utils/logger';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -42,10 +43,84 @@ function stopWindowsCommand(
   );
 }
 
-export async function checkLocalCondition(task: ScheduledTask): Promise<string> {
+export type WatchSandboxMode = 'wsl' | 'lima' | 'native' | 'none';
+export type WatchCommandOutput = { stdout: string; stderr: string };
+
+export function watchCommandExecution(
+  sandboxEnabled: boolean,
+  mode: WatchSandboxMode,
+  cwdInsideSandbox: boolean
+): 'sandbox' | 'host' | 'blocked' {
+  if (!sandboxEnabled || mode === 'native') return 'host';
+  if ((mode === 'wsl' || mode === 'lima') && cwdInsideSandbox) return 'sandbox';
+  return 'blocked';
+}
+
+function insideWorkspace(filePath: string, root: string): boolean {
+  return isPathWithinRoot(filePath, root, process.platform === 'win32');
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return resolve(path);
+    throw error;
+  }
+}
+
+async function defaultWatchCommandRunner(
+  command: string,
+  cwd: string,
+  timeoutMs: number
+): Promise<WatchCommandOutput | null> {
+  // The desktop sandbox lives in the Electron main process.
+  if (!process.versions.electron) return null;
+  const { configStore } = await import('../config/config-store');
+  const { getSandboxAdapter } = await import('../sandbox/sandbox-adapter');
+  const adapter = getSandboxAdapter();
+  const workspace = adapter.workspacePath;
+  const cwdInsideSandbox = workspace
+    ? insideWorkspace(await canonicalPath(cwd), await canonicalPath(workspace))
+    : false;
+  const route = watchCommandExecution(
+    configStore.get('sandboxEnabled'),
+    adapter.initialized ? adapter.mode : 'none',
+    cwdInsideSandbox
+  );
+  if (route === 'host') return null;
+  if (route === 'blocked') {
+    throw new Error('Watch command stays in the sandbox, which is not ready for this workspace.');
+  }
+  const result = await adapter.executeCommand(command, cwd, undefined, timeoutMs);
+  if (!result.success) {
+    throw new Error(`Watch command exited with code ${result.exitCode}: ${result.stderr.trim()}`);
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
+export async function checkLocalCondition(
+  task: ScheduledTask,
+  runCommand: (
+    command: string,
+    cwd: string,
+    timeoutMs: number
+  ) => Promise<WatchCommandOutput | null> = defaultWatchCommandRunner
+): Promise<string> {
   const config = normalizeLocalWatchConfig(task.watchConfig);
   const hash = createHash('sha512');
   if (config.checkType === 'command') {
+    const timeoutMs = config.checkConfig.timeoutMs ?? 10000;
+    const isolated = await runCommand(config.checkConfig.command, task.cwd, timeoutMs);
+    if (isolated) {
+      const stdout = Buffer.from(isolated.stdout);
+      const stderr = Buffer.from(isolated.stderr);
+      if (stdout.length + stderr.length > MAX_OUTPUT_BYTES) {
+        throw new Error('Watch command output exceeds 1 MiB.');
+      }
+      hash.update(`${stdout.length}:`).update(stdout).update(stderr);
+      return `output:${hash.digest('hex')}`;
+    }
     const { stdout, stderr } = await new Promise<{ stdout: Buffer; stderr: Buffer }>(
       (resolve, reject) => {
         const child = spawn(config.checkConfig.command, {
@@ -136,9 +211,17 @@ export async function checkLocalCondition(task: ScheduledTask): Promise<string> 
     hash.update(`${stdout.length}:`).update(stdout).update(stderr);
     return `output:${hash.digest('hex')}`;
   }
-  const filePath = resolve(task.cwd, config.checkConfig.path);
+  const root = await canonicalPath(task.cwd);
+  const filePath = resolve(root, config.checkConfig.path);
+  if (!insideWorkspace(filePath, root)) {
+    throw new Error('Watch file must stay inside the task workspace.');
+  }
   try {
-    const file = await open(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
+    const realFilePath = await realpath(filePath);
+    if (!insideWorkspace(realFilePath, root)) {
+      throw new Error('Watch file must stay inside the task workspace.');
+    }
+    const file = await open(realFilePath, constants.O_RDONLY | constants.O_NONBLOCK);
     try {
       const info = await file.stat();
       if (!info.isFile()) throw new Error('Watch path must refer to a regular file.');

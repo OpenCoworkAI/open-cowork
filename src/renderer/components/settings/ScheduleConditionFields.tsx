@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import {
   isLocalWatchTimeoutValid,
+  localizeWatchConfigError,
   type LocalWatchConfig,
 } from '../../../shared/schedule/local-watch-task';
 
@@ -45,7 +46,9 @@ export function ScheduleConditionFields({
           <option value="command">{t('schedule.watchCommand')}</option>
         </select>
       </label>
-      {error && <div className="text-xs text-error break-words">{error}</div>}
+      {error && (
+        <div className="text-xs text-error break-words">{localizeWatchConfigError(error, t)}</div>
+      )}
       {value?.checkType === 'file' && (
         <label className="block text-sm space-y-1">
           <span>{t('schedule.watchPath')}</span>
