@@ -9,6 +9,8 @@ import {
 } from '../src/main/schedule/scheduled-task-manager';
 import { checkLocalCondition } from '../src/main/schedule/local-condition-checker';
 import {
+  isLocalWatchConditionComplete,
+  isLocalWatchTimeoutValid,
   normalizeLocalWatchConfig,
   type LocalWatchConfig,
 } from '../src/shared/schedule/local-watch-task';
@@ -388,5 +390,34 @@ describe('local conditional scheduled tasks', () => {
         checkConfig: { command: 'echo OK', timeoutMs: 0 },
       })
     ).toThrow();
+    const commandWatch: LocalWatchConfig = {
+      checkType: 'command',
+      compareMode: 'output',
+      checkConfig: { command: 'echo OK', timeoutMs: 1500 },
+    };
+    expect(isLocalWatchTimeoutValid(commandWatch)).toBe(true);
+    expect(
+      isLocalWatchTimeoutValid({
+        ...commandWatch,
+        checkConfig: { command: 'echo OK', timeoutMs: 500 },
+      })
+    ).toBe(false);
+    expect(
+      isLocalWatchTimeoutValid({
+        ...commandWatch,
+        checkConfig: { command: 'echo OK', timeoutMs: Number.NaN },
+      })
+    ).toBe(false);
+    expect(isLocalWatchConditionComplete(null)).toBe(true);
+    expect(isLocalWatchConditionComplete(fileWatch)).toBe(true);
+    expect(isLocalWatchConditionComplete({ ...fileWatch, checkConfig: { path: '  ' } })).toBe(
+      false
+    );
+    expect(
+      isLocalWatchConditionComplete({
+        ...commandWatch,
+        checkConfig: { command: ' ', timeoutMs: 1500 },
+      })
+    ).toBe(false);
   });
 });

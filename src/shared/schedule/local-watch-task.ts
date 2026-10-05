@@ -16,6 +16,18 @@ export type LocalWatchConfig =
       checkConfig: { command: string; timeoutMs?: number };
     };
 
+export function isLocalWatchTimeoutValid(config: LocalWatchConfig | null): boolean {
+  if (config?.checkType !== 'command') return true;
+  const timeoutMs = config.checkConfig.timeoutMs ?? 10000;
+  return Number.isInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 30000;
+}
+
+export function isLocalWatchConditionComplete(config: LocalWatchConfig | null): boolean {
+  if (!config) return true;
+  const value = config.checkType === 'file' ? config.checkConfig.path : config.checkConfig.command;
+  return value.trim().length > 0;
+}
+
 const watchSchema = Type.Union([
   Type.Object({
     checkType: Type.Literal('file'),

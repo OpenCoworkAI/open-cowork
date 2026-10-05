@@ -1,5 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import type { LocalWatchConfig } from '../../../shared/schedule/local-watch-task';
+import {
+  isLocalWatchTimeoutValid,
+  type LocalWatchConfig,
+} from '../../../shared/schedule/local-watch-task';
 
 export function ScheduleConditionFields({
   value,
@@ -14,7 +17,7 @@ export function ScheduleConditionFields({
   const fieldClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-sm';
   const timeout =
     value?.checkType === 'command' ? (value.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
-  const timeoutValid = Number.isInteger(timeout) && timeout >= 1 && timeout <= 30;
+  const timeoutValid = isLocalWatchTimeoutValid(value);
   return (
     <div className="border-t border-border pt-3 space-y-2">
       <label className="block text-sm space-y-1">

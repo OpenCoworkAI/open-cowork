@@ -14,7 +14,11 @@ import { useAppStore } from '../../store';
 import { formatAppDateTime, joinAppList } from '../../utils/i18n-format';
 import { renderLocalizedBannerMessage, getWeekdayOptions, getScheduleModeOptions } from './shared';
 import type { LocalizedBanner, ScheduleFormMode } from './shared';
-import type { LocalWatchConfig } from '../../../shared/schedule/local-watch-task';
+import {
+  isLocalWatchConditionComplete,
+  isLocalWatchTimeoutValid,
+  type LocalWatchConfig,
+} from '../../../shared/schedule/local-watch-task';
 import { watchConfigForTaskUpdate } from '../../../shared/schedule/watch-config-update';
 import { ScheduleConditionFields } from './ScheduleConditionFields';
 
@@ -56,10 +60,8 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
   const [watchConfig, setWatchConfig] = useState<LocalWatchConfig | null>(null);
   const [watchConditionEdited, setWatchConditionEdited] = useState(false);
-  const timeoutSeconds =
-    watchConfig?.checkType === 'command' ? (watchConfig.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
-  const timeoutValid =
-    Number.isInteger(timeoutSeconds) && timeoutSeconds >= 1 && timeoutSeconds <= 30;
+  const timeoutValid = isLocalWatchTimeoutValid(watchConfig);
+  const conditionComplete = isLocalWatchConditionComplete(watchConfig);
   const weekdayOptions = getWeekdayOptions(t);
   const scheduleModeOptions = getScheduleModeOptions(t, scheduleMode, Boolean(watchConfig));
   const promptChangedWhileEditing = Boolean(
@@ -539,7 +541,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         <div className="flex items-center gap-2">
           <button
             onClick={submitTask}
-            disabled={isLoading || !timeoutValid}
+            disabled={isLoading || !timeoutValid || !conditionComplete}
             className="px-3 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-50"
           >
             {editingId ? t('schedule.saveChanges') : t('schedule.createTask')}
