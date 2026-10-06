@@ -399,6 +399,18 @@ describe('local conditional scheduled tasks', () => {
       '配置无效'
     );
     expect(localizeWatchConfigError('Unexpected token', (key) => key)).toBe('Unexpected token');
+    expect(
+      localizeWatchConfigError(
+        "Error invoking remote method 'schedule.runNow': Error: schedule.watchInvalid",
+        () => '配置无效'
+      )
+    ).toBe('配置无效');
+    expect(
+      localizeWatchConfigError(
+        "Error invoking remote method 'schedule.runNow': Error: Watch command timed out after 1000 ms.",
+        (key) => key
+      )
+    ).toBe('Watch command timed out after 1000 ms.');
     expect(() =>
       normalizeLocalWatchConfig({
         checkType: 'command',

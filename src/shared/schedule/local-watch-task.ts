@@ -17,12 +17,14 @@ export const LOCAL_WATCH_CONFIG_ERRORS = {
 } as const;
 
 const localWatchErrorKeys = new Set<string>(Object.values(LOCAL_WATCH_CONFIG_ERRORS));
+const remoteErrorPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
 export function localizeWatchConfigError(
   message: string,
   translate: (key: string) => string
 ): string {
-  return localWatchErrorKeys.has(message) ? translate(message) : message;
+  const raw = message.replace(remoteErrorPrefix, '');
+  return localWatchErrorKeys.has(raw) ? translate(raw) : raw;
 }
 
 export type LocalWatchConfig =
