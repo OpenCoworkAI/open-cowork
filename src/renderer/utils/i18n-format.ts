@@ -4,6 +4,9 @@ function getAppLocale(language = i18n.resolvedLanguage || i18n.language): string
   if (language.startsWith('zh')) {
     return 'zh-CN';
   }
+  if (language.startsWith('it')) {
+    return 'it-IT';
+  }
   return 'en-US';
 }
 
