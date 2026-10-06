@@ -716,6 +716,8 @@
     "watchInvalid": "Select a file or command, and use a timeout from 1000 to 30000 ms.",
     "watchFileRequired": "Enter a watch file path.",
     "watchCommandRequired": "Enter a watch command.",
+    "watchWorkspaceEscape": "The watch file must stay inside the task workspace.",
+    "watchSandboxUnavailable": "The sandbox is enabled but not ready for this workspace, so the watch command was not run.",
     "createTitle": "Create Schedule",
     "editTitle": "Edit Schedule",
     "autoTitleLabel": "Auto title (used to identify sessions)",

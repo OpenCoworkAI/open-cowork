@@ -4,7 +4,10 @@ import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import type { ScheduledTask } from './scheduled-task-manager';
-import { normalizeLocalWatchConfig } from '../../shared/schedule/local-watch-task';
+import {
+  LOCAL_WATCH_CONFIG_ERRORS,
+  normalizeLocalWatchConfig,
+} from '../../shared/schedule/local-watch-task';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { logError } from '../utils/logger';
 
@@ -90,7 +93,7 @@ async function defaultWatchCommandRunner(
   );
   if (route === 'host') return null;
   if (route === 'blocked') {
-    throw new Error('Watch command stays in the sandbox, which is not ready for this workspace.');
+    throw new Error(LOCAL_WATCH_CONFIG_ERRORS.sandboxUnavailable);
   }
   const result = await adapter.executeCommand(command, cwd, undefined, timeoutMs);
   if (!result.success) {
@@ -214,12 +217,12 @@ export async function checkLocalCondition(
   const root = await canonicalPath(task.cwd);
   const filePath = resolve(root, config.checkConfig.path);
   if (!insideWorkspace(filePath, root)) {
-    throw new Error('Watch file must stay inside the task workspace.');
+    throw new Error(LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape);
   }
   try {
     const realFilePath = await realpath(filePath);
     if (!insideWorkspace(realFilePath, root)) {
-      throw new Error('Watch file must stay inside the task workspace.');
+      throw new Error(LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape);
     }
     const file = await open(realFilePath, constants.O_RDONLY | constants.O_NONBLOCK);
     try {

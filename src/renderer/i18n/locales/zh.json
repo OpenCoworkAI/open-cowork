@@ -716,6 +716,8 @@
     "watchInvalid": "请选择文件或命令，超时时间为 1000 到 30000 毫秒。",
     "watchFileRequired": "请填写监控文件路径。",
     "watchCommandRequired": "请填写监控命令。",
+    "watchWorkspaceEscape": "监控文件必须位于任务工作目录内。",
+    "watchSandboxUnavailable": "沙盒已开启，但还不能覆盖这个工作目录，因此没有执行监控命令。",
     "createTitle": "新建定时任务",
     "editTitle": "编辑定时任务",
     "autoTitleLabel": "自动标题（用于会话区分）",

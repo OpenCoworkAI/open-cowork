@@ -290,7 +290,11 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
       });
       await loadTasks();
     } catch (err) {
-      setError(err instanceof Error ? { text: err.message } : { key: 'schedule.runNowFailed' });
+      setError(
+        err instanceof Error
+          ? { text: localizeWatchConfigError(err.message, t) }
+          : { key: 'schedule.runNowFailed' }
+      );
     } finally {
       setIsLoading(false);
     }

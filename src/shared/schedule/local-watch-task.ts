@@ -12,6 +12,8 @@ export const LOCAL_WATCH_CONFIG_ERRORS = {
   invalid: 'schedule.watchInvalid',
   fileRequired: 'schedule.watchFileRequired',
   commandRequired: 'schedule.watchCommandRequired',
+  workspaceEscape: 'schedule.watchWorkspaceEscape',
+  sandboxUnavailable: 'schedule.watchSandboxUnavailable',
 } as const;
 
 const localWatchErrorKeys = new Set<string>(Object.values(LOCAL_WATCH_CONFIG_ERRORS));

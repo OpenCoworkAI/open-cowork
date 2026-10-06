@@ -1,14 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScheduledTask } from '../src/main/schedule/scheduled-task-manager';
 
-const { open } = vi.hoisted(() => ({ open: vi.fn() }));
-vi.mock('node:fs/promises', () => ({ open }));
+const { open, realpath } = vi.hoisted(() => ({ open: vi.fn(), realpath: vi.fn() }));
+vi.mock('node:fs/promises', () => ({ open, realpath }));
 import { checkLocalCondition } from '../src/main/schedule/local-condition-checker';
 
 const task = {
   cwd: '/tmp',
   watchConfig: { checkType: 'file', compareMode: 'content', checkConfig: { path: 'watch.txt' } },
 } as ScheduledTask;
+beforeEach(() => {
+  realpath.mockImplementation(async (value: string) => value);
+});
 afterEach(() => vi.clearAllMocks());
 
 describe('bounded file condition reads', () => {

@@ -442,12 +442,18 @@ describe('local conditional scheduled tasks', () => {
     await writeFile(outside, 'secret');
     try {
       task.watchConfig = { ...fileWatch, checkConfig: { path: outside } };
-      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+      await expect(checkLocalCondition(task)).rejects.toThrow(
+        LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
+      );
       task.watchConfig = { ...fileWatch, checkConfig: { path: '../watch-secret.txt' } };
-      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+      await expect(checkLocalCondition(task)).rejects.toThrow(
+        LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
+      );
       await symlink(outside, join(cwd, 'watched.txt'));
       task.watchConfig = fileWatch;
-      await expect(checkLocalCondition(task)).rejects.toThrow('task workspace');
+      await expect(checkLocalCondition(task)).rejects.toThrow(
+        LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
+      );
     } finally {
       await unlink(outside).catch(() => undefined);
     }
