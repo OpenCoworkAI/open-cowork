@@ -1,0 +1,137 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
+index aaaa782..3a2caf5 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.d.ts
+@@ -28,6 +28,11 @@ export interface CreateAgentSessionOptions {
+     }>;
+     /** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
+     tools?: Tool[];
++    /**
++     * Tool implementations to run instead of rebuilding host-local tools from cwd.
++     * Lima sandbox sessions pass this so bash executes inside the guest workspace.
++     */
++    baseToolsOverride?: Record<string, Tool>;
+     /** Custom tools to register (in addition to built-in tools). */
+     customTools?: ToolDefinition[];
+     /** Resource loader. When omitted, DefaultResourceLoader is used. */
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+index 438ac8c..96d0236 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+@@ -230,6 +230,7 @@ export async function createAgentSession(options = {}) {
+         customTools: options.customTools,
+         modelRegistry,
+         initialActiveToolNames,
++        baseToolsOverride: options.baseToolsOverride,
+         extensionRunnerRef,
+     });
+     const extensionsResult = resourceLoader.getExtensions();
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
+index 23227a3..c7edc4b 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.d.ts
+@@ -48,6 +48,10 @@ export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
+ export interface BashToolOptions {
+     /** Custom operations for command execution. Default: local shell */
+     operations?: BashOperations;
++    /** Filename prefix for SDK overflow output files. Default: pi-bash. */
++    outputFilePrefix?: string;
++    /** Directory for SDK overflow output files. Default: os.tmpdir(). */
++    outputDirectory?: string;
+     /** Command prefix prepended to every command (e.g., "shopt -s expand_aliases" for alias support) */
+     commandPrefix?: string;
+     /** Hook to adjust command, cwd, or env before execution */
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
+index 0781652..dfc1eee 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js
+@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
+ import { createWriteStream, existsSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
++import { finished } from "node:stream/promises";
+ import { Type } from "@sinclair/typebox";
+ import { spawn } from "child_process";
+ import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+@@ -9,9 +10,9 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "
+ /**
+  * Generate a unique temp file path for bash output
+  */
+-function getTempFilePath() {
++function getTempFilePath(prefix = "pi-bash", directory = tmpdir()) {
+     const id = randomBytes(8).toString("hex");
+-    return join(tmpdir(), `pi-bash-${id}.log`);
++    return join(directory, `${prefix}-${id}.log`);
+ }
+ const bashSchema = Type.Object({
+     command: Type.String({ description: "Bash command to execute" }),
+@@ -124,6 +125,16 @@ export function createBashTool(cwd, options) {
+                 // We'll stream to a temp file if output gets large
+                 let tempFilePath;
+                 let tempFileStream;
++                const outputAbort = new AbortController();
++                const executionSignal = signal
++                    ? AbortSignal.any([signal, outputAbort.signal])
++                    : outputAbort.signal;
++                const finishOutput = async () => {
++                    if (tempFileStream) {
++                        tempFileStream.end();
++                        await finished(tempFileStream, { cleanup: true });
++                    }
++                };
+                 let totalBytes = 0;
+                 // Keep a rolling buffer of the last chunk for tail truncation
+                 const chunks = [];
+@@ -134,8 +145,12 @@ export function createBashTool(cwd, options) {
+                     totalBytes += data.length;
+                     // Start writing to temp file once we exceed the threshold
+                     if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+-                        tempFilePath = getTempFilePath();
++                        tempFilePath = getTempFilePath(options?.outputFilePrefix, options?.outputDirectory);
+                         tempFileStream = createWriteStream(tempFilePath);
++                        tempFileStream.once("error", (error) => {
++                            outputAbort.abort();
++                            reject(error);
++                        });
+                         // Write all buffered chunks to the file
+                         for (const chunk of chunks) {
+                             tempFileStream.write(chunk);
+@@ -169,14 +184,16 @@ export function createBashTool(cwd, options) {
+                 };
+                 ops.exec(spawnContext.command, spawnContext.cwd, {
+                     onData: handleData,
+-                    signal,
++                    signal: executionSignal,
+                     timeout,
+                     env: spawnContext.env,
+                 })
+-                    .then(({ exitCode }) => {
+-                    // Close temp file stream
+-                    if (tempFileStream) {
+-                        tempFileStream.end();
++                    .then(async ({ exitCode }) => {
++                    try {
++                        await finishOutput();
++                    } catch (writeError) {
++                        reject(writeError);
++                        return;
+                     }
+                     // Combine all buffered chunks
+                     const fullBuffer = Buffer.concat(chunks);
+@@ -214,10 +231,12 @@ export function createBashTool(cwd, options) {
+                         resolve({ content: [{ type: "text", text: outputText }], details });
+                     }
+                 })
+-                    .catch((err) => {
+-                    // Close temp file stream
+-                    if (tempFileStream) {
+-                        tempFileStream.end();
++                    .catch(async (err) => {
++                    try {
++                        await finishOutput();
++                    } catch (writeError) {
++                        reject(writeError);
++                        return;
+                     }
+                     // Combine all buffered chunks for error output
+                     const fullBuffer = Buffer.concat(chunks);
