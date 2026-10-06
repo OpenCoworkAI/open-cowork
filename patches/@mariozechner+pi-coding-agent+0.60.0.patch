@@ -1,0 +1,29 @@
+diff --git a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+index 438ac8c..9376c28 100644
+--- a/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
++++ b/node_modules/@mariozechner/pi-coding-agent/dist/core/sdk.js
+@@ -125,6 +125,16 @@ export async function createAgentSession(options = {}) {
+     const initialActiveToolNames = options.tools
+         ? options.tools.map((t) => t.name).filter((n) => n in allTools)
+         : defaultActiveToolNames;
++    // When callers pass full Tool objects (not just names) in options.tools, honor their
++    // actual implementations rather than silently discarding them and rebuilding default
++    // tools from `cwd` alone. Without this, any caller providing custom-runtime tools
++    // (e.g. tools whose bash operations route through a different environment such as a
++    // container or WSL distro) would have those implementations dropped: only the tool
++    // *names* were being kept, and AgentSession would then reconstruct plain default
++    // tools bound to `cwd` on the host filesystem, silently ignoring the custom operations.
++    const baseToolsOverride = options.tools
++        ? Object.fromEntries(options.tools.map((t) => [t.name, t]))
++        : undefined;
+     let agent;
+     // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
+     const convertToLlmWithBlockImages = (messages) => {
+@@ -230,6 +240,7 @@ export async function createAgentSession(options = {}) {
+         customTools: options.customTools,
+         modelRegistry,
+         initialActiveToolNames,
++        baseToolsOverride,
+         extensionRunnerRef,
+     });
+     const extensionsResult = resourceLoader.getExtensions();
