@@ -109,6 +109,8 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
       { id: 'kimi-k2-thinking', name: 'kimi-k2-thinking' },
       { id: 'glm-5', name: 'glm-5' },
+      { id: 'MiniMax-M3', name: 'MiniMax-M3' },
+      { id: 'MiniMax-M2.7', name: 'MiniMax-M2.7' },
       { id: 'MiniMax-M2.5', name: 'MiniMax-M2.5' },
       { id: 'qwen-max', name: 'qwen-max' },
       { id: 'grok-code-fast-1', name: 'grok-code-fast-1' },
