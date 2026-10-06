@@ -94,6 +94,10 @@ export interface TraceStepRow {
 }
 
 export interface ScheduledTaskRow {
+  watch_config?: string | null;
+  last_state?: string | null;
+  last_checked_at?: number | null;
+  consecutive_unchanged?: number;
   id: string;
   title: string;
   prompt: string;
@@ -341,6 +345,15 @@ function initializeSchema(database: Database.Database): void {
     )
   `);
     ensureColumn(database, 'scheduled_tasks', 'schedule_config', 'schedule_config TEXT');
+    ensureColumn(database, 'scheduled_tasks', 'watch_config', 'watch_config TEXT');
+    ensureColumn(database, 'scheduled_tasks', 'last_state', 'last_state TEXT');
+    ensureColumn(database, 'scheduled_tasks', 'last_checked_at', 'last_checked_at INTEGER');
+    ensureColumn(
+      database,
+      'scheduled_tasks',
+      'consecutive_unchanged',
+      'consecutive_unchanged INTEGER NOT NULL DEFAULT 0'
+    );
 
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
@@ -491,9 +504,9 @@ export function initDatabase(): DatabaseInstance {
 
   const insertScheduledTask = rawDb.prepare(`
     INSERT OR REPLACE INTO scheduled_tasks (
-      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
+      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at, watch_config, last_state, last_checked_at, consecutive_unchanged
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getScheduledTaskStmt = rawDb.prepare(`
@@ -666,7 +679,11 @@ export function initDatabase(): DatabaseInstance {
           task.last_run_session_id,
           task.last_error,
           task.created_at,
-          task.updated_at
+          task.updated_at,
+          task.watch_config ?? null,
+          task.last_state ?? null,
+          task.last_checked_at ?? null,
+          task.consecutive_unchanged ?? 0
         );
       },
 

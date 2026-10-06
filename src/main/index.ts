@@ -69,6 +69,7 @@ import {
   type ScheduledTaskUpdateInput,
 } from './schedule/scheduled-task-manager';
 import { createScheduledTaskStore } from './schedule/scheduled-task-store';
+import { checkLocalCondition } from './schedule/local-condition-checker';
 import {
   buildScheduledTaskFallbackTitle,
   buildScheduledTaskTitle,
@@ -997,6 +998,7 @@ app
       const headlessScheduledTaskStore = createScheduledTaskStore(db);
       scheduledTaskManager = new ScheduledTaskManager({
         store: headlessScheduledTaskStore,
+        checkCondition: checkLocalCondition,
         executeTask: async (task) => {
           if (!sessionManager) {
             throw new Error('Session manager not initialized');
@@ -1423,6 +1425,7 @@ app
     const scheduledTaskStore = createScheduledTaskStore(db);
     scheduledTaskManager = new ScheduledTaskManager({
       store: scheduledTaskStore,
+      checkCondition: checkLocalCondition,
       executeTask: async (task) => {
         if (!sessionManager) {
           throw new Error('Session manager not initialized');

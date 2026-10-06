@@ -16,10 +16,10 @@ export interface DirectoryEntry {
 }
 
 export interface SandboxConfig {
-  workspacePath: string;           // Windows path like D:\project
-  wslWorkspacePath?: string;       // WSL path like /mnt/d/project
-  timeout?: number;                // Command timeout in ms
-  env?: Record<string, string>;    // Additional environment variables
+  workspacePath: string; // Windows path like D:\project
+  wslWorkspacePath?: string; // WSL path like /mnt/d/project
+  timeout?: number; // Command timeout in ms
+  env?: Record<string, string>; // Additional environment variables
 }
 
 export interface JSONRPCRequest {
@@ -66,7 +66,12 @@ export interface LimaStatus {
 
 export interface SandboxExecutor {
   initialize(config: SandboxConfig): Promise<void>;
-  executeCommand(command: string, cwd?: string, env?: Record<string, string>): Promise<ExecutionResult>;
+  executeCommand(
+    command: string,
+    cwd?: string,
+    env?: Record<string, string>,
+    timeoutMs?: number
+  ): Promise<ExecutionResult>;
   readFile(filePath: string): Promise<string>;
   writeFile(filePath: string, content: string): Promise<void>;
   listDirectory(dirPath: string): Promise<DirectoryEntry[]>;
@@ -82,4 +87,3 @@ export interface PathConverter {
   toWSL(windowsPath: string): string;
   toWindows(wslPath: string): string;
 }
-
