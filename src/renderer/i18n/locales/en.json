@@ -275,6 +275,10 @@
           "name": "MiniMax",
           "note": "Use OpenAI-compatible mode unless your MiniMax gateway documents another protocol."
         },
+        "requesty": {
+          "name": "Requesty",
+          "note": "Use OpenAI-compatible mode with a Requesty model ID such as gpt-5.4-mini. Switch the host to router.eu.requesty.ai for EU routing."
+        },
         "genericOpenAI": {
           "name": "Generic OpenAI-compatible",
           "note": "Use this for custom relays, gateways, or inference servers that mimic the OpenAI API."
