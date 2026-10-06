@@ -4,6 +4,7 @@ import type { ScheduledTask } from '../src/main/schedule/scheduled-task-manager'
 const { open, realpath } = vi.hoisted(() => ({ open: vi.fn(), realpath: vi.fn() }));
 vi.mock('node:fs/promises', () => ({ open, realpath }));
 import { checkLocalCondition } from '../src/main/schedule/local-condition-checker';
+import { LOCAL_WATCH_CONFIG_ERRORS } from '../src/shared/schedule/local-watch-task';
 
 const task = {
   cwd: '/tmp',
@@ -21,7 +22,7 @@ describe('bounded file condition reads', () => {
       bytesRead: length,
     }));
     open.mockResolvedValue({ stat: async () => ({ isFile: () => true, size: 1 }), read, close });
-    await expect(checkLocalCondition(task)).rejects.toThrow('10 MiB');
+    await expect(checkLocalCondition(task)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge);
     expect(read).toHaveBeenCalledTimes(1);
     expect(read.mock.calls[0][2]).toBe(10 * 1024 * 1024 + 1);
     expect(open).toHaveBeenCalledTimes(1);
@@ -32,7 +33,9 @@ describe('bounded file condition reads', () => {
     const read = vi.fn();
     const close = vi.fn();
     open.mockResolvedValue({ stat: async () => ({ isFile: () => false }), read, close });
-    await expect(checkLocalCondition(task)).rejects.toThrow('regular file');
+    await expect(checkLocalCondition(task)).rejects.toThrow(
+      LOCAL_WATCH_CONFIG_ERRORS.notRegularFile
+    );
     expect(read).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
   });

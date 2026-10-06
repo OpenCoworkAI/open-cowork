@@ -17,6 +17,8 @@ import {
   isLocalWatchTimeoutValid,
   localizeWatchConfigError,
   normalizeLocalWatchConfig,
+  watchCommandExitedMessage,
+  watchTimedOutMessage,
   type LocalWatchConfig,
 } from '../src/shared/schedule/local-watch-task';
 
@@ -190,7 +192,7 @@ describe('local conditional scheduled tasks', () => {
 
   it('reports a directory path error instead of starting an agent', async () => {
     task.watchConfig = { ...fileWatch, checkConfig: { path: '.' } };
-    await expect(manager.runNow(task.id)).rejects.toThrow('regular file');
+    await expect(manager.runNow(task.id)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.notRegularFile);
     expect(executeTask).not.toHaveBeenCalled();
   });
 
@@ -203,7 +205,7 @@ describe('local conditional scheduled tasks', () => {
         timeoutMs: 1000,
       },
     };
-    await expect(manager.runNow(task.id)).rejects.toThrow();
+    await expect(manager.runNow(task.id)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.timedOut);
     task.watchConfig = {
       ...task.watchConfig,
       checkConfig: {
@@ -211,7 +213,7 @@ describe('local conditional scheduled tasks', () => {
         timeoutMs: 1000,
       },
     };
-    await expect(manager.runNow(task.id)).rejects.toThrow();
+    await expect(manager.runNow(task.id)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.outputTooLarge);
     expect(executeTask).not.toHaveBeenCalled();
   });
 
@@ -251,7 +253,7 @@ describe('local conditional scheduled tasks', () => {
       },
     };
     const started = Date.now();
-    await expect(manager.runNow(task.id)).rejects.toThrow('timed out');
+    await expect(manager.runNow(task.id)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.timedOut);
     expect(Date.now() - started).toBeLessThan(2000);
     await new Promise((resolve) => setTimeout(resolve, 1800));
     await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -259,7 +261,7 @@ describe('local conditional scheduled tasks', () => {
 
   it('rejects oversized files and reads only regular files', async () => {
     await writeFile(join(cwd, 'watched.txt'), Buffer.alloc(10 * 1024 * 1024 + 1));
-    await expect(checkLocalCondition(task)).rejects.toThrow('10 MiB');
+    await expect(checkLocalCondition(task)).rejects.toThrow(LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge);
   });
 
   it('keeps observations private when receiving public task updates', () => {
@@ -405,12 +407,36 @@ describe('local conditional scheduled tasks', () => {
         () => '配置无效'
       )
     ).toBe('配置无效');
+    const translate = (key: string, options?: Record<string, unknown>) => {
+      if (key === LOCAL_WATCH_CONFIG_ERRORS.timedOut) return `超时 ${options?.ms}`;
+      if (key === LOCAL_WATCH_CONFIG_ERRORS.commandExited) {
+        return `退出 ${options?.code} ${options?.detail}`;
+      }
+      if (key === LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge) return '文件过大';
+      if (key === LOCAL_WATCH_CONFIG_ERRORS.outputTooLarge) return '输出过大';
+      if (key === LOCAL_WATCH_CONFIG_ERRORS.notRegularFile) return '不是普通文件';
+      return key;
+    };
     expect(
       localizeWatchConfigError(
         "Error invoking remote method 'schedule.runNow': Error: Watch command timed out after 1000 ms.",
-        (key) => key
+        translate
       )
-    ).toBe('Watch command timed out after 1000 ms.');
+    ).toBe('超时 1000');
+    expect(localizeWatchConfigError(watchTimedOutMessage(1500), translate)).toBe('超时 1500');
+    expect(
+      localizeWatchConfigError('Watch command exited with code 2: disk full: retry', translate)
+    ).toBe('退出 2 disk full: retry');
+    expect(localizeWatchConfigError(watchCommandExitedMessage(7, 'fail: now'), translate)).toBe(
+      '退出 7 fail: now'
+    );
+    expect(localizeWatchConfigError('Watch file exceeds 10 MiB.', translate)).toBe('文件过大');
+    expect(localizeWatchConfigError('Watch command output exceeds 1 MiB.', translate)).toBe(
+      '输出过大'
+    );
+    expect(localizeWatchConfigError('Watch path must refer to a regular file.', translate)).toBe(
+      '不是普通文件'
+    );
     expect(() =>
       normalizeLocalWatchConfig({
         checkType: 'command',

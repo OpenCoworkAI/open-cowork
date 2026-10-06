@@ -14,17 +14,64 @@ export const LOCAL_WATCH_CONFIG_ERRORS = {
   commandRequired: 'schedule.watchCommandRequired',
   workspaceEscape: 'schedule.watchWorkspaceEscape',
   sandboxUnavailable: 'schedule.watchSandboxUnavailable',
+  outputTooLarge: 'schedule.watchOutputTooLarge',
+  fileTooLarge: 'schedule.watchFileTooLarge',
+  notRegularFile: 'schedule.watchNotRegularFile',
+  timedOut: 'schedule.watchTimedOut',
+  commandExited: 'schedule.watchCommandExited',
 } as const;
 
 const localWatchErrorKeys = new Set<string>(Object.values(LOCAL_WATCH_CONFIG_ERRORS));
 const remoteErrorPrefix = /^Error invoking remote method '[^']+': (?:Error: )?/;
+const timedOutPrefix = `${LOCAL_WATCH_CONFIG_ERRORS.timedOut}:`;
+const exitedPrefix = `${LOCAL_WATCH_CONFIG_ERRORS.commandExited}:`;
+const legacyTimedOut = /^Watch command timed out after (\d+) ms\.$/;
+const legacyExited = /^Watch command exited with code (-?\d+|null): ([\s\S]*)$/;
+const legacyWatchMessages: Record<string, string> = {
+  'Watch command output exceeds 1 MiB.': LOCAL_WATCH_CONFIG_ERRORS.outputTooLarge,
+  'Watch file exceeds 10 MiB.': LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge,
+  'Watch path must refer to a regular file.': LOCAL_WATCH_CONFIG_ERRORS.notRegularFile,
+};
 
-export function localizeWatchConfigError(
-  message: string,
-  translate: (key: string) => string
-): string {
+export type WatchTranslate = (key: string, options?: Record<string, unknown>) => string;
+
+export function watchTimedOutMessage(ms: number): string {
+  return `${timedOutPrefix}${ms}`;
+}
+
+export function watchCommandExitedMessage(code: number | null, detail: string): string {
+  return `${exitedPrefix}${code ?? 'null'}:${detail}`;
+}
+
+export function localizeWatchConfigError(message: string, translate: WatchTranslate): string {
   const raw = message.replace(remoteErrorPrefix, '');
-  return localWatchErrorKeys.has(raw) ? translate(raw) : raw;
+  if (localWatchErrorKeys.has(raw)) return translate(raw);
+  if (raw.startsWith(timedOutPrefix)) {
+    const ms = raw.slice(timedOutPrefix.length);
+    if (/^\d+$/.test(ms)) return translate(LOCAL_WATCH_CONFIG_ERRORS.timedOut, { ms });
+  }
+  if (raw.startsWith(exitedPrefix)) {
+    const body = raw.slice(exitedPrefix.length);
+    const split = body.indexOf(':');
+    if (split > 0) {
+      const code = body.slice(0, split);
+      const detail = body.slice(split + 1);
+      if (/^(-?\d+|null)$/.test(code)) {
+        return translate(LOCAL_WATCH_CONFIG_ERRORS.commandExited, { code, detail });
+      }
+    }
+  }
+  const timedOut = legacyTimedOut.exec(raw);
+  if (timedOut) return translate(LOCAL_WATCH_CONFIG_ERRORS.timedOut, { ms: timedOut[1] });
+  const exited = legacyExited.exec(raw);
+  if (exited) {
+    return translate(LOCAL_WATCH_CONFIG_ERRORS.commandExited, {
+      code: exited[1],
+      detail: exited[2],
+    });
+  }
+  const legacy = legacyWatchMessages[raw];
+  return legacy ? translate(legacy) : raw;
 }
 
 export type LocalWatchConfig =

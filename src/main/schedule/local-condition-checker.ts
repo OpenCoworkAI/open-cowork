@@ -7,6 +7,8 @@ import type { ScheduledTask } from './scheduled-task-manager';
 import {
   LOCAL_WATCH_CONFIG_ERRORS,
   normalizeLocalWatchConfig,
+  watchCommandExitedMessage,
+  watchTimedOutMessage,
 } from '../../shared/schedule/local-watch-task';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { logError } from '../utils/logger';
@@ -97,7 +99,7 @@ async function defaultWatchCommandRunner(
   }
   const result = await adapter.executeCommand(command, cwd, undefined, timeoutMs);
   if (!result.success) {
-    throw new Error(`Watch command exited with code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(watchCommandExitedMessage(result.exitCode, result.stderr.trim()));
   }
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -119,7 +121,7 @@ export async function checkLocalCondition(
       const stdout = Buffer.from(isolated.stdout);
       const stderr = Buffer.from(isolated.stderr);
       if (stdout.length + stderr.length > MAX_OUTPUT_BYTES) {
-        throw new Error('Watch command output exceeds 1 MiB.');
+        throw new Error(LOCAL_WATCH_CONFIG_ERRORS.outputTooLarge);
       }
       hash.update(`${stdout.length}:`).update(stdout).update(stderr);
       return `output:${hash.digest('hex')}`;
@@ -179,15 +181,11 @@ export async function checkLocalCondition(
             }
           });
         };
-        const timer = setTimeout(
-          () =>
-            stop(new Error(`Watch command timed out after ${config.checkConfig.timeoutMs} ms.`)),
-          config.checkConfig.timeoutMs
-        );
+        const timer = setTimeout(() => stop(new Error(watchTimedOutMessage(timeoutMs))), timeoutMs);
         const collect = (chunk: Buffer, chunks: Buffer[]) => {
           outputBytes += chunk.length;
           if (outputBytes > MAX_OUTPUT_BYTES)
-            stop(new Error('Watch command output exceeds 1 MiB.'));
+            stop(new Error(LOCAL_WATCH_CONFIG_ERRORS.outputTooLarge));
           else chunks.push(chunk);
         };
         child.stdout.on('data', (chunk: Buffer) => collect(chunk, stdoutChunks));
@@ -202,7 +200,7 @@ export async function checkLocalCondition(
           if (code !== 0)
             reject(
               new Error(
-                `Watch command exited with code ${code}: ${Buffer.concat(stderrChunks).toString('utf8').trim()}`
+                watchCommandExitedMessage(code, Buffer.concat(stderrChunks).toString('utf8').trim())
               )
             );
           else
@@ -227,8 +225,8 @@ export async function checkLocalCondition(
     const file = await open(realFilePath, constants.O_RDONLY | constants.O_NONBLOCK);
     try {
       const info = await file.stat();
-      if (!info.isFile()) throw new Error('Watch path must refer to a regular file.');
-      if (info.size > MAX_FILE_BYTES) throw new Error('Watch file exceeds 10 MiB.');
+      if (!info.isFile()) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.notRegularFile);
+      if (info.size > MAX_FILE_BYTES) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge);
       const buffer = Buffer.alloc(MAX_FILE_BYTES + 1);
       let bytes = 0;
       while (bytes < buffer.length) {
@@ -236,7 +234,7 @@ export async function checkLocalCondition(
         if (bytesRead === 0) break;
         bytes += bytesRead;
       }
-      if (bytes > MAX_FILE_BYTES) throw new Error('Watch file exceeds 10 MiB.');
+      if (bytes > MAX_FILE_BYTES) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.fileTooLarge);
       return `file:${hash.update(buffer.subarray(0, bytes)).digest('hex')}`;
     } finally {
       await file.close();
