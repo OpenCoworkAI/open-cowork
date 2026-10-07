@@ -385,7 +385,7 @@ describe('SessionManager.renameSession', () => {
     const sendToRenderer = vi.fn();
     const manager = new SessionManager(db, sendToRenderer);
 
-    expect(manager.renameSession('s1', '  Quarterly plan  ')).toBe(true);
+    manager.renameSession('s1', '  Quarterly plan  ');
 
     expect(db.sessions.update).toHaveBeenCalledWith('s1', { title: 'Quarterly plan' });
     expect(sendToRenderer).toHaveBeenCalledWith({
@@ -402,12 +402,12 @@ describe('SessionManager.renameSession', () => {
     expect(db.sessions.update).not.toHaveBeenCalled();
   });
 
-  it('leaves deleted sessions alone', () => {
+  it('rejects a deleted session', () => {
     const db = makeSessionDb(null);
     const sendToRenderer = vi.fn();
     const manager = new SessionManager(db, sendToRenderer);
 
-    expect(manager.renameSession('gone', 'New title')).toBe(false);
+    expect(() => manager.renameSession('gone', 'New title')).toThrow('Session not found: gone');
     expect(db.sessions.update).not.toHaveBeenCalled();
     expect(sendToRenderer).not.toHaveBeenCalled();
   });

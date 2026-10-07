@@ -615,6 +615,8 @@
     "confirmDelete": "Delete",
     "exportSession": "Export conversation",
     "renameSession": "Rename conversation",
+    "renameSessionInput": "Conversation title",
+    "renameFailed": "Could not rename the conversation. The previous title was restored.",
     "exportFailed": "Could not export conversation. Please try again.",
     "exportPending": "Wait until this conversation finishes before exporting."
   },

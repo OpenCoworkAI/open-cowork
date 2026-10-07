@@ -706,13 +706,24 @@ export function useIPC() {
   );
 
   const renameSession = useCallback(
-    (sessionId: string, title: string) => {
-      useAppStore.getState().updateSession(sessionId, { title });
-      if (isElectron) {
-        send({ type: 'session.rename', payload: { sessionId, title } });
+    async (session: Session, title: string) => {
+      useAppStore.getState().updateSession(session.id, { title });
+      if (!isElectron) return;
+      try {
+        await invoke({ type: 'session.rename', payload: { sessionId: session.id, title } });
+      } catch (error) {
+        console.error('[useIPC] Failed to rename session:', session.id, error);
+        const store = useAppStore.getState();
+        store.updateSession(session.id, { title: session.title });
+        store.setGlobalNotice({
+          id: `notice-rename-failed-${Date.now()}`,
+          type: 'error',
+          message: i18n.t('sidebar.renameFailed'),
+          messageKey: 'sidebar.renameFailed',
+        });
       }
     },
-    [send]
+    [invoke]
   );
 
   const batchDeleteSessions = useCallback(

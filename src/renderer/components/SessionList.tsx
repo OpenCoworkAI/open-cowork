@@ -2,6 +2,7 @@ import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Download, Pencil, Trash2 } from 'lucide-react';
 import type { Session } from '../types';
+import { renameKeyAction, resolveRenameTitle } from '../utils/session-rename';
 
 type Props = {
   sessions: Session[];
@@ -12,7 +13,7 @@ type Props = {
   isElectron: boolean;
   onSessionClick: (sessionId: string) => void;
   onExport: (event: MouseEvent, session: Session) => void;
-  onRename: (sessionId: string, title: string) => void;
+  onRename: (session: Session, title: string) => void;
   onDelete: (event: MouseEvent, sessionId: string) => void;
 };
 
@@ -36,20 +37,14 @@ export function SessionList({
 
   const finishRename = (session: Session, value: string) => {
     setRenamingSessionId(null);
-    const title = value.trim();
-    if (title && title !== session.title) {
-      onRename(session.id, title);
-    }
+    const title = resolveRenameTitle(session.title, value);
+    if (title) onRename(session, title);
   };
 
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>, session: Session) => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === 'Escape') {
-      event.currentTarget.value = session.title;
-    }
-    if (event.key === 'Enter' || event.key === 'Escape') {
-      event.currentTarget.blur();
-    }
+    const action = renameKeyAction(event.key, event.nativeEvent.isComposing);
+    if (action === 'cancel') event.currentTarget.value = session.title;
+    if (action) event.currentTarget.blur();
   };
 
   return (
@@ -100,7 +95,7 @@ export function SessionList({
                             <input
                               autoFocus
                               defaultValue={session.title}
-                              aria-label={t('sidebar.renameSession')}
+                              aria-label={t('sidebar.renameSessionInput')}
                               onClick={(event) => event.stopPropagation()}
                               onFocus={(event) => event.currentTarget.select()}
                               onKeyDown={(event) => handleRenameKeyDown(event, session)}
