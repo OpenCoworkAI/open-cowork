@@ -1,7 +1,11 @@
+import { MAX_RENAMED_SESSION_TITLE_LENGTH } from '../../shared/session-title';
+
 export type RenameKeyAction = 'save' | 'cancel' | null;
 
 export function resolveRenameTitle(currentTitle: string, value: string): string | null {
-  const title = value.trim();
+  // A stored title can already exceed the limit (session.start does not cap it),
+  // and the field's maxLength does not shorten its initial value.
+  const title = value.trim().slice(0, MAX_RENAMED_SESSION_TITLE_LENGTH).trim();
   return title && title !== currentTitle ? title : null;
 }
 
