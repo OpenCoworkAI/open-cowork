@@ -126,6 +126,21 @@ describe('system notifications', () => {
     expect(state.sessionStates['s-1']?.messages).toEqual([persistedMessage]);
   });
 
+  it('still loads trace steps and logs the error when saved messages fail to load', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    invoke.mockImplementationOnce(async () => {
+      throw new Error('database locked');
+    });
+
+    notifySessionStatus('s-1', 'running', 'idle');
+    FakeNotification.created[0].onclick?.();
+    await vi.waitFor(() => expect(consoleError).toHaveBeenCalled());
+
+    expect(useAppStore.getState().sessionStates['s-1']?.traceSteps).toEqual([persistedStep]);
+    expect(consoleError.mock.calls[0]?.[1]).toBe('s-1');
+    consoleError.mockRestore();
+  });
+
   it('keeps history that is already in the store', async () => {
     const streamed: Message = { ...persistedMessage, id: 'live', timestamp: 2 };
     useAppStore.getState().setMessages('s-1', [streamed]);

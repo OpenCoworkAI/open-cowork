@@ -22,37 +22,48 @@ export function setSystemNotificationsEnabled(enabled: boolean): void {
   localStorage.setItem(STORAGE_KEY, String(enabled));
 }
 
+async function loadMessages(sessionId: string): Promise<void> {
+  const messages = await window.electronAPI.invoke<Message[]>({
+    type: 'session.getMessages',
+    payload: { sessionId },
+  });
+  if (!useAppStore.getState().sessionStates[sessionId]?.messages.length) {
+    useAppStore.getState().setMessages(sessionId, messages);
+  }
+}
+
+async function loadTraceSteps(sessionId: string): Promise<void> {
+  const steps = await window.electronAPI.invoke<TraceStep[]>({
+    type: 'session.getTraceSteps',
+    payload: { sessionId },
+  });
+  if (!useAppStore.getState().sessionStates[sessionId]?.traceSteps.length) {
+    useAppStore.getState().setTraceSteps(sessionId, steps);
+  }
+}
+
 async function openSession(sessionId: string): Promise<void> {
   window.electronAPI.window.show();
   const store = useAppStore.getState();
   store.setShowSettings(false);
   store.setActiveSession(sessionId);
   // A session restored from the session list has no history in the store yet.
-  if (!store.sessionStates[sessionId]?.messages.length) {
-    const messages = await window.electronAPI.invoke<Message[]>({
-      type: 'session.getMessages',
-      payload: { sessionId },
-    });
-    if (!useAppStore.getState().sessionStates[sessionId]?.messages.length) {
-      useAppStore.getState().setMessages(sessionId, messages);
-    }
-  }
-  if (!store.sessionStates[sessionId]?.traceSteps.length) {
-    const steps = await window.electronAPI.invoke<TraceStep[]>({
-      type: 'session.getTraceSteps',
-      payload: { sessionId },
-    });
-    if (!useAppStore.getState().sessionStates[sessionId]?.traceSteps.length) {
-      useAppStore.getState().setTraceSteps(sessionId, steps);
-    }
-  }
+  const loaded = store.sessionStates[sessionId];
+  await Promise.all([
+    loaded?.messages.length ? undefined : loadMessages(sessionId),
+    loaded?.traceSteps.length ? undefined : loadTraceSteps(sessionId),
+  ]);
 }
 
 function notifyForSession(sessionId: string, body: string): void {
   if (!areSystemNotificationsEnabled() || document.hasFocus()) return;
   const session = useAppStore.getState().sessions.find((item) => item.id === sessionId);
   const notification = new Notification(session?.title || 'Open Cowork', { body });
-  notification.onclick = () => void openSession(sessionId);
+  notification.onclick = () => {
+    openSession(sessionId).catch((error: unknown) => {
+      console.error('[Notifications] Failed to open session:', sessionId, error);
+    });
+  };
 }
 
 export function notifySessionStatus(
