@@ -1544,7 +1544,9 @@ app
 
     app.on('activate', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
+        mainWindow.focus();
         return;
       }
       const hasVisibleWindow = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed());
