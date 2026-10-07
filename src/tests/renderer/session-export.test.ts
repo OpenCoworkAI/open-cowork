@@ -230,6 +230,8 @@ describe('createSessionMarkdownExport', () => {
           { type: 'thinking', thinking: 'private reasoning' },
           { type: 'tool_use', id: 'tool-1', name: 'read', displayName: 'Read file', input: {} },
           { type: 'text', text: 'Done.' },
+          { type: 'text', text: '    const total = 3;' },
+          { type: 'text', text: '  \n ' },
         ],
       },
       {
@@ -241,13 +243,17 @@ describe('createSessionMarkdownExport', () => {
       },
     ];
 
-    const { filename, blob } = createSessionMarkdownExport(session, messages, t);
+    const { filename, blob } = createSessionMarkdownExport(
+      { ...session, title: 'Conversation\n  draft' },
+      messages,
+      t
+    );
 
     expect(filename).toBe('open-cowork-session-session-1.md');
     expect(blob.type).toBe('text/markdown');
     expect(await blob.text()).toBe(
       [
-        '# Conversation',
+        '# Conversation draft',
         '## sidebar.exportMarkdownUser',
         '请看这张图\n\n- 第一点',
         '_[sidebar.exportMarkdownImage]_',
@@ -255,6 +261,7 @@ describe('createSessionMarkdownExport', () => {
         '## sidebar.exportMarkdownAssistant',
         '> sidebar.exportMarkdownTool(Read file)',
         'Done.',
+        '    const total = 3;',
       ].join('\n\n') + '\n'
     );
   });

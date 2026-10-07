@@ -58,7 +58,7 @@ type Translate = (key: string, options?: Record<string, string>) => string;
 function blockToMarkdown(block: ContentBlock, t: Translate): string | null {
   switch (block.type) {
     case 'text':
-      return block.text.trim() || null;
+      return block.text.trim() ? block.text : null;
     case 'image':
       return `_[${t('sidebar.exportMarkdownImage')}]_`;
     case 'file_attachment':
@@ -72,7 +72,7 @@ function blockToMarkdown(block: ContentBlock, t: Translate): string | null {
 }
 
 export function createSessionMarkdownExport(session: Session, messages: Message[], t: Translate) {
-  const sections = [`# ${session.title}`];
+  const sections = [`# ${session.title.replace(/\s+/g, ' ').trim()}`];
   for (const message of messages) {
     const blocks = message.content
       .map((block) => blockToMarkdown(block, t))
