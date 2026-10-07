@@ -6,10 +6,16 @@ describe('resolveRenameTitle', () => {
     expect(resolveRenameTitle('Old title', '  Quarterly plan  ')).toBe('Quarterly plan');
   });
 
-  it('shortens a title to the 200-character limit the main process accepts', () => {
+  it('shortens an edited title to the 200-character limit the main process accepts', () => {
     const long = 'x'.repeat(250);
 
     expect(resolveRenameTitle(long, `${long}!`)).toBe('x'.repeat(200));
+  });
+
+  it('keeps a stored title over the limit when the edit is cancelled', () => {
+    const long = 'x'.repeat(250);
+
+    expect(resolveRenameTitle(long, long)).toBeNull();
   });
 
   it('keeps the old title for a blank or unchanged value', () => {
