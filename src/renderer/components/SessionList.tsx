@@ -1,7 +1,9 @@
-import { useMemo, type MouseEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Download, Trash2 } from 'lucide-react';
+import { Check, Download, Pencil, Trash2 } from 'lucide-react';
 import type { Session } from '../types';
+import { MAX_RENAMED_SESSION_TITLE_LENGTH } from '../../shared/session-title';
+import { renameKeyAction, resolveRenameTitle } from '../utils/session-rename';
 
 type Props = {
   sessions: Session[];
@@ -12,6 +14,7 @@ type Props = {
   isElectron: boolean;
   onSessionClick: (sessionId: string) => void;
   onExport: (event: MouseEvent, session: Session) => void;
+  onRename: (session: Session, title: string) => void;
   onDelete: (event: MouseEvent, sessionId: string) => void;
 };
 
@@ -26,10 +29,24 @@ export function SessionList({
   isElectron,
   onSessionClick,
   onExport,
+  onRename,
   onDelete,
 }: Props) {
   const { t } = useTranslation();
   const groups = useMemo(() => groupSessionsByDate(sessions, t), [sessions, t]);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+
+  const finishRename = (session: Session, value: string) => {
+    setRenamingSessionId(null);
+    const title = resolveRenameTitle(session.title, value);
+    if (title) onRename(session, title);
+  };
+
+  const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>, session: Session) => {
+    const action = renameKeyAction(event.nativeEvent);
+    if (action === 'cancel') event.currentTarget.value = session.title;
+    if (action) event.currentTarget.blur();
+  };
 
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4">
@@ -49,6 +66,7 @@ export function SessionList({
                 {group.sessions.map((session) => {
                   const isActive = activeSessionId === session.id;
                   const isSelected = selectedIds.has(session.id);
+                  const isRenaming = renamingSessionId === session.id;
                   return (
                     <div
                       key={session.id}
@@ -61,7 +79,7 @@ export function SessionList({
                             : 'hover:bg-surface-hover/60'
                       }`}
                     >
-                      <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-16' : ''}`}>
+                      <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-20' : ''}`}>
                         {isSelectMode && (
                           <div
                             className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -74,14 +92,39 @@ export function SessionList({
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="text-[13px] font-medium leading-5 text-text-primary truncate">
-                            {session.title}
-                          </div>
+                          {isRenaming ? (
+                            <input
+                              autoFocus
+                              defaultValue={session.title}
+                              maxLength={MAX_RENAMED_SESSION_TITLE_LENGTH}
+                              aria-label={t('sidebar.renameSessionInput')}
+                              onClick={(event) => event.stopPropagation()}
+                              onFocus={(event) => event.currentTarget.select()}
+                              onKeyDown={(event) => handleRenameKeyDown(event, session)}
+                              onBlur={(event) => finishRename(session, event.currentTarget.value)}
+                              className="w-full rounded border border-accent bg-background px-1 text-[13px] font-medium leading-5 text-text-primary outline-none"
+                            />
+                          ) : (
+                            <div className="text-[13px] font-medium leading-5 text-text-primary truncate">
+                              {session.title}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {!isSelectMode && (
+                      {!isSelectMode && !isRenaming && (
                         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setRenamingSessionId(session.id);
+                            }}
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                            title={t('sidebar.renameSession')}
+                            aria-label={t('sidebar.renameSession')}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
                           <button
                             onClick={(event) => onExport(event, session)}
                             disabled={
