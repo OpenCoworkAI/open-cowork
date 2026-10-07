@@ -1160,13 +1160,13 @@ app
 
         // Set up RemoteManager with StdioChannel
         const stdioAgentExecutor: AgentExecutor = {
-          startSession: async (title, prompt, cwd) => {
+          startSession: async (title, prompt, cwd, content) => {
             if (!sessionManager) throw new Error('Session manager not initialized');
             const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
             if (unsupportedReason) {
               throw new Error(unsupportedReason);
             }
-            return sessionManager.startSession(title, prompt, cwd);
+            return sessionManager.startSession(title, prompt, cwd, undefined, content);
           },
           continueSession: async (sessionId, prompt, content) => {
             if (!sessionManager) throw new Error('Session manager not initialized');
@@ -1463,13 +1463,13 @@ app
     // 初始化远程管理器
     remoteManager.setRendererCallback(sendToRenderer);
     const agentExecutor: AgentExecutor = {
-      startSession: async (title, prompt, cwd) => {
+      startSession: async (title, prompt, cwd, content) => {
         if (!sessionManager) throw new Error('Session manager not initialized');
         const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
         if (unsupportedReason) {
           throw new Error(unsupportedReason);
         }
-        return sessionManager.startSession(title, prompt, cwd);
+        return sessionManager.startSession(title, prompt, cwd, undefined, content);
       },
       continueSession: async (sessionId, prompt, content, cwd) => {
         if (!sessionManager) throw new Error('Session manager not initialized');

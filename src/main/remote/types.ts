@@ -335,6 +335,10 @@ export interface RemoteContent {
   imageUrl?: string;
   imageKey?: string;
 
+  /** Downloaded image payload (for image type, after channel resolution) */
+  imageBase64?: string;
+  imageMediaType?: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
   /** File information (for file type) */
   file?: {
     name: string;
