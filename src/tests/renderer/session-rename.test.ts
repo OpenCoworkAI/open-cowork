@@ -13,14 +13,24 @@ describe('resolveRenameTitle', () => {
 });
 
 describe('renameKeyAction', () => {
+  const key = (value: string, isComposing = false, keyCode = 0) => ({
+    key: value,
+    isComposing,
+    keyCode,
+  });
+
   it('saves on Enter and cancels on Escape', () => {
-    expect(renameKeyAction('Enter', false)).toBe('save');
-    expect(renameKeyAction('Escape', false)).toBe('cancel');
-    expect(renameKeyAction('a', false)).toBeNull();
+    expect(renameKeyAction(key('Enter'))).toBe('save');
+    expect(renameKeyAction(key('Escape'))).toBe('cancel');
+    expect(renameKeyAction(key('a'))).toBeNull();
   });
 
   it('leaves Enter and Escape to the IME while it is composing', () => {
-    expect(renameKeyAction('Enter', true)).toBeNull();
-    expect(renameKeyAction('Escape', true)).toBeNull();
+    expect(renameKeyAction(key('Enter', true))).toBeNull();
+    expect(renameKeyAction(key('Escape', true))).toBeNull();
+  });
+
+  it('treats keyCode 229 as IME input even when isComposing is false', () => {
+    expect(renameKeyAction(key('Enter', false, 229))).toBeNull();
   });
 });

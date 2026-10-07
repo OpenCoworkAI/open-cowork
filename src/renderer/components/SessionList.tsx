@@ -43,10 +43,7 @@ export function SessionList({
   };
 
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>, session: Session) => {
-    // Some Windows IMEs commit a candidate with an Enter whose isComposing is
-    // false but whose keyCode is 229.
-    const composing = event.nativeEvent.isComposing || event.keyCode === 229;
-    const action = renameKeyAction(event.key, composing);
+    const action = renameKeyAction(event.nativeEvent);
     if (action === 'cancel') event.currentTarget.value = session.title;
     if (action) event.currentTarget.blur();
   };
