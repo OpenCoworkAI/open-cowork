@@ -253,6 +253,13 @@ async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500)
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 const ELECTRON_DEVTOOLS_DEBUG_PORT = '9223';
 
+// Set on every quit request so the macOS window close handler lets the window
+// close instead of hiding it.
+let isQuitting = false;
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 // Enable Chrome DevTools Protocol in dev mode so the renderer can be inspected
 // via chrome://inspect or connected to by Puppeteer/Playwright at localhost:9223.
 // Chrome MCP uses 9222, so keep Electron on a separate port in development.
@@ -262,6 +269,12 @@ if (isDev) {
     'remote-allow-origins',
     `http://localhost:${ELECTRON_DEVTOOLS_DEBUG_PORT}`
   );
+}
+
+// Windows shows toasts only for the AppUserModelID on the installer's Start Menu
+// shortcut, which electron-builder sets to the appId.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.opencowork.app');
 }
 
 const hasSingleInstanceLock = isDev || app.requestSingleInstanceLock();
@@ -604,6 +617,16 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // The packaged macOS app keeps running after its window closes (see
+  // window-all-closed). Hiding the window keeps the renderer alive, so task
+  // notifications still appear and the window reopens with its state.
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !isDev && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
   });
 
   // Notify renderer about config status after window is ready
@@ -1520,6 +1543,12 @@ app
     }
 
     app.on('activate', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+      }
       const hasVisibleWindow = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed());
       if (!hasVisibleWindow) {
         createWindow();
@@ -2450,6 +2479,14 @@ ipcMain.on('window.close', () => {
   } catch (error) {
     logError('[Window] Error closing:', error);
   }
+});
+
+ipcMain.on('window.show', () => {
+  if (mainWindow?.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow?.show();
+  mainWindow?.focus();
 });
 
 // Sandbox IPC handlers
