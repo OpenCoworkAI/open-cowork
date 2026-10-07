@@ -142,12 +142,10 @@ export function useIPC() {
             store.setSessions(event.payload.sessions);
             break;
 
-          case 'session.status':
-            notifySessionStatus(
-              event.payload.sessionId,
-              store.sessions.find((session) => session.id === event.payload.sessionId)?.status,
-              event.payload.status
-            );
+          case 'session.status': {
+            const previousStatus = store.sessions.find(
+              (session) => session.id === event.payload.sessionId
+            )?.status;
             store.updateSession(event.payload.sessionId, {
               status: event.payload.status,
             });
@@ -158,7 +156,9 @@ export function useIPC() {
               store.clearPendingTurns(event.payload.sessionId);
               store.clearQueuedMessages(event.payload.sessionId);
             }
+            notifySessionStatus(event.payload.sessionId, previousStatus, event.payload.status);
             break;
+          }
 
           case 'session.update':
             store.updateSession(event.payload.sessionId, event.payload.updates);
