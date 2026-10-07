@@ -265,4 +265,25 @@ describe('createSessionMarkdownExport', () => {
       ].join('\n\n') + '\n'
     );
   });
+
+  it('falls back to the default title and skips block types it does not model', async () => {
+    const messages: Message[] = [
+      {
+        id: 'message-1',
+        sessionId: session.id,
+        role: 'assistant',
+        timestamp: 150,
+        content: [
+          { type: 'redacted_thinking', data: 'x' } as unknown as Message['content'][number],
+          { type: 'text', text: 'Visible answer' },
+        ],
+      },
+    ];
+
+    const { blob } = createSessionMarkdownExport({ ...session, title: '  ' }, messages, t);
+
+    expect(await blob.text()).toBe(
+      ['# New Session', '## sidebar.exportMarkdownAssistant', 'Visible answer'].join('\n\n') + '\n'
+    );
+  });
 });

@@ -1,3 +1,4 @@
+import { DEFAULT_SESSION_TITLE } from '../../shared/session-title';
 import type { ContentBlock, Message, MessageRole, Session } from '../types';
 import { useAppStore } from '../store';
 
@@ -68,11 +69,17 @@ function blockToMarkdown(block: ContentBlock, t: Translate): string | null {
     case 'tool_result':
     case 'thinking':
       return null;
+    // Persisted history is parsed without validation and may hold block types
+    // this renderer does not model.
+    default:
+      return null;
   }
 }
 
 export function createSessionMarkdownExport(session: Session, messages: Message[], t: Translate) {
-  const sections = [`# ${session.title.replace(/\s+/g, ' ').trim()}`];
+  // Titles sent by external clients (remote channels, stdio) are not validated.
+  const title = session.title.replace(/\s+/g, ' ').trim() || DEFAULT_SESSION_TITLE;
+  const sections = [`# ${title}`];
   for (const message of messages) {
     const blocks = message.content
       .map((block) => blockToMarkdown(block, t))
