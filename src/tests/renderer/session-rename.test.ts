@@ -12,6 +12,12 @@ describe('resolveRenameTitle', () => {
     expect(resolveRenameTitle(long, `${long}!`)).toBe('x'.repeat(200));
   });
 
+  it('does not keep half of an emoji at the length limit', () => {
+    const edited = `${'x'.repeat(199)}😀 more`;
+
+    expect(resolveRenameTitle('Old title', edited)).toBe('x'.repeat(199));
+  });
+
   it('keeps a stored title over the limit when the edit is cancelled', () => {
     const long = 'x'.repeat(250);
 

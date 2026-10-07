@@ -7,7 +7,11 @@ export function resolveRenameTitle(currentTitle: string, value: string): string 
   // Compare before shortening: Escape puts the stored title back, and a stored
   // title can already exceed the limit (session.start does not cap it).
   if (!edited || edited === currentTitle.trim()) return null;
-  const title = edited.slice(0, MAX_RENAMED_SESSION_TITLE_LENGTH).trim();
+  let cut = edited.slice(0, MAX_RENAMED_SESSION_TITLE_LENGTH);
+  // The limit counts UTF-16 units, like the main process; do not keep half of
+  // an emoji that straddles it.
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  const title = cut.trim();
   return title !== currentTitle ? title : null;
 }
 
