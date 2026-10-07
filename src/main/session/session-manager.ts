@@ -58,6 +58,7 @@ import {
 } from './session-title-utils';
 import { generateTitleWithSdk } from '../agent/sdk-one-shot';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
+import { MAX_RENAMED_SESSION_TITLE_LENGTH } from '../../shared/session-title';
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -1053,9 +1054,13 @@ export class SessionManager {
   }
 
   renameSession(sessionId: string, title: string): void {
-    const trimmed = title.trim();
+    // The payload comes from IPC clients, so its type is not guaranteed.
+    const trimmed = typeof title === 'string' ? title.trim() : '';
     if (!trimmed) {
       throw new Error('Session title cannot be empty');
+    }
+    if (trimmed.length > MAX_RENAMED_SESSION_TITLE_LENGTH) {
+      throw new Error(`Session title cannot exceed ${MAX_RENAMED_SESSION_TITLE_LENGTH} characters`);
     }
     if (!this.updateSessionTitle(sessionId, trimmed)) {
       throw new Error(`Session not found: ${sessionId}`);

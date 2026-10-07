@@ -714,6 +714,9 @@ export function useIPC() {
       } catch (error) {
         console.error('[useIPC] Failed to rename session:', session.id, error);
         const store = useAppStore.getState();
+        // A later rename or an authoritative session.update may have replaced
+        // this title; only undo the value this call wrote.
+        if (store.sessions.find((item) => item.id === session.id)?.title !== title) return;
         store.updateSession(session.id, { title: session.title });
         store.setGlobalNotice({
           id: `notice-rename-failed-${Date.now()}`,

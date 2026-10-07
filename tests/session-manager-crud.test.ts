@@ -402,6 +402,20 @@ describe('SessionManager.renameSession', () => {
     expect(db.sessions.update).not.toHaveBeenCalled();
   });
 
+  it('rejects a title over the length limit or of the wrong type', () => {
+    const db = makeSessionDb({ id: 's1', title: 'Old title' });
+    const manager = new SessionManager(db, vi.fn());
+
+    expect(() => manager.renameSession('s1', 'x'.repeat(201))).toThrow(
+      'Session title cannot exceed 200 characters'
+    );
+    expect(() => manager.renameSession('s1', 42 as unknown as string)).toThrow(
+      'Session title cannot be empty'
+    );
+    manager.renameSession('s1', 'x'.repeat(200));
+    expect(db.sessions.update).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a deleted session', () => {
     const db = makeSessionDb(null);
     const sendToRenderer = vi.fn();

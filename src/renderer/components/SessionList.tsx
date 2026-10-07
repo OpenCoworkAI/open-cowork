@@ -2,6 +2,7 @@ import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Download, Pencil, Trash2 } from 'lucide-react';
 import type { Session } from '../types';
+import { MAX_RENAMED_SESSION_TITLE_LENGTH } from '../../shared/session-title';
 import { renameKeyAction, resolveRenameTitle } from '../utils/session-rename';
 
 type Props = {
@@ -42,7 +43,10 @@ export function SessionList({
   };
 
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>, session: Session) => {
-    const action = renameKeyAction(event.key, event.nativeEvent.isComposing);
+    // Some Windows IMEs commit a candidate with an Enter whose isComposing is
+    // false but whose keyCode is 229.
+    const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+    const action = renameKeyAction(event.key, composing);
     if (action === 'cancel') event.currentTarget.value = session.title;
     if (action) event.currentTarget.blur();
   };
@@ -95,6 +99,7 @@ export function SessionList({
                             <input
                               autoFocus
                               defaultValue={session.title}
+                              maxLength={MAX_RENAMED_SESSION_TITLE_LENGTH}
                               aria-label={t('sidebar.renameSessionInput')}
                               onClick={(event) => event.stopPropagation()}
                               onFocus={(event) => event.currentTarget.select()}
