@@ -264,6 +264,12 @@ if (isDev) {
   );
 }
 
+// Windows shows toasts only for the AppUserModelID on the installer's Start Menu
+// shortcut, which electron-builder sets to the appId.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.opencowork.app');
+}
+
 const hasSingleInstanceLock = isDev || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   logWarn('[App] Another instance is already running, quitting this instance');

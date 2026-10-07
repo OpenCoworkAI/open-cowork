@@ -61,7 +61,7 @@ function notifyForSession(sessionId: string, body: string): void {
   const notification = new Notification(session?.title || 'Open Cowork', { body });
   notification.onclick = () => {
     openSession(sessionId).catch((error: unknown) => {
-      console.error('[Notifications] Failed to open session:', sessionId, error);
+      console.error('[Notifications] Failed to load session history:', sessionId, error);
     });
   };
 }

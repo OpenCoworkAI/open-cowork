@@ -91,7 +91,7 @@ describe('system notifications', () => {
   });
 
   it('recognizes a run that started before this renderer loaded', () => {
-    notifySessionStatus('s-1', 'running', 'idle');
+    notifySessionStatus('restored', 'running', 'idle');
 
     expect(FakeNotification.created).toHaveLength(1);
   });
