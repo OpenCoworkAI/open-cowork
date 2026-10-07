@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createSessionExport, getSessionExportMessages } from '../../renderer/utils/session-export';
+import {
+  createSessionExport,
+  createSessionMarkdownExport,
+  getSessionExportMessages,
+} from '../../renderer/utils/session-export';
 import type { Message, Session } from '../../renderer/types';
 import { useAppStore } from '../../renderer/store';
 import { SessionList } from '../../renderer/components/SessionList';
@@ -125,8 +129,10 @@ describe('SessionList export action', () => {
     expect(desktop).toContain('disabled=""');
     expect(desktop).toContain('title="sidebar.exportPending"');
     expect(desktop).toContain('aria-label="sidebar.exportPending"');
+    expect(desktop.match(/aria-label="sidebar.exportPending"/g)).toHaveLength(2);
     expect(browser).not.toContain('disabled=""');
     expect(browser).toContain('aria-label="sidebar.exportSession"');
+    expect(browser).toContain('aria-label="sidebar.exportSessionMarkdown"');
   });
 
   it('disables other export actions until the current export finishes', () => {
@@ -144,7 +150,7 @@ describe('SessionList export action', () => {
       })
     );
 
-    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+    expect(markup.match(/disabled=""/g)).toHaveLength(4);
   });
 });
 
@@ -189,5 +195,67 @@ describe('createSessionExport', () => {
       session,
       messages,
     });
+  });
+});
+
+describe('createSessionMarkdownExport', () => {
+  const t = (key: string, options?: Record<string, string>) =>
+    options ? `${key}(${Object.values(options).join(',')})` : key;
+
+  it('writes a readable transcript and leaves internal blocks out', async () => {
+    const messages: Message[] = [
+      {
+        id: 'message-1',
+        sessionId: session.id,
+        role: 'user',
+        timestamp: 150,
+        content: [
+          { type: 'text', text: '请看这张图\n\n- 第一点' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } },
+          {
+            type: 'file_attachment',
+            filename: 'notes.txt',
+            relativePath: 'notes.txt',
+            size: 5,
+            inlineDataBase64: 'aGVsbG8=',
+          },
+        ],
+      },
+      {
+        id: 'message-2',
+        sessionId: session.id,
+        role: 'assistant',
+        timestamp: 160,
+        content: [
+          { type: 'thinking', thinking: 'private reasoning' },
+          { type: 'tool_use', id: 'tool-1', name: 'read', displayName: 'Read file', input: {} },
+          { type: 'text', text: 'Done.' },
+        ],
+      },
+      {
+        id: 'message-3',
+        sessionId: session.id,
+        role: 'user',
+        timestamp: 170,
+        content: [{ type: 'tool_result', toolUseId: 'tool-1', content: 'file body' }],
+      },
+    ];
+
+    const { filename, blob } = createSessionMarkdownExport(session, messages, t);
+
+    expect(filename).toBe('open-cowork-session-session-1.md');
+    expect(blob.type).toBe('text/markdown');
+    expect(await blob.text()).toBe(
+      [
+        '# Conversation',
+        '## sidebar.exportMarkdownUser',
+        '请看这张图\n\n- 第一点',
+        '_[sidebar.exportMarkdownImage]_',
+        '_[sidebar.exportMarkdownAttachment(notes.txt)]_',
+        '## sidebar.exportMarkdownAssistant',
+        '> sidebar.exportMarkdownTool(Read file)',
+        'Done.',
+      ].join('\n\n') + '\n'
+    );
   });
 });

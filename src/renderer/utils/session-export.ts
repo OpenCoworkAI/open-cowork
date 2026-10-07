@@ -1,5 +1,7 @@
-import type { Message, Session } from '../types';
+import type { ContentBlock, Message, MessageRole, Session } from '../types';
 import { useAppStore } from '../store';
+
+export type SessionExportFormat = 'json' | 'markdown';
 
 export async function getSessionExportMessages(
   sessionId: string,
@@ -42,5 +44,45 @@ export function createSessionExport(session: Session, messages: Message[]) {
   return {
     filename: `open-cowork-session-${session.id}.json`,
     blob: new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+  };
+}
+
+const MARKDOWN_ROLE_KEYS: Record<MessageRole, string> = {
+  user: 'sidebar.exportMarkdownUser',
+  assistant: 'sidebar.exportMarkdownAssistant',
+  system: 'sidebar.exportMarkdownSystem',
+};
+
+type Translate = (key: string, options?: Record<string, string>) => string;
+
+function blockToMarkdown(block: ContentBlock, t: Translate): string | null {
+  switch (block.type) {
+    case 'text':
+      return block.text.trim() || null;
+    case 'image':
+      return `_[${t('sidebar.exportMarkdownImage')}]_`;
+    case 'file_attachment':
+      return `_[${t('sidebar.exportMarkdownAttachment', { name: block.filename })}]_`;
+    case 'tool_use':
+      return `> ${t('sidebar.exportMarkdownTool', { name: block.displayName ?? block.name })}`;
+    case 'tool_result':
+    case 'thinking':
+      return null;
+  }
+}
+
+export function createSessionMarkdownExport(session: Session, messages: Message[], t: Translate) {
+  const sections = [`# ${session.title}`];
+  for (const message of messages) {
+    const blocks = message.content
+      .map((block) => blockToMarkdown(block, t))
+      .filter((block) => block !== null);
+    if (blocks.length === 0) continue;
+    sections.push(`## ${t(MARKDOWN_ROLE_KEYS[message.role])}`, ...blocks);
+  }
+
+  return {
+    filename: `open-cowork-session-${session.id}.md`,
+    blob: new Blob([`${sections.join('\n\n')}\n`], { type: 'text/markdown' }),
   };
 }

@@ -1,7 +1,8 @@
 import { useMemo, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Download, Trash2 } from 'lucide-react';
+import { Check, Download, FileText, Trash2 } from 'lucide-react';
 import type { Session } from '../types';
+import type { SessionExportFormat } from '../utils/session-export';
 
 type Props = {
   sessions: Session[];
@@ -11,7 +12,7 @@ type Props = {
   exportingSessionId: string | null;
   isElectron: boolean;
   onSessionClick: (sessionId: string) => void;
-  onExport: (event: MouseEvent, session: Session) => void;
+  onExport: (event: MouseEvent, session: Session, format: SessionExportFormat) => void;
   onDelete: (event: MouseEvent, sessionId: string) => void;
 };
 
@@ -49,6 +50,7 @@ export function SessionList({
                 {group.sessions.map((session) => {
                   const isActive = activeSessionId === session.id;
                   const isSelected = selectedIds.has(session.id);
+                  const exportPending = isElectron && session.status === 'running';
                   return (
                     <div
                       key={session.id}
@@ -61,7 +63,7 @@ export function SessionList({
                             : 'hover:bg-surface-hover/60'
                       }`}
                     >
-                      <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-16' : ''}`}>
+                      <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-20' : ''}`}>
                         {isSelectMode && (
                           <div
                             className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -83,24 +85,34 @@ export function SessionList({
                       {!isSelectMode && (
                         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                           <button
-                            onClick={(event) => onExport(event, session)}
-                            disabled={
-                              exportingSessionId !== null ||
-                              (isElectron && session.status === 'running')
-                            }
+                            onClick={(event) => onExport(event, session, 'json')}
+                            disabled={exportingSessionId !== null || exportPending}
                             className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors disabled:opacity-40"
                             title={t(
-                              isElectron && session.status === 'running'
-                                ? 'sidebar.exportPending'
-                                : 'sidebar.exportSession'
+                              exportPending ? 'sidebar.exportPending' : 'sidebar.exportSession'
                             )}
                             aria-label={t(
-                              isElectron && session.status === 'running'
-                                ? 'sidebar.exportPending'
-                                : 'sidebar.exportSession'
+                              exportPending ? 'sidebar.exportPending' : 'sidebar.exportSession'
                             )}
                           >
                             <Download className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(event) => onExport(event, session, 'markdown')}
+                            disabled={exportingSessionId !== null || exportPending}
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors disabled:opacity-40"
+                            title={t(
+                              exportPending
+                                ? 'sidebar.exportPending'
+                                : 'sidebar.exportSessionMarkdown'
+                            )}
+                            aria-label={t(
+                              exportPending
+                                ? 'sidebar.exportPending'
+                                : 'sidebar.exportSessionMarkdown'
+                            )}
+                          >
+                            <FileText className="w-3 h-3" />
                           </button>
                           <button
                             onClick={(event) => onDelete(event, session.id)}

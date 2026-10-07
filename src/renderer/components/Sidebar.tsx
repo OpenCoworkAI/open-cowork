@@ -15,7 +15,12 @@ import {
   ListChecks,
 } from 'lucide-react';
 import type { Session } from '../types';
-import { createSessionExport, getSessionExportMessages } from '../utils/session-export';
+import {
+  createSessionExport,
+  createSessionMarkdownExport,
+  getSessionExportMessages,
+  type SessionExportFormat,
+} from '../utils/session-export';
 import { SessionList } from './SessionList';
 
 import sidebarLogoSrc from '../assets/logo.png';
@@ -205,7 +210,11 @@ export function Sidebar() {
     deleteSession(sessionId);
   };
 
-  const handleExportSession = async (e: React.MouseEvent, session: Session) => {
+  const handleExportSession = async (
+    e: React.MouseEvent,
+    session: Session,
+    format: SessionExportFormat
+  ) => {
     e.stopPropagation();
     setExportError(null);
     setExportingSessionId(session.id);
@@ -215,7 +224,10 @@ export function Sidebar() {
         setExportError('sidebar.exportPending');
         return;
       }
-      const { blob, filename } = createSessionExport(session, messages);
+      const { blob, filename } =
+        format === 'markdown'
+          ? createSessionMarkdownExport(session, messages, t)
+          : createSessionExport(session, messages);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
