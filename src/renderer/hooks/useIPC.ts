@@ -705,6 +705,16 @@ export function useIPC() {
     [send]
   );
 
+  const renameSession = useCallback(
+    (sessionId: string, title: string) => {
+      useAppStore.getState().updateSession(sessionId, { title });
+      if (isElectron) {
+        send({ type: 'session.rename', payload: { sessionId, title } });
+      }
+    },
+    [send]
+  );
+
   const batchDeleteSessions = useCallback(
     (sessionIds: string[]) => {
       useAppStore.getState().removeSessions(sessionIds);
@@ -819,6 +829,7 @@ export function useIPC() {
     continueSession,
     stopSession,
     deleteSession,
+    renameSession,
     batchDeleteSessions,
     listSessions,
     getSessionMessages,

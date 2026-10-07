@@ -481,6 +481,7 @@ export type ClientEvent =
     }
   | { type: 'session.stop'; payload: { sessionId: string } }
   | { type: 'session.delete'; payload: { sessionId: string } }
+  | { type: 'session.rename'; payload: { sessionId: string; title: string } }
   | { type: 'session.batchDelete'; payload: { sessionIds: string[] } }
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }

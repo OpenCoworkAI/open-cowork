@@ -112,6 +112,7 @@ describe('SessionList export action', () => {
       exportingSessionId: null,
       onSessionClick: vi.fn(),
       onExport: vi.fn(),
+      onRename: vi.fn(),
       onDelete: vi.fn(),
     };
 
@@ -140,11 +141,36 @@ describe('SessionList export action', () => {
         isElectron: true,
         onSessionClick: vi.fn(),
         onExport: vi.fn(),
+        onRename: vi.fn(),
         onDelete: vi.fn(),
       })
     );
 
     expect(markup.match(/disabled=""/g)).toHaveLength(2);
+  });
+
+  it('offers a rename action for each conversation outside select mode', () => {
+    const props = {
+      sessions: [session, { ...session, id: 'session-2' }],
+      activeSessionId: session.id,
+      selectedIds: new Set<string>(),
+      exportingSessionId: null,
+      isElectron: true,
+      onSessionClick: vi.fn(),
+      onExport: vi.fn(),
+      onRename: vi.fn(),
+      onDelete: vi.fn(),
+    };
+
+    const markup = renderToStaticMarkup(
+      createElement(SessionList, { ...props, isSelectMode: false })
+    );
+    const selecting = renderToStaticMarkup(
+      createElement(SessionList, { ...props, isSelectMode: true })
+    );
+
+    expect(markup.match(/aria-label="sidebar.renameSession"/g)).toHaveLength(2);
+    expect(selecting).not.toContain('sidebar.renameSession');
   });
 });
 

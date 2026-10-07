@@ -363,3 +363,52 @@ describe('SessionManager.deleteSession cache eviction', () => {
     expect(db.messages.getBySessionId).toHaveBeenCalledTimes(2);
   });
 });
+
+// ------------------------------------------------------------------
+// renameSession
+// ------------------------------------------------------------------
+describe('SessionManager.renameSession', () => {
+  function makeSessionDb(existing: { id: string; title: string } | null) {
+    return makeDb({
+      sessions: {
+        create: vi.fn(),
+        get: vi.fn(() => existing),
+        getAll: vi.fn(() => []),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as unknown,
+    });
+  }
+
+  it('stores the trimmed title and tells the renderer', () => {
+    const db = makeSessionDb({ id: 's1', title: 'Old title' });
+    const sendToRenderer = vi.fn();
+    const manager = new SessionManager(db, sendToRenderer);
+
+    expect(manager.renameSession('s1', '  Quarterly plan  ')).toBe(true);
+
+    expect(db.sessions.update).toHaveBeenCalledWith('s1', { title: 'Quarterly plan' });
+    expect(sendToRenderer).toHaveBeenCalledWith({
+      type: 'session.update',
+      payload: { sessionId: 's1', updates: { title: 'Quarterly plan' } },
+    });
+  });
+
+  it('rejects a blank title', () => {
+    const db = makeSessionDb({ id: 's1', title: 'Old title' });
+    const manager = new SessionManager(db, vi.fn());
+
+    expect(() => manager.renameSession('s1', '   ')).toThrow('Session title cannot be empty');
+    expect(db.sessions.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves deleted sessions alone', () => {
+    const db = makeSessionDb(null);
+    const sendToRenderer = vi.fn();
+    const manager = new SessionManager(db, sendToRenderer);
+
+    expect(manager.renameSession('gone', 'New title')).toBe(false);
+    expect(db.sessions.update).not.toHaveBeenCalled();
+    expect(sendToRenderer).not.toHaveBeenCalled();
+  });
+});

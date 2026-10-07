@@ -614,6 +614,7 @@
     "cancel": "取消",
     "confirmDelete": "删除",
     "exportSession": "导出对话",
+    "renameSession": "重命名对话",
     "exportFailed": "导出对话失败，请重试。",
     "exportPending": "请等待本次对话结束后再导出。"
   },

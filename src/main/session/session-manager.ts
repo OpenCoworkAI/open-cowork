@@ -1052,6 +1052,14 @@ export class SessionManager {
     });
   }
 
+  renameSession(sessionId: string, title: string): boolean {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      throw new Error('Session title cannot be empty');
+    }
+    return this.updateSessionTitle(sessionId, trimmed);
+  }
+
   private updateSessionTitle(sessionId: string, title: string): boolean {
     const existing = this.db.sessions.get(sessionId);
     if (!existing) {

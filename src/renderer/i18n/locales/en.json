@@ -614,6 +614,7 @@
     "cancel": "Cancel",
     "confirmDelete": "Delete",
     "exportSession": "Export conversation",
+    "renameSession": "Rename conversation",
     "exportFailed": "Could not export conversation. Please try again.",
     "exportPending": "Wait until this conversation finishes before exporting."
   },
