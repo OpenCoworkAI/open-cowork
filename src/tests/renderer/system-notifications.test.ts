@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../renderer/store';
-import type { Session } from '../../renderer/types';
+import type { ClientEvent, Message, Session, TraceStep } from '../../renderer/types';
 import {
   areSystemNotificationsEnabled,
   notifyPermissionRequest,
@@ -34,23 +34,43 @@ function makeSession(id: string, title: string): Session {
   };
 }
 
+const persistedMessage: Message = {
+  id: 'm-1',
+  sessionId: 's-1',
+  role: 'user',
+  content: [{ type: 'text', text: 'Summarize the weekly report' }],
+  timestamp: 1,
+};
+const persistedStep: TraceStep = {
+  id: 't-1',
+  type: 'thinking',
+  status: 'completed',
+  title: 'Task completed',
+  timestamp: 1,
+};
+
 let hasFocus = false;
 const showWindow = vi.fn();
+const invoke = vi.fn(async (event: ClientEvent) =>
+  event.type === 'session.getMessages' ? [persistedMessage] : [persistedStep]
+);
 
 beforeEach(() => {
   const storage = new Map<string, string>();
   hasFocus = false;
   FakeNotification.created = [];
   showWindow.mockReset();
+  invoke.mockClear();
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
   });
   vi.stubGlobal('document', { hasFocus: () => hasFocus });
   vi.stubGlobal('Notification', FakeNotification);
-  vi.stubGlobal('window', { electronAPI: { window: { show: showWindow } } });
+  vi.stubGlobal('window', { electronAPI: { invoke, window: { show: showWindow } } });
   useAppStore.setState({
     sessions: [makeSession('s-1', 'Weekly report'), makeSession('s-2', 'Clean up downloads')],
+    sessionStates: {},
     activeSessionId: 's-2',
     showSettings: true,
   });
@@ -61,47 +81,67 @@ afterEach(() => {
 });
 
 describe('system notifications', () => {
-  it('notifies when a running session finishes in the background and opens it on click', () => {
-    notifySessionStatus('s-1', 'running');
-    notifySessionStatus('s-1', 'idle');
+  it('reports a background run as ended without claiming success', () => {
+    notifySessionStatus('s-1', 'running', 'running');
+    notifySessionStatus('s-1', 'running', 'idle');
+
+    expect(FakeNotification.created.map((n) => [n.title, n.options.body])).toEqual([
+      ['Weekly report', 'Task ended'],
+    ]);
+  });
+
+  it('recognizes a run that started before this renderer loaded', () => {
+    notifySessionStatus('s-1', 'running', 'idle');
 
     expect(FakeNotification.created).toHaveLength(1);
-    const [notification] = FakeNotification.created;
-    expect(notification.title).toBe('Weekly report');
-    expect(notification.options.body).toBe('Task finished');
+  });
 
-    notification.onclick?.();
+  it('recognizes a scheduled run that started before its session reached the store', () => {
+    notifySessionStatus('scheduled', undefined, 'running');
+    notifySessionStatus('scheduled', 'idle', 'idle');
+
+    expect(FakeNotification.created.map((n) => n.title)).toEqual(['Open Cowork']);
+  });
+
+  it('ignores sessions that were not running and repeated idle updates', () => {
+    notifySessionStatus('s-1', 'idle', 'idle');
+    notifySessionStatus('s-1', 'running', 'running');
+    notifySessionStatus('s-1', 'running', 'idle');
+    notifySessionStatus('s-1', 'idle', 'idle');
+
+    expect(FakeNotification.created).toHaveLength(1);
+  });
+
+  it('opens the session and loads its saved history on click', async () => {
+    notifySessionStatus('s-1', 'running', 'idle');
+    FakeNotification.created[0].onclick?.();
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().sessionStates['s-1']?.traceSteps).toEqual([persistedStep])
+    );
+
+    const state = useAppStore.getState();
     expect(showWindow).toHaveBeenCalledTimes(1);
-    expect(useAppStore.getState().activeSessionId).toBe('s-1');
-    expect(useAppStore.getState().showSettings).toBe(false);
+    expect(state.activeSessionId).toBe('s-1');
+    expect(state.showSettings).toBe(false);
+    expect(state.sessionStates['s-1']?.messages).toEqual([persistedMessage]);
   });
 
-  it('reports a failed run', () => {
-    notifySessionStatus('s-1', 'running');
-    notifySessionStatus('s-1', 'error');
+  it('keeps history that is already in the store', async () => {
+    const streamed: Message = { ...persistedMessage, id: 'live', timestamp: 2 };
+    useAppStore.getState().setMessages('s-1', [streamed]);
+    useAppStore.getState().setTraceSteps('s-1', [persistedStep]);
 
-    expect(FakeNotification.created.map((n) => n.options.body)).toEqual(['Task failed']);
-  });
+    notifyPermissionRequest({ toolUseId: 't-1', toolName: 'bash', input: {}, sessionId: 's-1' });
+    FakeNotification.created[0].onclick?.();
+    await vi.waitFor(() => expect(useAppStore.getState().activeSessionId).toBe('s-1'));
 
-  it('ignores idle updates for sessions that were not running', () => {
-    notifySessionStatus('s-1', 'idle');
-    notifySessionStatus('s-1', 'error');
-
-    expect(FakeNotification.created).toHaveLength(0);
-  });
-
-  it('notifies once per run', () => {
-    notifySessionStatus('s-1', 'running');
-    notifySessionStatus('s-1', 'idle');
-    notifySessionStatus('s-1', 'idle');
-
-    expect(FakeNotification.created).toHaveLength(1);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(useAppStore.getState().sessionStates['s-1']?.messages).toEqual([streamed]);
   });
 
   it('stays quiet while the window has focus', () => {
     hasFocus = true;
-    notifySessionStatus('s-1', 'running');
-    notifySessionStatus('s-1', 'idle');
+    notifySessionStatus('s-1', 'running', 'idle');
     notifyPermissionRequest({ toolUseId: 't-1', toolName: 'bash', input: {}, sessionId: 's-1' });
 
     expect(FakeNotification.created).toHaveLength(0);
@@ -112,8 +152,7 @@ describe('system notifications', () => {
     setSystemNotificationsEnabled(false);
     expect(areSystemNotificationsEnabled()).toBe(false);
 
-    notifySessionStatus('s-1', 'running');
-    notifySessionStatus('s-1', 'idle');
+    notifySessionStatus('s-1', 'running', 'idle');
     notifySudoPasswordRequest({ toolUseId: 't-2', command: 'sudo ls', sessionId: 's-1' });
     expect(FakeNotification.created).toHaveLength(0);
 
@@ -129,11 +168,5 @@ describe('system notifications', () => {
       ['Clean up downloads', 'Waiting for your approval: bash'],
       ['Clean up downloads', 'Waiting for your administrator password'],
     ]);
-  });
-
-  it('falls back to the app name for an unknown session', () => {
-    notifyPermissionRequest({ toolUseId: 't-1', toolName: 'bash', input: {}, sessionId: 'gone' });
-
-    expect(FakeNotification.created[0].title).toBe('Open Cowork');
   });
 });

@@ -143,7 +143,11 @@ export function useIPC() {
             break;
 
           case 'session.status':
-            notifySessionStatus(event.payload.sessionId, event.payload.status);
+            notifySessionStatus(
+              event.payload.sessionId,
+              store.sessions.find((session) => session.id === event.payload.sessionId)?.status,
+              event.payload.status
+            );
             store.updateSession(event.payload.sessionId, {
               status: event.payload.status,
             });

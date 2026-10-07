@@ -81,11 +81,10 @@
     "language": "语言",
     "notifications": "通知",
     "systemNotifications": "系统通知",
-    "systemNotificationsDesc": "Open Cowork 在后台时，任务完成、失败或需要你操作时发送系统通知。"
+    "systemNotificationsDesc": "Open Cowork 在后台时，任务结束或需要你操作时发送系统通知。"
   },
   "notifications": {
-    "taskFinished": "任务已完成",
-    "taskFailed": "任务失败",
+    "taskEnded": "任务已结束",
     "approvalNeeded": "等待你审批：{{tool}}",
     "passwordNeeded": "等待你输入管理员密码"
   },

@@ -81,11 +81,10 @@
     "language": "Language",
     "notifications": "Notifications",
     "systemNotifications": "System notifications",
-    "systemNotificationsDesc": "While Open Cowork is in the background, notify me when a task finishes, fails, or needs my input."
+    "systemNotificationsDesc": "While Open Cowork is in the background, notify me when a task ends or needs my input."
   },
   "notifications": {
-    "taskFinished": "Task finished",
-    "taskFailed": "Task failed",
+    "taskEnded": "Task ended",
     "approvalNeeded": "Waiting for your approval: {{tool}}",
     "passwordNeeded": "Waiting for your administrator password"
   },
