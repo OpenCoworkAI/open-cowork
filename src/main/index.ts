@@ -2452,6 +2452,14 @@ ipcMain.on('window.close', () => {
   }
 });
 
+ipcMain.on('window.show', () => {
+  if (mainWindow?.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow?.show();
+  mainWindow?.focus();
+});
+
 // Sandbox IPC handlers
 ipcMain.handle('sandbox.getStatus', async () => {
   try {
