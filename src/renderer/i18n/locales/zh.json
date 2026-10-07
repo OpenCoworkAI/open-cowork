@@ -627,6 +627,8 @@
     "startFailed": "启动会话失败，请稍后重试。",
     "disclaimer": "Open Cowork 由 AI 驱动，可能会出错，请务必自行复核结果。",
     "noModel": "无模型",
+    "modelCycled": "已切换模型为 {{model}}",
+    "modelCycledSet": "已切换到 {{name}}（{{model}}）",
     "connectorCount_one": "{{count}} 个连接器",
     "connectorCount_other": "{{count}} 个连接器"
   },

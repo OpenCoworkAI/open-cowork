@@ -627,6 +627,8 @@
     "startFailed": "Failed to start session. Please try again.",
     "disclaimer": "Open Cowork is AI-powered and may make mistakes. Please double-check responses.",
     "noModel": "No model",
+    "modelCycled": "Switched model to {{model}}",
+    "modelCycledSet": "Switched to {{name}} ({{model}})",
     "connectorCount_one": "{{count}} connector",
     "connectorCount_other": "{{count}} connectors"
   },
