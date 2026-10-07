@@ -611,6 +611,7 @@
     "deselectAll": "取消全选",
     "nSelected": "已选 {{count}} 个",
     "batchDeleteConfirm": "删除 {{count}} 个对话？此操作无法撤销。",
+    "deleteConfirm": "删除对话「{{title}}」？此操作无法撤销。",
     "cancel": "取消",
     "confirmDelete": "删除",
     "exportSession": "导出对话",
