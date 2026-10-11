@@ -333,20 +333,35 @@ export class WSLBridge implements SandboxExecutor {
    * Test if WSL distro is working (can execute simple command)
    */
   static async testDistro(distro: string): Promise<boolean> {
-    try {
-      WSLBridge.validateDistroName(distro);
-      const { stdout } = await execFileAsync('wsl', ['-d', distro, '-e', 'echo', 'OK'], {
-        timeout: 10000,
-        encoding: 'utf-8',
-      });
-      return stdout.trim() === 'OK';
-    } catch (error) {
-      const errMsg = (error as Error).message || '';
-      if (errMsg.includes('E_UNEXPECTED') || errMsg.includes('4294967295')) {
-        log('[WSL] Distro test failed - WSL service error. Try: wsl --shutdown');
+    const attemptOnce = async (): Promise<boolean> => {
+      try {
+        WSLBridge.validateDistroName(distro);
+        const { stdout } = await execFileAsync('wsl', ['-d', distro, '-e', 'echo', 'OK'], {
+          timeout: 10000,
+          encoding: 'utf-8',
+        });
+        return stdout.trim() === 'OK';
+      } catch (error) {
+        const errMsg = (error as Error).message || '';
+        if (errMsg.includes('E_UNEXPECTED') || errMsg.includes('4294967295')) {
+          log('[WSL] Distro test failed - WSL service error. Try: wsl --shutdown');
+        }
+        return false;
       }
-      return false;
+    };
+
+    if (await attemptOnce()) {
+      return true;
     }
+
+    // The WSL2 lightweight VM is often not running yet the first time it's used after
+    // a reboot or after being idled out by Windows. That first "wsl -d <distro>" call
+    // can transiently fail or time out while the VM cold-starts, even though the distro
+    // is perfectly fine. Retry once after a short delay before reporting unavailable -
+    // this avoids caching a false "WSL not available" result at app startup.
+    log('[WSL] Distro test failed, retrying once in case WSL2 was cold-starting...');
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    return attemptOnce();
   }
 
   /**
