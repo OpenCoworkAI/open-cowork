@@ -6,7 +6,11 @@ export function SettingsGeneral() {
   const { i18n, t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const currentLang = i18n.language.startsWith('zh') ? 'zh' : 'en';
+  // Normalize the active language to its base code so the highlight matches
+  // every supported language (e.g. "es-ES" -> "es", "zh-CN" -> "zh"), and map
+  // Norwegian variants (nb/nn) to the "no" locale we ship.
+  const baseLang = i18n.language.split('-')[0];
+  const currentLang = baseLang === 'nb' || baseLang === 'nn' ? 'no' : baseLang;
   const [appVer, setAppVer] = useState('');
   useEffect(() => {
     try {
@@ -21,6 +25,16 @@ export function SettingsGeneral() {
   const languages = [
     { code: 'en', nativeName: 'English' },
     { code: 'zh', nativeName: '中文' },
+    { code: 'es', nativeName: 'Español' },
+    { code: 'fr', nativeName: 'Français' },
+    { code: 'de', nativeName: 'Deutsch' },
+    { code: 'it', nativeName: 'Italiano' },
+    { code: 'uk', nativeName: 'Українська' },
+    { code: 'pl', nativeName: 'Polski' },
+    { code: 'sv', nativeName: 'Svenska' },
+    { code: 'no', nativeName: 'Norsk' },
+    { code: 'nl', nativeName: 'Nederlands' },
+    { code: 'ro', nativeName: 'Română' },
   ];
 
   const themeOptions = [
