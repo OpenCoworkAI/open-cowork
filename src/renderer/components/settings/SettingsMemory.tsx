@@ -326,6 +326,26 @@ export function SettingsMemory() {
     }
   };
 
+  const handleForgetSession = async (sessionId: string) => {
+    if (!window.confirm(t('memory.forgetSessionConfirm'))) {
+      return;
+    }
+    setIsBusy(true);
+    setStatus(null);
+    try {
+      await window.electronAPI.memory.forgetSession(sessionId);
+      setResults((current) => current.filter((item) => item.sessionId !== sessionId));
+      setSelected((current) => (current?.sessionId === sessionId ? null : current));
+      setInspectedSession(null);
+      await Promise.all([refreshOverview(), refreshFiles()]);
+      setStatus(t('memory.forgetSessionSuccess'));
+    } catch (error) {
+      setStatus(stripIpcErrorPrefix(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const handleClearCore = async () => {
     if (!window.confirm(t('memory.clearCoreConfirm'))) {
       return;
@@ -812,15 +832,28 @@ export function SettingsMemory() {
                   <p className="text-sm font-semibold text-text-primary">
                     {t('memory.inspectSession', '查看会话记忆')}
                   </p>
-                  {inspectedSession?.filePath && (
-                    <button
-                      onClick={() => {
-                        void window.electronAPI.showItemInFolder(inspectedSession.filePath);
-                      }}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary"
-                    >
-                      {t('memory.revealInFinder', '在 Finder 中显示')}
-                    </button>
+                  {inspectedSession && (
+                    <div className="flex gap-2">
+                      {inspectedSession.filePath && (
+                        <button
+                          onClick={() => {
+                            void window.electronAPI.showItemInFolder(inspectedSession.filePath);
+                          }}
+                          className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary"
+                        >
+                          {t('memory.revealInFinder', '在 Finder 中显示')}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          void handleForgetSession(inspectedSession.session.sessionId);
+                        }}
+                        disabled={isBusy}
+                        className="rounded-lg border border-rose-300/60 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                      >
+                        {t('memory.forgetSession')}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {inspectedSession ? (

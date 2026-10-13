@@ -481,16 +481,37 @@ export class MemoryService {
     return { success: true };
   }
 
+  /**
+   * Removes the experience memory taken from a conversation and turns memory
+   * off for it, so later runs and rebuilds do not learn from it again. The
+   * conversation and core memory stay.
+   */
+  forgetSession(sessionId: string): Promise<void> {
+    this.db.sessions.update(sessionId, { memory_enabled: 0 });
+    return this.queue.enqueue(sessionId, async () => {
+      this.removeSessionMemory(sessionId);
+    });
+  }
+
   deleteSession(sessionId: string): Promise<void> {
     this.deletedSessionIds.add(sessionId);
     return this.queue.enqueue(sessionId, async () => {
-      const store = this.getExperienceStore();
-      if (store.getSession(sessionId)) {
-        store.removeSession(sessionId);
-        store.save();
-      }
-      this.getStateStore().delete(sessionId);
+      this.removeSessionMemory(sessionId);
     });
+  }
+
+  private removeSessionMemory(sessionId: string): void {
+    const store = this.getExperienceStore();
+    if (store.getSession(sessionId)) {
+      store.removeSession(sessionId);
+      store.save();
+    }
+    this.getStateStore().delete(sessionId);
+  }
+
+  /** A run's session object can predate forgetSession, so the saved session decides. */
+  private isMemoryTurnedOff(sessionId: string): boolean {
+    return this.db.sessions.get(sessionId)?.memory_enabled === 0;
   }
 
   private async batchRebuild(sessionRows: SessionRow[]): Promise<void> {
@@ -500,13 +521,14 @@ export class MemoryService {
     const bundles = await this.extractExperienceBundles(sessionRows);
     const sortedBundles = [...bundles].sort((a, b) => a.session.createdAt - b.session.createdAt);
     for (const bundle of sortedBundles) {
-      await this.ingestExtractedBundle(bundle);
+      // On the session's queue, so forgetting it during the rebuild takes effect.
+      await this.queue.enqueue(bundle.session.id, () => this.ingestExtractedBundle(bundle));
     }
   }
 
   private async ingest(input: MemoryIngestionInput): Promise<void> {
     const { session, messages } = input;
-    if (!session.memoryEnabled || !messages.length) {
+    if (!session.memoryEnabled || !messages.length || this.isMemoryTurnedOff(session.id)) {
       return;
     }
 
@@ -581,6 +603,9 @@ export class MemoryService {
   }
 
   private async ingestExtractedBundle(bundle: ExtractionBundle): Promise<void> {
+    if (this.isMemoryTurnedOff(bundle.session.id)) {
+      return;
+    }
     await this.updateCoreMemory(bundle.session.id, bundle.sessionDate, bundle.fullTurns);
     if (bundle.fullTurns.length) {
       await this.storeExperienceSession({
@@ -658,7 +683,8 @@ export class MemoryService {
       turns,
       existingCorePromptBlock: coreStore.toPromptBlock(),
     });
-    if (actions.length) {
+    // The conversation can be forgotten while the extractor runs.
+    if (actions.length && !this.isMemoryTurnedOff(sessionId)) {
       coreStore.applyActions(actions);
     }
   }

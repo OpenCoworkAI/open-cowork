@@ -3121,6 +3121,13 @@ ipcMain.handle('memory.forgetCoreEntry', (_event, combinedKey: string) => {
   return memoryService.forgetCoreEntry(combinedKey);
 });
 
+ipcMain.handle('memory.forgetSession', (_event, sessionId: string) => {
+  if (!memoryService) {
+    throw new Error('Memory service not initialized');
+  }
+  return memoryService.forgetSession(sessionId);
+});
+
 ipcMain.handle('memory.rebuildAll', async () => {
   if (!memoryService) {
     throw new Error('Memory service not initialized');
