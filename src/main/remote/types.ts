@@ -30,6 +30,12 @@ export interface GatewayConfig {
 
   /** Auto-approve safe tools without user confirmation */
   autoApproveSafeTools?: boolean;
+
+  /** Optional companion module for phone clients (pairing + /companion/stream) */
+  companion?: {
+    /** Whether companion endpoints are exposed alongside the gateway */
+    enabled: boolean;
+  };
 }
 
 export interface GatewayAuthConfig {

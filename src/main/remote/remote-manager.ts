@@ -10,7 +10,9 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { WebSocketChannel } from './channels/websocket-channel';
 import { StdioChannel } from './channels/stdio-channel';
+import { CompanionServer } from './companion/companion-server';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -187,8 +189,19 @@ export class RemoteManager extends EventEmitter {
     log('[RemoteManager] Starting remote control system...');
 
     try {
+      // Optional companion module for phone clients (one-time QR pairing +
+      // authorized /companion/stream WebSocket). Mounted together with the
+      // gateway on the same HTTP server.
+      let companionServer: CompanionServer | undefined;
+      if (config.gateway.companion?.enabled) {
+        companionServer = new CompanionServer({
+          gatewayPort: config.gateway.port,
+          gatewayToken: config.gateway.auth.token,
+        });
+      }
+
       // Create gateway
-      this.gateway = new RemoteGateway(config.gateway, this.messageRouter);
+      this.gateway = new RemoteGateway(config.gateway, this.messageRouter, companionServer);
 
       // 设置远程默认工作目录（优先使用配置，其次使用全局默认）
       const configuredDefaultWorkingDir =
@@ -1263,6 +1276,19 @@ export class RemoteManager extends EventEmitter {
 
       log('[RemoteManager] Slack channel registered');
     }
+
+    // Register the WebSocket channel so WebSocket clients (and companion
+    // proxy connections) receive agent responses. Without it every answer is
+    // dropped with "Channel not found: websocket".
+    const websocketChannel = new WebSocketChannel({
+      sendToClient: (clientId, frame) => this.gateway!.sendFrameToClient(clientId, frame),
+      resolveSessionId: (clientId) =>
+        this.messageRouter.getSessionMapping('websocket', clientId, clientId)?.sessionId,
+    });
+    this.gateway.registerChannel(websocketChannel);
+    log('[RemoteManager] WebSocket channel registered');
+
+    // Companion module device tokens are managed in-memory (companion-server.ts).
 
     // TODO: Register other channels (WeChat, Telegram, DingTalk)
   }

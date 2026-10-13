@@ -20,6 +20,7 @@ import type {
   GatewayEvent,
 } from './types';
 import { MessageRouter } from './message-router';
+import type { CompanionServer } from './companion/companion-server';
 
 // WebSocket client connection
 interface WSClient {
@@ -46,6 +47,9 @@ export class RemoteGateway extends EventEmitter {
   private wsClients: Map<string, WSClient> = new Map();
   private messageRouter: MessageRouter;
 
+  /** Optional companion module (phone pairing + /companion/stream). */
+  private companionServer?: CompanionServer;
+
   // Pairing management
   private pairingRequests: Map<string, PairingRequest> = new Map();
   private pairedUsers: Map<string, PairedUser> = new Map();
@@ -55,10 +59,11 @@ export class RemoteGateway extends EventEmitter {
   // Rate limiting for WebSocket auth
   private authAttempts: Map<string, { count: number; resetTime: number }> = new Map();
 
-  constructor(config: GatewayConfig, messageRouter: MessageRouter) {
+  constructor(config: GatewayConfig, messageRouter: MessageRouter, companionServer?: CompanionServer) {
     super();
     this.config = config;
     this.messageRouter = messageRouter;
+    this.companionServer = companionServer;
 
     // Set up message router callback
     this.messageRouter.onResponse(this.handleAgentResponse.bind(this));
@@ -94,6 +99,10 @@ export class RemoteGateway extends EventEmitter {
         logError('[Gateway] WebSocket server error:', error);
         this.emitEvent('gateway.error', { error: error.message });
       });
+
+      // Mount the optional companion module (phone pairing + /companion/stream)
+      // before the server starts accepting upgrades.
+      this.companionServer?.attachServer(this.httpServer!);
 
       // Start listening
       await new Promise<void>((resolve, reject) => {
@@ -161,6 +170,11 @@ export class RemoteGateway extends EventEmitter {
     if (this.wss) {
       this.wss.close();
       this.wss = undefined;
+    }
+
+    // Stop the companion module (closes its /companion/stream sockets)
+    if (this.companionServer) {
+      await this.companionServer.stop();
     }
 
     // Close HTTP server
@@ -593,6 +607,14 @@ export class RemoteGateway extends EventEmitter {
       return;
     }
 
+    // Companion module endpoints (/companion/*): one-time QR pairing and
+    // device-token management. The upgrade to /companion/stream is handled by
+    // the companion module's own WebSocketServer.
+    if (url.startsWith('/companion/') && this.companionServer) {
+      this.companionServer.handleHttpRequest(req, res);
+      return;
+    }
+
     // Channel webhooks
     if (url.startsWith('/webhook/')) {
       this.handleWebhook(req, res, url);
@@ -840,6 +862,19 @@ export class RemoteGateway extends EventEmitter {
         this.sendWSMessage(client.ws, message);
       }
     }
+  }
+
+  /**
+   * Send a frame to a single authenticated WebSocket client.
+   * Used by WebSocketChannel to answer the client that sent a prompt.
+   */
+  sendFrameToClient(clientId: string, message: WSMessage): boolean {
+    const client = this.wsClients.get(clientId);
+    if (!client || !client.authenticated) {
+      return false;
+    }
+    this.sendWSMessage(client.ws, message);
+    return true;
   }
 
   private generateClientId(): string {
