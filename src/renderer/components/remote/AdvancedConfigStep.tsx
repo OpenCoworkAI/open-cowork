@@ -8,18 +8,22 @@ interface Props {
   defaultWorkingDirectory: string;
   gatewayPort: number;
   autoApproveSafeTools: boolean;
+  companionEnabled: boolean;
   onWorkingDirectoryChange: (value: string) => void;
   onGatewayPortChange: (value: number) => void;
   onAutoApproveChange: (value: boolean) => void;
+  onCompanionEnabledChange: (value: boolean) => void;
 }
 
 export function AdvancedConfigStep({
   defaultWorkingDirectory,
   gatewayPort,
   autoApproveSafeTools,
+  companionEnabled,
   onWorkingDirectoryChange,
   onGatewayPortChange,
   onAutoApproveChange,
+  onCompanionEnabledChange,
 }: Props) {
   const { t } = useTranslation();
 
@@ -78,6 +82,29 @@ export function AdvancedConfigStep({
             <span
               className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
                 autoApproveSafeTools ? 'left-5' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 rounded-xl bg-surface-hover">
+          <div>
+            <div className="font-medium text-text-primary text-sm">
+              {t('remote.companionModule')}
+            </div>
+            <p className="text-xs text-text-muted mt-0.5">
+              {t('remote.companionModuleDesc')}
+            </p>
+          </div>
+          <button
+            onClick={() => onCompanionEnabledChange(!companionEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              companionEnabled ? 'bg-accent' : 'bg-surface-active'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                companionEnabled ? 'left-5' : 'left-0.5'
               }`}
             />
           </button>

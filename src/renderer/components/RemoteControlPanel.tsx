@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { GatewayControlCard } from './remote/GatewayControlCard';
+import { CompanionPairingCard } from './remote/CompanionPairingCard';
 import { PairingRequestsSection } from './remote/PairingRequestsSection';
 import { PairingGuideCard } from './remote/PairingGuideCard';
 import { ConfigStepNav } from './remote/ConfigStepNav';
@@ -37,7 +38,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   // Remote state
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
-  const [, setConfig] = useState<RemoteConfig | null>(null);
+  const [config, setConfig] = useState<RemoteConfig | null>(null);
   const [pairedUsers, setPairedUsers] = useState<PairedUser[]>([]);
   const [pendingPairings, setPendingPairings] = useState<PairingRequest[]>([]);
   const [isTogglingGateway, setIsTogglingGateway] = useState(false);
@@ -54,6 +55,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [gatewayPort, setGatewayPort] = useState(18789);
   const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('');
   const [autoApproveSafeTools, setAutoApproveSafeTools] = useState(true);
+  const [companionEnabled, setCompanionEnabled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [useLongConnection, setUseLongConnection] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
@@ -99,6 +101,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         setGatewayPort(configResult.gateway?.port || 18789);
         setDefaultWorkingDirectory(configResult.gateway?.defaultWorkingDirectory || '');
         setAutoApproveSafeTools(configResult.gateway?.autoApproveSafeTools !== false);
+        setCompanionEnabled(configResult.gateway?.companion?.enabled || false);
         setTunnelEnabled(configResult.gateway?.tunnel?.enabled || false);
         setNgrokAuthToken(configResult.gateway?.tunnel?.ngrok?.authToken || '');
         if (configResult.channels?.feishu) {
@@ -187,6 +190,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         port: gatewayPort,
         defaultWorkingDirectory: defaultWorkingDirectory || undefined,
         autoApproveSafeTools,
+        companion: { enabled: companionEnabled },
         tunnel:
           tunnelEnabled && ngrokAuthToken
             ? {
@@ -317,6 +321,10 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         onToggle={toggleGateway}
       />
 
+      <CompanionPairingCard
+        enabled={Boolean(status?.running && config?.gateway?.companion?.enabled)}
+      />
+
       {status?.running && feishuDmPolicy === 'pairing' && <PairingGuideCard />}
 
       <PairingRequestsSection
@@ -368,9 +376,11 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             defaultWorkingDirectory={defaultWorkingDirectory}
             gatewayPort={gatewayPort}
             autoApproveSafeTools={autoApproveSafeTools}
+            companionEnabled={companionEnabled}
             onWorkingDirectoryChange={setDefaultWorkingDirectory}
             onGatewayPortChange={setGatewayPort}
             onAutoApproveChange={setAutoApproveSafeTools}
+            onCompanionEnabledChange={setCompanionEnabled}
           />
         )}
 

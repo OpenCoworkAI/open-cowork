@@ -114,6 +114,11 @@ export interface GatewayConfig {
   tunnel?: TunnelConfig;
   defaultWorkingDirectory?: string;
   autoApproveSafeTools?: boolean;
+
+  /** Optional companion module for phone clients (pairing + /companion/stream). */
+  companion?: {
+    enabled: boolean;
+  };
 }
 
 /** Full remote configuration returned by remote.getConfig. */
