@@ -27,6 +27,7 @@ import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
+import { TodoExtension } from './agent/todo-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
 import {
   configStore,
@@ -933,6 +934,7 @@ app
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
+        new TodoExtension(),
         new SubagentExtension(
           () => sessionManager?.getMCPManager() ?? null,
           sendToRenderer,
@@ -1338,6 +1340,7 @@ app
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),
+      new TodoExtension(),
       new SubagentExtension(
         () => sessionManager?.getMCPManager() ?? null,
         sendToRenderer,
