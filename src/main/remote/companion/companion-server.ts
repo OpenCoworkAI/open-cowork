@@ -194,6 +194,83 @@ export class CompanionServer {
     log('[Companion] Stopped');
   }
 
+  /** Result of the pairing start call, for the desktop UI to render as a QR code. */
+  getPairStartResult(): {
+    code: string;
+    expiresAt: number;
+    hosts: string[];
+    port: number | undefined;
+    qr: { app: 'opencowork'; v: 1; hosts: string[]; port: number | undefined; code: string };
+  } {
+    const hosts = this.getPublicHosts();
+    const targetPort = this.options.gatewayPort ?? this.standalonePort;
+    return {
+      code: this.pairCode?.code ?? '',
+      expiresAt: this.pairCode?.expiresAt ?? Date.now(),
+      hosts,
+      port: targetPort,
+      qr: { app: 'opencowork', v: 1, hosts, port: targetPort, code: this.pairCode?.code ?? '' },
+    };
+  }
+
+  /**
+   * IPC entry point (local main process) for the desktop UI: invalidate the
+   * previous code, create a fresh one-time code, and return the QR payload.
+   */
+  startPairing(pairCodeTtlMs?: number): ReturnType<CompanionServer['getPairStartResult']> {
+    return this.startPairingLocked(pairCodeTtlMs);
+  }
+
+  private startPairingLocked(pairCodeTtlMs?: number): ReturnType<CompanionServer['getPairStartResult']> {
+    this.pairCode = undefined;
+
+    const ttl = pairCodeTtlMs ?? this.options.pairCodeTtlMs ?? 5 * 60 * 1000;
+    this.pairCode = {
+      code: this.generatePairingCode(),
+      createdAt: Date.now(),
+      expiresAt: Date.now() + ttl,
+    };
+
+    log('[Companion] Pairing code generated via IPC (port:', String(this.options.gatewayPort ?? this.standalonePort ?? '?'), ')');
+    return this.getPairStartResult();
+  }
+
+  /** Public variant for testing / IPC. */
+  getStatusSummary(): { running: boolean; tokens: number } {
+    return { running: this._running, tokens: this.tokens.size };
+  }
+
+  /** IPC surface: paired devices for the settings UI (prefixes only). */
+  listTokenSummaries(): Array<{
+    tokenPrefix: string;
+    createdAt: number;
+    lastSeenAt: number;
+  }> {
+    return [...this.tokens.values()].map((entry) => ({
+      tokenPrefix: entry.token.slice(0, 8),
+      createdAt: entry.createdAt,
+      lastSeenAt: entry.lastSeenAt,
+    }));
+  }
+
+  /** IPC surface: revoke a device token. Returns the evicted prefix or null. */
+  revokeDeviceToken(tokenOrPrefix: string): string | null {
+    const claimed = tokenOrPrefix.trim();
+    if (this.tokens.has(claimed)) {
+      this.tokens.delete(claimed);
+      return claimed.slice(0, 8);
+    }
+    if (claimed.length >= 4) {
+      for (const [key, entry] of this.tokens) {
+        if (entry.token.startsWith(claimed)) {
+          this.tokens.delete(key);
+          return entry.token.slice(0, 8);
+        }
+      }
+    }
+    return null;
+  }
+
   /**
    * HTTP request entry point. In gateway mode RemoteGateway delegates all
    * /companion/* requests here; in standalone mode this is the createServer
@@ -239,37 +316,10 @@ export class CompanionServer {
       return;
     }
 
-    // A new code invalidates the previous one: at most one live QR at a time.
-    this.pairCode = undefined;
-
-    const ttl = this.options.pairCodeTtlMs ?? 5 * 60 * 1000;
-    this.pairCode = {
-      code: this.generatePairingCode(),
-      createdAt: Date.now(),
-      expiresAt: Date.now() + ttl,
-    };
-
-    const hosts = this.getPublicHosts();
-    const qrTargetPort = this.options.gatewayPort ?? this.standalonePort;
+    const result = this.startPairingLocked();
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        code: this.pairCode.code,
-        expiresAt: this.pairCode.expiresAt,
-        hosts,
-        port: qrTargetPort,
-        qr: {
-          app: 'opencowork',
-          v: 1,
-          hosts,
-          port: qrTargetPort,
-          code: this.pairCode.code,
-        },
-      })
-    );
-
-    log('[Companion] Pairing code generated (port:', String(qrTargetPort ?? '?'), ')');
+    res.end(JSON.stringify(result));
   }
 
   // ============================================================================

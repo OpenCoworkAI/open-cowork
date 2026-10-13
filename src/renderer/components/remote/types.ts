@@ -35,6 +35,9 @@ export interface RemoteConfig {
     bind: string;
     defaultWorkingDirectory?: string;
     autoApproveSafeTools?: boolean;
+    companion?: {
+      enabled: boolean;
+    };
     tunnel?: {
       enabled: boolean;
       type: 'ngrok' | 'cloudflare' | 'frp';

@@ -182,6 +182,46 @@ describe('companion pairing (one-time code -> device token)', () => {
       await server2.stop();
     }
   });
+
+  it('startPairing() (IPC surface) returns a fresh one-time code and invalidates the previous one', async () => {
+    const server2 = await startStub();
+    try {
+      const first = server2.startPairing();
+      expect(first.code).toMatch(/^[A-Z2-9]{8}$/);
+      expect(first.qr.code).toBe(first.code);
+      expect(first.qr.port).toBe(server2.port);
+
+      const second = server2.startPairing();
+      expect(second.code).not.toBe(first.code);
+
+      // Old code is dead: the HTTP pair exchange rejects it.
+      const res = await post(server2.port!, '/companion/pair', { code: first.code });
+      expect(res.status).toBe(400);
+    } finally {
+      await server2.stop();
+    }
+  });
+
+  it('lists and revokes paired devices through the IPC-style helpers', async () => {
+    const server2 = await startStub();
+    try {
+      expect(server2.listTokenSummaries()).toHaveLength(0);
+
+      const start = server2.startPairing();
+      const pair = await post(server2.port!, '/companion/pair', { code: start.code });
+      expect(pair.body.ok).toBe(true);
+
+      expect(server2.listTokenSummaries()).toHaveLength(1);
+      expect(server2.listTokenSummaries()[0].tokenPrefix.length).toBe(8);
+
+      const prefix = server2.listTokenSummaries()[0].tokenPrefix;
+      expect(server2.revokeDeviceToken(prefix)).toBe(prefix);
+      expect(server2.listTokenSummaries()).toHaveLength(0);
+      expect(server2.revokeDeviceToken('occ-0000')).toBeNull();
+    } finally {
+      await server2.stop();
+    }
+  });
 });
 
 describe('companion stream (stub-agent mode)', () => {

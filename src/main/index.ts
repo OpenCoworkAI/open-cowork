@@ -2878,6 +2878,46 @@ ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannel
   }
 });
 
+ipcMain.handle('remote.companion.startPairing', () => {
+  try {
+    const result = remoteManager.startCompanionPairing();
+    return result ?? { error: 'Companion module is not enabled' };
+  } catch (error) {
+    logError('[Remote] Error starting companion pairing:', error);
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.companion.isReady', () => {
+  try {
+    return { enabled: remoteManager.isCompanionEnabled() };
+  } catch (error) {
+    logError('[Remote] Error checking companion status:', error);
+    return { enabled: false };
+  }
+});
+
+ipcMain.handle('remote.companion.listTokens', () => {
+  try {
+    return remoteManager.getCompanionTokens();
+  } catch (error) {
+    logError('[Remote] Error listing companion tokens:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('remote.companion.revokeToken', (_event, tokenOrPrefix: string) => {
+  try {
+    const revokedPrefix = remoteManager.revokeCompanionToken(tokenOrPrefix);
+    return revokedPrefix
+      ? { success: true, tokenPrefix: revokedPrefix }
+      : { success: false, error: 'Unknown token' };
+  } catch (error) {
+    logError('[Remote] Error revoking companion token:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('remote.getPairedUsers', () => {
   try {
     return remoteManager.getPairedUsers();

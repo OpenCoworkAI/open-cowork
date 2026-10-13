@@ -72,6 +72,9 @@ export interface RemoteInteraction {
 
 export class RemoteManager extends EventEmitter {
   private gateway?: RemoteGateway;
+
+  /** Optional companion module (phone pairing + /companion/stream). */
+  private companionServer?: CompanionServer;
   private messageRouter: MessageRouter;
   private agentExecutor?: AgentExecutor;
   private sendToRenderer?: (event: ServerEvent) => void;
@@ -199,6 +202,7 @@ export class RemoteManager extends EventEmitter {
           gatewayToken: config.gateway.auth.token,
         });
       }
+      this.companionServer = companionServer;
 
       // Create gateway
       this.gateway = new RemoteGateway(config.gateway, this.messageRouter, companionServer);
@@ -1225,6 +1229,33 @@ export class RemoteManager extends EventEmitter {
     this.gateway.on('gateway.stopped', () => {
       this.emitStatusUpdate();
     });
+  }
+
+  // ============================================================================
+  // Companion module accessors (phone pairing UI, IPC)
+  // ============================================================================
+
+  /** Create a fresh one-time pairing code; returns null when companion is off. */
+  startCompanionPairing(): ReturnType<CompanionServer['startPairing']> | null {
+    if (!this.companionServer?.running) {
+      return null;
+    }
+    return this.companionServer.startPairing();
+  }
+
+  /** Paired phone devices for the settings UI. */
+  getCompanionTokens(): ReturnType<CompanionServer['listTokenSummaries']> {
+    return this.companionServer?.listTokenSummaries() ?? [];
+  }
+
+  /** Revoke a companion device token; returns the evicted prefix or null. */
+  revokeCompanionToken(tokenOrPrefix: string): string | null {
+    return this.companionServer?.revokeDeviceToken(tokenOrPrefix) ?? null;
+  }
+
+  /** Whether the companion module is running right now. */
+  isCompanionEnabled(): boolean {
+    return this.companionServer?.running ?? false;
   }
 
   /**
