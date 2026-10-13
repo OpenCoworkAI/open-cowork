@@ -12,6 +12,11 @@ import type {
 } from '../types';
 import { handleSubagentProgressEvent } from './useSubagentProgress';
 import i18n from '../i18n/config';
+import {
+  notifyPermissionRequest,
+  notifySessionStatus,
+  notifySudoPasswordRequest,
+} from '../utils/system-notifications';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -137,7 +142,10 @@ export function useIPC() {
             store.setSessions(event.payload.sessions);
             break;
 
-          case 'session.status':
+          case 'session.status': {
+            const previousStatus = store.sessions.find(
+              (session) => session.id === event.payload.sessionId
+            )?.status;
             store.updateSession(event.payload.sessionId, {
               status: event.payload.status,
             });
@@ -148,7 +156,9 @@ export function useIPC() {
               store.clearPendingTurns(event.payload.sessionId);
               store.clearQueuedMessages(event.payload.sessionId);
             }
+            notifySessionStatus(event.payload.sessionId, previousStatus, event.payload.status);
             break;
+          }
 
           case 'session.update':
             store.updateSession(event.payload.sessionId, event.payload.updates);
@@ -215,6 +225,7 @@ export function useIPC() {
 
           case 'permission.request':
             store.setPendingPermission(event.payload);
+            notifyPermissionRequest(event.payload);
             break;
 
           case 'permission.dismiss': {
@@ -233,6 +244,7 @@ export function useIPC() {
 
           case 'sudo.password.request':
             store.setPendingSudoPassword(event.payload);
+            notifySudoPasswordRequest(event.payload);
             break;
 
           case 'sudo.password.dismiss': {
