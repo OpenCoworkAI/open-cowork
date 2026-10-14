@@ -1,6 +1,6 @@
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Download, FileText, Pencil, Trash2 } from 'lucide-react';
+import { Check, Download, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import type { Session } from '../types';
 import { MAX_RENAMED_SESSION_TITLE_LENGTH } from '../../shared/session-title';
 import { renameKeyAction, resolveRenameTitle } from '../utils/session-rename';
@@ -92,6 +92,12 @@ export function SessionList({
                           >
                             {isSelected && <Check className="w-2.5 h-2.5" />}
                           </div>
+                        )}
+                        {session.status === 'running' && (
+                          <Loader2
+                            className="w-3 h-3 flex-shrink-0 animate-spin text-accent"
+                            aria-hidden="true"
+                          />
                         )}
                         <div className="min-w-0 flex-1">
                           {isRenaming ? (

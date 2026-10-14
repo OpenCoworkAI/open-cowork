@@ -277,7 +277,10 @@ export class SessionManager {
     // Start processing the prompt with content blocks
     this.enqueuePrompt(session, prompt, content);
 
-    return session;
+    // enqueuePrompt already flipped the persisted status to 'running'; reload
+    // so the renderer adds the session already running instead of dropping the
+    // status event it emitted before this resolved.
+    return this.loadSession(session.id) ?? session;
   }
 
   // Create a new session object
@@ -1045,11 +1048,12 @@ export class SessionManager {
 
   // Update session status
   private updateSessionStatus(sessionId: string, status: Session['status']): void {
-    this.db.sessions.update(sessionId, { status, updated_at: Date.now() });
+    const updatedAt = Date.now();
+    this.db.sessions.update(sessionId, { status, updated_at: updatedAt });
 
     this.sendToRenderer({
       type: 'session.status',
-      payload: { sessionId, status },
+      payload: { sessionId, status, updatedAt },
     });
   }
 

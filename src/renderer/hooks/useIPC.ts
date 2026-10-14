@@ -140,6 +140,9 @@ export function useIPC() {
           case 'session.status':
             store.updateSession(event.payload.sessionId, {
               status: event.payload.status,
+              ...(event.payload.updatedAt !== undefined
+                ? { updatedAt: event.payload.updatedAt }
+                : {}),
             });
             if (event.payload.status !== 'running') {
               store.finishExecutionClock(event.payload.sessionId);

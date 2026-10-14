@@ -442,6 +442,10 @@ export function initDatabase(): DatabaseInstance {
   // Initialize schema
   initializeSchema(rawDb);
 
+  // No run survives a restart, so a persisted 'running' is always a leftover
+  // from a killed process. Clear it once at startup to avoid a stuck indicator.
+  rawDb.prepare("UPDATE sessions SET status = 'idle' WHERE status = 'running'").run();
+
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
     INSERT OR REPLACE INTO sessions
@@ -561,9 +565,12 @@ export function initDatabase(): DatabaseInstance {
 
         if (setClauses.length === 0) return;
 
-        // Always update updated_at
-        setClauses.push('updated_at = ?');
-        values.push(Date.now());
+        // Bump updated_at unless the caller supplied an explicit value (a second
+        // assignment would otherwise silently override it).
+        if (updates.updated_at === undefined) {
+          setClauses.push('updated_at = ?');
+          values.push(Date.now());
+        }
         values.push(id);
 
         const sql = `UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ?`;

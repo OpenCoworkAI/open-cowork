@@ -362,7 +362,7 @@ export async function generateTitleWithSdk(
   try {
     const result = await runPiAiOneShot(
       titlePrompt,
-      'Generate a concise title. Reply with only the title text and no extra markup.',
+      'You generate concise session titles. Always follow the exact output format requested in the user message.',
       config
     );
     const title = normalizeGeneratedTitle(result.text);
