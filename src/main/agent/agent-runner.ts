@@ -17,8 +17,8 @@ import {
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   createCodingTools,
-  type BashToolOptions,
   type AgentSession as PiAgentSession,
+  type CreateAgentSessionOptions,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
@@ -84,10 +84,8 @@ import {
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
+import { createLimaSandboxCodingTools, VIRTUAL_WORKSPACE_PATH } from './lima-sandbox-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
-
-// Virtual workspace path shown to the model (hides real sandbox path)
-const VIRTUAL_WORKSPACE_PATH = '/workspace';
 
 /**
  * Estimate chars-per-token ratio based on content language.
@@ -1049,9 +1047,11 @@ ${hints.join('\n')}
   private wrapBashToolForSudo(
     tools: ToolDefinition[],
     sessionId: string,
-    effectiveCwd: string
+    effectiveCwd: string,
+    useLimaSandbox: boolean
   ): ToolDefinition[] {
-    if (!this.requestSudoPassword) return tools;
+    // Lima commands, including sudo, stay in the guest tool backend.
+    if (useLimaSandbox || !this.requestSudoPassword) return tools;
 
     const requestSudoPassword = this.requestSudoPassword;
 
@@ -2140,13 +2140,22 @@ Tool routing:
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
       await enrichProcessPathForBuild();
 
-      const bashOptions: BashToolOptions | undefined =
-        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
+      // Lima creates the session directory inside the VM. Host bash checks that
+      // path with existsSync, fails, and the UI then rewrites it to /workspace.
+      // Run the coding tools in the guest and keep those implementations: the
+      // SDK otherwise rebuilds host-local tools from cwd.
+      const guestSandboxPath =
+        useSandboxIsolation && sandbox.isLima && sandboxPath ? sandboxPath : null;
+      // The guest read tool resizes images on the host like the local one, so both get the wrapper.
       const codingTools = wrapReadToolForImageResizeErrors(
-        createCodingTools(
-          effectiveCwd,
-          bashOptions ? { bash: bashOptions } : undefined
-        ) as ToolDefinition[]
+        (guestSandboxPath
+          ? createLimaSandboxCodingTools(guestSandboxPath)
+          : createCodingTools(
+              effectiveCwd,
+              process.platform === 'win32'
+                ? { bash: { operations: createWindowsBashOperations() } }
+                : undefined
+            )) as ToolDefinition[]
       );
 
       // Inject a default 120s timeout for bash commands when the model omits one
@@ -2156,7 +2165,12 @@ Tool routing:
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const wrappedTools = this.wrapBashToolForSudo(
+        withTimeout,
+        session.id,
+        effectiveCwd,
+        Boolean(guestSandboxPath)
+      );
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
@@ -2274,6 +2288,13 @@ Tool routing:
           authStorage,
           modelRegistry,
           tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
+          ...(guestSandboxPath
+            ? {
+                baseToolsOverride: Object.fromEntries(
+                  wrappedTools.map((tool) => [tool.name, tool])
+                ) as CreateAgentSessionOptions['baseToolsOverride'],
+              }
+            : {}),
           customTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({
