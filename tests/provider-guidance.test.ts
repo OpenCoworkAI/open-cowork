@@ -35,6 +35,25 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('http://localhost:3000/v1')).toBeNull();
   });
 
+  it('detects each MiniMax region and protocol endpoint with the target model', () => {
+    const endpoints = [
+      ['https://api.minimax.io/v1', 'minimax-global-openai', 'openai'],
+      ['https://api.minimax.io/anthropic', 'minimax-global-anthropic', 'anthropic'],
+      ['https://api.minimaxi.com/v1', 'minimax-cn-openai', 'openai'],
+      ['https://api.minimaxi.com/anthropic', 'minimax-cn-anthropic', 'anthropic'],
+    ] as const;
+
+    for (const [baseUrl, id, protocol] of endpoints) {
+      const setup = detectCommonProviderSetup(baseUrl);
+      expect(setup?.id).toBe(id);
+      expect(setup?.recommendedProtocol).toBe(protocol);
+      expect(setup?.recommendedBaseUrl).toBe(baseUrl);
+      expect(setup?.exampleModel).toBe('MiniMax-M3');
+    }
+
+    expect(detectCommonProviderSetup('https://minimax-proxy.example.com/v1')).toBeNull();
+  });
+
   it('keeps unknown hosts unmatched and exposes the generic OpenAI fallback separately', () => {
     expect(detectCommonProviderSetup('https://relay.example.internal/v1')).toBeNull();
     expect(getFallbackOpenAISetup().id).toBe('generic-openai');
