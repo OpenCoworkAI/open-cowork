@@ -1,6 +1,6 @@
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
 import type { TSchema } from '@sinclair/typebox';
-import type { Message, Session } from '../../renderer/types';
+import type { Message, Session, TraceStep } from '../../renderer/types';
 
 export type AgentRuntimeCustomTool = ToolDefinition<TSchema, unknown>;
 
@@ -15,6 +15,8 @@ export interface BeforeSessionRunContext {
 export interface BeforeSessionRunResult {
   promptPrefix?: string;
   customTools?: AgentRuntimeCustomTool[];
+  /** Steps to show in the trace panel for this run, such as the memory it received. */
+  traceSteps?: TraceStep[];
 }
 
 export interface AfterSessionRunContext {

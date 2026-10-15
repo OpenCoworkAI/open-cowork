@@ -6,6 +6,7 @@ import type {
   BeforeSessionRunResult,
   SessionDeletedContext,
 } from './agent-runtime-extension';
+import type { TraceStep } from '../../renderer/types';
 import { logError, logWarn } from '../utils/logger';
 
 function mergeCustomTools(tools: AgentRuntimeCustomTool[]): AgentRuntimeCustomTool[] {
@@ -36,6 +37,7 @@ export class AgentRuntimeExtensionManager {
   async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
     const promptPrefixes: string[] = [];
     const customTools: AgentRuntimeCustomTool[] = [];
+    const traceSteps: TraceStep[] = [];
 
     for (const extension of this.extensions) {
       if (!extension.beforeSessionRun) {
@@ -52,6 +54,9 @@ export class AgentRuntimeExtensionManager {
         if (result.customTools?.length) {
           customTools.push(...result.customTools);
         }
+        if (result.traceSteps?.length) {
+          traceSteps.push(...result.traceSteps);
+        }
       } catch (error) {
         logError(
           `[AgentRuntimeExtensionManager] beforeSessionRun failed for ${extension.name}:`,
@@ -63,6 +68,7 @@ export class AgentRuntimeExtensionManager {
     return {
       promptPrefix: promptPrefixes.join('\n\n').trim() || undefined,
       customTools: mergeCustomTools(customTools),
+      traceSteps: traceSteps.length ? traceSteps : undefined,
     };
   }
 

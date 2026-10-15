@@ -115,11 +115,34 @@ export interface TraceStep {
   toolInput?: Record<string, unknown>;
   toolOutput?: string;
   isError?: boolean;
+  /** Set on `memory` steps: the saved memory injected into this run. */
+  memoryItems?: MemoryUsedItem[];
   timestamp: number;
   duration?: number;
 }
 
-export type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result';
+/** One saved memory a run received, as shown in the trace panel. */
+export type MemoryUsedItem =
+  | {
+      scope: 'core';
+      category?: string;
+      key: string;
+      value: string;
+      userWritten: boolean;
+    }
+  | {
+      scope: 'experience';
+      kind: 'chunk' | 'session';
+      /** The conversation the memory was taken from. */
+      sessionId: string;
+      sessionTitle?: string;
+      workspace: string | null;
+      summary: string;
+      /** The run also received more than the summary of that conversation. */
+      expanded: boolean;
+    };
+
+export type TraceStepType = 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'memory';
 export type TraceStepStatus = 'pending' | 'running' | 'completed' | 'error';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
