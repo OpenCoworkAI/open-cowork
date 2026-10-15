@@ -95,6 +95,7 @@ export interface TraceStepRow {
   tool_input: string | null; // JSON string
   tool_output: string | null;
   is_error: number | null;
+  memory_items: string | null; // JSON string
   timestamp: number;
   duration: number | null;
 }
@@ -284,6 +285,8 @@ function initializeSchema(database: Database.Database): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+
+    ensureColumn(database, 'trace_steps', 'memory_items', 'memory_items TEXT');
 
     // Create index for faster message queries
     database.exec(`
@@ -499,9 +502,9 @@ export function initDatabase(): DatabaseInstance {
 
   const insertTraceStep = rawDb.prepare(`
     INSERT OR REPLACE INTO trace_steps (
-      id, session_id, type, status, title, content, tool_name, tool_input, tool_output, is_error, timestamp, duration
+      id, session_id, type, status, title, content, tool_name, tool_input, tool_output, is_error, memory_items, timestamp, duration
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getTraceStepsBySessionStmt = rawDb.prepare(`
@@ -644,6 +647,7 @@ export function initDatabase(): DatabaseInstance {
           step.tool_input,
           step.tool_output,
           step.is_error,
+          step.memory_items,
           step.timestamp,
           step.duration
         );
