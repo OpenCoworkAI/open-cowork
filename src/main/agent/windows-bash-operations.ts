@@ -6,6 +6,11 @@ import {
   type BashOperations,
 } from '@mariozechner/pi-coding-agent';
 import { getDefaultShell } from '../utils/shell-resolver';
+import {
+  createWindowsOutputNormalizer,
+  getWindowsConsoleCodePage,
+  type OutputNormalizer,
+} from '../utils/windows-output-encoding';
 
 const DEFAULT_TERMINATION_GRACE_MS = 5000;
 const DEFAULT_TASKKILL_WAIT_MS = 3000;
@@ -134,21 +139,23 @@ export function createWindowsBashOperations(
   const taskkillWaitMs = options.taskkillWaitMs ?? DEFAULT_TASKKILL_WAIT_MS;
 
   return {
-    exec: (command, cwd, { onData, signal, timeout, env }) =>
-      new Promise((resolve, reject) => {
-        if (!existsSync(cwd)) {
-          reject(
-            new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`)
-          );
-          return;
-        }
+    exec: async (command, cwd, { onData, signal, timeout, env }) => {
+      if (!existsSync(cwd)) {
+        throw new Error(
+          `Working directory does not exist: ${cwd}\nCannot execute bash commands.`
+        );
+      }
 
-        if (signal?.aborted) {
-          reject(new Error('aborted'));
-          return;
-        }
+      if (signal?.aborted) {
+        throw new Error('aborted');
+      }
 
-        const { shell, args } = buildWindowsShellInvocation(command, shellResolver(cwd));
+      const { shell, args } = buildWindowsShellInvocation(command, shellResolver(cwd));
+      const codePage = await getWindowsConsoleCodePage();
+      const normalizeStdout: OutputNormalizer | null = createWindowsOutputNormalizer(codePage);
+      const normalizeStderr: OutputNormalizer | null = createWindowsOutputNormalizer(codePage);
+
+      return new Promise((resolve, reject) => {
         const child = spawnProcess(shell, args, {
           cwd,
           detached: false,
@@ -165,8 +172,8 @@ export function createWindowsBashOperations(
         const cleanup = () => {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           if (forcedSettleHandle) clearTimeout(forcedSettleHandle);
-          child.stdout?.off('data', onData);
-          child.stderr?.off('data', onData);
+          child.stdout?.off('data', onStdoutChunk);
+          child.stderr?.off('data', onStderrChunk);
           child.off('close', onClose);
           child.off('error', onError);
           signal?.removeEventListener('abort', onAbort);
@@ -225,8 +232,14 @@ export function createWindowsBashOperations(
           terminateChild('aborted');
         }
 
-        child.stdout?.on('data', onData);
-        child.stderr?.on('data', onData);
+        const onStdoutChunk = (chunk: Buffer) => {
+          onData(normalizeStdout ? normalizeStdout(chunk) : chunk);
+        };
+        const onStderrChunk = (chunk: Buffer) => {
+          onData(normalizeStderr ? normalizeStderr(chunk) : chunk);
+        };
+        child.stdout?.on('data', onStdoutChunk);
+        child.stderr?.on('data', onStderrChunk);
         child.once('close', onClose);
         child.once('error', onError);
 
@@ -239,6 +252,7 @@ export function createWindowsBashOperations(
         }
 
         signal?.addEventListener('abort', onAbort, { once: true });
-      }),
+      });
+    },
   };
 }
