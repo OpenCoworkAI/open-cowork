@@ -31,7 +31,12 @@ import { getFeishuWebhookConfigError } from '../../shared/feishu-webhook-config'
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
-  startSession(title: string, prompt: string, cwd?: string): Promise<Session>;
+  startSession(
+    title: string,
+    prompt: string,
+    cwd?: string,
+    content?: ContentBlock[]
+  ): Promise<Session>;
   continueSession(
     sessionId: string,
     prompt: string,
@@ -1359,7 +1364,8 @@ export class RemoteManager extends EventEmitter {
       const newSession = await this.agentExecutor.startSession(
         buildRemoteSessionTitle(prompt),
         prompt,
-        workingDirectory
+        workingDirectory,
+        content
       );
 
       // Map remote session ID to actual session ID
