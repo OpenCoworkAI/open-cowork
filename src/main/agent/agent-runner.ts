@@ -70,6 +70,7 @@ import {
   resolvePiRouteProtocol,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
+import { installMiniMaxPayloadHook } from './minimax-payload';
 import {
   LoopGuard,
   buildAbortUserMessage,
@@ -2305,6 +2306,9 @@ Tool routing:
           cwd: effectiveCwd,
         });
         piSession = newPiSession;
+        if (!installMiniMaxPayloadHook(piSession.agent)) {
+          logWarn('[CoworkAgentRunner] SDK does not expose _onPayload for MiniMax compatibility');
+        }
 
         // Install permission-gating hook via the SDK's tool_call extension event.
         // This must happen once per new session — the hook persists across reuses.

@@ -36,25 +36,25 @@ describe('provider guidance helpers', () => {
         id: 'minimax-global-openai',
         protocol: 'openai',
         baseUrl: 'https://api.minimax.io/v1',
-        model: 'MiniMax-M3',
+        model: 'MiniMax-M3.1-Flash',
       },
       {
         id: 'minimax-global-anthropic',
         protocol: 'anthropic',
         baseUrl: 'https://api.minimax.io/anthropic',
-        model: 'MiniMax-M3',
+        model: 'MiniMax-M3.1-Flash',
       },
       {
         id: 'minimax-cn-openai',
         protocol: 'openai',
         baseUrl: 'https://api.minimaxi.com/v1',
-        model: 'MiniMax-M3',
+        model: 'MiniMax-M3.1-Flash',
       },
       {
         id: 'minimax-cn-anthropic',
         protocol: 'anthropic',
         baseUrl: 'https://api.minimaxi.com/anthropic',
-        model: 'MiniMax-M3',
+        model: 'MiniMax-M3.1-Flash',
       },
     ]);
 

@@ -19,6 +19,7 @@ import {
   normalizeOllamaBaseUrl,
 } from '../../shared/ollama-base-url';
 import { API_PROVIDER_PRESETS, getModelInputGuidance } from '../../shared/api-model-presets';
+import { isDirectMiniMaxBaseUrl, MINIMAX_TEXT_MODELS } from '../../shared/minimax';
 import {
   COMMON_PROVIDER_SETUPS,
   detectCommonProviderSetup,
@@ -171,7 +172,14 @@ function isLegacyOllamaConfig(
   }
 }
 
-function modelPresetForProfile(profileKey: ProviderProfileKey, presets: ProviderPresets) {
+export function modelPresetForProfile(
+  profileKey: ProviderProfileKey,
+  presets: ProviderPresets,
+  baseUrl?: string
+) {
+  if (profileKey.startsWith('custom:') && isDirectMiniMaxBaseUrl(baseUrl)) {
+    return { name: 'MiniMax', baseUrl: baseUrl || '', models: MINIMAX_TEXT_MODELS };
+  }
   if (profileKey === 'ollama') {
     return presets.ollama;
   }
@@ -260,7 +268,7 @@ function normalizeProfile(
 
   const modelValue = profile?.model?.trim() || fallback.model;
   const rawBaseUrl = profile?.baseUrl?.trim() || fallback.baseUrl;
-  const hasPresetModel = modelPresetForProfile(profileKey, presets).models.some(
+  const hasPresetModel = modelPresetForProfile(profileKey, presets, rawBaseUrl).models.some(
     (item) => item.id === modelValue
   );
   return {
@@ -543,7 +551,7 @@ function buildSetupModelState(
   profileKey: ProviderProfileKey,
   presets: ProviderPresets
 ): Pick<UIProviderProfile, 'model' | 'customModel' | 'useCustomModel'> {
-  const preset = modelPresetForProfile(profileKey, presets);
+  const preset = modelPresetForProfile(profileKey, presets, setup.recommendedBaseUrl);
   const hasPresetModel = preset.models.some((item) => item.id === setup.exampleModel);
   return {
     model: hasPresetModel ? setup.exampleModel : preset.models[0]?.id || setup.exampleModel,
@@ -927,7 +935,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const customProtocol = providerMeta.customProtocol;
   const currentProfile =
     profiles[activeProfileKey] || defaultProfileForKey(activeProfileKey, presets);
-  const modelPreset = modelPresetForProfile(activeProfileKey, presets);
+  const modelPreset = modelPresetForProfile(activeProfileKey, presets, currentProfile.baseUrl);
   const currentPreset = modelPreset;
   const hasDiscoveredOllamaModels =
     provider === 'ollama' && Object.prototype.hasOwnProperty.call(discoveredModels, activeProfileKey);

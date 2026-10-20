@@ -135,7 +135,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     applyProvider: 'custom',
     recommendedProtocol: 'openai',
     recommendedBaseUrl: 'https://api.minimax.io/v1',
-    exampleModel: 'MiniMax-M3',
+    exampleModel: 'MiniMax-M3.1-Flash',
     matcher: {
       hosts: ['api.minimax.io'],
       pathPrefixes: ['/v1'],
@@ -148,7 +148,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     applyProvider: 'custom',
     recommendedProtocol: 'anthropic',
     recommendedBaseUrl: 'https://api.minimax.io/anthropic',
-    exampleModel: 'MiniMax-M3',
+    exampleModel: 'MiniMax-M3.1-Flash',
     matcher: {
       hosts: ['api.minimax.io'],
       pathPrefixes: ['/anthropic'],
@@ -161,7 +161,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     applyProvider: 'custom',
     recommendedProtocol: 'openai',
     recommendedBaseUrl: 'https://api.minimaxi.com/v1',
-    exampleModel: 'MiniMax-M3',
+    exampleModel: 'MiniMax-M3.1-Flash',
     matcher: {
       hosts: ['api.minimaxi.com'],
       pathPrefixes: ['/v1'],
@@ -174,7 +174,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     applyProvider: 'custom',
     recommendedProtocol: 'anthropic',
     recommendedBaseUrl: 'https://api.minimaxi.com/anthropic',
-    exampleModel: 'MiniMax-M3',
+    exampleModel: 'MiniMax-M3.1-Flash',
     matcher: {
       hosts: ['api.minimaxi.com'],
       pathPrefixes: ['/anthropic'],
