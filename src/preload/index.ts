@@ -436,6 +436,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getWebhookUrl: (): Promise<string | null> => ipcRenderer.invoke('remote.getWebhookUrl'),
     restart: (): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.restart'),
+    companion: {
+      startPairing: (): Promise<{
+        code?: string;
+        expiresAt?: number;
+        hosts?: string[];
+        port?: number;
+        qr?: { app: string; v: number; hosts: string[]; port?: number; code: string };
+        error?: string;
+      }> => ipcRenderer.invoke('remote.companion.startPairing'),
+      isReady: (): Promise<{ enabled: boolean }> =>
+        ipcRenderer.invoke('remote.companion.isReady'),
+      listTokens: (): Promise<
+        Array<{ tokenPrefix: string; createdAt: number; lastSeenAt: number }>
+      > => ipcRenderer.invoke('remote.companion.listTokens'),
+      revokeToken: (tokenOrPrefix: string): Promise<{ success: boolean; tokenPrefix?: string; error?: string }> =>
+        ipcRenderer.invoke('remote.companion.revokeToken', tokenOrPrefix),
+    },
   },
 
   schedule: {
@@ -712,6 +729,23 @@ declare global {
         }>;
         getWebhookUrl: () => Promise<string | null>;
         restart: () => Promise<{ success: boolean; error?: string }>;
+        companion: {
+          startPairing: () => Promise<{
+            code?: string;
+            expiresAt?: number;
+            hosts?: string[];
+            port?: number;
+            qr?: { app: string; v: number; hosts: string[]; port?: number; code: string };
+            error?: string;
+          }>;
+          isReady: () => Promise<{ enabled: boolean }>;
+          listTokens: () => Promise<
+            Array<{ tokenPrefix: string; createdAt: number; lastSeenAt: number }>
+          >;
+          revokeToken: (
+            tokenOrPrefix: string
+          ) => Promise<{ success: boolean; tokenPrefix?: string; error?: string }>;
+        };
       };
       schedule: {
         list: () => Promise<ScheduleTask[]>;
