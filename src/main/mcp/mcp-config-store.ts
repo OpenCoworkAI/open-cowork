@@ -45,6 +45,11 @@ export const MCP_SERVER_PRESETS: Record<
       NOTION_TOKEN: 'Notion Internal Integration Token (get from notion.so/profile/integrations)',
     },
   },
+  'parallel-search': {
+    name: 'Parallel Search',
+    type: 'streamable-http',
+    url: 'https://search.parallel.ai/mcp',
+  },
   'software-development': {
     name: 'Software_Development',
     type: 'stdio',
