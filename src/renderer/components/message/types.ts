@@ -1,10 +1,6 @@
 // Shared types for MessageCard sub-components
-import type {
-  Message,
-  ContentBlock,
-  ToolUseContent,
-  ToolResultContent,
-} from '../../types';
+import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../../types';
+import type { TextDirection } from '../../utils/text-direction';
 
 export type { Message, ContentBlock, ToolUseContent, ToolResultContent };
 
@@ -12,6 +8,7 @@ export interface ContentBlockViewProps {
   block: ContentBlock;
   isUser: boolean;
   isStreaming?: boolean;
+  textDirection?: TextDirection;
   /** All blocks in the same message, used to locate the paired tool_result */
   allBlocks?: ContentBlock[];
   /** The full message, used to search across all session messages */

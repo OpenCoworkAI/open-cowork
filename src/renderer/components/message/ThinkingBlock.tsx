@@ -3,6 +3,11 @@ import { Suspense, lazy, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
 import { PanelErrorBoundary } from '../PanelErrorBoundary';
+import {
+  getTextAlignmentClass,
+  getTextDirectionProps,
+  type TextDirection,
+} from '../../utils/text-direction';
 
 const MessageMarkdown = lazy(() =>
   import('../MessageMarkdown').then((module) => ({ default: module.MessageMarkdown }))
@@ -39,13 +44,19 @@ export function escapeThinkTags(text: string): string {
 
 interface ThinkingBlockProps {
   block: { type: 'thinking'; thinking: string };
+  textDirection?: TextDirection;
 }
 
-export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBlockProps) {
+export const ThinkingBlock = memo(function ThinkingBlock({
+  block,
+  textDirection = 'auto',
+}: ThinkingBlockProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const text = block.thinking || '';
   if (!text) return null;
+  const directionProps = getTextDirectionProps(textDirection);
+  const alignmentClass = getTextAlignmentClass(textDirection);
 
   // Preview: first ~80 chars, clean up broken ** markers from truncation
   let preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
@@ -67,7 +78,10 @@ export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBloc
           {t('messageCard.thinking')}
         </span>
         {!expanded && (
-          <span className="text-[11px] text-text-muted/60 truncate flex-1 min-w-0 italic">
+          <span
+            {...directionProps}
+            className={`text-[11px] text-text-muted/60 truncate flex-1 min-w-0 italic ${alignmentClass}`}
+          >
             {previewNodes}
           </span>
         )}
@@ -80,13 +94,29 @@ export const ThinkingBlock = memo(function ThinkingBlock({ block }: ThinkingBloc
 
       {expanded && (
         <div className="border-t border-border/50 px-4 py-3 animate-fade-in">
-          <div className="text-sm text-text-secondary leading-relaxed prose-chat max-w-none">
+          <div
+            {...directionProps}
+            className={`text-sm text-text-secondary leading-relaxed prose-chat max-w-none ${alignmentClass}`}
+          >
             <PanelErrorBoundary
               name="ThinkingMarkdown"
-              fallback={<div className="whitespace-pre-wrap">{text}</div>}
+              fallback={
+                <div {...directionProps} className={`whitespace-pre-wrap ${alignmentClass}`}>
+                  {text}
+                </div>
+              }
             >
-              <Suspense fallback={<div className="whitespace-pre-wrap">{text}</div>}>
-                <MessageMarkdown normalizedText={escapeThinkTags(text)} />
+              <Suspense
+                fallback={
+                  <div {...directionProps} className={`whitespace-pre-wrap ${alignmentClass}`}>
+                    {text}
+                  </div>
+                }
+              >
+                <MessageMarkdown
+                  normalizedText={escapeThinkTags(text)}
+                  textDirection={textDirection}
+                />
               </Suspense>
             </PanelErrorBoundary>
           </div>

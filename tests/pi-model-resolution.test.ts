@@ -3,6 +3,7 @@ import {
   applyPiModelRuntimeOverrides,
   buildPiModelLookupCandidates,
   buildSyntheticPiModel,
+  buildSyntheticPiModelFromRuntimeConfig,
   inferPiApi,
   resolvePiModelString,
   resolvePiRouteProtocol,
@@ -149,6 +150,42 @@ describe('pi model resolution helpers', () => {
     });
   });
 
+  it('reads contextWindow and maxTokens from the runtime config object', () => {
+    const withoutOverrides = buildSyntheticPiModelFromRuntimeConfig(
+      {
+        model: 'llama3.3',
+        provider: 'ollama',
+        customProtocol: 'openai',
+        baseUrl: 'http://localhost:11434/v1',
+      },
+      {
+        resolvedModelString: 'llama3.3',
+        routeProtocol: 'openai',
+        effectiveBaseUrl: 'http://localhost:11434/v1',
+      }
+    );
+    expect(withoutOverrides.contextWindow).toBe(131072);
+    expect(withoutOverrides.maxTokens).toBe(4096);
+
+    const withOverrides = buildSyntheticPiModelFromRuntimeConfig(
+      {
+        model: 'llama3.3',
+        provider: 'ollama',
+        customProtocol: 'openai',
+        baseUrl: 'http://localhost:11434/v1',
+        contextWindow: 32000,
+        maxTokens: 8000,
+      },
+      {
+        resolvedModelString: 'llama3.3',
+        routeProtocol: 'openai',
+        effectiveBaseUrl: 'http://localhost:11434/v1',
+      }
+    );
+    expect(withOverrides.contextWindow).toBe(32000);
+    expect(withOverrides.maxTokens).toBe(8000);
+  });
+
   it('downgrades openai responses api to completions for custom endpoints', () => {
     const model = applyPiModelRuntimeOverrides(
       {
@@ -221,6 +258,7 @@ describe('pi model resolution helpers', () => {
 
     expect(model.baseUrl).toBe('https://api.moonshot.cn/v1');
     expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.supportsStrictMode).toBe(false);
   });
 
   it('keeps developer role enabled for first-party openai endpoints', () => {
@@ -245,6 +283,7 @@ describe('pi model resolution helpers', () => {
     );
 
     expect(model.compat?.supportsDeveloperRole).toBeUndefined();
+    expect(model.compat?.supportsStrictMode).toBeUndefined();
   });
 
   it('auto-detects reasoning models by model id pattern', () => {
@@ -367,6 +406,7 @@ describe('pi model resolution helpers', () => {
 
     expect(model.baseUrl).toBe('http://localhost:11434/v1');
     expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.supportsStrictMode).toBe(false);
   });
 
   it('maps ollama thinking off to reasoning_effort none for reasoning models', () => {
@@ -418,6 +458,7 @@ describe('pi model resolution helpers', () => {
     );
 
     expect(model.compat?.supportsDeveloperRole).toBe(false);
+    expect(model.compat?.supportsStrictMode).toBe(false);
   });
 
   it('disables supportsStore alongside developer role for non-standard endpoints', () => {
@@ -443,6 +484,7 @@ describe('pi model resolution helpers', () => {
 
     expect(model.compat?.supportsDeveloperRole).toBe(false);
     expect(model.compat?.supportsStore).toBe(false);
+    expect(model.compat?.supportsStrictMode).toBe(false);
   });
 
   it('preserves existing compat fields when disabling developer role', () => {
@@ -471,79 +513,8 @@ describe('pi model resolution helpers', () => {
 
     expect(model.compat?.supportsDeveloperRole).toBe(false);
     expect(model.compat?.supportsStore).toBe(false);
+    expect(model.compat?.supportsStrictMode).toBe(false);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((model.compat as any)?.supportsStreaming).toBe(true);
-  });
-
-  it('sets requiresThinkingInContent for DeepSeek V4 models on custom endpoints', () => {
-    const model = applyPiModelRuntimeOverrides(
-      {
-        id: 'deepseek-v4-pro',
-        name: 'deepseek-v4-pro',
-        api: 'openai-completions',
-        provider: 'custom',
-        baseUrl: 'https://my-relay.example.com/v1',
-        reasoning: true,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 16384,
-      },
-      {
-        configProvider: 'custom',
-        rawProvider: 'custom',
-        customBaseUrl: 'https://my-relay.example.com/v1',
-      }
-    );
-
-    expect(model.compat?.requiresThinkingInContent).toBe(true);
-  });
-
-  it('sets requiresThinkingInContent for provider-prefixed DeepSeek V4 model ids', () => {
-    const model = applyPiModelRuntimeOverrides(
-      {
-        id: 'deepseek/deepseek-v4-flash',
-        name: 'deepseek/deepseek-v4-flash',
-        api: 'openai-completions',
-        provider: 'openrouter',
-        baseUrl: 'https://openrouter.ai/api/v1',
-        reasoning: true,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 16384,
-      },
-      {
-        configProvider: 'openrouter',
-        rawProvider: 'openrouter',
-        customBaseUrl: 'https://openrouter.ai/api/v1',
-      }
-    );
-
-    expect(model.compat?.requiresThinkingInContent).toBe(true);
-  });
-
-  it('does not set requiresThinkingInContent for non-V4 DeepSeek models on custom endpoints', () => {
-    const model = applyPiModelRuntimeOverrides(
-      {
-        id: 'deepseek-reasoner',
-        name: 'deepseek-reasoner',
-        api: 'openai-completions',
-        provider: 'custom',
-        baseUrl: 'https://my-relay.example.com/v1',
-        reasoning: true,
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 16384,
-      },
-      {
-        configProvider: 'custom',
-        rawProvider: 'custom',
-        customBaseUrl: 'https://my-relay.example.com/v1',
-      }
-    );
-
-    expect(model.compat?.requiresThinkingInContent).toBeUndefined();
   });
 });

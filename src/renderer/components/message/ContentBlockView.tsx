@@ -14,7 +14,11 @@ import {
   resolveLocalFilePathFromHref,
 } from '../../utils/markdown-local-link';
 import { normalizeLatexDelimiters } from '../../utils/latex-delimiters';
-import { AUTO_TEXT_DIRECTION_PROPS } from '../../utils/text-direction';
+import {
+  AUTO_TEXT_DIRECTION_PROPS,
+  getTextAlignmentClass,
+  getTextDirectionProps,
+} from '../../utils/text-direction';
 import type { ToolUseContent, ToolResultContent, FileAttachmentContent } from '../../types';
 import { FileText } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
@@ -39,6 +43,7 @@ export const ContentBlockView = memo(function ContentBlockView({
   isStreaming,
   allBlocks,
   message,
+  textDirection = 'auto',
 }: ContentBlockViewProps) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -47,6 +52,8 @@ export const ContentBlockView = memo(function ContentBlockView({
   const setGlobalNotice = useAppStore((s) => s.setGlobalNotice);
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) : null;
   const currentWorkingDir = activeSession?.cwd || workingDir;
+  const directionProps = getTextDirectionProps(textDirection);
+  const alignmentClass = getTextAlignmentClass(textDirection);
 
   const resolveFilePath = (value: string) => resolvePathAgainstWorkspace(value, currentWorkingDir);
 
@@ -190,6 +197,8 @@ export const ContentBlockView = memo(function ContentBlockView({
           }
           return (
             <code
+              dir="ltr"
+              style={{ unicodeBidi: 'isolate' }}
               className="px-1.5 py-0.5 rounded bg-surface-muted text-accent font-mono text-sm"
               {...props}
             >
@@ -202,21 +211,33 @@ export const ContentBlockView = memo(function ContentBlockView({
       },
       p({ children }: { children?: React.ReactNode }) {
         return (
-          <p {...AUTO_TEXT_DIRECTION_PROPS} className="text-start">
+          <p {...directionProps} className={alignmentClass}>
             {renderChildrenWithFileLinks(children, 'p')}
           </p>
         );
       },
       li({ children }: { children?: React.ReactNode }) {
+        const content = renderChildrenWithFileLinks(children, 'li');
+        // The marker follows the list item's own direction. Manual RTL would
+        // place an outside marker on the right while text-left keeps the words
+        // on the left, so the marker stays LTR and the item text carries the
+        // selected direction.
+        if (textDirection === 'auto') {
+          return (
+            <li {...directionProps} className={alignmentClass}>
+              {content}
+            </li>
+          );
+        }
         return (
-          <li {...AUTO_TEXT_DIRECTION_PROPS} className="text-start">
-            {renderChildrenWithFileLinks(children, 'li')}
+          <li dir="ltr" className={alignmentClass}>
+            <span {...directionProps}>{content}</span>
           </li>
         );
       },
       table({ children }: { children?: React.ReactNode }) {
         return (
-          <div className="overflow-x-auto my-3">
+          <div {...AUTO_TEXT_DIRECTION_PROPS} className="overflow-x-auto my-3">
             <table className="min-w-full border-collapse">{children}</table>
           </div>
         );
@@ -257,7 +278,7 @@ export const ContentBlockView = memo(function ContentBlockView({
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentWorkingDir, setGlobalNotice, t]
+    [currentWorkingDir, textDirection, setGlobalNotice, t]
   );
 
   switch (block.type) {
@@ -276,8 +297,8 @@ export const ContentBlockView = memo(function ContentBlockView({
       if (isUser) {
         return (
           <p
-            {...AUTO_TEXT_DIRECTION_PROPS}
-            className="text-text-primary whitespace-pre-wrap break-words text-start"
+            {...directionProps}
+            className={`text-text-primary whitespace-pre-wrap break-words ${alignmentClass}`}
           >
             {text}
             {isStreaming && <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />}
@@ -290,8 +311,8 @@ export const ContentBlockView = memo(function ContentBlockView({
           name="MessageMarkdown"
           fallback={
             <div
-              {...AUTO_TEXT_DIRECTION_PROPS}
-              className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
+              {...directionProps}
+              className={`prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words ${alignmentClass}`}
             >
               {normalizedText}
             </div>
@@ -300,8 +321,8 @@ export const ContentBlockView = memo(function ContentBlockView({
           <Suspense
             fallback={
               <div
-                {...AUTO_TEXT_DIRECTION_PROPS}
-                className="prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words text-start"
+                {...directionProps}
+                className={`prose-chat max-w-none text-text-primary whitespace-pre-wrap break-words ${alignmentClass}`}
               >
                 {normalizedText}
               </div>
@@ -311,6 +332,7 @@ export const ContentBlockView = memo(function ContentBlockView({
               normalizedText={escapeThinkTags(normalizedText)}
               isStreaming={isStreaming}
               components={markdownComponents}
+              textDirection={textDirection}
             />
           </Suspense>
         </PanelErrorBoundary>
@@ -372,7 +394,12 @@ export const ContentBlockView = memo(function ContentBlockView({
       );
 
     case 'thinking':
-      return <ThinkingBlock block={block as { type: 'thinking'; thinking: string }} />;
+      return (
+        <ThinkingBlock
+          block={block as { type: 'thinking'; thinking: string }}
+          textDirection={textDirection}
+        />
+      );
 
     default:
       return null;

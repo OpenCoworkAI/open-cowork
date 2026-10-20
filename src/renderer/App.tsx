@@ -13,6 +13,7 @@ import {
   usePendingDialogs,
 } from './store/selectors';
 import { useIPC } from './hooks/useIPC';
+import { useModelCycleShortcut } from './hooks/useModelCycleShortcut';
 import { useWindowSize } from './hooks/useWindowSize';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeView } from './components/WelcomeView';
@@ -82,6 +83,7 @@ function App() {
 
   const { listSessions, isElectron } = useIPC();
   const { width } = useWindowSize();
+  useModelCycleShortcut();
   const initialized = useRef(false);
   const sidebarBeforeSettings = useRef(false);
 

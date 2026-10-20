@@ -2,6 +2,7 @@
 import { useState, memo } from 'react';
 import { ChevronDown, ChevronRight, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { EMPTY_MESSAGES, EMPTY_TRACE_STEPS } from '../../store/selectors';
 import {
   shouldPreferToolResultImages,
   shouldRenderToolResultText,
@@ -27,10 +28,14 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   message,
 }: ToolUseBlockProps) {
   const traceSteps = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.traceSteps ?? []) : []
+    message?.sessionId
+      ? (s.sessionStates[message.sessionId]?.traceSteps ?? EMPTY_TRACE_STEPS)
+      : EMPTY_TRACE_STEPS
   );
   const allMessages = useAppStore((s) =>
-    message?.sessionId ? (s.sessionStates[message.sessionId]?.messages ?? []) : []
+    message?.sessionId
+      ? (s.sessionStates[message.sessionId]?.messages ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES
   );
   const activeTurn = useAppStore((s) =>
     message?.sessionId ? (s.sessionStates[message.sessionId]?.activeTurn ?? null) : null

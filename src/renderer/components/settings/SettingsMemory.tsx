@@ -11,6 +11,8 @@ import type {
   MemorySearchScope,
 } from '../../types';
 import { useAppStore } from '../../store';
+import { stripIpcErrorPrefix } from '../../../shared/ipc-error';
+import { CoreMemoryEditor } from './CoreMemoryEditor';
 import { SettingsContentSection } from './shared';
 
 type SearchMode = 'workspace' | 'all' | 'global';
@@ -324,6 +326,26 @@ export function SettingsMemory() {
     }
   };
 
+  const handleForgetSession = async (sessionId: string) => {
+    if (!window.confirm(t('memory.forgetSessionConfirm'))) {
+      return;
+    }
+    setIsBusy(true);
+    setStatus(null);
+    try {
+      await window.electronAPI.memory.forgetSession(sessionId);
+      setResults((current) => current.filter((item) => item.sessionId !== sessionId));
+      setSelected((current) => (current?.sessionId === sessionId ? null : current));
+      setInspectedSession(null);
+      await Promise.all([refreshOverview(), refreshFiles()]);
+      setStatus(t('memory.forgetSessionSuccess'));
+    } catch (error) {
+      setStatus(stripIpcErrorPrefix(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const handleClearCore = async () => {
     if (!window.confirm(t('memory.clearCoreConfirm'))) {
       return;
@@ -370,8 +392,14 @@ export function SettingsMemory() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard label={t('memory.coreCount')} value={overview?.coreCount ?? 0} />
-            <MetricCard label={t('memory.sessionCount')} value={overview?.experienceSessionCount ?? 0} />
-            <MetricCard label={t('memory.chunkCount')} value={overview?.experienceChunkCount ?? 0} />
+            <MetricCard
+              label={t('memory.sessionCount')}
+              value={overview?.experienceSessionCount ?? 0}
+            />
+            <MetricCard
+              label={t('memory.chunkCount')}
+              value={overview?.experienceChunkCount ?? 0}
+            />
             <MetricCard
               label={t('memory.workspaceCount')}
               value={overview?.sourceWorkspaceCount ?? 0}
@@ -408,7 +436,9 @@ export function SettingsMemory() {
                 overview?.topSourceWorkspaces?.length
                   ? `Top sources: ${overview.topSourceWorkspaces
                       .slice(0, 3)
-                      .map((item) => `${item.workspaceKey} (${item.sessionCount}/${item.chunkCount})`)
+                      .map(
+                        (item) => `${item.workspaceKey} (${item.sessionCount}/${item.chunkCount})`
+                      )
                       .join(' · ')}`
                   : undefined
               }
@@ -416,6 +446,21 @@ export function SettingsMemory() {
           </div>
         </div>
       </SettingsContentSection>
+
+      <CoreMemoryEditor
+        overview={overview}
+        disabled={isBusy}
+        onChanged={() => {
+          void Promise.all([refreshOverview(), refreshFiles()]).catch((error: unknown) => {
+            setStatus(
+              t('memory.coreRefreshFailed', {
+                error: stripIpcErrorPrefix(error instanceof Error ? error.message : String(error)),
+              })
+            );
+          });
+        }}
+        onStatus={setStatus}
+      />
 
       <SettingsContentSection
         title={t('memory.runtimeTitle', '运行时配置')}
@@ -740,7 +785,9 @@ export function SettingsMemory() {
                       </p>
                       <p className="mt-1 text-sm font-medium text-text-primary">{selected.title}</p>
                     </div>
-                    <p className="text-sm text-text-secondary whitespace-pre-wrap">{selected.summary}</p>
+                    <p className="text-sm text-text-secondary whitespace-pre-wrap">
+                      {selected.summary}
+                    </p>
                     {selected.sourceFile && (
                       <p className="text-xs text-text-muted">
                         {t('memory.sourceFile', '来源文件')}: {selected.sourceFile}
@@ -749,7 +796,10 @@ export function SettingsMemory() {
                     {selected.sessionId && (
                       <button
                         onClick={() => {
-                          void handleInspectSession(selected.sessionId!, selected.sourceWorkspace || selected.workspaceKey);
+                          void handleInspectSession(
+                            selected.sessionId!,
+                            selected.sourceWorkspace || selected.workspaceKey
+                          );
                         }}
                         className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary"
                       >
@@ -782,15 +832,28 @@ export function SettingsMemory() {
                   <p className="text-sm font-semibold text-text-primary">
                     {t('memory.inspectSession', '查看会话记忆')}
                   </p>
-                  {inspectedSession?.filePath && (
-                    <button
-                      onClick={() => {
-                        void window.electronAPI.showItemInFolder(inspectedSession.filePath);
-                      }}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary"
-                    >
-                      {t('memory.revealInFinder', '在 Finder 中显示')}
-                    </button>
+                  {inspectedSession && (
+                    <div className="flex gap-2">
+                      {inspectedSession.filePath && (
+                        <button
+                          onClick={() => {
+                            void window.electronAPI.showItemInFolder(inspectedSession.filePath);
+                          }}
+                          className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-primary"
+                        >
+                          {t('memory.revealInFinder', '在 Finder 中显示')}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          void handleForgetSession(inspectedSession.session.sessionId);
+                        }}
+                        disabled={isBusy}
+                        className="rounded-lg border border-rose-300/60 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                      >
+                        {t('memory.forgetSession')}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {inspectedSession ? (
@@ -825,7 +888,10 @@ export function SettingsMemory() {
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-text-muted">
-                    {t('memory.inspectSessionHint', '从上方搜索结果中选择一个 session 或 chunk 后查看')}
+                    {t(
+                      'memory.inspectSessionHint',
+                      '从上方搜索结果中选择一个 session 或 chunk 后查看'
+                    )}
                   </p>
                 )}
               </div>
@@ -873,7 +939,9 @@ export function SettingsMemory() {
                   <p className="mt-1 text-xs text-text-muted">{file.filePath}</p>
                   <p className="mt-2 text-[11px] text-text-muted">
                     {file.sizeBytes} bytes
-                    {typeof file.sessionCount === 'number' ? ` · ${file.sessionCount} sessions` : ''}
+                    {typeof file.sessionCount === 'number'
+                      ? ` · ${file.sessionCount} sessions`
+                      : ''}
                     {typeof file.chunkCount === 'number' ? ` · ${file.chunkCount} chunks` : ''}
                   </p>
                 </button>
@@ -1001,13 +1069,7 @@ function InfoCard({
   );
 }
 
-function LabeledField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-xs font-medium text-text-muted">{label}</span>
@@ -1028,7 +1090,11 @@ function ToggleField({
   return (
     <label className="flex items-center justify-between gap-3 rounded-lg border border-border-muted bg-background/70 px-3 py-2.5">
       <span className="text-sm text-text-primary">{label}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
     </label>
   );
 }
@@ -1070,7 +1136,9 @@ function ResultGroup({
                   {[item.sourceWorkspace, item.sourceSessionTitle].filter(Boolean).join(' · ')}
                 </p>
               )}
-              {item.sourceFile && <p className="mt-2 text-[11px] text-text-muted">{item.sourceFile}</p>}
+              {item.sourceFile && (
+                <p className="mt-2 text-[11px] text-text-muted">{item.sourceFile}</p>
+              )}
             </button>
           ))}
         </div>

@@ -44,6 +44,88 @@ describe('pi model runtime overrides', () => {
     expect(model.compat).toMatchObject({
       supportsDeveloperRole: false,
       supportsStore: false,
+      supportsStrictMode: false,
     });
+  });
+
+  it('does not set requiresThinkingInContent for DeepSeek V4 models on custom endpoints', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'deepseek-v4-pro',
+        name: 'deepseek-v4-pro',
+        api: 'openai-completions',
+        provider: 'custom',
+        baseUrl: 'https://my-relay.example.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      } as Model<Api>,
+      {
+        configProvider: 'custom',
+        rawProvider: 'custom',
+        customBaseUrl: 'https://my-relay.example.com/v1',
+      }
+    );
+
+    expect(
+      (model.compat as { requiresThinkingInContent?: boolean } | undefined)
+        ?.requiresThinkingInContent
+    ).toBeUndefined();
+  });
+
+  it('does not set requiresThinkingInContent for provider-prefixed DeepSeek V4 model ids', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'deepseek/deepseek-v4-flash',
+        name: 'deepseek/deepseek-v4-flash',
+        api: 'openai-completions',
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      } as Model<Api>,
+      {
+        configProvider: 'openrouter',
+        rawProvider: 'openrouter',
+        customBaseUrl: 'https://openrouter.ai/api/v1',
+      }
+    );
+
+    expect(
+      (model.compat as { requiresThinkingInContent?: boolean } | undefined)
+        ?.requiresThinkingInContent
+    ).toBeUndefined();
+  });
+
+  it('does not set requiresThinkingInContent for non-V4 DeepSeek models on custom endpoints', () => {
+    const model = applyPiModelRuntimeOverrides(
+      {
+        id: 'deepseek-reasoner',
+        name: 'deepseek-reasoner',
+        api: 'openai-completions',
+        provider: 'custom',
+        baseUrl: 'https://my-relay.example.com/v1',
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      } as Model<Api>,
+      {
+        configProvider: 'custom',
+        rawProvider: 'custom',
+        customBaseUrl: 'https://my-relay.example.com/v1',
+      }
+    );
+
+    expect(
+      (model.compat as { requiresThinkingInContent?: boolean } | undefined)
+        ?.requiresThinkingInContent
+    ).toBeUndefined();
   });
 });

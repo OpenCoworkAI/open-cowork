@@ -236,15 +236,50 @@ export function parseJsonObject(text) {
     return JSON.parse(text);
   } catch {}
 
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    return null;
+  let candidateStart = -1;
+  let depth = 0;
+  let escaped = false;
+  let inString = false;
+  let lastParsed = null;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (candidateStart === -1) {
+      if (character === '{') {
+        candidateStart = index;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === '{') {
+      depth += 1;
+    } else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          lastParsed = JSON.parse(text.slice(candidateStart, index + 1));
+        } catch {}
+        candidateStart = -1;
+      }
+    }
   }
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
-  }
+
+  return lastParsed;
 }
 
 export async function callDeepSeekJson({
@@ -291,14 +326,32 @@ export async function callDeepSeekJson({
   }
 
   const payload = JSON.parse(rawText);
-  const content = payload.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error(`DeepSeek API returned no message content: ${truncate(rawText, 1000, 'response')}`);
+  const choice = payload.choices?.[0];
+  if (choice?.finish_reason === 'length') {
+    const usage = payload.usage;
+    throw new Error(
+      'DeepSeek response was truncated before completion. ' +
+        `max_tokens=${maxTokens}, completion_tokens=${usage?.completion_tokens ?? 'unknown'}, ` +
+        `reasoning_tokens=${usage?.completion_tokens_details?.reasoning_tokens ?? 'unknown'}`
+    );
+  }
+  const message = choice?.message;
+  const standardContent =
+    typeof message?.content === 'string' && message.content.trim() ? message.content : null;
+  // Reasoning may contain example JSON; it is never a publishable answer.
+  const content = standardContent;
+
+  if (!content) {
+    throw new Error('DeepSeek API returned no message content.');
   }
 
   const parsed = parseJsonObject(content);
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error(`DeepSeek returned non-JSON content: ${truncate(content, 1000, 'model output')}`);
+    const error = new Error(
+      `DeepSeek returned non-JSON content: ${truncate(content, 1000, 'model output')}`
+    );
+    error.modelOutput = content;
+    throw error;
   }
 
   return {
@@ -309,69 +362,92 @@ export async function callDeepSeekJson({
 }
 
 function isRetryableDeepSeekOutputError(error) {
-  const message = String(error?.message || error)
+  const message = String(error?.message || error);
   return (
     message.includes('DeepSeek API returned no message content') ||
+    message.includes('DeepSeek response was truncated before completion.') ||
     message.includes('DeepSeek returned non-JSON content') ||
-    message.includes('Model returned an empty body.')
-  )
+    message.includes('Model returned an empty body.') ||
+    message.includes('Model returned a placeholder body.')
+  );
 }
 
 export function assertNonEmptyParsedString(parsed, fieldName = 'body') {
-  const value = parsed && typeof parsed === 'object' ? parsed[fieldName] : undefined
+  const value = parsed && typeof parsed === 'object' ? parsed[fieldName] : undefined;
   if (typeof value === 'string' && value.trim()) {
-    return value.trim()
+    if (fieldName === 'body') {
+      const substantiveText = value
+        .replaceAll('*Open Cowork Bot*', '')
+        .replace(/[\s*#_`>\[\](){}-]/g, '');
+      if (
+        !substantiveText ||
+        /^[.\u2026\u3002]+$/.test(substantiveText) ||
+        /^(?:TODO|TBD|FULLMARKDOWNREVIEWBODY)$/i.test(substantiveText)
+      ) {
+        throw new Error('Model returned a placeholder body.');
+      }
+    }
+    return value.trim();
   }
 
-  let serialized = ''
+  let serialized = '';
   try {
-    serialized = JSON.stringify(parsed)
+    serialized = JSON.stringify(parsed);
   } catch {
-    serialized = String(parsed)
+    serialized = String(parsed);
   }
   throw new Error(
     `Model returned an empty ${fieldName}. Parsed payload: ${truncate(serialized, 1000, 'parsed payload')}`
-  )
+  );
 }
 
 export async function callDeepSeekJsonWithRetries(options) {
-  const { maxAttempts = 3, fieldName = 'body', userPrompt, ...requestOptions } = options
-  let lastError = null
+  const {
+    maxAttempts = 3,
+    fieldName = 'body',
+    maxTokens = 8192,
+    userPrompt,
+    ...requestOptions
+  } = options;
+  let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // Reasoning and the final answer share the output budget. Each retry needs
+    // more room; repeating the second attempt's cap cannot recover from length.
+    const attemptMaxTokens = maxTokens * 2 ** (attempt - 1);
+    const retryInstructions = [
+      'AUTOMATION RETRY NOTE:',
+      '- Return ONLY valid JSON.',
+      `- The JSON MUST include a non-empty string field named "${fieldName}".`,
+      '- Do not wrap the JSON in code fences.',
+      `- Do not return an empty, null, or missing "${fieldName}" field.`,
+      '- Write the complete answer in message content; reasoning is not published.',
+      '- Do not return placeholder text such as "...", "TODO", or "TBD".',
+      '- Avoid repeating the supplied context or quoting entire diffs.',
+    ];
     const attemptPrompt =
-      attempt === 1
-        ? userPrompt
-        : [
-            userPrompt,
-            '',
-            'AUTOMATION RETRY NOTE:',
-            '- Your previous response was invalid for automation.',
-            '- Return ONLY valid JSON.',
-            `- The JSON MUST include a non-empty string field named "${fieldName}".`,
-            '- Do not wrap the JSON in code fences.',
-            `- Do not return an empty, null, or missing "${fieldName}" field.`,
-          ].join('\n')
+      attempt === 1 ? userPrompt : [userPrompt, '', ...retryInstructions].join('\n');
 
     try {
       const result = await callDeepSeekJson({
         ...requestOptions,
+        maxTokens: attemptMaxTokens,
         userPrompt: attemptPrompt,
-      })
-      assertNonEmptyParsedString(result.parsed, fieldName)
-      return result
+      });
+      assertNonEmptyParsedString(result.parsed, fieldName);
+      return result;
     } catch (error) {
-      lastError = error
+      lastError = error;
       if (attempt >= maxAttempts || !isRetryableDeepSeekOutputError(error)) {
-        throw error
+        throw error;
       }
       console.warn(
         `DeepSeek output invalid on attempt ${attempt}/${maxAttempts}: ${error.message}`
-      )
+      );
     }
   }
 
-  throw lastError || new Error('DeepSeek output validation failed after retries.')
+  throw lastError || new Error('DeepSeek output validation failed after retries.');
 }
 export function ensureBotSignature(body) {
   const trimmed = body.trim();
@@ -431,12 +507,16 @@ export function loadPullRequestFileExcerpts(prNumber, filePaths, maxFiles = 6, m
   const excerpts = [];
   for (const filePath of [...new Set(filePaths)].slice(0, maxFiles)) {
     try {
-      const content = execFileSync('git', ['show', `refs/remotes/pull/${prNumber}/head:${filePath}`], {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        maxBuffer: 5 * 1024 * 1024,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      const content = execFileSync(
+        'git',
+        ['show', `refs/remotes/pull/${prNumber}/head:${filePath}`],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          maxBuffer: 5 * 1024 * 1024,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
       excerpts.push({
         path: filePath,
         content: truncate(content, maxChars, filePath),

@@ -49,6 +49,20 @@ describe('tool result utils', () => {
     expect(normalized.images).toEqual([{ data: base64Image, mimeType: 'image/png' }]);
   });
 
+  it('keeps 2026 structured tool output in model context', () => {
+    const normalized = normalizeMcpToolResultForModel({
+      content: [{ type: 'text', text: 'Calculation complete' }],
+      structuredContent: {
+        bmi: 22.86,
+        category: 'healthy',
+      },
+    });
+
+    expect(normalized.text).toContain('Calculation complete');
+    expect(normalized.text).toContain('"bmi":22.86');
+    expect(normalized.text).toContain('"category":"healthy"');
+  });
+
   it('keeps different images that share the same prefix and length', () => {
     const sharedPrefix = 'PREFIX'.repeat(20);
     const firstImage = `${sharedPrefix}${'X'.repeat(64)}`;

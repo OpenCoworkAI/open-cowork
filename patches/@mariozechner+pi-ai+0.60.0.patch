@@ -1,26 +1,70 @@
+diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/anthropic.js b/node_modules/@mariozechner/pi-ai/dist/providers/anthropic.js
+index 5aeee0d..cbd865e 100644
+--- a/node_modules/@mariozechner/pi-ai/dist/providers/anthropic.js
++++ b/node_modules/@mariozechner/pi-ai/dist/providers/anthropic.js
+@@ -740,4 +740,5 @@ function mapStopReason(reason) {
+             throw new Error(`Unhandled stop reason: ${reason}`);
+     }
+ }
++export { convertMessages };
+ //# sourceMappingURL=anthropic.js.map
+\ No newline at end of file
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-index 29ae8cf..6d9ea61 100644
+index 29ae8cf..da97105 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-@@ -474,13 +474,32 @@ export function convertMessages(model, context, compat) {
+@@ -384,6 +384,43 @@ function maybeAddOpenRouterAnthropicCacheControl(model, messages) {
+         }
+     }
+ }
++/**
++ * OpenAI Chat Completions content parts only accept `text` (and `image_url`).
++ * Anthropic-style `{ type: "thinking" }` fails on DeepSeek's OpenAI-compatible
++ * endpoint (`https://api.deepseek.com`) with:
++ *   unknown variant `thinking`, expected `text`
++ * Strip those parts from outbound history. Stored SDK/DB messages are unchanged.
++ *
++ * Do not delete top-level `reasoning_content`. Legacy deepseek-reasoner rejected
++ * that field on input, but DeepSeek V4 thinking mode requires it on subsequent
++ * requests that carry `tools` (Open Cowork always does). Omitting it 400s with
++ * "reasoning_content in the thinking mode must be passed back".
++ */
++function stripThinkingBlocksFromOpenAICompatibleMessages(messages) {
++    const result = [];
++    for (const msg of messages) {
++        if (!msg || typeof msg !== "object" || !Array.isArray(msg.content)) {
++            result.push(msg);
++            continue;
++        }
++        const content = msg.content.filter((part) => !part || part.type !== "thinking");
++        if (content.length === msg.content.length) {
++            result.push(msg);
++            continue;
++        }
++        const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
++        if (content.length === 0) {
++            // Empty content arrays 400 on OpenAI-compatible endpoints.
++            if (!hasToolCalls) {
++                continue;
++            }
++            result.push({ ...msg, content: "" });
++            continue;
++        }
++        result.push({ ...msg, content });
++    }
++    return result;
++}
+ export function convertMessages(model, context, compat) {
+     const params = [];
+     const normalizeToolCallId = (id) => {
+@@ -474,13 +511,22 @@ export function convertMessages(model, context, compat) {
              // Filter out empty thinking blocks to avoid API validation errors
              const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
              if (nonEmptyThinkingBlocks.length > 0) {
--                if (compat.requiresThinkingAsText) {
-+                if (compat.requiresThinkingInContent) {
-+                    // DeepSeek V4 Pro requires thinking blocks in content[] array, not as top-level field
-+                    const thinkingContent = nonEmptyThinkingBlocks.map((b) => ({
-+                        type: "thinking",
-+                        thinking: b.thinking,
-+                    }));
-+                    const existingContent = Array.isArray(assistantMsg.content)
-+                        ? assistantMsg.content
-+                        : assistantMsg.content
-+                            ? [{ type: "text", text: assistantMsg.content }]
-+                            : [];
-+                    assistantMsg.content = [...thinkingContent, ...existingContent];
-+                }
-+                else if (compat.requiresThinkingAsText) {
++                // Never emit `{ type: "thinking" }` into OpenAI-compatible content[].
++                // DeepSeek V4 replay uses top-level `reasoning_content` (required when
++                // the request includes tools). requiresThinkingAsText keeps type:text.
+                 if (compat.requiresThinkingAsText) {
                      // Convert thinking blocks to plain text (no tags to avoid model mimicking them)
                      const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n\n");
                      const textContent = assistantMsg.content;
@@ -37,27 +81,12 @@ index 29ae8cf..6d9ea61 100644
                      else {
                          assistantMsg.content = [{ type: "text", text: thinkingText }];
                      }
-@@ -658,6 +677,7 @@ function mapStopReason(reason) {
- function detectCompat(model) {
-     const provider = model.provider;
-     const baseUrl = model.baseUrl;
-+    const isDeepSeekV4 = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i.test(model.id);
-     const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
-     const isNonStandard = provider === "cerebras" ||
-         baseUrl.includes("cerebras.ai") ||
-@@ -690,6 +710,7 @@ function detectCompat(model) {
-         requiresToolResultName: false,
-         requiresAssistantAfterToolResult: false,
-         requiresThinkingAsText: false,
-+        requiresThinkingInContent: isDeepSeekV4,
-         thinkingFormat: isZai ? "zai" : "openai",
-         openRouterRouting: {},
-         vercelGatewayRouting: {},
-@@ -714,6 +735,7 @@ function getCompat(model) {
-         requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
-         requiresAssistantAfterToolResult: model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
-         requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
-+        requiresThinkingInContent: model.compat.requiresThinkingInContent ?? detected.requiresThinkingInContent,
-         thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
-         openRouterRouting: model.compat.openRouterRouting ?? {},
-         vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
+@@ -594,7 +640,7 @@ export function convertMessages(model, context, compat) {
+         }
+         lastRole = msg.role;
+     }
+-    return params;
++    return stripThinkingBlocksFromOpenAICompatibleMessages(params);
+ }
+ function convertTools(tools, compat) {
+     return tools.map((tool) => ({

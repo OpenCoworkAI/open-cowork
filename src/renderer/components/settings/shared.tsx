@@ -66,13 +66,19 @@ export function getWeekdayOptions(t: TFunction): Array<{ value: ScheduleWeekday;
 }
 
 export function getScheduleModeOptions(
-  t: TFunction
+  t: TFunction,
+  mode: ScheduleFormMode = 'once',
+  conditional = false
 ): Array<{ value: ScheduleFormMode; label: string }> {
-  return [
+  const options: Array<{ value: ScheduleFormMode; label: string }> = [
     { value: 'once', label: t('schedule.modeOnce') },
     { value: 'daily', label: t('schedule.modeDaily') },
     { value: 'weekly', label: t('schedule.modeWeekly') },
   ];
+  if (conditional || mode === 'legacy-interval') {
+    options.push({ value: 'legacy-interval', label: t('schedule.watchInterval') });
+  }
+  return conditional ? options.filter((option) => option.value !== 'once') : options;
 }
 
 // ==================== Shared UI Component ====================

@@ -1,3 +1,9 @@
+import type {
+  LocalWatchConfig,
+  ScheduledTaskRunOutcome,
+} from '../../shared/schedule/local-watch-task';
+import type { SubagentConfig } from '../../shared/subagent-config';
+
 // Session types
 export interface Session {
   id: string;
@@ -133,6 +139,11 @@ export interface WeeklyScheduleConfig {
 export type ScheduleConfig = DailyScheduleConfig | WeeklyScheduleConfig;
 
 export interface ScheduleTask {
+  watchConfig?: LocalWatchConfig | null;
+  watchConfigError?: string | null;
+  lastState?: string | null;
+  lastCheckedAt?: number | null;
+  consecutiveUnchanged?: number;
   id: string;
   title: string;
   prompt: string;
@@ -151,6 +162,7 @@ export interface ScheduleTask {
 }
 
 export interface ScheduleCreateInput {
+  watchConfig?: LocalWatchConfig | null;
   title?: string;
   prompt: string;
   cwd: string;
@@ -163,6 +175,7 @@ export interface ScheduleCreateInput {
 }
 
 export interface ScheduleUpdateInput {
+  watchConfig?: LocalWatchConfig | null;
   title?: string;
   prompt?: string;
   cwd?: string;
@@ -172,9 +185,11 @@ export interface ScheduleUpdateInput {
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
-  lastRunAt?: number | null;
-  lastRunSessionId?: string | null;
-  lastError?: string | null;
+}
+
+export interface ScheduleRunNowResult {
+  task: ScheduleTask;
+  outcome: ScheduledTaskRunOutcome;
 }
 
 // Skills types
@@ -355,6 +370,15 @@ export interface MemoryInspectSessionResult {
   chunks: ChunkMemoryItem[];
 }
 
+export interface CoreMemoryListEntry {
+  combinedKey: string;
+  category?: 'identity' | 'preferences' | 'skills' | 'interests';
+  key: string;
+  value: string;
+  /** Written by the user in Settings; extraction and rebuild keep it as is. */
+  userWritten: boolean;
+}
+
 export interface MemoryOverview {
   enabled: boolean;
   storageRoot: string;
@@ -466,6 +490,7 @@ export type ClientEvent =
     }
   | { type: 'session.stop'; payload: { sessionId: string } }
   | { type: 'session.delete'; payload: { sessionId: string } }
+  | { type: 'session.rename'; payload: { sessionId: string; title: string } }
   | { type: 'session.batchDelete'; payload: { sessionIds: string[] } }
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
@@ -531,7 +556,7 @@ export type ServerEvent =
     }
   | {
       type: 'session.status';
-      payload: { sessionId: string; status: SessionStatus; error?: string };
+      payload: { sessionId: string; status: SessionStatus; error?: string; updatedAt?: number };
     }
   | { type: 'session.update'; payload: { sessionId: string; updates: Partial<Session> } }
   | { type: 'session.list'; payload: { sessions: Session[] } }
@@ -699,6 +724,8 @@ export interface MemoryRuntimeConfig {
 }
 
 export interface AppConfig {
+  subagent?: SubagentConfig;
+  subagentConfigError?: string;
   provider: ProviderType;
   apiKey: string;
   baseUrl?: string;

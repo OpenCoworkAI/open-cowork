@@ -13,6 +13,7 @@
 - **Multi-Model**: Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi, Grok, MiniMax, Ollama
 - **UI/UX**: Enhanced interface with English/Chinese localization
 - **Remote Control**: Feishu (Lark) bot integration with pairing mode + approval panel
+- **GUI Operation (Computer Use)**: GUI automation on macOS and Windows through screen capture and mouse/keyboard control, via the built-in `GUI_Operate` connector
 - **CI/CD**: Automated builds, smoke tests, Codex-powered PR review bot
 - **Model Presets**: Up-to-date model catalogs for all major providers
 - **Dependency Policy**: Tiered management strategy with Dependabot grouping
@@ -45,11 +46,10 @@
 
 ### Long-term
 
-- **Computer Use (CUA)**: GUI automation via screen capture and mouse/keyboard control
 - **Collaborative Mode**: Multiple users sharing a workspace
 - **Mobile Companion**: Lightweight mobile app for monitoring and quick interactions
 
 ---
 
-_Last updated: 2026-05-01_
+_Last updated: 2026-10-14_
 _Want to contribute? Check our [Contributing Guide](CONTRIBUTING.md) and pick an issue labeled `good first issue`._

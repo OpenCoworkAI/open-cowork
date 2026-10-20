@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "id": "mcp-chrome-1",
+      "name": "Chrome",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "enabled": true
+    },
+    {
+      "name": "tavily-mcp",
+      "command": "npx",
+      "args": "-y tavily-mcp@latest",
+      "env": ["TAVILY_API_KEY=tvly-test-key"]
+    },
+    null
+  ]
+}

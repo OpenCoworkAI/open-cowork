@@ -17,8 +17,8 @@ import {
   SessionManager as PiSessionManager,
   SettingsManager as PiSettingsManager,
   createCodingTools,
-  type BashToolOptions,
   type AgentSession as PiAgentSession,
+  type CreateAgentSessionOptions,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent';
 import { Type, type TSchema } from '@sinclair/typebox';
@@ -48,6 +48,7 @@ import { getSandboxAdapter } from '../sandbox/sandbox-adapter';
 import { pathConverter } from '../sandbox/wsl-bridge';
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { extractArtifactsFromText, buildArtifactTraceSteps } from '../utils/artifact-parser';
+import { wrapReadToolForImageResizeErrors } from './image-resize-packaging';
 import { getDefaultShell } from '../utils/shell-resolver';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
@@ -64,11 +65,9 @@ import {
   toUserFacingErrorText,
 } from './agent-runner-message-end';
 import {
-  applyPiModelRuntimeOverrides,
-  buildSyntheticPiModel,
+  buildSyntheticPiModelFromRuntimeConfig,
   resolvePiRegistryModel,
   resolvePiRouteProtocol,
-  resolveSyntheticPiModelFallback,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
 import {
@@ -85,10 +84,8 @@ import {
 } from './tool-result-utils';
 import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
+import { createLimaSandboxCodingTools, VIRTUAL_WORKSPACE_PATH } from './lima-sandbox-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
-
-// Virtual workspace path shown to the model (hides real sandbox path)
-const VIRTUAL_WORKSPACE_PATH = '/workspace';
 
 /**
  * Estimate chars-per-token ratio based on content language.
@@ -1050,9 +1047,11 @@ ${hints.join('\n')}
   private wrapBashToolForSudo(
     tools: ToolDefinition[],
     sessionId: string,
-    effectiveCwd: string
+    effectiveCwd: string,
+    useLimaSandbox: boolean
   ): ToolDefinition[] {
-    if (!this.requestSudoPassword) return tools;
+    // Lima commands, including sudo, stay in the guest tool backend.
+    if (useLimaSandbox || !this.requestSudoPassword) return tools;
 
     const requestSudoPassword = this.requestSudoPassword;
 
@@ -1612,31 +1611,12 @@ ${hints.join('\n')}
 
       if (!piModel) {
         usedSyntheticModel = true;
-        // Synthetic fallback: construct a Model for unknown/custom models
-        const synthetic = resolveSyntheticPiModelFallback({
-          rawModel: runtimeConfig.model,
+        // Synthetic fallback: construct a Model for unknown/custom models.
+        // Reads contextWindow/maxTokens from the flat runtime AppConfig.
+        piModel = buildSyntheticPiModelFromRuntimeConfig(runtimeConfig, {
           resolvedModelString: modelString,
-          rawProvider: runtimeConfig.provider,
           routeProtocol: configProtocol,
-          baseUrl: effectiveBaseUrl,
-        });
-        piModel = buildSyntheticPiModel(
-          synthetic.modelId,
-          synthetic.provider,
-          configProtocol,
           effectiveBaseUrl,
-          undefined,
-          undefined,
-          runtimeConfig.contextWindow,
-          runtimeConfig.maxTokens
-        );
-        // Apply the same runtime overrides (developer role compat, base URL, API downgrade)
-        // that resolvePiRegistryModel applies to registry models
-        piModel = applyPiModelRuntimeOverrides(piModel, {
-          configProvider: configProtocol,
-          customBaseUrl: effectiveBaseUrl,
-          rawProvider: runtimeConfig.provider,
-          customProtocol: runtimeConfig.customProtocol,
         });
         logCtxWarn(
           '[CoworkAgentRunner] Model not in pi-ai registry, using synthetic model:',
@@ -1819,6 +1799,7 @@ ${hints.join('\n')}
         modelBaseUrl: piModel.baseUrl,
         effectiveCwd,
         apiKey,
+        subagent: configStore.getAll().subagent,
       });
       const skillPaths = await this.resolveSkillPaths(session.id);
       const skillsSignature = JSON.stringify(skillPaths);
@@ -1859,6 +1840,7 @@ ${hints.join('\n')}
             prompt,
             existingMessages,
             isColdStart: !cachedSession,
+            sandboxIsolated: useSandboxIsolation,
           })
         : { promptPrefix: undefined, customTools: [] };
 
@@ -2158,23 +2140,37 @@ Tool routing:
       // executed via Pi SDK's Bash tool can find bundled and user-installed executables.
       await enrichProcessPathForBuild();
 
-      const bashOptions: BashToolOptions | undefined =
-        process.platform === 'win32' ? { operations: createWindowsBashOperations() } : undefined;
-      const codingTools = createCodingTools(
-        effectiveCwd,
-        bashOptions ? { bash: bashOptions } : undefined
+      // Lima creates the session directory inside the VM. Host bash checks that
+      // path with existsSync, fails, and the UI then rewrites it to /workspace.
+      // Run the coding tools in the guest and keep those implementations: the
+      // SDK otherwise rebuilds host-local tools from cwd.
+      const guestSandboxPath =
+        useSandboxIsolation && sandbox.isLima && sandboxPath ? sandboxPath : null;
+      // The guest read tool resizes images on the host like the local one, so both get the wrapper.
+      const codingTools = wrapReadToolForImageResizeErrors(
+        (guestSandboxPath
+          ? createLimaSandboxCodingTools(guestSandboxPath)
+          : createCodingTools(
+              effectiveCwd,
+              process.platform === 'win32'
+                ? { bash: { operations: createWindowsBashOperations() } }
+                : undefined
+            )) as ToolDefinition[]
       );
 
       // Inject a default 120s timeout for bash commands when the model omits one
-      const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(
-        codingTools as ToolDefinition[]
-      );
+      const withTimeout = CoworkAgentRunner.wrapBashToolWithDefaultTimeout(codingTools);
 
       // Wrap the bash tool to intercept sudo commands and request passwords
       // Note: wrapBashToolForSudo returns ToolDefinition[] (5-param execute) but
       // createAgentSession.tools expects Tool[] (4-param execute). The extra ctx
       // parameter is simply not passed by the session runner — safe to cast.
-      const wrappedTools = this.wrapBashToolForSudo(withTimeout, session.id, effectiveCwd);
+      const wrappedTools = this.wrapBashToolForSudo(
+        withTimeout,
+        session.id,
+        effectiveCwd,
+        Boolean(guestSandboxPath)
+      );
 
       // Diagnostic: log tools being passed to SDK (helps debug Ollama tool use)
       logCtx(`[CoworkAgentRunner] Session reuse check: cached=${!!cachedSession}`);
@@ -2292,6 +2288,13 @@ Tool routing:
           authStorage,
           modelRegistry,
           tools: wrappedTools as unknown as ReturnType<typeof createCodingTools>,
+          ...(guestSandboxPath
+            ? {
+                baseToolsOverride: Object.fromEntries(
+                  wrappedTools.map((tool) => [tool.name, tool])
+                ) as CreateAgentSessionOptions['baseToolsOverride'],
+              }
+            : {}),
           customTools,
           sessionManager: PiSessionManager.inMemory(),
           settingsManager: PiSettingsManager.inMemory({

@@ -9,12 +9,16 @@ import type { TunnelStatus } from './types';
 
 interface Props {
   useLongConnection: boolean;
+  verificationToken: string;
+  encryptKey: string;
   tunnelEnabled: boolean;
   ngrokAuthToken: string;
   gatewayPort: number;
   tunnelStatus: TunnelStatus | null;
   webhookUrl: string | null;
   onLongConnectionChange: (value: boolean) => void;
+  onVerificationTokenChange: (value: string) => void;
+  onEncryptKeyChange: (value: string) => void;
   onTunnelEnabledChange: (value: boolean) => void;
   onNgrokAuthTokenChange: (value: string) => void;
   onCopy: (text: string) => void;
@@ -22,12 +26,16 @@ interface Props {
 
 export function ConnectionConfigStep({
   useLongConnection,
+  verificationToken,
+  encryptKey,
   tunnelEnabled,
   ngrokAuthToken,
   gatewayPort,
   tunnelStatus,
   webhookUrl,
   onLongConnectionChange,
+  onVerificationTokenChange,
+  onEncryptKeyChange,
   onTunnelEnabledChange,
   onNgrokAuthTokenChange,
   onCopy,
@@ -56,9 +64,7 @@ export function ConnectionConfigStep({
           <div
             className={`p-2 rounded-lg ${useLongConnection ? 'bg-success/10' : 'bg-surface-active'}`}
           >
-            <Zap
-              className={`w-6 h-6 ${useLongConnection ? 'text-success' : 'text-text-muted'}`}
-            />
+            <Zap className={`w-6 h-6 ${useLongConnection ? 'text-success' : 'text-text-muted'}`} />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -70,15 +76,13 @@ export function ConnectionConfigStep({
             <p className="text-sm text-text-secondary mt-1">{t('remote.longConnectionDesc')}</p>
             <div className="flex items-center gap-4 mt-3 text-xs text-text-muted">
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-success" />{' '}
-                {t('remote.noPublicInternet')}
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" /> {t('remote.noPublicInternet')}
               </span>
               <span className="flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-success" /> {t('remote.outOfBox')}
               </span>
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-success" />{' '}
-                {t('remote.stableReliable')}
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" /> {t('remote.stableReliable')}
               </span>
             </div>
           </div>
@@ -141,6 +145,34 @@ export function ConnectionConfigStep({
                   <Copy className="w-4 h-4 text-text-muted" />
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-text-muted mb-1">{t('remote.encryptKey')}</label>
+              <input
+                type="password"
+                value={encryptKey}
+                onChange={(e) => onEncryptKeyChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full px-3 py-2 bg-surface-hover border border-border rounded-lg text-sm text-text-primary focus:border-accent focus:outline-none"
+                placeholder={t('remote.encryptKeyPlaceholder')}
+              />
+              <p className="text-xs text-text-muted mt-2">{t('remote.encryptKeyHint')}</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-text-muted mb-1">
+                {t('remote.verificationToken')}
+              </label>
+              <input
+                type="password"
+                value={verificationToken}
+                onChange={(e) => onVerificationTokenChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full px-3 py-2 bg-surface-hover border border-border rounded-lg text-sm text-text-primary focus:border-accent focus:outline-none"
+                placeholder={t('remote.verificationTokenPlaceholder')}
+              />
+              <p className="text-xs text-text-muted mt-2">{t('remote.verificationTokenHint')}</p>
             </div>
 
             {/* Built-in ngrok tunnel */}

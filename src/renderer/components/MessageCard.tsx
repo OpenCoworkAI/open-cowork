@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Clock, XCircle } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
+import type { TextDirection } from '../utils/text-direction';
 
 interface MessageCardProps {
   message: Message;
@@ -21,6 +22,23 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
     ? (rawContent as ContentBlock[])
     : [{ type: 'text', text: String(rawContent ?? '') } as ContentBlock];
   const [copied, setCopied] = useState(false);
+  const [textDirection, setTextDirection] = useState<TextDirection>('auto');
+  const hasText = contentBlocks.some((block) => block.type === 'text' && Boolean(block.text));
+
+  const directionSelect = hasText && (
+    <select
+      dir="ltr"
+      aria-label={t('messageCard.textDirection')}
+      title={t('messageCard.textDirection')}
+      value={textDirection}
+      onChange={(event) => setTextDirection(event.target.value as TextDirection)}
+      className="w-32 h-7 rounded border border-border bg-surface text-text-secondary text-xs px-1 opacity-100 sm:opacity-0 sm:group-hover/message:opacity-100 focus:opacity-100 transition-opacity"
+    >
+      <option value="auto">{t('messageCard.directionAuto')}</option>
+      <option value="ltr">{t('messageCard.directionLtr')}</option>
+      <option value="rtl">{t('messageCard.directionRtl')}</option>
+    </select>
+  );
 
   // Build a set of tool_result IDs that have a matching tool_use (for merging)
   const mergedResultIds = useMemo(() => {
@@ -58,10 +76,10 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in group/message">
       {isUser ? (
         // User message - compact styling with smaller padding and radius
-        <div className="flex items-start gap-2 justify-end group">
+        <div className="flex flex-col items-end gap-1">
           <div
             className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
               isQueued ? 'opacity-70 border-dashed' : ''
@@ -90,21 +108,25 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
                   block={block}
                   isUser={isUser}
                   isStreaming={isStreaming}
+                  textDirection={textDirection}
                 />
               ))
             )}
           </div>
-          <button
-            onClick={handleCopy}
-            className="mt-1 w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-            title={t('messageCard.copyMessage')}
-          >
-            {copied ? (
-              <Check className="w-3 h-3 text-success" />
-            ) : (
-              <Copy className="w-3 h-3 text-text-muted" />
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            {directionSelect}
+            <button
+              onClick={handleCopy}
+              className="w-7 h-7 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-100 sm:opacity-0 sm:group-hover/message:opacity-100 focus:opacity-100"
+              title={t('messageCard.copyMessage')}
+            >
+              {copied ? (
+                <Check className="w-3 h-3 text-success" />
+              ) : (
+                <Copy className="w-3 h-3 text-text-muted" />
+              )}
+            </button>
+          </div>
         </div>
       ) : (
         // Assistant message — no bubble, direct content (Claude style)
@@ -123,11 +145,13 @@ export const MessageCard = memo(function MessageCard({ message, isStreaming }: M
                 block={block}
                 isUser={isUser}
                 isStreaming={isStreaming}
+                textDirection={textDirection}
                 allBlocks={contentBlocks}
                 message={message}
               />
             );
           })}
+          {directionSelect && <div className="flex justify-end">{directionSelect}</div>}
         </div>
       )}
     </div>

@@ -510,13 +510,14 @@ export class SandboxAdapter implements SandboxExecutor {
   async executeCommand(
     command: string,
     cwd?: string,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ExecutionResult> {
     if (!this.executor) {
       throw new Error('Sandbox not initialized');
     }
 
-    return this.executor.executeCommand(command, cwd, env);
+    return this.executor.executeCommand(command, cwd, env, timeoutMs);
   }
 
   /**

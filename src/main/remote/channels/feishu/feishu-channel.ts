@@ -15,6 +15,7 @@ import type {
   RemoteContent,
   RemoteResponseContent,
 } from '../../types';
+import { AESCipher } from '@larksuiteoapi/node-sdk';
 import { FeishuAPI } from './feishu-api';
 import { FeishuWSClient } from './feishu-ws-client';
 
@@ -145,15 +146,15 @@ export class FeishuChannel extends ChannelBase {
     body: string,
     signature: string
   ): boolean {
-    const verificationToken = this.config?.verificationToken;
-    if (!verificationToken) return false; // Reject — verificationToken is required for webhook mode
+    // Official Feishu/Lark event callback signature:
+    // SHA256(timestamp + nonce + encryptKey + rawBody)
+    // See larksuite/node-sdk dispatcher/request-handle.ts checkIsEventValidated.
+    const encryptKey = this.config?.encryptKey;
+    if (!encryptKey) return false;
 
     try {
-      const content = timestamp + nonce + verificationToken + body;
-      const computedSignature = crypto
-        .createHmac('sha256', verificationToken)
-        .update(content)
-        .digest('hex');
+      const content = timestamp + nonce + encryptKey + body;
+      const computedSignature = crypto.createHash('sha256').update(content).digest('hex');
       const sigBuf = Buffer.from(signature, 'hex');
       const computedBuf = Buffer.from(computedSignature, 'hex');
       if (sigBuf.length !== computedBuf.length) return false;
@@ -186,57 +187,112 @@ export class FeishuChannel extends ChannelBase {
     }
 
     try {
-      const data = JSON.parse(body);
-      log('[Feishu] Webhook data:', JSON.stringify(data, null, 2));
-
-      // Handle URL verification challenge
-      if (data.type === 'url_verification') {
-        log('[Feishu] URL verification challenge');
-        return {
-          status: 200,
-          data: { challenge: data.challenge },
-        };
+      const envelope = JSON.parse(body) as unknown;
+      if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+        return { status: 400, data: { error: 'Invalid JSON' } };
       }
 
-      // Handle v2 schema (飞书新版事件格式)
-      if (data.schema === '2.0') {
-        log('[Feishu] Processing v2 schema event');
-        const eventType = data.header?.event_type;
-        log('[Feishu] Event type:', eventType);
-
-        if (eventType === 'im.message.receive_v1') {
-          this.handleMessageEvent(data.event);
-        }
-
-        return { status: 200, data: { code: 0 } };
+      const unwrapped = this.unwrapWebhookPayload(envelope as Record<string, unknown>);
+      if (!unwrapped.ok) {
+        return { status: unwrapped.status, data: { error: unwrapped.error } };
       }
 
-      // Handle v1 schema (飞书旧版事件格式)
-      if (data.event) {
-        log('[Feishu] Processing v1 schema event');
-        const eventType = data.header?.event_type || data.event?.type;
-        log('[Feishu] Event type:', eventType);
-
-        if (eventType === 'im.message.receive_v1' || eventType === 'message') {
-          this.handleMessageEvent(data.event);
-        }
-
-        return { status: 200, data: { code: 0 } };
-      }
-
-      // Verify request if encryption is enabled
-      if (this.config.encryptKey && data.encrypt) {
-        log('[Feishu] Encrypted message received, decryption not yet implemented');
-        // TODO: Implement message decryption
-        return { status: 501, data: { code: 1, msg: 'Encrypted webhook not yet supported' } };
-      }
-
-      log('[Feishu] Unknown webhook format, returning OK');
-      return { status: 200, data: { code: 0 } };
+      return this.dispatchWebhookPayload(unwrapped.payload);
     } catch (error) {
-      logError('[Feishu] Webhook handling error:', error);
+      if (error instanceof SyntaxError) {
+        return { status: 400, data: { error: 'Invalid JSON' } };
+      }
+      logError('[Feishu] Webhook handling error');
       return { status: 500, data: { error: 'Internal error' } };
     }
+  }
+
+  /**
+   * Decrypt `{ encrypt }` envelopes with AESCipher (AES-256-CBC, key = SHA256(encryptKey)).
+   * Signature verification already used the raw outer body; this runs next so encrypted
+   * URL challenges and events share the plaintext handlers.
+   */
+  private unwrapWebhookPayload(
+    envelope: Record<string, unknown>
+  ): { ok: true; payload: Record<string, unknown> } | { ok: false; status: number; error: string } {
+    if (envelope.encrypt === undefined) {
+      return { ok: true, payload: envelope };
+    }
+    if (typeof envelope.encrypt !== 'string' || envelope.encrypt.length === 0) {
+      logWarn('[Feishu] Encrypted webhook envelope is invalid');
+      return { ok: false, status: 400, error: 'Invalid encrypted payload' };
+    }
+
+    const encryptKey = this.config.encryptKey;
+    if (!encryptKey) {
+      logWarn('[Feishu] Encrypted webhook received without encryptKey configured');
+      return { ok: false, status: 400, error: 'Invalid encrypted payload' };
+    }
+
+    try {
+      const plaintext = new AESCipher(encryptKey).decrypt(envelope.encrypt);
+      const payload = JSON.parse(plaintext) as unknown;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        logWarn('[Feishu] Encrypted webhook plaintext is not a JSON object');
+        return { ok: false, status: 400, error: 'Invalid encrypted payload' };
+      }
+      return { ok: true, payload: payload as Record<string, unknown> };
+    } catch {
+      logWarn('[Feishu] Encrypted webhook decryption failed');
+      return { ok: false, status: 400, error: 'Invalid encrypted payload' };
+    }
+  }
+
+  private dispatchWebhookPayload(data: Record<string, unknown>): {
+    status: number;
+    data: Record<string, unknown>;
+  } {
+    // Handle URL verification challenge. Signature uses encryptKey; the
+    // body token must match Verification Token when one is configured.
+    if (data.type === 'url_verification') {
+      const expectedToken = this.config.verificationToken;
+      if (expectedToken && data.token !== expectedToken) {
+        logWarn('[Feishu] URL verification token mismatch');
+        return { status: 403, data: { error: 'Invalid verification token' } };
+      }
+      log('[Feishu] URL verification challenge');
+      return {
+        status: 200,
+        data: { challenge: data.challenge },
+      };
+    }
+
+    const header = data.header as { event_type?: string } | undefined;
+    const event = data.event as Record<string, unknown> | undefined;
+
+    // Handle v2 schema (飞书新版事件格式)
+    if (data.schema === '2.0') {
+      log('[Feishu] Processing v2 schema event');
+      const eventType = header?.event_type;
+      log('[Feishu] Event type:', eventType);
+
+      if (eventType === 'im.message.receive_v1' && event) {
+        this.handleMessageEvent(event);
+      }
+
+      return { status: 200, data: { code: 0 } };
+    }
+
+    // Handle v1 schema (飞书旧版事件格式)
+    if (event) {
+      log('[Feishu] Processing v1 schema event');
+      const eventType = header?.event_type || (event.type as string | undefined);
+      log('[Feishu] Event type:', eventType);
+
+      if ((eventType === 'im.message.receive_v1' || eventType === 'message') && event) {
+        this.handleMessageEvent(event);
+      }
+
+      return { status: 200, data: { code: 0 } };
+    }
+
+    log('[Feishu] Unknown webhook format, returning OK');
+    return { status: 200, data: { code: 0 } };
   }
 
   /**

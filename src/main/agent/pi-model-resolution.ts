@@ -5,7 +5,6 @@ const COMMON_FALLBACK_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 const INVALID_REGISTRY_PROVIDERS = new Set(['', 'custom']);
 const REASONING_MODEL_PATTERN =
   /\bthinking\b|\breasoner\b|deepseek-r1|deepseek-v4|kimi-k2|qwen3(?:\.5)?(?=[:/-]|$)/i;
-const DEEPSEEK_V4_MODEL_PATTERN = /(?:^|[/_-])deepseek[-_.]?v4(?:$|[-:_.])/i;
 type PiRegistryProvider = Parameters<typeof getModel>[0];
 
 interface KnownSyntheticModelMetadata {
@@ -27,6 +26,7 @@ export interface PiModelLookupOptions {
   rawProvider?: string;
   customBaseUrl?: string;
   customProtocol?: string;
+  restrictToProvider?: boolean;
 }
 
 export interface PiModelLookupCandidate {
@@ -75,6 +75,27 @@ function shouldDisableDeveloperRoleForEndpoint(
   }
 
   return true;
+}
+
+/**
+ * Every non-official OpenAI-compatible endpoint (custom relays such as
+ * TokenMix, local Ollama, OpenRouter) gets the same compat overrides.
+ * Those endpoints 400 on proprietary Chat Completions fields (`strict`
+ * inside `function`, `store`, `developer` role). pi-ai omits `strict` when
+ * `supportsStrictMode` is false. Omitting the field matches OpenAI's default
+ * of non-strict tools, so providers that accept `strict` keep the same
+ * behaviour as an explicit `strict: false`.
+ */
+function applyNonOfficialOpenAICompat(model: Model<Api>): Model<Api> {
+  return {
+    ...model,
+    compat: {
+      ...(model.compat || {}),
+      supportsDeveloperRole: false,
+      supportsStore: false,
+      supportsStrictMode: false,
+    },
+  } as Model<Api>;
 }
 
 function shouldPreserveOpenAIResponsesApi(
@@ -197,6 +218,53 @@ export function buildSyntheticPiModel(
       contextWindow ?? knownMetadata?.contextWindow ?? knownSpecs?.contextWindow ?? 128000,
     maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
   } as Model<Api>;
+}
+
+export interface RuntimeSyntheticPiModelConfig {
+  model?: string;
+  provider?: string;
+  customProtocol?: string;
+  baseUrl?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+/**
+ * Production synthetic-model path used by the agent runner.
+ * Reads contextWindow/maxTokens from the runtime config object so callers
+ * cannot accidentally drop projected flat AppConfig overrides.
+ */
+export function buildSyntheticPiModelFromRuntimeConfig(
+  runtimeConfig: RuntimeSyntheticPiModelConfig,
+  input: {
+    resolvedModelString: string;
+    routeProtocol: string;
+    effectiveBaseUrl?: string;
+  }
+): Model<Api> {
+  const synthetic = resolveSyntheticPiModelFallback({
+    rawModel: runtimeConfig.model,
+    resolvedModelString: input.resolvedModelString,
+    rawProvider: runtimeConfig.provider,
+    routeProtocol: input.routeProtocol,
+    baseUrl: input.effectiveBaseUrl,
+  });
+  const piModel = buildSyntheticPiModel(
+    synthetic.modelId,
+    synthetic.provider,
+    input.routeProtocol,
+    input.effectiveBaseUrl,
+    undefined,
+    undefined,
+    runtimeConfig.contextWindow,
+    runtimeConfig.maxTokens
+  );
+  return applyPiModelRuntimeOverrides(piModel, {
+    configProvider: input.routeProtocol,
+    customBaseUrl: input.effectiveBaseUrl,
+    rawProvider: runtimeConfig.provider,
+    customProtocol: runtimeConfig.customProtocol,
+  });
 }
 
 export function resolveSyntheticPiModelFallback(
@@ -333,14 +401,7 @@ export function applyPiModelRuntimeOverrides(
     nextModel = { ...nextModel, api: 'openai-completions' } as typeof nextModel;
   }
   if (shouldDisableDeveloperRoleForEndpoint(nextModel, options)) {
-    nextModel = {
-      ...nextModel,
-      compat: {
-        ...(nextModel.compat || {}),
-        supportsDeveloperRole: false,
-        supportsStore: false,
-      },
-    } as typeof nextModel;
+    nextModel = applyNonOfficialOpenAICompat(nextModel);
   }
 
   if (
@@ -367,20 +428,6 @@ export function applyPiModelRuntimeOverrides(
     } as typeof nextModel;
   }
 
-  // DeepSeek V4 models on custom/relay endpoints need thinking blocks in content[] array.
-  if (nextModel.api === 'openai-completions' && DEEPSEEK_V4_MODEL_PATTERN.test(nextModel.id)) {
-    const currentCompat = (nextModel.compat || {}) as Record<string, unknown>;
-    if (!currentCompat.requiresThinkingInContent) {
-      nextModel = {
-        ...nextModel,
-        compat: {
-          ...currentCompat,
-          requiresThinkingInContent: true,
-        },
-      } as typeof nextModel;
-    }
-  }
-
   // Handle custom provider with explicit protocol override
   if (isCustomProvider && options.customProtocol) {
     const targetApi = inferPiApi(options.customProtocol);
@@ -397,6 +444,7 @@ export function resolvePiRegistryModel(
   options: PiModelLookupOptions = {}
 ): Model<Api> | undefined {
   for (const candidate of buildPiModelLookupCandidates(modelString, options)) {
+    if (options.restrictToProvider && candidate.provider !== options.configProvider) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (getModel as (...args: unknown[]) => Model<Api> | undefined)(
       candidate.provider as PiRegistryProvider,
