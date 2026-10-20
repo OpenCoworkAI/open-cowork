@@ -176,7 +176,7 @@ export function modelPresetForProfile(
   profileKey: ProviderProfileKey,
   presets: ProviderPresets,
   baseUrl?: string
-) {
+): ProviderPresets['custom'] {
   if (profileKey.startsWith('custom:') && isDirectMiniMaxBaseUrl(baseUrl)) {
     return { name: 'MiniMax', baseUrl: baseUrl || '', models: MINIMAX_TEXT_MODELS };
   }
