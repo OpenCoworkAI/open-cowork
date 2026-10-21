@@ -96,15 +96,38 @@ function buildProgressEvent(
 type SendEvent = (event: ServerEvent) => void;
 type PermissionHandler = (toolName: string, toolInput: unknown) => Promise<'allow' | 'deny'>;
 
+/**
+ * Callback for persisting a subagent run's lifecycle snapshot. Invoked once on
+ * start-ish (status 'running') and once more at completion/failure with the
+ * accumulated tools timeline and full text. Wired up in `src/main/index.ts` to
+ * write into the `subagent_runs` table; left undefined in unit tests.
+ */
+export type SubagentRunRecorder = (run: {
+  subagentId: string;
+  sessionId: string;
+  task: string;
+  status: 'running' | 'completed' | 'failed';
+  tools: Array<{
+    toolName: string;
+    startedAt?: number;
+    durationMs?: number;
+    isError?: boolean;
+  }>;
+  accumulatedText: string;
+  error?: string;
+  durationMs?: number;
+}) => void;
+
 function createSpawnSubagentTool(
   mcpManager: MCPManager | null,
   sendEvent: SendEvent,
   parentSessionId: string,
   requestPermission: PermissionHandler | null,
-  getParentAbortSignal: () => AbortSignal | null,
+  getParentAbortSignal: (parentSessionId: string) => AbortSignal | null,
   activeSubagents: Map<string, Set<string>>,
   cwd: string,
-  sandboxIsolated: boolean
+  sandboxIsolated: boolean,
+  recordRun?: SubagentRunRecorder
 ): AgentRuntimeCustomTool {
   const config = configStore.getAll();
   const settings = config.subagentConfigError
@@ -228,8 +251,31 @@ function createSpawnSubagentTool(
       );
 
       const subagentId = uuidv4();
-      log(`[SubagentExtension] Spawning child ${subagentId} for task: "${task.slice(0, 100)}..."`);
+
+      // Parent already stopped — refuse to spawn so a cancelled parent never
+      // leaves a stray child card that immediately flips to cancelled.
+      if (getParentAbortSignal(parentSessionId)?.aborted) {
+        log(`[SubagentExtension] Refusing spawn ${subagentId}: parent session already stopped`);
+        return {
+          content: [
+            { type: 'text' as const, text: 'Subagent cancelled: parent session was stopped.' },
+          ],
+          details: undefined as unknown,
+        };
+      }
+
       const startTime = Date.now();
+
+      // Accumulators shared across the execution try/catch so the catch path
+      // can persist whatever progress happened before an error.
+      let finalText = '';
+      let currentFullText = '';
+      const toolsTimeline: Array<{
+        toolName: string;
+        startedAt?: number;
+        durationMs?: number;
+        isError?: boolean;
+      }> = [];
 
       active.add(subagentId);
       activeSubagents.set(parentSessionId, active);
@@ -241,6 +287,15 @@ function createSpawnSubagentTool(
           task: task.slice(0, 200),
         })
       );
+
+      recordRun?.({
+        subagentId,
+        sessionId: parentSessionId,
+        task,
+        status: 'running',
+        tools: [],
+        accumulatedText: '',
+      });
 
       try {
         const authStorage = getSharedAuthStorage();
@@ -401,23 +456,40 @@ function createSpawnSubagentTool(
           cwd,
         });
 
-        let finalText = '';
         const unsubscribe = childSession.subscribe((event) => {
           if (event.type === 'tool_execution_start') {
+            const toolName = (event as { toolName?: string }).toolName || 'unknown';
+            toolsTimeline.push({ toolName, startedAt: Date.now() });
             safeSendEvent(
               sendEvent,
               buildProgressEvent(parentSessionId, subagentId, {
                 event: 'tool_start',
-                toolName: (event as { toolName?: string }).toolName || 'unknown',
+                toolName,
               })
             );
           } else if (event.type === 'tool_execution_end') {
             const e = event as { toolName?: string; isError?: boolean };
+            const toolName = e.toolName || 'unknown';
+            // Scan from the tail without allocating a reversed copy on every
+            // tool completion (quadratic work over a long tool timeline).
+            let matchingTool: (typeof toolsTimeline)[number] | undefined;
+            for (let i = toolsTimeline.length - 1; i >= 0; i--) {
+              const t = toolsTimeline[i];
+              if (t.toolName === toolName && t.durationMs == null) {
+                matchingTool = t;
+                break;
+              }
+            }
+            if (matchingTool) {
+              // Duration is per-tool (from its own start), not from subagent launch.
+              matchingTool.durationMs = Date.now() - (matchingTool.startedAt ?? startTime);
+              matchingTool.isError = e.isError || false;
+            }
             safeSendEvent(
               sendEvent,
               buildProgressEvent(parentSessionId, subagentId, {
                 event: 'tool_end',
-                toolName: e.toolName || 'unknown',
+                toolName,
                 isError: e.isError || false,
               })
             );
@@ -425,18 +497,23 @@ function createSpawnSubagentTool(
             const e = event as { message?: { content?: unknown[] } };
             const content = e.message?.content;
             if (Array.isArray(content)) {
-              const lastText = content
+              // Emit the FULL current assistant text (all text blocks joined),
+              // not just the last block, so the renderer can display the whole
+              // analysis so far. Replace-endpoint on the renderer matches this.
+              const fullText = content
                 .filter((b): b is { type: 'text'; text: string } => {
                   const block = b as { type?: string; text?: string };
                   return block.type === 'text' && typeof block.text === 'string';
                 })
-                .pop();
-              if (lastText) {
+                .map((b) => b.text)
+                .join('\n');
+              currentFullText = fullText;
+              if (fullText) {
                 safeSendEvent(
                   sendEvent,
                   buildProgressEvent(parentSessionId, subagentId, {
                     event: 'text_delta',
-                    text: lastText.text,
+                    text: fullText,
                   })
                 );
               }
@@ -445,7 +522,8 @@ function createSpawnSubagentTool(
         });
 
         let timeoutId: NodeJS.Timeout | undefined;
-        const parentSignal = getParentAbortSignal();
+        let parentCancelled = false;
+        const parentSignal = getParentAbortSignal(parentSessionId);
         let parentAbortHandler: (() => void) | undefined;
 
         try {
@@ -457,10 +535,14 @@ function createSpawnSubagentTool(
           const parentAbortPromise = parentSignal
             ? new Promise<never>((_, reject) => {
                 if (parentSignal.aborted) {
+                  parentCancelled = true;
                   reject(new ParentCancelledError());
                   return;
                 }
-                parentAbortHandler = () => reject(new ParentCancelledError());
+                parentAbortHandler = () => {
+                  parentCancelled = true;
+                  reject(new ParentCancelledError());
+                };
                 parentSignal.addEventListener('abort', parentAbortHandler);
               })
             : null;
@@ -507,6 +589,43 @@ function createSpawnSubagentTool(
         }
 
         const durationMs = Date.now() - startTime;
+
+        // Final gate: regardless of whether the abort listener fired, if the
+        // parent signal is aborted by the time the child finishes, report
+        // cancelled rather than completed.
+        const parentNowAborted = getParentAbortSignal(parentSessionId)?.aborted ?? false;
+
+        // Parent cancellation raced the child's natural completion — surface
+        // cancelled (not completed) so a stopped run is never shown as success.
+        if (parentCancelled || parentNowAborted) {
+          log(`[SubagentExtension] Child ${subagentId} cancelled after ${durationMs}ms`);
+          safeSendEvent(
+            sendEvent,
+            buildProgressEvent(parentSessionId, subagentId, {
+              event: 'failed',
+              error: 'cancelled',
+              durationMs,
+              text: currentFullText,
+            })
+          );
+          recordRun?.({
+            subagentId,
+            sessionId: parentSessionId,
+            task,
+            status: 'failed',
+            tools: toolsTimeline,
+            accumulatedText: currentFullText,
+            error: 'cancelled',
+            durationMs,
+          });
+          return {
+            content: [
+              { type: 'text' as const, text: 'Subagent cancelled: parent session was stopped.' },
+            ],
+            details: undefined as unknown,
+          };
+        }
+
         log(`[SubagentExtension] Child ${subagentId} completed in ${durationMs}ms`);
 
         safeSendEvent(
@@ -514,8 +633,19 @@ function createSpawnSubagentTool(
           buildProgressEvent(parentSessionId, subagentId, {
             event: 'completed',
             durationMs,
+            text: currentFullText,
           })
         );
+
+        recordRun?.({
+          subagentId,
+          sessionId: parentSessionId,
+          task,
+          status: 'completed',
+          tools: toolsTimeline,
+          accumulatedText: currentFullText,
+          durationMs,
+        });
 
         return {
           content: [
@@ -529,7 +659,12 @@ function createSpawnSubagentTool(
         logError(`[SubagentExtension] Child ${subagentId} failed after ${durationMs}ms:`, message);
 
         const isTimeout = err instanceof SubagentTimeoutError;
-        const isCancelled = err instanceof ParentCancelledError;
+        const hasParentStopped = getParentAbortSignal(parentSessionId)?.aborted ?? false;
+        // Parent may have aborted without necessarily rejecting through
+        // ParentCancelledError (e.g. the child's own prompt errored at the same
+        // moment) — still classify as cancelled so the card is never shown as a
+        // model error for a stopped run.
+        const isCancelled = err instanceof ParentCancelledError || hasParentStopped;
 
         safeSendEvent(
           sendEvent,
@@ -537,8 +672,24 @@ function createSpawnSubagentTool(
             event: 'failed',
             error: isTimeout ? 'timeout' : isCancelled ? 'cancelled' : message.slice(0, 200),
             durationMs,
+            text: currentFullText,
           })
         );
+
+        recordRun?.({
+          subagentId,
+          sessionId: parentSessionId,
+          task,
+          status: 'failed',
+          tools: toolsTimeline,
+          accumulatedText: currentFullText,
+          error: isTimeout
+            ? 'timeout'
+            : isCancelled
+              ? 'cancelled'
+              : message.slice(0, 200),
+          durationMs,
+        });
 
         return {
           content: [
@@ -569,7 +720,9 @@ export class SubagentExtension implements AgentRuntimeExtension {
     private readonly getMcpManager: () => MCPManager | null,
     private readonly sendEvent: SendEvent,
     private readonly requestPermission: PermissionHandler | null = null,
-    private readonly getParentAbortSignal: () => AbortSignal | null = () => null
+    private readonly getParentAbortSignal: (parentSessionId: string) => AbortSignal | null = () =>
+      null,
+    private readonly recordRun?: SubagentRunRecorder
   ) {}
 
   async beforeSessionRun(context: BeforeSessionRunContext): Promise<BeforeSessionRunResult> {
@@ -583,7 +736,8 @@ export class SubagentExtension implements AgentRuntimeExtension {
           this.getParentAbortSignal,
           this.activeSubagents,
           context.session.cwd || configStore.getAll()?.defaultWorkdir || process.cwd(),
-          context.sandboxIsolated ?? false
+          context.sandboxIsolated ?? false,
+          this.recordRun
         ),
       ],
     };

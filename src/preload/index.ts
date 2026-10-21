@@ -6,6 +6,7 @@ import type {
   CreateSetPayload,
   ProviderPresets,
   Skill,
+  SubagentRun,
   ApiTestInput,
   ApiTestResult,
   PluginCatalogItemV2,
@@ -57,6 +58,7 @@ const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>(
   'session.list',
   'session.getMessages',
   'session.getTraceSteps',
+  'session.getSubagentRuns',
   'session.compact',
   'session.getContextUsage',
   'permission.response',
@@ -151,6 +153,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     } | null> =>
       invoke({
         type: 'session.getContextUsage',
+        payload: { sessionId },
+      }),
+    getSubagentRuns: (sessionId: string): Promise<SubagentRun[]> =>
+      invoke({
+        type: 'session.getSubagentRuns',
         payload: { sessionId },
       }),
   },
@@ -514,6 +521,7 @@ declare global {
           contextWindow: number;
           percent: number | null;
         } | null>;
+        getSubagentRuns: (sessionId: string) => Promise<SubagentRun[]>;
       };
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;

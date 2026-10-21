@@ -1038,6 +1038,9 @@
     "label": "Subagent",
     "completed": "Completed",
     "inDuration": "in {{duration}}",
-    "showResult": "Show result"
+    "showResult": "Show result",
+    "taskLabel": "Task",
+    "outputLabel": "Output",
+    "errorLabel": "Error"
   }
 }
