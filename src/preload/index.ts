@@ -232,6 +232,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimize: () => ipcRenderer.send('window.minimize'),
     maximize: () => ipcRenderer.send('window.maximize'),
     close: () => ipcRenderer.send('window.close'),
+    show: () => ipcRenderer.send('window.show'),
   },
 
   // MCP methods
@@ -553,6 +554,7 @@ declare global {
         minimize: () => void;
         maximize: () => void;
         close: () => void;
+        show: () => void;
       };
       mcp: {
         getServers: () => Promise<McpServerConfig[]>;

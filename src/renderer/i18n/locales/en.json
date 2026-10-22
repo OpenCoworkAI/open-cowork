@@ -78,7 +78,15 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
-    "language": "Language"
+    "language": "Language",
+    "notifications": "Notifications",
+    "systemNotifications": "System notifications",
+    "systemNotificationsDesc": "While Open Cowork is in the background, notify me when a task ends or needs my input."
+  },
+  "notifications": {
+    "taskEnded": "Task ended",
+    "approvalNeeded": "Waiting for your approval: {{tool}}",
+    "passwordNeeded": "Waiting for your administrator password"
   },
   "memory": {
     "title": "Memory",
