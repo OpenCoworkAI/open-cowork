@@ -19,7 +19,7 @@ Everything is plain JSON under the memory storage root, `<userData>/memory` unle
 
 ## How memory is written
 
-After a run finishes, and only when memory is on and the conversation has memory enabled, the conversation is queued for ingestion. One conversation is processed at a time, and `memoryRuntime.ingestionConcurrency` (default 4) conversations run in parallel.
+After a run finishes, and only when memory is on and the conversation has memory enabled, the conversation is queued for ingestion. Each conversation has its own queue, so its runs are ingested one after another.
 
 1. The messages added since the last ingestion go to the core extractor, which changes core entries.
 2. The whole transcript goes to the experience extractor, which writes the conversation's summary and chunks.
@@ -43,7 +43,7 @@ The context panel shows a **Memory used** section for the latest run. It lists:
 - the past-conversation summaries that were injected, with the conversation each came from, and whether the model also read that conversation in full;
 - an **Open conversation** link for every source conversation that still exists.
 
-The list is saved with the conversation's trace, so it is still there after a restart. Core entries have no source conversation: core memory does not record which conversation a fact came from.
+The list is saved with the conversation's trace, so it is still there after a restart. It is a record of what that run was given, so it keeps the text as it was then: forgetting a conversation, clearing memory or editing an entry later does not change it, and deleting the conversation that used the memory deletes the list with it. Core entries have no source conversation: core memory does not record which conversation a fact came from.
 
 ## Correcting memory
 
@@ -58,4 +58,4 @@ The list is saved with the conversation's trace, so it is still there after a re
 - **Rebuild current workspace** clears that workspace's experience memory and ingests its conversations again, oldest first, for conversations that have memory enabled.
 - **Rebuild all** drops the extracted core entries and all experience memory, keeps the entries you wrote, and ingests every memory-enabled conversation again.
 
-Rebuilding calls the extraction model once per conversation, so it can take a while and cost tokens on a long history.
+Rebuilding calls the extraction model once per conversation, so it can take a while and cost tokens on a long history. Up to `memoryRuntime.ingestionConcurrency` (default 4) conversations are extracted in parallel; their results are then ingested oldest first.
