@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Brain, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useAppStore } from '../store';
-import type { MemoryUsedItem, TraceStep } from '../types';
+import type { MemoryUsedItem, Message, TraceStep } from '../types';
 import { latestMemoryStep, splitMemoryItems } from '../utils/memory-used';
 
 const EMPTY_STEPS: TraceStep[] = [];
+const EMPTY_MESSAGES: Message[] = [];
 
 interface MemoryUsedListProps {
   items: MemoryUsedItem[];
@@ -83,7 +84,13 @@ export function MemoryUsed() {
     activeSessionId ? (s.sessionStates[activeSessionId]?.traceSteps ?? EMPTY_STEPS) : EMPTY_STEPS
   );
 
-  const items = latestMemoryStep(steps)?.memoryItems;
+  const messages = useAppStore((s) =>
+    activeSessionId
+      ? (s.sessionStates[activeSessionId]?.messages ?? EMPTY_MESSAGES)
+      : EMPTY_MESSAGES
+  );
+
+  const items = latestMemoryStep(steps, messages)?.memoryItems;
   if (!items?.length) {
     return null;
   }
