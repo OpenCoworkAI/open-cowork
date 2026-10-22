@@ -1843,6 +1843,9 @@ ${hints.join('\n')}
             sandboxIsolated: useSandboxIsolation,
           })
         : { promptPrefix: undefined, customTools: [] };
+      for (const step of extensionResult.traceSteps ?? []) {
+        this.sendTraceStep(session.id, step);
+      }
 
       let contextualPrompt = prompt;
       if (!cachedSession) {

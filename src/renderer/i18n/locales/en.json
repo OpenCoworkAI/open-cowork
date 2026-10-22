@@ -701,7 +701,15 @@
     "copyPath": "Copy path",
     "openInFileManager": "Open in file manager",
     "contextUsage": "Context Usage",
-    "contextUsageLabel": "{{used}} / {{total}}"
+    "contextUsageLabel": "{{used}} / {{total}}",
+    "memoryUsed": "Memory used",
+    "memoryUsedCount": "{{core}} core · {{experience}} past",
+    "memoryCore": "Core memory",
+    "memoryExperience": "From past conversations",
+    "memoryUserWritten": "written by you",
+    "memoryExpanded": "read in full",
+    "memoryOpenSource": "Open conversation",
+    "memoryUntitled": "Untitled conversation"
   },
   "compaction": {
     "turnsLeft": "turns left",

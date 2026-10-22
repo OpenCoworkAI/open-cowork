@@ -13,6 +13,7 @@ import {
 } from '../utils/artifact-steps';
 import { useIPC } from '../hooks/useIPC';
 import { CompactionHistory } from './CompactionHistory';
+import { MemoryUsed } from './MemoryUsed';
 import {
   ChevronDown,
   ChevronUp,
@@ -376,6 +377,9 @@ export function ContextPanel() {
 
       {/* Compaction History */}
       {activeSession && <CompactionHistory />}
+
+      {/* Memory the latest run received */}
+      <MemoryUsed />
 
       {/* Artifacts Section */}
       <div className="border-b border-border-muted">

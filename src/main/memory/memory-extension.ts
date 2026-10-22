@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
@@ -12,13 +13,28 @@ export class MemoryExtension implements AgentRuntimeExtension {
   async beforeSessionRun({
     session,
     prompt,
-  }: Parameters<NonNullable<AgentRuntimeExtension['beforeSessionRun']>>[0]): Promise<BeforeSessionRunResult | void> {
+  }: Parameters<
+    NonNullable<AgentRuntimeExtension['beforeSessionRun']>
+  >[0]): Promise<BeforeSessionRunResult | void> {
     if (!this.memoryService.isEnabled() || !session.memoryEnabled) {
       return;
     }
 
+    const { promptPrefix, used } = await this.memoryService.buildPromptContext(session, prompt);
     return {
-      promptPrefix: await this.memoryService.buildPromptPrefix(session, prompt),
+      promptPrefix,
+      traceSteps: used.length
+        ? [
+            {
+              id: randomUUID(),
+              type: 'memory',
+              status: 'completed',
+              title: 'Memory used',
+              memoryItems: used,
+              timestamp: Date.now(),
+            },
+          ]
+        : [],
     };
   }
 

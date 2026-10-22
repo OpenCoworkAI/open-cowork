@@ -23,6 +23,7 @@ describe('memory integration wiring', () => {
     expect(runner).toContain('resolveSkillPaths(session.id)');
     expect(runner).toContain("path.join(plugin.runtimePath, 'skills')");
     expect(runner).toContain('this.extensionManager.beforeSessionRun');
+    expect(runner).toContain('extensionResult.traceSteps');
     expect(runner).toContain('skillsSignature');
     expect(memoryExtension).not.toContain('customTools: this.memoryService.getTools()');
   });

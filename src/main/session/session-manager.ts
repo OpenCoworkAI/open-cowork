@@ -21,6 +21,7 @@ import type {
   PermissionResult,
   ContentBlock,
   TextContent,
+  MemoryUsedItem,
   TraceStep,
   FileAttachmentContent,
 } from '../../renderer/types';
@@ -1249,6 +1250,9 @@ export class SessionManager {
       toolInput: parseToolInput(row.tool_input),
       toolOutput: row.tool_output || undefined,
       isError: row.is_error === 1 ? true : undefined,
+      memoryItems: row.memory_items
+        ? (JSON.parse(row.memory_items) as MemoryUsedItem[])
+        : undefined,
       timestamp: row.timestamp,
       duration: row.duration ?? undefined,
     }));
@@ -1334,6 +1338,7 @@ export class SessionManager {
       tool_input: step.toolInput ? JSON.stringify(step.toolInput) : null,
       tool_output: step.toolOutput ?? null,
       is_error: step.isError ? 1 : null,
+      memory_items: step.memoryItems ? JSON.stringify(step.memoryItems) : null,
       timestamp: step.timestamp,
       duration: step.duration ?? null,
     });

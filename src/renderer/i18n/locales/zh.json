@@ -701,7 +701,15 @@
     "copyPath": "复制路径",
     "openInFileManager": "在文件管理器中打开",
     "contextUsage": "上下文用量",
-    "contextUsageLabel": "{{used}} / {{total}}"
+    "contextUsageLabel": "{{used}} / {{total}}",
+    "memoryUsed": "使用的记忆",
+    "memoryUsedCount": "核心 {{core}} 条 · 过往对话 {{experience}} 条",
+    "memoryCore": "核心记忆",
+    "memoryExperience": "来自过往对话",
+    "memoryUserWritten": "你写的",
+    "memoryExpanded": "已读全文",
+    "memoryOpenSource": "打开对话",
+    "memoryUntitled": "未命名对话"
   },
   "compaction": {
     "turnsLeft": "轮剩余",

@@ -2,6 +2,8 @@
 
 Use this checklist with a real API key after launching the app locally.
 
+For how memory works, see [memory.md](memory.md).
+
 ## 1. Core Memory Retention
 
 1. Start a new session.
