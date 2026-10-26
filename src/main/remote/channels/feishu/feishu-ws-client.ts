@@ -22,6 +22,7 @@ export interface FeishuMessage {
   messageType: string;
   content: string;
   createTime: string;
+  mentions?: unknown;
 }
 
 /**
@@ -332,6 +333,7 @@ export class FeishuWSClient extends EventEmitter {
     this.emit('message', {
       ...feishuMessage,
       text: textContent,
+      mentions: message.mentions,
     });
     log('[FeishuWS] Message event emitted');
   }
