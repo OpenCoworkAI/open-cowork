@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import enTranslations from './locales/en.json';
 import zhTranslations from './locales/zh.json';
+import itTranslations from './locales/it.json';
 
 i18n
   .use(LanguageDetector) // 自动检测浏览器语言
@@ -16,9 +17,12 @@ i18n
       zh: {
         translation: zhTranslations,
       },
+      it: {
+        translation: itTranslations,
+      },
     },
     fallbackLng: 'en', // 默认语言
-    supportedLngs: ['en', 'zh'], // 支持的语言
+    supportedLngs: ['en', 'zh', 'it'], // lingue supportate
     interpolation: {
       escapeValue: false, // React 已经处理了 XSS
     },
