@@ -261,9 +261,11 @@ describe('api config state helpers', () => {
       'kimi-k2-thinking'
     );
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain('glm-5');
-    expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
-      'MiniMax-M2.5'
-    );
+    expect(
+      FALLBACK_PROVIDER_PRESETS.custom.models
+        .map((item) => item.id)
+        .filter((id) => id.startsWith('MiniMax-'))
+    ).toEqual(['MiniMax-M3.1-Flash', 'MiniMax-M3']);
     expect(FALLBACK_PROVIDER_PRESETS.custom.models.map((item) => item.id)).toContain(
       'grok-code-fast-1'
     );
