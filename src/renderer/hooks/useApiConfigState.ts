@@ -178,7 +178,12 @@ export function modelPresetForProfile(
   baseUrl?: string
 ): ProviderPresets['custom'] {
   if (profileKey.startsWith('custom:') && isDirectMiniMaxBaseUrl(baseUrl)) {
-    return { name: 'MiniMax', baseUrl: baseUrl || '', models: MINIMAX_TEXT_MODELS };
+    return {
+      ...presets.custom,
+      name: 'MiniMax',
+      baseUrl: baseUrl || '',
+      models: MINIMAX_TEXT_MODELS,
+    };
   }
   if (profileKey === 'ollama') {
     return presets.ollama;
