@@ -8,6 +8,7 @@ export type CommonProviderSetupId =
   | 'ollama'
   | 'gemini-custom'
   | 'minimax'
+  | 'requesty'
   | 'generic-openai';
 
 export interface CommonProviderSetup {
@@ -137,6 +138,19 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
       hosts: ['api.minimax.chat'],
       hostContains: ['minimax'],
       pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'requesty',
+    nameKey: 'api.guidance.setups.requesty.name',
+    noteKey: 'api.guidance.setups.requesty.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'https://router.requesty.ai/v1',
+    exampleModel: 'gpt-5.4-mini',
+    matcher: {
+      hosts: ['requesty.ai'],
+      pathPrefixes: ['/', '/v1'],
     },
   },
   {

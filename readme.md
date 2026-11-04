@@ -172,6 +172,7 @@ You need an API key to power the agent. We support **OpenRouter**, **Anthropic**
 | **Zhipu AI (GLM)** | [GLM Coding Plan](https://bigmodel.cn/glm-coding) (⚡️Chinese Deal)         | `https://open.bigmodel.cn/api/anthropic` | `glm-4.7`, `glm-4.6` |
 | **MiniMax**        | [MiniMax Coding Plan](https://platform.minimaxi.com/subscribe/coding-plan) | `https://api.minimaxi.com/anthropic`     | `minimax-m2`         |
 | **Kimi**           | [Kimi Coding Plan](https://www.kimi.com/membership/pricing)                | `https://api.kimi.com/coding/`           | `kimi-k2`            |
+| **Requesty**       | [Requesty](https://app.requesty.ai/api-keys)                               | `https://router.requesty.ai/v1`          | `gpt-5.4-mini`       |
 
 ### 2. Configure
 
