@@ -80,7 +80,7 @@ The project documentation lists these provider examples:
 - Zhipu AI / GLM: base URL `https://open.bigmodel.cn/api/anthropic`, recommended models `glm-4.7` and `glm-4.6`
 - MiniMax: base URL `https://api.minimaxi.com/anthropic`, recommended model `minimax-m2`
 - Kimi: base URL `https://api.kimi.com/coding/`, recommended model `kimi-k2`
-- OpenLLM: base URL `http://127.0.0.1:8787/v1` (local daemon, OpenAI-compatible protocol, no API key needed), recommended model `plus`
+- OpenLLM: base URL `http://127.0.0.1:8787/v1` (local daemon, no API key needed; select the OpenAI protocol), recommended model `plus`
 
 Any provider with an OpenAI-compatible API can be configured when compatible with the app's model settings.
 
