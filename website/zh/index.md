@@ -160,7 +160,7 @@ features:
 | **OpenRouter** | `https://openrouter.ai/api`              | claude-4-5-sonnet |
 | **Anthropic**  | 默认                                     | claude-4-5-sonnet |
 | **智谱 AI**    | `https://open.bigmodel.cn/api/anthropic` | glm-4.7           |
-| **MiniMax**    | `https://api.minimaxi.com/anthropic`     | minimax-m2        |
+| **MiniMax**    | `https://api.minimax.io/v1`              | MiniMax-M3        |
 | **Kimi**       | `https://api.kimi.com/coding/`           | kimi-k2           |
 
 </div>
