@@ -35,6 +35,18 @@ describe('provider guidance helpers', () => {
     expect(detectCommonProviderSetup('http://localhost:3000/v1')).toBeNull();
   });
 
+  it('detects the local OpenLLM daemon only on its default port and recommends OpenAI-compatible setup', () => {
+    const setup = detectCommonProviderSetup('http://127.0.0.1:8787/v1');
+    expect(setup?.id).toBe('openllm');
+    expect(setup?.recommendedProtocol).toBe('openai');
+    expect(setup?.recommendedBaseUrl).toBe('http://127.0.0.1:8787/v1');
+    expect(setup?.exampleModel).toBe('plus');
+    expect(setup?.preferProviderTab).toBeUndefined();
+    expect(detectCommonProviderSetup('http://localhost:8787/v1/')?.id).toBe('openllm');
+    expect(detectCommonProviderSetup('http://127.0.0.1:3000/v1')).toBeNull();
+    expect(detectCommonProviderSetup('http://127.0.0.1:11434/v1')?.id).toBe('ollama');
+  });
+
   it('keeps unknown hosts unmatched and exposes the generic OpenAI fallback separately', () => {
     expect(detectCommonProviderSetup('https://relay.example.internal/v1')).toBeNull();
     expect(getFallbackOpenAISetup().id).toBe('generic-openai');

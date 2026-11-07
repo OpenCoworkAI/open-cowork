@@ -8,6 +8,7 @@ export type CommonProviderSetupId =
   | 'ollama'
   | 'gemini-custom'
   | 'minimax'
+  | 'openllm'
   | 'generic-openai';
 
 export interface CommonProviderSetup {
@@ -136,6 +137,20 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     matcher: {
       hosts: ['api.minimax.chat'],
       hostContains: ['minimax'],
+      pathPrefixes: ['/v1'],
+    },
+  },
+  {
+    id: 'openllm',
+    nameKey: 'api.guidance.setups.openllm.name',
+    noteKey: 'api.guidance.setups.openllm.note',
+    applyProvider: 'custom',
+    recommendedProtocol: 'openai',
+    recommendedBaseUrl: 'http://127.0.0.1:8787/v1',
+    exampleModel: 'plus',
+    matcher: {
+      hosts: ['127.0.0.1', 'localhost'],
+      ports: ['8787'],
       pathPrefixes: ['/v1'],
     },
   },
