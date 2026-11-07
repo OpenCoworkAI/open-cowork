@@ -162,6 +162,7 @@ features:
 | **智谱 AI**    | `https://open.bigmodel.cn/api/anthropic` | glm-4.7           |
 | **MiniMax**    | `https://api.minimaxi.com/anthropic`     | minimax-m2        |
 | **Kimi**       | `https://api.kimi.com/coding/`           | kimi-k2           |
+| **OpenLLM**    | `http://127.0.0.1:8787/v1`               | plus              |
 
 </div>
 
