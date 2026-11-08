@@ -28,7 +28,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
-import { mcpConfigStore } from '../mcp/mcp-config-store';
 import {
   log,
   logWarn,
@@ -573,7 +572,6 @@ export class CoworkAgentRunner {
   private static readonly MAX_CACHED_SESSIONS = 50;
 
   // Per-instance caches — invalidated when the underlying config changes.
-  private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
   private _skillsSetupDone = false;
 
   /**
@@ -602,13 +600,6 @@ export class CoworkAgentRunner {
   /** Call after the user installs / removes a skill so the next query re-links everything. */
   invalidateSkillsSetup(): void {
     this._skillsSetupDone = false;
-  }
-
-  /** Call after the user changes MCP server config so the next query rebuilds mcpServers. */
-  invalidateMcpServersCache(): void {
-    this._mcpServersCache = null;
-    // Sessions stay alive — MCP tools are rebuilt each query via buildMcpCustomTools()
-    log('[CoworkAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
   }
 
   // TODO: Credentials should be served via a secure MCP tool or IPC channel,
@@ -1695,7 +1686,7 @@ ${hints.join('\n')}
       logTiming('after pi-ai model resolution', runStartTime);
 
       // the agent SDK handles path sandboxing via its own tools
-      const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      // (pi-ai models generally support images; the model handles unsupported cases)
       const effectiveCwd =
         useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
 
@@ -1922,153 +1913,28 @@ ${hints.join('\n')}
         contextualPrompt = `${extensionResult.promptPrefix.trim()}\n\n${contextualPrompt}`;
       }
 
-      logTiming('before building MCP servers config', runStartTime);
+      logTiming('before reading MCP server status', runStartTime);
 
-      // Build MCP servers configuration for SDK
-      // IMPORTANT: SDK uses tool names in format: mcp__<ServerKey>__<toolName>
-      const mcpServers: Record<string, unknown> = {};
+      // MCP tools are bridged into the SDK as customTools via
+      // buildMcpCustomTools(this.mcpManager) below — the SDK never receives an
+      // `mcpServers` config map. This block used to build (and cache) such a
+      // map only to log it: it duplicated mcp-manager state, could drift from
+      // the servers actually connected, and did per-query config/preset work
+      // for no functional gain. Diagnostics now come from the authoritative
+      // source (mcpManager.getServerStatus()).
       if (this.mcpManager) {
         const serverStatuses = this.mcpManager.getServerStatus();
-        const connectedServers = serverStatuses.filter((s) => s.connected);
         log('[CoworkAgentRunner] MCP server statuses:', safeStringify(serverStatuses));
-        log('[CoworkAgentRunner] Connected MCP servers:', connectedServers.length);
-
-        let allConfigs: ReturnType<typeof mcpConfigStore.getEnabledServers> = [];
-        try {
-          allConfigs = mcpConfigStore.getEnabledServers();
-          log(
-            '[CoworkAgentRunner] Enabled MCP configs:',
-            allConfigs.map((c) => c.name)
-          );
-        } catch (error) {
-          logWarn(
-            '[CoworkAgentRunner] Failed to read enabled MCP configs; MCP tools will be unavailable this query',
-            error
-          );
-          allConfigs = [];
-        }
-
-        // Cache key: serialized config list + imageCapable flag.  The bundled node
-        // paths are stable for the lifetime of the process so they don't need to be
-        // part of the fingerprint.
-        const mcpFingerprint = JSON.stringify(allConfigs) + String(imageCapable);
-        if (this._mcpServersCache?.fingerprint === mcpFingerprint) {
-          Object.assign(mcpServers, this._mcpServersCache.servers);
-          log('[CoworkAgentRunner] MCP servers config reused from cache');
-        } else {
-          // Use the module-level memoized helper — no more per-query fs.existsSync calls.
-          const bundledNodePaths = getBundledNodePaths();
-          const bundledNpx = bundledNodePaths?.npx ?? null;
-
-          for (const config of allConfigs) {
-            try {
-              // Use a simpler key without spaces to avoid issues
-              const serverKey = config.name;
-
-              if (config.type === 'stdio') {
-                // 当命令是 npx 或 node 时优先使用内置路径
-                const command =
-                  config.command === 'npx' && bundledNpx
-                    ? bundledNpx
-                    : config.command === 'node' && bundledNodePaths
-                      ? bundledNodePaths.node
-                      : config.command;
-
-                // 使用内置 npx/node 时，将内置 node bin 注入 PATH
-                const serverEnv = { ...config.env };
-                if (bundledNodePaths && (config.command === 'npx' || config.command === 'node')) {
-                  const nodeBinDir = path.dirname(bundledNodePaths.node);
-                  const currentPath = process.env.PATH || '';
-                  // Prepend bundled node bin to PATH so npx can find node
-                  serverEnv.PATH = `${nodeBinDir}${path.delimiter}${currentPath}`;
-                  log(`[CoworkAgentRunner]   Added bundled node bin to PATH: ${nodeBinDir}`);
-                }
-
-                if (!imageCapable) {
-                  serverEnv.OPEN_COWORK_DISABLE_IMAGE_TOOL_OUTPUT = '1';
-                }
-
-                // Resolve path placeholders for presets
-                let resolvedArgs = config.args || [];
-
-                // Check if any args contain placeholders that need resolving
-                const hasPlaceholders = resolvedArgs.some(
-                  (arg) =>
-                    arg.includes('{SOFTWARE_DEV_SERVER_PATH}') ||
-                    arg.includes('{GUI_OPERATE_SERVER_PATH}')
-                );
-
-                if (hasPlaceholders) {
-                  // Get the appropriate preset based on config name
-                  let presetKey: string | null = null;
-                  if (
-                    config.name === 'Software_Development' ||
-                    config.name === 'Software Development'
-                  ) {
-                    presetKey = 'software-development';
-                  } else if (config.name === 'GUI_Operate' || config.name === 'GUI Operate') {
-                    presetKey = 'gui-operate';
-                  }
-
-                  if (presetKey) {
-                    const preset = mcpConfigStore.createFromPreset(presetKey, true);
-                    if (preset && preset.args) {
-                      resolvedArgs = preset.args;
-                    }
-                  }
-                }
-
-                mcpServers[serverKey] = {
-                  type: 'stdio',
-                  command,
-                  args: resolvedArgs,
-                  env: serverEnv,
-                };
-                log(`[CoworkAgentRunner] Added STDIO MCP server: ${serverKey}`);
-                log(`[CoworkAgentRunner]   Command: ${command} ${resolvedArgs.join(' ')}`);
-                log(`[CoworkAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
-              } else if (config.type === 'sse') {
-                mcpServers[serverKey] = {
-                  type: 'sse',
-                  url: config.url,
-                  headers: config.headers || {},
-                };
-                log(`[CoworkAgentRunner] Added SSE MCP server: ${serverKey}`);
-              }
-            } catch (error) {
-              logError('[CoworkAgentRunner] Failed to prepare MCP server config, skipping server', {
-                serverId: config.id,
-                serverName: config.name,
-                error: toErrorText(error),
-              });
-            }
-          }
-
-          // Store in cache for subsequent queries
-          this._mcpServersCache = { fingerprint: mcpFingerprint, servers: { ...mcpServers } };
-        }
-
-        const mcpServersSummary = Object.entries(mcpServers).map(([name, serverConfig]) => {
-          const typedServerConfig = serverConfig as {
-            type?: string;
-            command?: string;
-            args?: unknown[];
-            env?: Record<string, unknown>;
-          };
-          return {
-            name,
-            type: typedServerConfig.type ?? 'unknown',
-            command: typedServerConfig.command ?? '',
-            argsCount: Array.isArray(typedServerConfig.args) ? typedServerConfig.args.length : 0,
-            envKeys: typedServerConfig.env ? Object.keys(typedServerConfig.env).length : 0,
-          };
-        });
-        log('[CoworkAgentRunner] Final mcpServers summary:', safeStringify(mcpServersSummary, 2));
-        if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
-          log('[CoworkAgentRunner] Final mcpServers config:', safeStringify(mcpServers, 2));
-        }
+        const connectedServers = serverStatuses.filter((s) => s.connected);
+        log(
+          '[CoworkAgentRunner] Connected MCP servers:',
+          connectedServers.length,
+          '— exposed tools:',
+          connectedServers.reduce((sum, s) => sum + s.toolCount, 0)
+        );
       }
-      logTiming('after building MCP servers config', runStartTime);
+
+      logTiming('after reading MCP server status', runStartTime);
 
       const workspaceInfoPrompt =
         useSandboxIsolation && sandboxPath

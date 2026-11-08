@@ -2179,7 +2179,6 @@ ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
     const mcpManager = sessionManager.getMCPManager();
     try {
       await mcpManager.updateServer(config);
-      sessionManager.invalidateMcpServersCache();
       log(`[MCP] Server ${config.name} updated successfully`);
     } catch (err) {
       logError('[MCP] Failed to update server:', err);
@@ -2202,7 +2201,6 @@ ipcMain.handle('mcp.deleteServer', async (_event, serverId: string) => {
     const mcpManager = sessionManager.getMCPManager();
     try {
       await mcpManager.removeServer(serverId);
-      sessionManager.invalidateMcpServersCache();
       log(`[MCP] Server ${serverId} removed successfully`);
     } catch (err) {
       logError('[MCP] Failed to remove server:', err);
