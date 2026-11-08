@@ -10,6 +10,8 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { redactSensitiveText } from './mcp-log-redaction.js';
+
 // Use a session-level timestamp for the log filename
 let mcpLogFilename: string | null = null;
 let logsDir: string | null = null;
@@ -98,6 +100,12 @@ Arguments: ${JSON.stringify(process.argv.map(arg => /^(sk-|key-|token-|secret-)/
 const MAX_LOG_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function writeMCPLog(content: string, label?: string): void {
+  // Defense-in-depth: every log line passes through sensitive-value redaction
+  // (mirrors agent-desktop trace sanitization) so ad-hoc template logging
+  // across the MCP servers can never persist raw text, tokens, URLs,
+  // clipboard content or base64 screenshots to disk.
+  const safeContent = redactSensitiveText(content);
+
   // Initialize log file on first call
   if (!logInitialized) {
     initializeLogFile();
@@ -107,7 +115,7 @@ export function writeMCPLog(content: string, label?: string): void {
   const formattedLabel = label ? ` [${label}]` : '';
 
   // Print to stderr (with simpler format for console)
-  console.error(`[${timestamp}]${formattedLabel} ${content}`);
+  console.error(`[${timestamp}]${formattedLabel} ${safeContent}`);
 
   // If log not initialized, can't write to file
   if (!mcpLogFilename || !logInitialized) {
@@ -130,7 +138,7 @@ export function writeMCPLog(content: string, label?: string): void {
 
   // Format log entry for file (with more detail)
   const labelText = label ? `${label}:\n${'='.repeat(80)}\n` : '';
-  const logEntry = `\n${'='.repeat(80)}\n[${timestamp}]${formattedLabel}\n${labelText}${content}\n${'='.repeat(80)}\n`;
+  const logEntry = `\n${'='.repeat(80)}\n[${timestamp}]${formattedLabel}\n${labelText}${safeContent}\n${'='.repeat(80)}\n`;
 
   try {
     // Use sync write for critical logs (Bootstrap, Error, Fatal, Initialization)
