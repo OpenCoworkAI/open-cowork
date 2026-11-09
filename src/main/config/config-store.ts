@@ -52,6 +52,12 @@ export type ProviderProfileKey =
 export type ConfigSetId = string;
 export type CreateSetMode = 'blank' | 'clone';
 
+/**
+ * Modo de acesso ao desktop (computer use semântico via agent-desktop).
+ * `off` é o padrão — o GUI Operate visual continua sendo o caminho principal.
+ */
+export type DesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
+
 export interface CreateConfigSetPayload {
   name: string;
   mode?: CreateSetMode;
@@ -119,6 +125,15 @@ export interface AppConfig {
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
+
+  /**
+   * Computer use semântico (agent-desktop).
+   * - `off`       → desligado (padrão). Nenhuma tool semântica é exposta.
+   * - `mcp`       → expõe as 8 tools `desktop_*` (camada MCP por sessão).
+   * - `mcp+skill` → além das tools, publica a skill de uso semântico.
+   * - `native`    → reservado para a camada nativa/FFI (Fase 5).
+   */
+  desktopAccessMode?: DesktopAccessMode;
 
   // Global memory toggle
   memoryEnabled: boolean;
@@ -239,6 +254,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
+  desktopAccessMode: (v) => v === 'off' || v === 'mcp' || v === 'mcp+skill' || v === 'native',
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -312,6 +328,7 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'light',
   sandboxEnabled: false,
+  desktopAccessMode: 'off',
   memoryEnabled: true,
   memoryRuntime: {
     llm: {

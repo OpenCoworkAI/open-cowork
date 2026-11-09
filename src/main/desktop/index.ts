@@ -5,6 +5,7 @@ export {
   buildOperationCatalog,
   classifyAggregate,
   classifyRisk,
+  collectRequestedPhysicalOperations,
   extractBatchedOperations,
   groupOperationsByAggregate,
   operationFromUpstreamTool,

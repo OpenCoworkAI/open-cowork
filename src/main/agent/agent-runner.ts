@@ -28,6 +28,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
+import { AgentDesktopManager, collectRequestedPhysicalOperations } from '../desktop';
 import {
   log,
   logWarn,
@@ -566,6 +567,19 @@ export class CoworkAgentRunner {
   private _pluginRuntimeService?: PluginRuntimeService;
   private _skillsAdapter?: SkillsAdapter;
   private extensionManager?: AgentRuntimeExtensionManager;
+  /**
+   * Computer use semântico (agent-desktop). Criado sob demanda — só existe
+   * quando `desktopAccessMode` está ligado. Mantém **um cliente MCP por
+   * sessão de agente**, porque o upstream fixa a identidade no start do
+   * servidor.
+   */
+  private agentDesktopManager?: AgentDesktopManager;
+  /**
+   * Operações de input físico já autorizadas permanentemente **na sessão**.
+   * A granularidade é por operação (`mouse_click`), não por tool — autorizar
+   * `desktop_act` não autoriza `desktop_clipboard`.
+   */
+  private physicalAlwaysAllow: Map<string, Set<string>> = new Map();
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
   private toolDisplayNameCache: Map<string, string> = new Map();
@@ -909,6 +923,74 @@ ${hints.join('\n')}
    * the backend, but the renderer's loading spinner may not clear. This is
    * a renderer-side issue tracked as a follow-up.
    */
+  /**
+   * Constrói as tools agregadas de computer use semântico (`desktop_*`) da sessão.
+   *
+   * Camada **opt-in**: com `desktopAccessMode: 'off'` nada é exposto e o GUI
+   * Operate visual continua sendo o único caminho.
+   *
+   * Pontos-chave:
+   *  - **um cliente MCP por sessão** — o upstream fixa `--session` /
+   *    `--agent-id` no start do servidor, então um servidor compartilhado não
+   *    representa dois subagentes ao mesmo tempo;
+   *  - **não passa pelo `MCPManager` global**, que reexecuta chamadas após
+   *    timeout independentemente da ação (achado C4 — duplicação de ação);
+   *  - a falha é **declarada, nunca silenciosa**: sem binário ou sem permissão
+   *    de acessibilidade, registrámos e degradamos para a camada visual em vez
+   *    de fingir que a capacidade existe.
+   */
+  private async buildAgentDesktopCustomTools(
+    sessionId: string,
+    agentId?: string
+  ): Promise<ToolDefinition[]> {
+    const mode = configStore.get('desktopAccessMode') ?? 'off';
+    if (mode === 'off' || mode === 'native') {
+      // 'native' é reservado para a camada FFI (Fase 5) — sem tools MCP.
+      return [];
+    }
+
+    try {
+      if (!this.agentDesktopManager) {
+        this.agentDesktopManager = new AgentDesktopManager({
+          pathContext: {
+            resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+            userDataPath: app.getPath('userData'),
+          },
+        });
+      }
+
+      const { tools } = await this.agentDesktopManager.buildToolsForSession(sessionId, agentId);
+
+      log(
+        `[CoworkAgentRunner] Registered ${tools.length} semantic desktop tools:`,
+        tools.map((tool) => tool.name).join(', ')
+      );
+      return tools;
+    } catch (error) {
+      logError(
+        '[CoworkAgentRunner] Failed to start agent-desktop — degrading to visual GUI Operate:',
+        error
+      );
+      return [];
+    }
+  }
+
+  /** Todas as operações físicas pedidas já estão autorizadas nesta sessão? */
+  private isPhysicalOperationAllowed(sessionId: string, operations: string[]): boolean {
+    const allowed = this.physicalAlwaysAllow.get(sessionId);
+    if (!allowed) return false;
+    return operations.every((operation) => allowed.has(operation));
+  }
+
+  /** Registra autorização permanente para as operações físicas informadas. */
+  private rememberPhysicalOperationAllowed(sessionId: string, operations: string[]): void {
+    const allowed = this.physicalAlwaysAllow.get(sessionId) ?? new Set<string>();
+    for (const operation of operations) {
+      allowed.add(operation);
+    }
+    this.physicalAlwaysAllow.set(sessionId, allowed);
+  }
+
   private installPermissionHook(piSession: PiAgentSession, sessionId: string): void {
     if (!this.requestPermission) {
       log('[CoworkAgentRunner] No requestPermission callback — skipping permission hook');
@@ -952,6 +1034,19 @@ ${hints.join('\n')}
         // `toolName` so allow-once decisions stay stable across calls.
         const displayName = getDisplayName(toolName);
 
+        // --- Computer use semântico: input físico exige autorização explícita ---
+        // `desktop_*` roda headless por padrão. Operações que movem o cursor
+        // (mouse_*, hover, drag, cursor_overlay) só passam depois de o usuário
+        // autorizar **esta operação** — uma regra genérica de "sempre permitir
+        // desktop_act" não basta.
+        const physicalOperations =
+          toolName.startsWith('desktop_')
+            ? collectRequestedPhysicalOperations(input)
+            : [];
+        const requiresPhysicalAuthorization =
+          physicalOperations.length > 0 &&
+          !this.isPhysicalOperationAllowed(sessionId, physicalOperations);
+
         if (decision === 'deny') {
           log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`);
           return {
@@ -960,7 +1055,7 @@ ${hints.join('\n')}
           };
         }
 
-        if (decision === 'ask') {
+        if (decision === 'ask' || requiresPhysicalAuthorization) {
           const toolUseId = `${ctx.toolCall?.id ?? 'unknown'}-perm-${uuidv4().slice(0, 8)}`;
           let result: 'allow' | 'deny' | 'allow_always';
           try {
@@ -986,6 +1081,10 @@ ${hints.join('\n')}
 
           if (result === 'allow_always') {
             rememberAlwaysAllow(sessionId, toolName);
+            // Autorização permanente **por operação física**, não só por tool.
+            if (physicalOperations.length > 0) {
+              this.rememberPhysicalOperationAllowed(sessionId, physicalOperations);
+            }
           }
         }
 
@@ -1988,7 +2087,9 @@ Tool routing:
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
-      const customTools = [...mcpCustomTools, ...extensionCustomTools];
+      // Camada de desktop semântico (agent-desktop) — opt-in, um cliente por sessão.
+      const desktopCustomTools = await this.buildAgentDesktopCustomTools(session.id);
+      const customTools = [...mcpCustomTools, ...extensionCustomTools, ...desktopCustomTools];
       if (mcpCustomTools.length > 0) {
         log(
           `[CoworkAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`,
@@ -1999,6 +2100,12 @@ Tool routing:
         log(
           `[CoworkAgentRunner] Registered ${extensionCustomTools.length} extension tools as customTools:`,
           extensionCustomTools.map((t) => t.name).join(', ')
+        );
+      }
+      if (desktopCustomTools.length > 0) {
+        log(
+          `[CoworkAgentRunner] Registered ${desktopCustomTools.length} semantic desktop tools as customTools:`,
+          desktopCustomTools.map((t) => t.name).join(', ')
         );
       }
 

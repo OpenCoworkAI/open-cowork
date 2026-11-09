@@ -191,6 +191,45 @@ export function operationFromUpstreamTool(toolName: string): string | null {
   return operation.length > 0 ? operation : null;
 }
 
+/**
+ * Operações de **input físico** pedidas por uma chamada.
+ *
+ * Lê o `operation` da tool agregada (`{ operation, args }`) e, no caso de
+ * `batch`, inspeciona as operações aninhadas. É o que o hook de permissão
+ * usa para exigir autorização explícita — headless por padrão.
+ */
+export function collectRequestedPhysicalOperations(
+  input: Record<string, unknown>
+): string[] {
+  const operation = typeof input.operation === 'string' ? input.operation : '';
+  if (!operation) return [];
+
+  if (operation !== 'batch') {
+    return isPhysicalInputOperation(operation) ? [operation] : [];
+  }
+
+  const args =
+    input.args && typeof input.args === 'object'
+      ? (input.args as Record<string, unknown>)
+      : input;
+
+  return extractBatchedOperations(args).filter(isPhysicalInputOperation);
+}
+
+/**
+ * A operação exige **input físico** (move cursor / evento de mouse)?
+ * Usado pelo hook de permissão: input físico só passa com autorização
+ * explícita, mesmo que a regra geral da tool permita.
+ */
+export function isPhysicalInputOperation(operation: string): boolean {
+  return PHYSICAL_INPUT_OPERATIONS.has(operation);
+}
+
+/** A operação é puramente de leitura (nunca exige confirmação)? */
+export function isObservationOperation(operation: string): boolean {
+  return OBSERVATION_OPERATIONS.has(operation);
+}
+
 /** Classifica a operação no agregado correspondente. */
 export function classifyAggregate(operation: string): AgentDesktopAggregate {
   return AGGREGATE_BY_OPERATION[operation] ?? 'act';
