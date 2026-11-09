@@ -72,7 +72,8 @@
     "general": "General",
     "generalDesc": "Appearance, language & preferences",
     "desktop": "Desktop",
-    "desktopDesc": "Control the agent's access to the desktop"
+    "desktopDesc": "Control the agent's access to the desktop",
+    "experimental": "Experimental"
   },
   "general": {
     "appearance": "Appearance",
@@ -511,7 +512,14 @@
     "permissionAutomation": "Automation",
     "permissionScreenRecording": "Screen recording",
     "permissionUnknown": "Unknown",
-    "saved": "Desktop settings saved."
+    "saved": "Desktop settings saved.",
+    "experimentalTitle": "Experimental feature",
+    "experimentalNotice": "This capability has been validated in the field, but the app does not ship the agent-desktop binary yet. Until on-demand distribution is available, it only works with a manually installed binary.",
+    "limitationsTitle": "Known limitations",
+    "limitationsDescription": "Boundaries of the current implementation.",
+    "limitBinary": "The agent-desktop binary is not distributed by the app. It only works with a manual installation or via OPEN_COWORK_AGENT_DESKTOP_PATH.",
+    "limitNative": "Native mode (FFI) is not implemented yet — only MCP and MCP + skill work.",
+    "limitRdp": "Remote Desktop sessions (RDP) are not observable: the agent sees only the local RDP client window, not the remote machine's interface."
   },
   "mcp": {
     "noConnectors": "No connectors configured",

@@ -1,7 +1,8 @@
 {
   "settings": {
     "desktop": "Desktop",
-    "desktopDesc": "Controle o acesso do agente ao desktop"
+    "desktopDesc": "Controle o acesso do agente ao desktop",
+    "experimental": "Experimental"
   },
   "common": {
     "loading": "Carregando..."
@@ -32,6 +33,13 @@
     "permissionAutomation": "Automação",
     "permissionScreenRecording": "Gravação de tela",
     "permissionUnknown": "Desconhecido",
-    "saved": "Configurações de desktop salvas."
+    "saved": "Configurações de desktop salvas.",
+    "experimentalTitle": "Recurso experimental",
+    "experimentalNotice": "A capacidade foi validada em campo, mas o app ainda não distribui o binário agent-desktop. Até a distribuição sob demanda, só funciona com um binário instalado manualmente.",
+    "limitationsTitle": "Limitações conhecidas",
+    "limitationsDescription": "Fronteiras da implementação atual.",
+    "limitBinary": "O binário agent-desktop não é distribuído pelo app. Só funciona com instalação manual ou via OPEN_COWORK_AGENT_DESKTOP_PATH.",
+    "limitNative": "O modo nativo (FFI) ainda não foi implementado — apenas MCP e MCP + skill funcionam.",
+    "limitRdp": "Sessões de Área de Trabalho Remota (RDP) não são observáveis: o agente vê apenas a janela local do cliente RDP, não a interface da máquina remota."
   }
 }

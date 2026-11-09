@@ -72,7 +72,8 @@
     "general": "通用",
     "generalDesc": "外观、语言等通用偏好",
     "desktop": "桌面",
-    "desktopDesc": "控制智能体对桌面的访问权限"
+    "desktopDesc": "控制智能体对桌面的访问权限",
+    "experimental": "实验性"
   },
   "general": {
     "appearance": "外观",
@@ -511,7 +512,14 @@
     "permissionAutomation": "自动化权限",
     "permissionScreenRecording": "屏幕录制",
     "permissionUnknown": "未知",
-    "saved": "桌面设置已保存。"
+    "saved": "桌面设置已保存。",
+    "experimentalTitle": "实验性功能",
+    "experimentalNotice": "该能力已在真实环境验证，但应用尚未分发 agent-desktop 二进制文件。在按需分发上线前，仅能使用手动安装的二进制文件。",
+    "limitationsTitle": "已知限制",
+    "limitationsDescription": "当前实现的边界。",
+    "limitBinary": "应用尚未分发 agent-desktop 二进制文件。仅能使用手动安装的二进制文件，或通过 OPEN_COWORK_AGENT_DESKTOP_PATH 指定。",
+    "limitNative": "原生模式（FFI）尚未实现 —— 目前仅支持 MCP 与 MCP + skill。",
+    "limitRdp": "远程桌面会话（RDP）不可观测：代理只能看到本地 RDP 客户端窗口，看不到远程机器的界面。"
   },
   "mcp": {
     "noConnectors": "未配置连接器",

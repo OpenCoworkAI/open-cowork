@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   CheckCircle2,
+  CircleAlert,
   CircleSlash,
+  FlaskConical,
   Loader2,
   Monitor,
   RefreshCw,
@@ -36,6 +38,15 @@ const MODE_OPTIONS: { value: DesktopAccessMode; icon: typeof Monitor }[] = [
 ];
 
 /**
+ * Limitacoes conhecidas do capability, exibidas no fim do painel.
+ *
+ * Sao fatos verificados em campo, nao estimativas: o binario nao e
+ * distribuido pelo app, o modo nativo (FFI) nao existe e sessoes remotas
+ * via RDP nao sao observaveis a partir do host.
+ */
+const LIMITATION_KEYS = ['limitBinary', 'limitNative', 'limitRdp'] as const;
+
+/**
  * Estado de uma permissão, mapeado para a classe visual.
  *
  * `granted` → ok; `denied` → erro; `not_required` → neutro;
@@ -51,7 +62,7 @@ function permissionTone(state?: string): 'ok' | 'error' | 'neutral' | 'unknown' 
 
 const TONE_CLASS: Record<string, string> = {
   ok: 'text-success',
-  error: 'text-danger',
+  error: 'text-error',
   neutral: 'text-text-muted',
   unknown: 'text-text-muted',
 };
@@ -171,6 +182,24 @@ export function SettingsDesktop() {
           <span>{success}</span>
         </div>
       )}
+
+      {/*
+       * O capability está validado, mas a feature ainda NÃO está pronta para
+       * uso geral: o binário não é distribuído pelo app e o modo nativo (FFI)
+       * não existe. Declarar isso na própria tela evita que uma aba de
+       * Configurações pareça um recurso de produto já disponível.
+       */}
+      <div className="flex items-start gap-3 p-3.5 rounded-lg border border-warning/30 bg-warning/10">
+        <FlaskConical className="w-4 h-4 mt-0.5 shrink-0 text-warning" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-text-primary">
+            {t('desktop.experimentalTitle')}
+          </p>
+          <p className="text-xs leading-5 text-text-muted">
+            {t('desktop.experimentalNotice')}
+          </p>
+        </div>
+      </div>
 
       <SettingsContentSection
         title={t('desktop.modeTitle')}
@@ -292,6 +321,20 @@ export function SettingsDesktop() {
             <p className="text-xs leading-5 text-text-muted">{t('desktop.binaryMissingHint')}</p>
           )}
         </div>
+      </SettingsContentSection>
+
+      <SettingsContentSection
+        title={t('desktop.limitationsTitle')}
+        description={t('desktop.limitationsDescription')}
+      >
+        <ul className="space-y-2">
+          {LIMITATION_KEYS.map((key) => (
+            <li key={key} className="flex items-start gap-2 text-xs leading-5 text-text-muted">
+              <CircleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warning" />
+              <span>{t(`desktop.${key}`)}</span>
+            </li>
+          ))}
+        </ul>
       </SettingsContentSection>
     </div>
   );
