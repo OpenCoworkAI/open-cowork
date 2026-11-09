@@ -29,6 +29,7 @@ import type {
   MemoryInspectSessionResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
+import type { AgentDesktopStatus } from '../main/desktop/agent-desktop-status';
 import type {
   McpServerConfig,
   McpTool,
@@ -292,6 +293,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('plugins.setComponentEnabled', pluginId, component, enabled),
     uninstall: (pluginId: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('plugins.uninstall', pluginId),
+  },
+
+  // Desktop (computer use semântico via agent-desktop)
+  desktop: {
+    getStatus: (): Promise<AgentDesktopStatus> => ipcRenderer.invoke('desktop.getStatus'),
   },
 
   // Sandbox methods
@@ -594,6 +600,9 @@ declare global {
           enabled: boolean
         ) => Promise<PluginToggleResult>;
         uninstall: (pluginId: string) => Promise<{ success: boolean }>;
+      };
+      desktop: {
+        getStatus: () => Promise<AgentDesktopStatus>;
       };
       sandbox: {
         getStatus: () => Promise<{

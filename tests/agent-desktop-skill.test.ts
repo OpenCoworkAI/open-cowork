@@ -210,9 +210,12 @@ describe('camada de skill do agent-desktop', () => {
       expect(adapter).toContain('Não repita');
     });
 
-    it('ensina a abrir references sob demanda via skills_get', () => {
-      expect(adapter).toContain('operation: "skills_get"');
+    it('ensina a abrir references sob demanda via desktop_skills', () => {
+      expect(adapter).toContain('desktop_skills({ operation: "get"');
       expect(adapter).toContain('references/commands-observation.md');
+      // A rota antiga (skills_get dentro de desktop_observe) saiu de cena: as
+      // operações de skills têm tool agregada própria.
+      expect(adapter).not.toContain('operation: "skills_get"');
     });
 
     it('exige snapshot novo em STALE_REF/AMBIGUOUS_TARGET', () => {

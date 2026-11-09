@@ -47,6 +47,8 @@ import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
+import { resolveAgentDesktopBinary } from './desktop/agent-desktop-paths';
+import { readAgentDesktopStatus } from './desktop/agent-desktop-status';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
@@ -2468,6 +2470,31 @@ ipcMain.on('window.close', () => {
   } catch (error) {
     logError('[Window] Error closing:', error);
   }
+});
+
+// Desktop (computer use semântico via agent-desktop) IPC handlers
+//
+// O status é lido pelo comando CLI avulso `agent-desktop permissions` — não
+// sobe servidor MCP, para que a tela de Configurações não dependa do ciclo de
+// vida do cliente MCP. Falha é declarada (campo `error`), nunca silenciosa.
+ipcMain.handle('desktop.getStatus', async () => {
+  const mode = configStore.get('desktopAccessMode') ?? 'off';
+  const platform = process.platform;
+
+  const resolution = resolveAgentDesktopBinary({
+    resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+    userDataPath: app.getPath('userData'),
+  });
+
+  if (!resolution.binaryPath) {
+    return { mode, platform, binaryFound: false };
+  }
+
+  return readAgentDesktopStatus({
+    binaryPath: resolution.binaryPath,
+    mode,
+    platform,
+  });
 });
 
 // Sandbox IPC handlers

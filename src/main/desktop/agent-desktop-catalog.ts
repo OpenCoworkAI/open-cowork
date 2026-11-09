@@ -44,7 +44,8 @@ export type AgentDesktopAggregate =
   | 'window'
   | 'clipboard'
   | 'notifications'
-  | 'status';
+  | 'status'
+  | 'skills';
 
 export const AGGREGATE_ORDER: readonly AgentDesktopAggregate[] = [
   'observe',
@@ -55,6 +56,9 @@ export const AGGREGATE_ORDER: readonly AgentDesktopAggregate[] = [
   'clipboard',
   'notifications',
   'status',
+  // `skills` por último: é leitura pura e de uso raro (carregar uma reference
+  // sob demanda), então não deve competir por atenção no topo da lista.
+  'skills',
 ];
 
 /** Nome da tool agregada exposta ao modelo. */
@@ -135,9 +139,9 @@ export const AGGREGATE_BY_OPERATION: Readonly<Record<string, AgentDesktopAggrega
   get: 'observe',
   is: 'observe',
   list_surfaces: 'observe',
-  skills_list: 'observe',
-  skills_get: 'observe',
-  skills_path: 'observe',
+  skills_list: 'skills',
+  skills_get: 'skills',
+  skills_path: 'skills',
 
   // --- act: ação semântica sobre um elemento ---
   click: 'act',
@@ -394,6 +398,7 @@ export function groupOperationsByAggregate(
     clipboard: [],
     notifications: [],
     status: [],
+    skills: [],
   } as Record<AgentDesktopAggregate, AgentDesktopOperation[]>;
 
   for (const operation of operations) {

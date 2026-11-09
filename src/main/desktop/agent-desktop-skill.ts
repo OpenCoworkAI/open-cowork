@@ -19,7 +19,7 @@
  * - O **adaptador** é nosso: uma seção que traduz a sintaxe CLI para as tools
  *   agregadas e documenta a semântica de entrega no envelope do Open Cowork.
  * - As **references** (até 107 KB por skill) **não** são materializadas em disco:
- *   são carregadas sob demanda via `desktop_observe({operation:"skills_get"})`,
+ *   são carregadas sob demanda via `desktop_skills({operation:"get"})`,
  *   o que mantém o version-match e evita I/O desnecessário.
  *
  * ## Materialização e cache
@@ -349,7 +349,7 @@ export function buildAdapterSection(operations: readonly AgentDesktopOperation[]
   );
   lines.push('');
   lines.push('```');
-  lines.push('desktop_observe({ operation: "skills_get", args: { name: "agent-desktop", reference: "references/commands-observation.md" } })');
+  lines.push('desktop_skills({ operation: "get", args: { name: "agent-desktop", reference: "references/commands-observation.md" } })');
   lines.push('```');
   lines.push('');
   lines.push(

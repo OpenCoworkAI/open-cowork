@@ -17,5 +17,11 @@ export function buildAgentRuntimeSignature(config: AppConfig): string {
     enableThinking: config.enableThinking,
     memoryEnabled: config.memoryEnabled,
     memoryRuntime: config.memoryRuntime,
+    // Camada de acesso ao desktop: o modo muda **quais tools** a sessão
+    // expõe, e a chave mestre de input físico muda o **gate** de autorização.
+    // Entram na assinatura para que a mudança fique visível no fluxo de
+    // reload do session-manager (o runner lê a config em tempo de execução).
+    desktopAccessMode: config.desktopAccessMode ?? 'off',
+    desktopPhysicalInputEnabled: config.desktopPhysicalInputEnabled ?? false,
   });
 }

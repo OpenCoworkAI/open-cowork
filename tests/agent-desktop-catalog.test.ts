@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AGGREGATE_ORDER,
   buildOperationCatalog,
   classifyAggregate,
   classifyRisk,
@@ -103,6 +104,45 @@ describe('agent-desktop catalog', () => {
       expect(grouped.act.map((op) => op.operation)).toEqual(['click']);
       expect(grouped.wait.map((op) => op.operation)).toEqual(['wait']);
       expect(grouped.clipboard).toEqual([]);
+    });
+  });
+
+  describe('agregado `skills`', () => {
+    it('mapeia as operações de skills para o agregado próprio, não para observe', () => {
+      const grouped = groupOperationsByAggregate(
+        buildOperationCatalog([
+          'desktop_skills_list',
+          'desktop_skills_get',
+          'desktop_skills_path',
+          'desktop_snapshot',
+        ])
+      );
+
+      expect(grouped.skills.map((op) => op.operation)).toEqual([
+        'skills_get',
+        'skills_list',
+        'skills_path',
+      ]);
+      // `observe` não deve mais carregar as operações de skills.
+      expect(grouped.observe.map((op) => op.operation)).toEqual(['snapshot']);
+    });
+
+    it('mantém o agregado `skills` como leitura pura (risco observation)', () => {
+      const catalog = buildOperationCatalog([
+        'desktop_skills_list',
+        'desktop_skills_get',
+        'desktop_skills_path',
+      ]);
+
+      for (const operation of catalog) {
+        expect(operation.aggregate).toBe('skills');
+        expect(operation.risk).toBe('observation');
+      }
+    });
+
+    it('inclui `skills` no aggregate order, por último', () => {
+      expect(AGGREGATE_ORDER).toContain('skills');
+      expect(AGGREGATE_ORDER[AGGREGATE_ORDER.length - 1]).toBe('skills');
     });
   });
 

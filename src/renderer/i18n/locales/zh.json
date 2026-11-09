@@ -70,7 +70,9 @@
     "logsDesc": "查看和导出应用日志",
     "panelDesc": "配置工作区、工具以及账号相关行为。",
     "general": "通用",
-    "generalDesc": "外观、语言等通用偏好"
+    "generalDesc": "外观、语言等通用偏好",
+    "desktop": "桌面",
+    "desktopDesc": "控制智能体对桌面的访问权限"
   },
   "general": {
     "appearance": "外观",
@@ -482,6 +484,34 @@
     "syncDetailSkills": "正在将内置技能复制到沙盒",
     "syncDetailFallback": "正在回退到直接访问模式（安全性较低）",
     "syncDetailCompleted": "已同步 {{count}} 个文件"
+  },
+  "desktop": {
+    "modeTitle": "桌面访问",
+    "modeDescription": "选择智能体如何通过操作系统的无障碍层与桌面交互。",
+    "mode_off": "已禁用",
+    "mode_offDesc": "不暴露任何桌面工具，智能体无法观察或控制屏幕。",
+    "mode_mcp": "MCP 工具",
+    "mode_mcpDesc": "通过按会话启动的 MCP 服务器暴露聚合后的 desktop_* 工具。",
+    "mode_mcp_skill": "MCP 工具 + 技能",
+    "mode_mcp_skillDesc": "相同的工具，同时把上游 agent-desktop 技能本地化为模型的指导文档。",
+    "mode_native": "原生（FFI）",
+    "mode_nativeDesc": "尚不可用 —— 需要原生 FFI 层。",
+    "physicalTitle": "物理输入",
+    "physicalDescription": "控制会移动鼠标、按住按键或向屏幕粘贴内容等操作的总开关。",
+    "physicalLabel": "允许物理输入",
+    "physicalHint": "关闭后，即使此前已授权，物理操作也会被拒绝。这是绝对策略，不能按操作覆盖。",
+    "statusTitle": "状态",
+    "statusDescription": "agent-desktop 报告的二进制位置与操作系统权限。",
+    "binaryFound": "已找到二进制文件",
+    "binaryMissing": "未找到二进制文件",
+    "binaryMissingHint": "请安装 agent-desktop，或将 OPEN_COWORK_AGENT_DESKTOP_PATH 指向可执行文件路径。",
+    "version": "版本",
+    "checkNow": "立即检查",
+    "permissionAccessibility": "无障碍权限",
+    "permissionAutomation": "自动化权限",
+    "permissionScreenRecording": "屏幕录制",
+    "permissionUnknown": "未知",
+    "saved": "桌面设置已保存。"
   },
   "mcp": {
     "noConnectors": "未配置连接器",

@@ -67,6 +67,11 @@ const AGGREGATE_DESCRIPTIONS: Record<AgentDesktopAggregate, string> = {
   status:
     'Diagnostics: platform status, accessibility permissions, version, session info and trace. ' +
     'Use "permissions" to check whether accessibility access is granted.',
+  skills:
+    'Read-only access to the agent-desktop bundled skill documents. "list" shows the available ' +
+    'skills (core guide plus the one for the current platform), "get" returns a skill document ' +
+    'and "path" reports where they are stored. Use "get" with a reference name to load a ' +
+    'reference on demand instead of reading everything up front. Takes no action on the system.',
 };
 
 /**

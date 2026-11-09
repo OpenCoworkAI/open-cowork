@@ -135,6 +135,20 @@ export interface AppConfig {
    */
   desktopAccessMode?: DesktopAccessMode;
 
+  /**
+   * Chave mestre do input físico do computer use semântico.
+   *
+   * Quando `false` (padrão), toda operação `physical_input` — cursor, foco,
+   * digitação física — é **recusada**, independentemente da autorização por
+   * operação dada em uma sessão anterior. É uma política global e persistente
+   * do app, e complementa (não substitui) o gate por operação, que é uma
+   * concessão do usuário dentro de uma sessão.
+   *
+   * `true` apenas **permite** a abertura do diálogo de autorização; nunca
+   * autoriza sozinho.
+   */
+  desktopPhysicalInputEnabled?: boolean;
+
   // Global memory toggle
   memoryEnabled: boolean;
 
@@ -206,6 +220,7 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'enableThinking',
   'memoryEnabled',
   'desktopAccessMode',
+  'desktopPhysicalInputEnabled',
   'model',
   'provider',
   'contextWindow',
@@ -256,6 +271,7 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
   desktopAccessMode: (v) => v === 'off' || v === 'mcp' || v === 'mcp+skill' || v === 'native',
+  desktopPhysicalInputEnabled: (v) => typeof v === 'boolean',
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -330,6 +346,7 @@ const defaultConfig: AppConfig = {
   theme: 'light',
   sandboxEnabled: false,
   desktopAccessMode: 'off',
+  desktopPhysicalInputEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
     llm: {

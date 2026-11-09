@@ -12,6 +12,7 @@ import {
   ChevronRight,
   BrainCircuit,
   UsersRound,
+  Monitor,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -27,6 +28,7 @@ import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { SettingsSubagents } from './settings/SettingsSubagents';
+import { SettingsDesktop } from './settings/SettingsDesktop';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -40,7 +42,8 @@ interface SettingsPanelProps {
     | 'schedule'
     | 'remote'
     | 'logs'
-    | 'general';
+    | 'general'
+    | 'desktop';
 }
 
 type TabId =
@@ -53,7 +56,8 @@ type TabId =
   | 'schedule'
   | 'remote'
   | 'logs'
-  | 'general';
+  | 'general'
+  | 'desktop';
 
 const VALID_TABS = new Set<TabId>([
   'api',
@@ -66,6 +70,7 @@ const VALID_TABS = new Set<TabId>([
   'remote',
   'logs',
   'general',
+  'desktop',
 ]);
 
 function SettingsConnectorsFallback({ onRetry }: { onRetry: () => void }) {
@@ -145,6 +150,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.sandbox'),
       icon: Shield,
       description: t('settings.sandboxDesc'),
+    },
+    {
+      id: 'desktop' as TabId,
+      label: t('settings.desktop'),
+      icon: Monitor,
+      description: t('settings.desktopDesc'),
     },
     {
       id: 'connectors' as TabId,
@@ -290,6 +301,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
                 {viewedTabs.has('sandbox') && <SettingsSandbox />}
+              </div>
+              <div className={activeTab === 'desktop' ? '' : 'hidden'}>
+                {viewedTabs.has('desktop') && <SettingsDesktop />}
               </div>
               <div className={activeTab === 'connectors' ? '' : 'hidden'}>
                 {viewedTabs.has('connectors') && (

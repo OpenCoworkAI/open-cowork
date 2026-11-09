@@ -542,6 +542,18 @@ interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   skillsSignature?: string;
+  /**
+   * Assinatura da camada de acesso ao desktop (modo + chave mestre de input
+   * físico).
+   *
+   * As tools `desktop_*` são registradas na **criação** da sessão, então uma
+   * mudança de modo só passa a valer se a sessão for recriada. O caminho das
+   * skills não cobre isso: o path materializado só existe no modo `mcp+skill`,
+   * logo `off`→`mcp` e `mcp`→`off` deixariam as tools stale (expostas depois
+   * de desligar, ausentes depois de ligar). A assinatura é separada justamente
+   * para capturar **qualquer** mudança de modo.
+   */
+  desktopSignature?: string;
   ollamaNumCtx?: { value: number };
 }
 
@@ -997,6 +1009,14 @@ ${hints.join('\n')}
     const mode = configStore.get('desktopAccessMode') ?? 'off';
     if (mode === 'off' || mode === 'native') {
       // 'native' é reservado para a camada FFI (Fase 5) — sem tools MCP.
+      // Desligar o modo precisa **parar o processo filho**: sem isso o servidor
+      // MCP do agent-desktop continuaria vivo (com o agente mantendo acesso ao
+      // desktop) mesmo com o modo desligado.
+      void this.getAgentDesktopManager()
+        .closeSession(sessionId)
+        .catch((error) =>
+          logError('[CoworkAgentRunner] Failed to close agent-desktop session:', error)
+        );
       return [];
     }
 
@@ -1094,6 +1114,30 @@ ${hints.join('\n')}
         const requiresPhysicalAuthorization =
           physicalOperations.length > 0 &&
           !this.isPhysicalOperationAllowed(sessionId, physicalOperations);
+
+        // Chave mestre global de input físico.
+        //
+        // Quando desligada, input físico é **proibido** — não é "pergunte de
+        // novo". É uma política do app, absoluta e persistente; por isso não
+        // passa pelo diálogo de autorização nem pelo `allow_always` (que é uma
+        // concessão por operação dentro de uma sessão). A checagem vem antes
+        // do diálogo: desligar a chave tem que valer imediatamente.
+        const physicalInputEnabled =
+          configStore.get('desktopPhysicalInputEnabled') ?? false;
+        if (physicalOperations.length > 0 && !physicalInputEnabled) {
+          log(
+            `[CoworkAgentRunner] Physical desktop input '${physicalOperations.join(', ')}' blocked — ` +
+              'global physical input setting is disabled'
+          );
+          return {
+            block: true,
+            reason:
+              `Physical input is disabled by the global desktop setting ` +
+              `(operations: ${physicalOperations.join(', ')}). ` +
+              'Use the semantic alternatives instead (click, type, set_value) — ' +
+              'they do not move the cursor or steal focus.',
+          };
+        }
 
         if (decision === 'deny') {
           log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`);
@@ -1951,6 +1995,18 @@ ${hints.join('\n')}
       const skillsSignature = JSON.stringify(skillPaths);
       log('[CoworkAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
 
+      // Assinatura da camada de desktop. Fica **fora** de `skillsSignature` de
+      // propósito: as tools `desktop_*` são registradas na criação da sessão, e
+      // o conjunto de paths de skills não muda quando o modo vai de `off` para
+      // `mcp` (o path materializado só existe em `mcp+skill`). Sem esta
+      // assinatura, desligar o modo deixaria as tools expostas na sessão já
+      // aberta — violando "desligar o modo remove todas as `desktop_*` sem
+      // reinício".
+      const desktopSignature = JSON.stringify({
+        mode: configStore.get('desktopAccessMode') ?? 'off',
+        physicalInput: configStore.get('desktopPhysicalInputEnabled') ?? false,
+      });
+
       // Build contextual prompt — if reusing an existing SDK session, the SDK
       // already has conversation history so we only pass the new prompt.
       // For cold starts (new SDK session with existing DB history), we inject
@@ -1973,6 +2029,22 @@ ${hints.join('\n')}
         } catch (disposeError) {
           logWarn(
             '[CoworkAgentRunner] dispose error while recreating pi session for skills:',
+            disposeError
+          );
+        }
+        this.piSessions.delete(session.id);
+        cachedSession = undefined;
+      }
+      if (cachedSession && cachedSession.desktopSignature !== desktopSignature) {
+        logCtx(
+          '[CoworkAgentRunner] Desktop access changed, recreating cached pi session:',
+          session.id
+        );
+        try {
+          cachedSession.session.dispose();
+        } catch (disposeError) {
+          logWarn(
+            '[CoworkAgentRunner] dispose error while recreating pi session for desktop access:',
             disposeError
           );
         }
@@ -2361,6 +2433,7 @@ Tool routing:
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
+          desktopSignature,
         });
 
         // Ollama: wrap _onPayload to inject num_ctx into every request

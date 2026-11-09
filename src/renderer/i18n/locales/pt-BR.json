@@ -1,0 +1,37 @@
+{
+  "settings": {
+    "desktop": "Desktop",
+    "desktopDesc": "Controle o acesso do agente ao desktop"
+  },
+  "common": {
+    "loading": "Carregando..."
+  },
+  "desktop": {
+    "modeTitle": "Acesso ao desktop",
+    "modeDescription": "Escolha como o agente pode interagir com a camada de acessibilidade do sistema operacional.",
+    "mode_off": "Desativado",
+    "mode_offDesc": "Nenhuma tool de desktop é exposta. O agente não consegue observar nem controlar a tela.",
+    "mode_mcp": "Tools MCP",
+    "mode_mcpDesc": "Expõe as tools agregadas desktop_* através de um servidor MCP por sessão.",
+    "mode_mcp_skill": "Tools MCP + skill",
+    "mode_mcp_skillDesc": "As mesmas tools, mais a skill upstream do agent-desktop materializada localmente como guia para o modelo.",
+    "mode_native": "Nativo (FFI)",
+    "mode_nativeDesc": "Indisponível por enquanto — exige a camada nativa FFI.",
+    "physicalTitle": "Input físico",
+    "physicalDescription": "Chave mestre das operações que movem o mouse, seguram teclas ou colam na tela.",
+    "physicalLabel": "Permitir input físico",
+    "physicalHint": "Quando desativado, operações físicas são recusadas mesmo que o agente já tenha sido autorizado. É uma política absoluta e não pode ser sobrescrita por operação.",
+    "statusTitle": "Status",
+    "statusDescription": "Local do binário e permissões do sistema operacional reportadas pelo agent-desktop.",
+    "binaryFound": "Binário encontrado",
+    "binaryMissing": "Binário não encontrado",
+    "binaryMissingHint": "Instale o agent-desktop ou defina OPEN_COWORK_AGENT_DESKTOP_PATH com o caminho do executável.",
+    "version": "Versão",
+    "checkNow": "Verificar agora",
+    "permissionAccessibility": "Acessibilidade",
+    "permissionAutomation": "Automação",
+    "permissionScreenRecording": "Gravação de tela",
+    "permissionUnknown": "Desconhecido",
+    "saved": "Configurações de desktop salvas."
+  }
+}

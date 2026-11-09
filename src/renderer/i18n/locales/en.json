@@ -70,7 +70,9 @@
     "logsDesc": "View and export application logs",
     "panelDesc": "Configure your workspace, tools, and account behavior.",
     "general": "General",
-    "generalDesc": "Appearance, language & preferences"
+    "generalDesc": "Appearance, language & preferences",
+    "desktop": "Desktop",
+    "desktopDesc": "Control the agent's access to the desktop"
   },
   "general": {
     "appearance": "Appearance",
@@ -482,6 +484,34 @@
     "syncDetailSkills": "Copying built-in skills to sandbox",
     "syncDetailFallback": "Falling back to direct access mode (less secure)",
     "syncDetailCompleted": "Synced {{count}} files"
+  },
+  "desktop": {
+    "modeTitle": "Desktop access",
+    "modeDescription": "Choose how the agent may interact with the operating system's accessibility layer.",
+    "mode_off": "Disabled",
+    "mode_offDesc": "No desktop tools are exposed. The agent cannot observe or control the screen.",
+    "mode_mcp": "MCP tools",
+    "mode_mcpDesc": "Exposes the aggregated desktop_* tools through a per-session MCP server.",
+    "mode_mcp_skill": "MCP tools + skill",
+    "mode_mcp_skillDesc": "Same tools, plus the upstream agent-desktop skill materialized locally as guidance for the model.",
+    "mode_native": "Native (FFI)",
+    "mode_nativeDesc": "Not available yet — requires the native FFI layer.",
+    "physicalTitle": "Physical input",
+    "physicalDescription": "Master switch for operations that move the mouse, hold keys or paste into the screen.",
+    "physicalLabel": "Allow physical input",
+    "physicalHint": "When disabled, physical operations are refused even if the agent was previously authorized. This is an absolute policy and cannot be overridden per operation.",
+    "statusTitle": "Status",
+    "statusDescription": "Binary location and operating system permissions reported by agent-desktop.",
+    "binaryFound": "Binary found",
+    "binaryMissing": "Binary not found",
+    "binaryMissingHint": "Install agent-desktop or set OPEN_COWORK_AGENT_DESKTOP_PATH to the executable path.",
+    "version": "Version",
+    "checkNow": "Check now",
+    "permissionAccessibility": "Accessibility",
+    "permissionAutomation": "Automation",
+    "permissionScreenRecording": "Screen recording",
+    "permissionUnknown": "Unknown",
+    "saved": "Desktop settings saved."
   },
   "mcp": {
     "noConnectors": "No connectors configured",

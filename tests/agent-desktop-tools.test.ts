@@ -20,6 +20,9 @@ const UPSTREAM_TOOLS = [
   'desktop_clipboard_get',
   'desktop_list_notifications',
   'desktop_status',
+  'desktop_skills_list',
+  'desktop_skills_get',
+  'desktop_skills_path',
 ];
 
 function fakeClient(
@@ -63,6 +66,7 @@ describe('agent-desktop tools agregadas', () => {
         'desktop_clipboard',
         'desktop_notifications',
         'desktop_observe',
+        'desktop_skills',
         'desktop_status',
         'desktop_wait',
         'desktop_window',
@@ -74,6 +78,26 @@ describe('agent-desktop tools agregadas', () => {
       (client.getOperations as () => unknown) = () => buildOperationCatalog(['desktop_snapshot']);
       const tools = buildAgentDesktopTools({ client });
       expect(tools.map((tool) => tool.name)).toEqual(['desktop_observe']);
+    });
+
+    it('expõe as operações de skills em `desktop_skills`, fora de `desktop_observe`', () => {
+      const tools = buildAgentDesktopTools({ client: fakeClient() });
+      const skills = tools.find((tool) => tool.name === 'desktop_skills');
+      const observe = tools.find((tool) => tool.name === 'desktop_observe');
+
+      const skillsSchema = skills?.parameters as {
+        properties: { operation: { enum: string[] } };
+      };
+      expect(skillsSchema.properties.operation.enum).toEqual([
+        'skills_get',
+        'skills_list',
+        'skills_path',
+      ]);
+
+      const observeSchema = observe?.parameters as {
+        properties: { operation: { enum: string[] } };
+      };
+      expect(observeSchema.properties.operation.enum).not.toContain('skills_get');
     });
 
     it('enumera as operações reais do upstream no schema', () => {

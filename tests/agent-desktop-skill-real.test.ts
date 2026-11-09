@@ -69,7 +69,7 @@ describe.skipIf(!BINARY)('camada de skill contra o binário real do upstream', (
     // 2. A interface real (agregada) está documentada.
     expect(content).toContain('desktop_observe');
     expect(content).toContain('desktop_act');
-    expect(content).toContain('operation: "skills_get"');
+    expect(content).toContain('desktop_skills');
 
     // 3. A semântica de entrega está presente.
     expect(content).toContain('not_delivered');
