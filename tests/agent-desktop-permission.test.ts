@@ -14,7 +14,10 @@ describe('gate de input físico (autorização explícita)', () => {
       expect(isPhysicalInputOperation('mouse_wheel')).toBe(true);
       expect(isPhysicalInputOperation('hover')).toBe(true);
       expect(isPhysicalInputOperation('drag')).toBe(true);
-      expect(isPhysicalInputOperation('cursor_overlay')).toBe(true);
+      expect(isPhysicalInputOperation('triple_click')).toBe(true);
+      expect(isPhysicalInputOperation('cursor_overlay_enable')).toBe(true);
+      // Desligar o overlay nao move o cursor - nao exige autorizacao.
+      expect(isPhysicalInputOperation('cursor_overlay_disable')).toBe(false);
     });
 
     it('não marca operações semânticas nem de leitura', () => {

@@ -1,0 +1,892 @@
+{
+  "source": "v1.2.0/agent-desktop.exe",
+  "upstreamVersion": "1.2.0",
+  "toolCount": 67,
+  "tools": [
+    {
+      "name": "desktop_snapshot",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "compact": {},
+          "force_electron_a11y": {},
+          "include_bounds": {},
+          "interactive_only": {},
+          "max_depth": {},
+          "root": {},
+          "skeleton": {},
+          "surface": {},
+          "timeout_ms": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_find",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "count": {},
+          "description": {},
+          "exact": {},
+          "first": {},
+          "last": {},
+          "limit": {},
+          "name": {},
+          "native_id": {},
+          "nth": {},
+          "role": {},
+          "root": {},
+          "states": {},
+          "surface": {},
+          "text": {},
+          "timeout_ms": {},
+          "value": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_screenshot",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "output_path": {},
+          "screen": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_get",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "property": {},
+          "ref_id": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_is",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "property": {},
+          "ref_id": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_double_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_triple_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_right_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_type",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interval_ms": {},
+          "ref_id": {},
+          "text": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_set_value",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {},
+          "value": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_clear",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_focus",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_select",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {},
+          "value": {}
+        },
+        "required": [
+          "ref_id",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "desktop_toggle",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_check",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_uncheck",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_expand",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_collapse",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_scroll",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {},
+          "direction": {},
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_scroll_to",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref_id": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "ref_id"
+        ]
+      }
+    },
+    {
+      "name": "desktop_press",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "combo": {},
+          "force": {},
+          "window_id": {}
+        },
+        "required": [
+          "combo"
+        ]
+      }
+    },
+    {
+      "name": "desktop_key_down",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "combo": {},
+          "force": {}
+        },
+        "required": [
+          "combo"
+        ]
+      }
+    },
+    {
+      "name": "desktop_key_up",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "combo": {},
+          "force": {}
+        },
+        "required": [
+          "combo"
+        ]
+      }
+    },
+    {
+      "name": "desktop_hover",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "duration": {},
+          "ref_id": {},
+          "timeout_ms": {},
+          "xy": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_drag",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "drop_delay": {},
+          "duration": {},
+          "from": {},
+          "from_xy": {},
+          "timeout_ms": {},
+          "to": {},
+          "to_xy": {},
+          "wait_for_scope": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_mouse_move",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "xy": {}
+        },
+        "required": [
+          "xy"
+        ]
+      }
+    },
+    {
+      "name": "desktop_mouse_click",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "button": {},
+          "count": {},
+          "modifiers": {},
+          "xy": {}
+        },
+        "required": [
+          "xy"
+        ]
+      }
+    },
+    {
+      "name": "desktop_mouse_down",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "button": {},
+          "modifiers": {},
+          "xy": {}
+        },
+        "required": [
+          "xy"
+        ]
+      }
+    },
+    {
+      "name": "desktop_mouse_up",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "button": {},
+          "modifiers": {},
+          "xy": {}
+        },
+        "required": [
+          "xy"
+        ]
+      }
+    },
+    {
+      "name": "desktop_mouse_wheel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dx": {},
+          "dy": {},
+          "modifiers": {},
+          "x": {},
+          "y": {}
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "desktop_launch",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "activate": {},
+          "app": {},
+          "args": {},
+          "cdp": {},
+          "cwd": {},
+          "env": {},
+          "no_attach": {},
+          "timeout": {}
+        },
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "desktop_close_app",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "force": {}
+        },
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "desktop_list_windows",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "timeout_ms": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_list_displays",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_list_apps",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "timeout_ms": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_focus_window",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "title": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_resize_window",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "height": {},
+          "width": {},
+          "window_id": {}
+        },
+        "required": [
+          "width",
+          "height"
+        ]
+      }
+    },
+    {
+      "name": "desktop_move_window",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "window_id": {},
+          "x": {},
+          "y": {}
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "desktop_minimize",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_maximize",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_restore",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_list_surfaces",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_open_system_surface",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "surface": {}
+        },
+        "required": [
+          "surface"
+        ]
+      }
+    },
+    {
+      "name": "desktop_list_notifications",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "limit": {},
+          "text": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_dismiss_notification",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {},
+          "expected_app": {},
+          "expected_title": {},
+          "index": {}
+        },
+        "required": [
+          "index"
+        ]
+      }
+    },
+    {
+      "name": "desktop_dismiss_all_notifications",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "app": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_notification_action",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {},
+          "expected_app": {},
+          "expected_title": {},
+          "index": {}
+        },
+        "required": [
+          "index",
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "desktop_clipboard_get",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "format": {},
+          "out": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_clipboard_set",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_url": {},
+          "image": {},
+          "text": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_clipboard_clear",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_wait",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {},
+          "app": {},
+          "count": {},
+          "element": {},
+          "event": {},
+          "menu": {},
+          "menu_closed": {},
+          "ms": {},
+          "notification": {},
+          "predicate": {},
+          "text": {},
+          "timeout": {},
+          "value": {},
+          "window": {},
+          "window_id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_permissions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "guide": {},
+          "request": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_version",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_batch",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "commands_json": {},
+          "stop_on_error": {},
+          "timeout_ms": {}
+        },
+        "required": [
+          "commands_json"
+        ]
+      }
+    },
+    {
+      "name": "desktop_skills_list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_skills_get",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "full": {},
+          "name": {},
+          "reference": {}
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "desktop_skills_path",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_session_start",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {},
+          "multi_agent": {},
+          "name": {},
+          "no_trace": {},
+          "screenshots": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_session_end",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_session_list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_session_gc",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ended": {},
+          "older_than": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_cursor_overlay_enable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "accent": {},
+          "bow": {},
+          "dwell_ms": {},
+          "fill": {},
+          "hotspot": {},
+          "image": {},
+          "label": {},
+          "max_words": {},
+          "motion_seed": {},
+          "multi_agent": {},
+          "no_highlight": {},
+          "no_ripple": {},
+          "overshoot": {},
+          "pointer_hotspot": {},
+          "pointer_image": {},
+          "rim": {},
+          "size": {},
+          "travel_ms": {},
+          "tremor": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_cursor_overlay_disable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_trace_show",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event": {},
+          "limit": {}
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "desktop_trace_export",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {},
+          "out": {}
+        },
+        "required": []
+      }
+    }
+  ]
+}

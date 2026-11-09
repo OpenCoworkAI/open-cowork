@@ -23,6 +23,7 @@ import {
   buildOperationCatalog,
   parseDisposition,
   parseEnvelope,
+  parseSuccessDisposition,
   type AgentDesktopDelivery,
   type AgentDesktopOperation,
 } from './agent-desktop-catalog';
@@ -193,9 +194,44 @@ export class AgentDesktopClient {
 
         const durationMs = Date.now() - startedAt;
         const envelope = parseEnvelope(raw);
-        const disposition = envelope?.error?.disposition
-          ? parseDisposition(envelope.error.disposition)
-          : { delivery: 'delivered_verified' as AgentDesktopDelivery, retry: false };
+
+        // Resposta em texto simples = o upstream recusou a call **antes** de
+        // rodar o comando ("a call rejected before the command runs returns
+        // plain text"). Não é sucesso — e como não sabemos se algo foi
+        // executado, o tratamento é incerto (fail-safe).
+        if (!envelope) {
+          recordMcpToolAttempt({
+            callId,
+            tool: upstreamTool,
+            server: AGENT_DESKTOP_SERVER_NAME,
+            attempt,
+            durationMs,
+            outcome: 'error',
+            errorKind: 'structured_error',
+          });
+          return {
+            ok: false,
+            delivery: 'delivery_uncertain',
+            code: 'UNPARSEABLE_ENVELOPE',
+            message:
+              'agent-desktop returned a non-JSON response (call rejected before execution)',
+            retried,
+          };
+        }
+
+        // O upstream carrega a disposition do **sucesso** em `data.disposition`
+        // ("Action results carry data.disposition") e a do **erro** em
+        // `error.disposition`. Uma ação bem-sucedida pode ainda ter entrega
+        // incerta — reportar 'verified' seria mentir para o modelo.
+        //
+        // Um erro **sem** disposition cai em 'delivery_uncertain' (fail-safe),
+        // nunca em 'delivered_verified'.
+        const disposition = envelope.ok
+          ? parseSuccessDisposition(envelope) ?? {
+              delivery: 'delivered_verified' as AgentDesktopDelivery,
+              retry: false,
+            }
+          : parseDisposition(envelope.error?.disposition);
 
         recordMcpToolAttempt({
           callId,
@@ -203,11 +239,11 @@ export class AgentDesktopClient {
           server: AGENT_DESKTOP_SERVER_NAME,
           attempt,
           durationMs,
-          outcome: envelope && envelope.ok === false ? 'error' : 'ok',
-          errorKind: envelope && envelope.ok === false ? 'structured_error' : undefined,
+          outcome: envelope.ok === false ? 'error' : 'ok',
+          errorKind: envelope.ok === false ? 'structured_error' : undefined,
         });
 
-        if (envelope && envelope.ok === false) {
+        if (envelope.ok === false) {
           const result: AgentDesktopCallResult = {
             ok: false,
             delivery: disposition.delivery,
@@ -235,8 +271,8 @@ export class AgentDesktopClient {
         return {
           ok: true,
           delivery: disposition.delivery,
-          data: envelope?.data,
-          envelopeVersion: envelope?.version,
+          data: envelope.data,
+          envelopeVersion: envelope.version,
           retried,
         };
       } catch (error) {

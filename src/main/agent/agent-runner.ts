@@ -28,7 +28,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
-import { AgentDesktopManager, collectRequestedPhysicalOperations } from '../desktop';
+import {
+  AgentDesktopManager,
+  collectRequestedPhysicalOperations,
+  isObservationOperation,
+  requestedOperation,
+} from '../desktop';
 import {
   log,
   logWarn,
@@ -1034,15 +1039,18 @@ ${hints.join('\n')}
         // `toolName` so allow-once decisions stay stable across calls.
         const displayName = getDisplayName(toolName);
 
-        // --- Computer use semântico: input físico exige autorização explícita ---
+        // --- Computer use semântico: leitura livre, input físico explícito ---
         // `desktop_*` roda headless por padrão. Operações que movem o cursor
-        // (mouse_*, hover, drag, cursor_overlay) só passam depois de o usuário
-        // autorizar **esta operação** — uma regra genérica de "sempre permitir
-        // desktop_act" não basta.
-        const physicalOperations =
-          toolName.startsWith('desktop_')
-            ? collectRequestedPhysicalOperations(input)
-            : [];
+        // (mouse_*, hover, drag, triple_click, cursor_overlay_enable) só passam
+        // depois de o usuário autorizar **esta operação** — uma regra genérica
+        // de "sempre permitir desktop_act" não basta.
+        const isDesktopTool = toolName.startsWith('desktop_');
+        const desktopOperation = isDesktopTool ? requestedOperation(input) : '';
+        const isDesktopObservation =
+          isDesktopTool && desktopOperation !== '' && isObservationOperation(desktopOperation);
+        const physicalOperations = isDesktopTool
+          ? collectRequestedPhysicalOperations(input)
+          : [];
         const requiresPhysicalAuthorization =
           physicalOperations.length > 0 &&
           !this.isPhysicalOperationAllowed(sessionId, physicalOperations);
@@ -1055,7 +1063,15 @@ ${hints.join('\n')}
           };
         }
 
-        if (decision === 'ask' || requiresPhysicalAuthorization) {
+        // Leitura semântica é segura por construção: não abre diálogo.
+        // Sem isto, `decidePermission` cairia em 'ask' para toda tool nova
+        // (ALLOW_WITHOUT_RULE só contém 'todowrite') e cada snapshot viraria
+        // uma confirmação — inviável para computer use.
+        if (decision === 'ask' && isDesktopObservation && !requiresPhysicalAuthorization) {
+          log(
+            `[CoworkAgentRunner] Desktop observation '${desktopOperation}' — allowed without prompt`
+          );
+        } else if (decision === 'ask' || requiresPhysicalAuthorization) {
           const toolUseId = `${ctx.toolCall?.id ?? 'unknown'}-perm-${uuidv4().slice(0, 8)}`;
           let result: 'allow' | 'deny' | 'allow_always';
           try {

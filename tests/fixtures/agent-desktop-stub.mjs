@@ -2,36 +2,43 @@
 /**
  * Stub do servidor MCP do agent-desktop, para testes de contrato.
  *
- * Reproduz o **envelope** do upstream (JSON v2.6) e o catálogo de tools
- * `desktop_*`, mas sem tocar no desktop real.
+ * Reproduz o **envelope e o formato de resposta do upstream v1.2.0 real**
+ * (verificado em 2026-11-09 contra `agent-desktop.exe` v1.2.0, Windows x64):
+ *  - 67 tools com o prefixo `desktop_`;
+ *  - resultado MCP com `content[].text` (JSON) **e** `structuredContent`
+ *    (o mesmo envelope nos dois lugares, como o upstream real);
+ *  - envelope `{version:'2.6', command, ok, data|error}`;
+ *  - `error.disposition = {delivery, retry}` com `retry` como **string** `"safe"`;
+ *  - `data.disposition` presente em ações bem-sucedidas;
+ *  - recusa **antes** da execução devolve **texto simples**, sem JSON.
  *
  * Protocolo MCP sobre stdio = JSON-RPC 2.0, uma mensagem por linha.
  *
  * Comportamento controlado por variáveis de ambiente:
- *   STUB_CALL_LOG   — arquivo onde cada `tools/call` é appendido (JSONL)
- *   STUB_FAIL_TOOL  — nome da tool que devolve envelope de erro
- *   STUB_DELIVERY   — estado de entrega do erro (default: delivery_uncertain)
- *   STUB_RETRY      — "true" para o upstream declarar retry seguro
- *   STUB_FAIL_TIMES — quantas vezes a tool falha antes de sucesso (default: ∞)
- *   STUB_HANG_TOOL  — tool que nunca responde (testa timeout)
+ *   STUB_CALL_LOG         — arquivo onde cada `tools/call` é appendido (JSONL)
+ *   STUB_FAIL_TOOL        — tool que devolve envelope de erro
+ *   STUB_DELIVERY         — estado de entrega do erro (default: delivery_uncertain)
+ *   STUB_RETRY            — valor de `disposition.retry` (default: "safe")
+ *   STUB_FAIL_TIMES       — quantas vezes a tool falha antes de sucesso (default: ∞)
+ *   STUB_REJECT_TOOL      — tool recusada ANTES da execução (texto simples)
+ *   STUB_HANG_TOOL        — tool que nunca responde (testa timeout)
+ *   STUB_SUCCESS_DELIVERY — disposition em `data` no caso de sucesso
+ *   STUB_SUCCESS_RETRY    — `data.disposition.retry` no caso de sucesso
  */
 
 import { appendFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const TOOL_NAMES = [
-  // observe
   'desktop_snapshot',
   'desktop_find',
   'desktop_screenshot',
   'desktop_get',
   'desktop_is',
-  'desktop_list_surfaces',
-  'desktop_skills',
-  'desktop_open_system_surface',
-  // act
   'desktop_click',
   'desktop_double_click',
+  'desktop_triple_click',
+  'desktop_right_click',
   'desktop_type',
   'desktop_set_value',
   'desktop_clear',
@@ -54,46 +61,53 @@ const TOOL_NAMES = [
   'desktop_mouse_down',
   'desktop_mouse_up',
   'desktop_mouse_wheel',
-  'desktop_batch',
-  // wait
-  'desktop_wait',
-  // app
   'desktop_launch',
   'desktop_close_app',
-  'desktop_list_apps',
-  // window
   'desktop_list_windows',
+  'desktop_list_displays',
+  'desktop_list_apps',
   'desktop_focus_window',
   'desktop_resize_window',
   'desktop_move_window',
   'desktop_minimize',
   'desktop_maximize',
   'desktop_restore',
-  'desktop_list_displays',
-  // clipboard
-  'desktop_clipboard_get',
-  'desktop_clipboard_set',
-  'desktop_clipboard_clear',
-  // notifications
+  'desktop_list_surfaces',
+  'desktop_open_system_surface',
   'desktop_list_notifications',
   'desktop_dismiss_notification',
   'desktop_dismiss_all_notifications',
   'desktop_notification_action',
-  // status
+  'desktop_clipboard_get',
+  'desktop_clipboard_set',
+  'desktop_clipboard_clear',
+  'desktop_wait',
   'desktop_status',
   'desktop_permissions',
   'desktop_version',
-  'desktop_session',
-  'desktop_trace',
-  'desktop_cursor_overlay',
+  'desktop_batch',
+  'desktop_skills_list',
+  'desktop_skills_get',
+  'desktop_skills_path',
+  'desktop_session_start',
+  'desktop_session_end',
+  'desktop_session_list',
+  'desktop_session_gc',
+  'desktop_cursor_overlay_enable',
+  'desktop_cursor_overlay_disable',
+  'desktop_trace_show',
+  'desktop_trace_export',
 ];
 
 const CALL_LOG = process.env.STUB_CALL_LOG;
 const FAIL_TOOL = process.env.STUB_FAIL_TOOL;
 const DELIVERY = process.env.STUB_DELIVERY || 'delivery_uncertain';
-const RETRY = process.env.STUB_RETRY === 'true';
+const RETRY = process.env.STUB_RETRY ?? 'safe';
 const FAIL_TIMES = process.env.STUB_FAIL_TIMES ? Number(process.env.STUB_FAIL_TIMES) : Infinity;
+const REJECT_TOOL = process.env.STUB_REJECT_TOOL;
 const HANG_TOOL = process.env.STUB_HANG_TOOL;
+const SUCCESS_DELIVERY = process.env.STUB_SUCCESS_DELIVERY;
+const SUCCESS_RETRY = process.env.STUB_SUCCESS_RETRY;
 
 let failCount = 0;
 
@@ -117,9 +131,32 @@ function logCall(entry) {
 function toolDefinitions() {
   return TOOL_NAMES.map((name) => ({
     name,
-    description: `Stub tool ${name}`,
+    description: `agent-desktop ${name.replace('desktop_', '')}: stub tool`,
     inputSchema: { type: 'object', properties: {}, additionalProperties: true },
   }));
+}
+
+/**
+ * Resposta de tool MCP, no formato do upstream real: o mesmo envelope em
+ * `content[].text` e em `structuredContent`.
+ */
+function toolResult(envelope) {
+  return {
+    _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'agent-desktop', version: '1.2.0' } },
+    content: [{ type: 'text', text: JSON.stringify(envelope) }],
+    isError: false,
+    resultType: 'complete',
+    structuredContent: envelope,
+  };
+}
+
+/** Recusa antes da execução: texto simples, sem envelope JSON. */
+function rejectedResult(message) {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: false,
+    resultType: 'complete',
+  };
 }
 
 function handleToolCall(message) {
@@ -133,39 +170,50 @@ function handleToolCall(message) {
     return;
   }
 
-  if (FAIL_TOOL && name === FAIL_TOOL && failCount < FAIL_TIMES) {
-    failCount += 1;
-    const envelope = {
-      version: '2.6',
-      ok: false,
-      error: {
-        code: 'STUB_FAILURE',
-        message: `stub failure for ${name}`,
-        disposition: { delivery: DELIVERY, retry: RETRY },
-        recovery: 'observe the current state and retry',
-        details: { failCount },
-      },
-    };
-    respond(message.id, {
-      content: [{ type: 'text', text: JSON.stringify(envelope) }],
-      isError: false,
-    });
+  if (REJECT_TOOL && name === REJECT_TOOL) {
+    respond(message.id, rejectedResult(`call rejected before execution: ${name}`));
     return;
   }
 
-  const envelope = {
-    version: '2.6',
-    ok: true,
-    data: {
-      tool: name,
-      args,
-      echo: 'stub-data',
-    },
+  if (FAIL_TOOL && name === FAIL_TOOL && failCount < FAIL_TIMES) {
+    failCount += 1;
+    respond(
+      message.id,
+      toolResult({
+        version: '2.6',
+        command: name.replace('desktop_', ''),
+        ok: false,
+        error: {
+          code: 'STUB_FAILURE',
+          message: `stub failure for ${name}`,
+          disposition: { delivery: DELIVERY, retry: RETRY },
+          recovery: 'observe the current state and retry',
+          details: { failCount },
+        },
+      })
+    );
+    return;
+  }
+
+  const data = {
+    tool: name,
+    args,
+    echo: 'stub-data',
   };
-  respond(message.id, {
-    content: [{ type: 'text', text: JSON.stringify(envelope) }],
-    isError: false,
-  });
+
+  if (SUCCESS_DELIVERY) {
+    data.disposition = { delivery: SUCCESS_DELIVERY, retry: SUCCESS_RETRY ?? 'safe' };
+  }
+
+  respond(
+    message.id,
+    toolResult({
+      version: '2.6',
+      command: name.replace('desktop_', ''),
+      ok: true,
+      data,
+    })
+  );
 }
 
 const rl = createInterface({ input: process.stdin });
@@ -185,11 +233,10 @@ rl.on('line', (line) => {
 
   switch (message.method) {
     case 'initialize':
-      // Ecoa a versão pedida — negociação sempre aceita pelo cliente.
       respond(message.id, {
         protocolVersion: message.params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'agent-desktop-stub', version: '1.2.0' },
+        serverInfo: { name: 'agent-desktop', version: '1.2.0' },
       });
       break;
 

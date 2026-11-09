@@ -62,7 +62,11 @@ describe('agent-desktop catalog', () => {
       expect(classifyRisk('mouse_move')).toBe('physical_input');
       expect(classifyRisk('hover')).toBe('physical_input');
       expect(classifyRisk('drag')).toBe('physical_input');
-      expect(classifyRisk('cursor_overlay')).toBe('physical_input');
+      // O upstream devolve POLICY_DENIED para triple_click quando o input
+      // fisico esta desligado - e fisica por definicao do upstream.
+      expect(classifyRisk('triple_click')).toBe('physical_input');
+      // cursor_overlay_enable desenha um cursor animado na tela.
+      expect(classifyRisk('cursor_overlay_enable')).toBe('physical_input');
     });
   });
 

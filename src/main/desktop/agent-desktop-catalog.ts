@@ -10,17 +10,30 @@
  *  1. **O catálogo NÃO é hardcoded.** Ele é derivado de `tools/list` em runtime
  *     (ver `buildOperationCatalog`), então comandos novos do upstream aparecem
  *     sozinhos. As tabelas abaixo são apenas a *classificação* de cada operação
- *     conhecida — o fallback (`act`) cobre o que for novo.
+ *     conhecida — e agora são **explícitas para as 67 operações reais** do
+ *     v1.2.0, para que nenhuma operação caia silenciosamente no fallback.
  *
  *  2. **Toda operação carrega uma semântica de risco e de entrega.** Risco
  *     governa o hook de permissão (observação é livre; input físico exige
  *     autorização explícita). Entrega (`disposition`) governa o retry: só
  *     `not_delivered` é repetível — timeout NÃO prova que a ação não ocorreu
  *     (achado C4), então nada é re-executado automaticamente.
+ *
+ * Contrato verificado contra o binário real em 2026-11-09 (spike 0):
+ * `agent-desktop v1.2.0`, Windows x64, 67 tools. Ver
+ * `tests/fixtures/agent-desktop-tools-v1.2.0.json` e
+ * `SPIKE-EMPACOTAMENTO-AGENT-DESKTOP.md` §10.
  */
 
 /** Prefixo das tools do upstream (`src/mcp/catalog.rs`). */
 export const UPSTREAM_TOOL_PREFIX = 'desktop_';
+
+/**
+ * Tag do upstream com o qual este catálogo foi verificado.
+ * As tabelas abaixo valem para esta versão; upgrade do upstream exige
+ * reexecutar o spike de contrato (teste `agent-desktop-upstream-contract.test.ts`).
+ */
+export const UPSTREAM_CONTRACT_TAG = 'v1.2.0';
 
 /** Agregados expostos ao modelo (metodologia de computer use semântico). */
 export type AgentDesktopAggregate =
@@ -89,27 +102,79 @@ export interface AgentDesktopDisposition {
 export interface AgentDesktopEnvelope {
   version?: string;
   ok: boolean;
+  /** Comando executado (presente no upstream v1.2.0). */
+  command?: string;
   data?: unknown;
+  /**
+   * Disposition da ação bem-sucedida. O upstream a coloca **dentro de `data`**
+   * ("Action results carry `data.disposition`") — o cliente precisa ler aqui,
+   * não só em `error.disposition`.
+   */
   error?: {
     code?: string;
     message?: string;
-    disposition?: { delivery?: string; retry?: boolean };
+    disposition?: { delivery?: unknown; retry?: unknown };
     recovery?: string;
     details?: unknown;
   };
 }
 
-/** Operação → agregado. Tudo que não estiver na tabela cai em `act`. */
-const AGGREGATE_BY_OPERATION: Readonly<Record<string, AgentDesktopAggregate>> = {
-  // --- observe: leitura da árvore de acessibilidade ---
+/**
+ * Operação → agregado, **explícita para as 67 operações reais** do upstream
+ * v1.2.0 (ver `tests/fixtures/agent-desktop-tools-v1.2.0.json`).
+ *
+ * Tudo que não estiver na tabela cai em `act` (fail-safe: nunca em observação).
+ * O teste de contrato falha se o upstream ganhar uma operação nova sem
+ * classificação explícita — para que a adição seja uma decisão, não um acidente.
+ */
+export const AGGREGATE_BY_OPERATION: Readonly<Record<string, AgentDesktopAggregate>> = {
+  // --- observe: leitura da árvore de acessibilidade e de estado ---
   snapshot: 'observe',
   find: 'observe',
   screenshot: 'observe',
   get: 'observe',
   is: 'observe',
   list_surfaces: 'observe',
-  skills: 'observe',
-  open_system_surface: 'observe',
+  skills_list: 'observe',
+  skills_get: 'observe',
+  skills_path: 'observe',
+
+  // --- act: ação semântica sobre um elemento ---
+  click: 'act',
+  double_click: 'act',
+  // Triple-click e fisica por definicao do upstream: devolve POLICY_DENIED
+  // quando o input fisico esta desligado.
+  triple_click: 'act',
+  right_click: 'act',
+  type: 'act',
+  set_value: 'act',
+  clear: 'act',
+  focus: 'act',
+  select: 'act',
+  toggle: 'act',
+  check: 'act',
+  uncheck: 'act',
+  expand: 'act',
+  collapse: 'act',
+  scroll: 'act',
+  scroll_to: 'act',
+  press: 'act',
+  key_down: 'act',
+  key_up: 'act',
+  // Input fisico: cursor, hover e drag. Risco physical_input (autorizacao
+  // explicita por operacao), agregado act.
+  hover: 'act',
+  drag: 'act',
+  mouse_move: 'act',
+  mouse_click: 'act',
+  mouse_down: 'act',
+  mouse_up: 'act',
+  mouse_wheel: 'act',
+  // Abre uma superfície do shell (start-menu, taskbar, dock, menu-bar-extras).
+  // **Tem efeito visível** — não é observação, apesar de parecer uma consulta.
+  open_system_surface: 'act',
+  // Execução de um lote sequencial e não-atômico; o risco é escalado em runtime.
+  batch: 'act',
 
   // --- wait: espera orientada a evento ---
   wait: 'wait',
@@ -140,20 +205,31 @@ const AGGREGATE_BY_OPERATION: Readonly<Record<string, AgentDesktopAggregate>> = 
   dismiss_all_notifications: 'notifications',
   notification_action: 'notifications',
 
-  // --- status: diagnóstico ---
+  // --- status: diagnóstico, sessão, trace e overlay ---
   status: 'status',
   permissions: 'status',
   version: 'status',
-  session: 'status',
-  trace: 'status',
-  cursor_overlay: 'status',
+  session_start: 'status',
+  session_end: 'status',
+  session_list: 'status',
+  session_gc: 'status',
+  cursor_overlay_enable: 'status',
+  cursor_overlay_disable: 'status',
+  trace_show: 'status',
+  trace_export: 'status',
 };
 
 /**
  * Operações que **movem o cursor ou enviam evento físico**.
  * Precisam de autorização explícita — o padrão é headless.
+ *
+ * Verificado no upstream v1.2.0:
+ *  - `triple_click` retorna `POLICY_DENIED` quando input físico está desabilitado
+ *    → o próprio upstream a classifica como física;
+ *  - `cursor_overlay_enable` desenha um cursor animado na tela do usuário
+ *    (args `travel_ms`, `motion_seed`, `tremor`) → efeito físico no desktop.
  */
-const PHYSICAL_INPUT_OPERATIONS: ReadonlySet<string> = new Set([
+export const PHYSICAL_INPUT_OPERATIONS: ReadonlySet<string> = new Set([
   'hover',
   'drag',
   'mouse_move',
@@ -161,17 +237,27 @@ const PHYSICAL_INPUT_OPERATIONS: ReadonlySet<string> = new Set([
   'mouse_down',
   'mouse_up',
   'mouse_wheel',
-  'cursor_overlay',
+  'triple_click',
+  'cursor_overlay_enable',
 ]);
 
-/** Operações puramente de leitura (nunca exigem confirmação). */
-const OBSERVATION_OPERATIONS: ReadonlySet<string> = new Set([
+/**
+ * Operações puramente de leitura (nunca exigem confirmação).
+ *
+ * `wait` entra aqui porque apenas faz polling de estado — não altera nada.
+ * `session_start` / `session_end` / `session_gc` / `trace_export` **não** entram:
+ * criam, selam ou apagam estado no disco.
+ */
+export const OBSERVATION_OPERATIONS: ReadonlySet<string> = new Set([
   'snapshot',
   'find',
   'screenshot',
   'get',
   'is',
   'list_surfaces',
+  'skills_list',
+  'skills_get',
+  'skills_path',
   'list_apps',
   'list_windows',
   'list_displays',
@@ -179,16 +265,41 @@ const OBSERVATION_OPERATIONS: ReadonlySet<string> = new Set([
   'status',
   'permissions',
   'version',
-  'session',
-  'skills',
-  'trace',
+  'session_list',
+  'trace_show',
+  'wait',
 ]);
+
+/**
+ * Nome do argumento que carrega o lote no upstream v1.2.0.
+ * `desktop_batch` recebe `commands_json`: uma **string** com um array JSON de
+ * `{ command, args }`.
+ */
+export const BATCH_COMMANDS_ARG = 'commands_json';
 
 /** Extrai o nome da operação a partir do nome da tool upstream. */
 export function operationFromUpstreamTool(toolName: string): string | null {
   if (!toolName.startsWith(UPSTREAM_TOOL_PREFIX)) return null;
   const operation = toolName.slice(UPSTREAM_TOOL_PREFIX.length);
   return operation.length > 0 ? operation : null;
+}
+
+/**
+ * A operação está explicitamente classificada?
+ *
+ * `false` significa que o upstream introduziu algo novo e o fallback `act`
+ * foi aplicado — precisa de revisão explícita, não de default silencioso.
+ */
+export function isKnownOperation(operation: string): boolean {
+  return operation in AGGREGATE_BY_OPERATION;
+}
+
+/**
+ * Operação pedida por uma chamada da tool agregada.
+ * Lê `input.operation` — o envelope `{ operation, args }` das 8 tools.
+ */
+export function requestedOperation(input: Record<string, unknown>): string {
+  return typeof input.operation === 'string' ? input.operation : '';
 }
 
 /**
@@ -201,7 +312,7 @@ export function operationFromUpstreamTool(toolName: string): string | null {
 export function collectRequestedPhysicalOperations(
   input: Record<string, unknown>
 ): string[] {
-  const operation = typeof input.operation === 'string' ? input.operation : '';
+  const operation = requestedOperation(input);
   if (!operation) return [];
 
   if (operation !== 'batch') {
@@ -288,6 +399,7 @@ export function groupOperationsByAggregate(
   for (const operation of operations) {
     grouped[operation.aggregate].push(operation);
   }
+
   return grouped;
 }
 
@@ -312,27 +424,56 @@ export function resolveEffectiveRisk(
 
 /**
  * Extrai os nomes das operações de um `batch`.
- * Aceita tanto `{ operations: [...] }` quanto o array direto.
+ *
+ * O upstream v1.2.0 usa `commands_json`: uma **string** contendo um array JSON
+ * de `{ command, args }`. Aceitamos também `operations` / `ops` / `actions` /
+ * `commands` (array direto) para tolerância e para o stub de teste.
  */
 export function extractBatchedOperations(args: Record<string, unknown>): string[] {
-  const raw = args.operations ?? args.ops ?? args.actions;
+  const raw = readBatchPayload(args);
   if (!Array.isArray(raw)) return [];
 
   const names: string[] = [];
   for (const entry of raw) {
     if (typeof entry === 'string') {
-      names.push(entry);
+      names.push(operationFromUpstreamTool(entry) ?? entry);
       continue;
     }
     if (entry && typeof entry === 'object') {
-      const candidate = (entry as { operation?: unknown; tool?: unknown; name?: unknown });
-      const value = candidate.operation ?? candidate.tool ?? candidate.name;
+      const candidate = entry as {
+        command?: unknown;
+        operation?: unknown;
+        tool?: unknown;
+        name?: unknown;
+      };
+      const value =
+        candidate.command ?? candidate.operation ?? candidate.tool ?? candidate.name;
       if (typeof value === 'string') {
         names.push(operationFromUpstreamTool(value) ?? value);
       }
     }
   }
   return names;
+}
+
+/** Lê o payload do lote, aceitando `commands_json` (string JSON) e arrays diretos. */
+function readBatchPayload(args: Record<string, unknown>): unknown {
+  const commandsJson = args[BATCH_COMMANDS_ARG];
+  if (typeof commandsJson === 'string') {
+    try {
+      const parsed = JSON.parse(commandsJson);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // JSON inválido → sem operações detectadas (o upstream vai recusar a call
+      // com INVALID_ARGS, que é `not_delivered` e repetível).
+      return undefined;
+    }
+  } else if (Array.isArray(commandsJson)) {
+    return commandsJson;
+  }
+
+  const raw = args.operations ?? args.ops ?? args.actions ?? args.commands;
+  return Array.isArray(raw) ? raw : undefined;
 }
 
 /** Normaliza o valor de `delivery` do upstream para os 4 estados conhecidos. */
@@ -353,22 +494,33 @@ export function parseDelivery(value: unknown): AgentDesktopDelivery {
 }
 
 /**
- * Extrai a disposition do erro do upstream.
- * `retry` só é verdadeiro quando a entrega é `not_delivered` — é a única
- * situação em que repetir NÃO pode duplicar uma ação já executada.
+ * Extrai a disposition do upstream.
+ *
+ * O upstream v1.2.0 usa `disposition.retry` como a **string** `"safe"` (não
+ * booleano) — "Retry or substitute an action only when `disposition.retry` is
+ * `safe`. Only `not_delivered` is safe."
+ *
+ * Só repetimos quando **as duas** condições valem: a entrega foi comprovadamente
+ * `not_delivered` **e** o upstream declarou o retry como seguro. Qualquer valor
+ * desconhecido é fail-safe (não repete).
  */
 export function parseDisposition(value: unknown): AgentDesktopDisposition {
   const raw = (value ?? {}) as { delivery?: unknown; retry?: unknown };
   const delivery = parseDelivery(raw.delivery);
+  const retryDeclaredSafe = raw.retry === 'safe' || raw.retry === true;
   return {
     delivery,
-    retry: delivery === 'not_delivered' && raw.retry !== false,
+    retry: delivery === 'not_delivered' && retryDeclaredSafe,
   };
 }
 
 /**
  * Interpreta o resultado de uma tool MCP como envelope do upstream.
  * Aceita `structuredContent` ou o primeiro bloco de texto com JSON.
+ *
+ * Devolve `null` quando o upstream respondeu **texto simples** — o caso
+ * documentado de "a call rejected before the command runs returns plain text".
+ * Nesse caso o cliente **não** pode tratar a resposta como sucesso.
  */
 export function parseEnvelope(raw: unknown): AgentDesktopEnvelope | null {
   const candidates: unknown[] = [];
@@ -398,6 +550,19 @@ export function parseEnvelope(raw: unknown): AgentDesktopEnvelope | null {
   }
 
   return null;
+}
+
+/**
+ * Disposition declarada no **sucesso** — o upstream a coloca em `data.disposition`
+ * ("Action results carry `data.disposition`").
+ */
+export function parseSuccessDisposition(envelope: AgentDesktopEnvelope | null): AgentDesktopDisposition | null {
+  if (!envelope || envelope.ok !== true) return null;
+  const data = envelope.data;
+  if (!data || typeof data !== 'object') return null;
+  const disposition = (data as { disposition?: unknown }).disposition;
+  if (!disposition || typeof disposition !== 'object') return null;
+  return parseDisposition(disposition);
 }
 
 function tryParseJson(value: unknown): unknown {

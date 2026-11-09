@@ -101,7 +101,7 @@ describe('AgentDesktopClient (contrato com o servidor MCP do agent-desktop)', ()
     const client = createClient({
       STUB_FAIL_TOOL: 'desktop_click',
       STUB_DELIVERY: 'delivery_uncertain',
-      STUB_RETRY: 'true',
+      STUB_RETRY: 'safe',
     });
     try {
       await client.start();
@@ -122,7 +122,7 @@ describe('AgentDesktopClient (contrato com o servidor MCP do agent-desktop)', ()
     const client = createClient({
       STUB_FAIL_TOOL: 'desktop_click',
       STUB_DELIVERY: 'not_delivered',
-      STUB_RETRY: 'true',
+      STUB_RETRY: 'safe',
     });
     try {
       await client.start();
@@ -141,7 +141,7 @@ describe('AgentDesktopClient (contrato com o servidor MCP do agent-desktop)', ()
     const client = createClient({
       STUB_FAIL_TOOL: 'desktop_click',
       STUB_DELIVERY: 'not_delivered',
-      STUB_RETRY: 'false',
+      STUB_RETRY: 'unsafe',
     });
     try {
       await client.start();
