@@ -60,3 +60,22 @@ export {
   type AgentDesktopManagerOptions,
   type AgentDesktopSessionTools,
 } from './agent-desktop-manager';
+
+export {
+  AGENT_DESKTOP_CORE_SKILL,
+  buildAdapterSection,
+  buildSkillDocument,
+  buildStaticOperationCatalog,
+  extractAgentDesktopSkillGuide,
+  extractDescription,
+  listAgentDesktopSkills,
+  materializeAgentDesktopSkills,
+  readAgentDesktopVersion,
+  selectSkillNames,
+  splitFrontmatter,
+  type AgentDesktopMaterializedSkill,
+  type AgentDesktopSkillExec,
+  type AgentDesktopSkillMaterialization,
+  type AgentDesktopSkillSummary,
+  type MaterializeAgentDesktopSkillsOptions,
+} from './agent-desktop-skill';

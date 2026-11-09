@@ -19,6 +19,12 @@ import {
 } from './agent-desktop-client';
 import { resolveAgentDesktopBinary, type AgentDesktopPathContext } from './agent-desktop-paths';
 import { buildAgentDesktopTools, type AgentDesktopToolsOptions } from './agent-desktop-tools';
+import {
+  materializeAgentDesktopSkills,
+  readAgentDesktopVersion,
+  type AgentDesktopSkillExec,
+  type AgentDesktopSkillMaterialization,
+} from './agent-desktop-skill';
 import { log, logError, logWarn } from '../utils/logger';
 
 export interface AgentDesktopManagerOptions {
@@ -30,6 +36,8 @@ export interface AgentDesktopManagerOptions {
   callTimeoutMs?: number;
   /** Modo headed (cursor overlay / input físico). */
   headed?: boolean;
+  /** `execFile` injetado na materialização da skill (testes). */
+  skillExec?: AgentDesktopSkillExec;
 }
 
 export interface AgentDesktopSessionTools {
@@ -40,6 +48,18 @@ export interface AgentDesktopSessionTools {
 export class AgentDesktopManager {
   private readonly clients = new Map<string, AgentDesktopClient>();
   private readonly options: AgentDesktopManagerOptions;
+  /** Materializações em andamento, por versão do binário. */
+  private readonly skillMaterializations = new Map<
+    string,
+    Promise<AgentDesktopSkillMaterialization>
+  >();
+  /**
+   * Versão do binário em uso.
+   *
+   * Cacheada porque o binário é resolvido no startup (empacotado ou baixado
+   * sob demanda) e não muda durante a sessão — evita um spawn por turno.
+   */
+  private skillVersion?: Promise<string>;
 
   constructor(options: AgentDesktopManagerOptions = {}) {
     this.options = options;
@@ -94,6 +114,71 @@ export class AgentDesktopManager {
     const client = await this.getSessionClient(sessionId, agentId);
     const tools = buildAgentDesktopTools({ client, onBeforeExecute });
     return { tools, client };
+  }
+
+  /**
+   * Materializa a **camada de skill** do agent-desktop.
+   *
+   * As skills são extraídas do **binário** (não do servidor MCP): elas existem
+   * mesmo se o MCP falhar e não acoplam ao ciclo de vida do cliente. O cache é
+   * versionado (`<userData>/agent-desktop/skills/<versão>`), então uma
+   * atualização do binário invalida o materializado automaticamente.
+   *
+   * Devolve `null` quando não há binário ou userData — a degradação é
+   * **declarada** no log, nunca silenciosa.
+   */
+  async ensureSkillsMaterialized(): Promise<AgentDesktopSkillMaterialization | null> {
+    const userDataPath = this.options.pathContext?.userDataPath;
+    if (!userDataPath) {
+      logWarn(
+        '[AgentDesktopManager] userData path unavailable — skipping desktop skill materialization'
+      );
+      return null;
+    }
+
+    const binaryPath = this.resolveBinaryPath();
+    if (!binaryPath) return null;
+
+    const targetRoot = path.join(userDataPath, 'agent-desktop', 'skills');
+
+    try {
+      if (!this.skillVersion) {
+        this.skillVersion = readAgentDesktopVersion(binaryPath, this.options.skillExec).catch(
+          (error) => {
+            // Não envenena o cache: uma falha transitória pode ser tentada de novo.
+            this.skillVersion = undefined;
+            throw error;
+          }
+        );
+      }
+      const version = await this.skillVersion;
+
+      const existing = this.skillMaterializations.get(version);
+      if (existing) return existing;
+
+      const pending = materializeAgentDesktopSkills({
+        binaryPath,
+        targetRoot,
+        version,
+        exec: this.options.skillExec,
+      }).catch((error) => {
+        // Não envenena o cache: uma falha transitória pode ser tentada de novo.
+        this.skillMaterializations.delete(version);
+        throw error;
+      });
+      this.skillMaterializations.set(version, pending);
+
+      const result = await pending;
+      log(
+        `[AgentDesktopManager] Desktop skill materialized at ${result.directory} ` +
+          `(version ${result.version}, cached: ${result.cached}, ` +
+          `skills: ${result.skills.map((skill) => skill.name).join(', ')})`
+      );
+      return result;
+    } catch (error) {
+      logError('[AgentDesktopManager] Failed to materialize desktop skill', error);
+      return null;
+    }
   }
 
   /** Fecha o cliente da sessão. */

@@ -698,6 +698,14 @@ ${hints.join('\n')}
       }
     }
 
+    // Camada de skill do agent-desktop (modo `mcp+skill`).
+    // Precisa entrar **antes** da criação da sessão pi: `skillsSignature` é
+    // derivado desta lista e recria a sessão quando o conjunto de skills muda.
+    const desktopSkillPath = await this.resolveDesktopSkillPath();
+    if (desktopSkillPath) {
+      mergedPaths.add(desktopSkillPath);
+    }
+
     if (sessionId && appliedPlugins.length > 0) {
       this.sendToRenderer({
         type: 'plugins.runtimeApplied',
@@ -706,6 +714,28 @@ ${hints.join('\n')}
     }
 
     return Array.from(mergedPaths);
+  }
+
+  /**
+   * Caminho da skill do agent-desktop, quando o modo é `mcp+skill`.
+   *
+   * A materialização extrai do **binário** (não do servidor MCP), então a
+   * skill existe mesmo se o MCP falhar. Falha é declarada no log e a sessão
+   * segue sem a skill — as tools `desktop_*` continuam disponíveis.
+   */
+  private async resolveDesktopSkillPath(): Promise<string | undefined> {
+    const mode = configStore.get('desktopAccessMode') ?? 'off';
+    if (mode !== 'mcp+skill') return undefined;
+
+    try {
+      const materialization = await this.getAgentDesktopManager().ensureSkillsMaterialized();
+      if (!materialization) return undefined;
+      if (!fs.existsSync(materialization.directory)) return undefined;
+      return materialization.directory;
+    } catch (error) {
+      logError('[CoworkAgentRunner] Failed to materialize the agent-desktop skill', error);
+      return undefined;
+    }
   }
 
   /**
@@ -944,6 +974,22 @@ ${hints.join('\n')}
    *    de acessibilidade, registrámos e degradamos para a camada visual em vez
    *    de fingir que a capacidade existe.
    */
+  /**
+   * Gerenciador do agent-desktop (lazy, compartilhado entre a camada de skill
+   * e a camada de tools agregadas).
+   */
+  private getAgentDesktopManager(): AgentDesktopManager {
+    if (!this.agentDesktopManager) {
+      this.agentDesktopManager = new AgentDesktopManager({
+        pathContext: {
+          resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+          userDataPath: app.getPath('userData'),
+        },
+      });
+    }
+    return this.agentDesktopManager;
+  }
+
   private async buildAgentDesktopCustomTools(
     sessionId: string,
     agentId?: string
@@ -955,16 +1001,10 @@ ${hints.join('\n')}
     }
 
     try {
-      if (!this.agentDesktopManager) {
-        this.agentDesktopManager = new AgentDesktopManager({
-          pathContext: {
-            resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
-            userDataPath: app.getPath('userData'),
-          },
-        });
-      }
-
-      const { tools } = await this.agentDesktopManager.buildToolsForSession(sessionId, agentId);
+      const { tools } = await this.getAgentDesktopManager().buildToolsForSession(
+        sessionId,
+        agentId
+      );
 
       log(
         `[CoworkAgentRunner] Registered ${tools.length} semantic desktop tools:`,
