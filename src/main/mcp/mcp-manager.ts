@@ -25,6 +25,11 @@ import path from 'path';
 import { connectWithOAuthRetry, OpenCoworkMcpOAuthProvider } from './mcp-oauth';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import {
+  classifyMcpErrorKind,
+  recordMcpToolAttempt,
+  ensureMcpMetricsAutoFlush,
+} from './mcp-metrics';
 
 const MCP_LIST_TOOLS_TIMEOUT_MS = 5 * 60 * 1000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -1622,9 +1627,18 @@ export class MCPManager {
     let compatHotReloadTried = false;
     const deadline = Date.now() + MCP_TOOL_CALL_TIMEOUT_MS;
 
+    // Baseline metrics (Fase 0): one logical call, many transport attempts.
+    // The id groups attempts so a retry after an uncertain action attempt can
+    // be counted (duplicate-action risk). Contains no user data.
+    const metricsCallId = `${tool.serverName}::${actualToolName}::${Date.now()}::${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    ensureMcpMetricsAutoFlush();
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       // Re-lookup tool on every iteration: after reconnect the registry is refreshed
       const currentTool = this.tools.get(toolName) ?? tool;
+      const attemptStart = Date.now();
       try {
         const client = this.clients.get(currentTool.serverId);
         if (!client) {
@@ -1671,10 +1685,27 @@ export class MCPManager {
         }
 
         logTiming(`MCP tool ${actualToolName}`, callStartTime);
+        recordMcpToolAttempt({
+          callId: metricsCallId,
+          tool: actualToolName,
+          server: currentTool.serverName,
+          attempt: attempt + 1,
+          durationMs: Date.now() - attemptStart,
+          outcome: 'ok',
+        });
         return result;
       } catch (error: unknown) {
         lastError = error;
         const errorMsg = error instanceof Error ? error.message : String(error);
+        recordMcpToolAttempt({
+          callId: metricsCallId,
+          tool: actualToolName,
+          server: currentTool.serverName,
+          attempt: attempt + 1,
+          durationMs: Date.now() - attemptStart,
+          outcome: 'error',
+          errorKind: classifyMcpErrorKind(errorMsg),
+        });
         logCtxError(
           `[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`,
           errorMsg
