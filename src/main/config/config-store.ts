@@ -205,6 +205,7 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'sandboxEnabled',
   'enableThinking',
   'memoryEnabled',
+  'desktopAccessMode',
   'model',
   'provider',
   'contextWindow',
