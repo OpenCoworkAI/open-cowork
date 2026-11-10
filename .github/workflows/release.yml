@@ -84,10 +84,30 @@ jobs:
       - name: Vite build
         run: npx vite build
 
+      # Build sem assinatura: caminho padrao, nao exige segredos no repositorio.
       - name: Electron Builder (unsigned)
+        if: ${{ secrets.MAC_CSC_LINK == '' }}
         run: npx electron-builder --mac dmg dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # Build assinado + notarizado. Requer os segredos abaixo cadastrados no
+      # repositorio. O hook scripts/notarize.js (afterSign) e fail-open, mas
+      # com os tres segredos da Apple presentes ele efetivamente notariza.
+      #   MAC_CSC_LINK         -> certificado .p12 em base64
+      #   MAC_CSC_KEY_PASSWORD -> senha do .p12
+      #   APPLE_ID             -> Apple ID
+      #   APPLE_ID_PASSWORD    -> senha especifica do app (NAO a senha do Apple ID)
+      #   APPLE_TEAM_ID        -> identificador de equipe (10 caracteres)
+      - name: Electron Builder (signed + notarized)
+        if: ${{ secrets.MAC_CSC_LINK != '' }}
+        run: npx electron-builder --mac dmg dir --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources
@@ -202,8 +222,17 @@ jobs:
       - name: Vite build
         run: npx vite build
 
+      # Assinatura de codigo opcional. Fail-open verificado no
+      # electron-builder 26.8.1: sem certificado o signWindows() devolve
+      # false, registra aviso e o build NAO quebra (o artefato fica sem
+      # assinatura e o SmartScreen pode bloquear em maquinas de usuario).
+      #   WIN_CSC_LINK         -> certificado .pfx em base64
+      #   WIN_CSC_KEY_PASSWORD -> senha do .pfx
       - name: Electron Builder
         run: npx electron-builder --win nsis --publish never
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources
