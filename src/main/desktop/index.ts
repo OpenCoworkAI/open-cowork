@@ -49,18 +49,22 @@ export {
 } from './agent-desktop-paths';
 
 export {
-  AGENT_DESKTOP_INSTALL_METADATA_FILE,
   AGENT_DESKTOP_PINNED_VERSION,
   AGENT_DESKTOP_RELEASE_BASE_URL,
   AGENT_DESKTOP_RELEASE_REPO,
-  AgentDesktopDistributionError,
   PINNED_RELEASE,
+  parseChecksums,
+  type AgentDesktopReleaseAsset,
+} from './agent-desktop-release-manifest';
+
+export {
+  AGENT_DESKTOP_INSTALL_METADATA_FILE,
+  AgentDesktopDistributionError,
   agentDesktopAssetUrl,
   agentDesktopInstallDirectory,
   describeAgentDesktopInstallState,
   extractTarGz,
   installAgentDesktopBinary,
-  parseChecksums,
   readAgentDesktopInstallMetadata,
   resolveAgentDesktopReleaseAsset,
   safeArchivePath,
@@ -70,7 +74,6 @@ export {
   type AgentDesktopFetch,
   type AgentDesktopInstallMetadata,
   type AgentDesktopInstallSummary,
-  type AgentDesktopReleaseAsset,
   type InstallAgentDesktopOptions,
   type InstallAgentDesktopResult,
 } from './agent-desktop-distribution';

@@ -63,65 +63,28 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 import { agentDesktopExecutableName, agentDesktopPlatformDir } from './agent-desktop-paths';
-
-/** Repositório upstream que publica as releases. */
-export const AGENT_DESKTOP_RELEASE_REPO = 'vercel-labs/agent-desktop';
-
-/** Versão distribuída por esta fase. Fixada — "instalar" é reprodutível. */
-export const AGENT_DESKTOP_PINNED_VERSION = '1.2.0';
-
-/** Base de download das releases. */
-export const AGENT_DESKTOP_RELEASE_BASE_URL = `https://github.com/${AGENT_DESKTOP_RELEASE_REPO}/releases/download/v${AGENT_DESKTOP_PINNED_VERSION}`;
+import {
+  AGENT_DESKTOP_PINNED_VERSION,
+  AGENT_DESKTOP_RELEASE_BASE_URL,
+  AGENT_DESKTOP_RELEASE_REPO,
+  PINNED_RELEASE,
+  parseChecksums,
+  type AgentDesktopReleaseAsset,
+} from './agent-desktop-release-manifest';
 
 /**
- * Asset oficial por plataforma, com o SHA-256 **fixado em código**.
- *
- * Os digests vieram do `checksums.txt` publicado na release v1.2.0 do upstream
- * e foram reconferidos contra os arquivos reais. Apenas a variante **CLI** é
- * distribuída: os assets `-ffi-` (que carregam a camada nativa) ficam de fora
- * até a Fase 5.
+ * O manifesto e o parser vivem em `agent-desktop-release-manifest.ts` (módulo
+ * **puro**, sem imports) para que o CI consiga ler o **mesmo** manifesto sem
+ * duplicá-lo. Reexportados aqui para preservar a superfície pública.
  */
-export interface AgentDesktopReleaseAsset {
-  /** Target triple do Rust (usado no nome do asset). */
-  target: string;
-  /** Nome do arquivo do asset. */
-  assetName: string;
-  /** SHA-256 do asset (fixado — não vem da rede em runtime). */
-  sha256: string;
-}
-
-export const PINNED_RELEASE: Readonly<Record<string, AgentDesktopReleaseAsset>> = Object.freeze({
-  'win32-x64': {
-    target: 'x86_64-pc-windows-msvc',
-    assetName: 'agent-desktop-v1.2.0-x86_64-pc-windows-msvc.tar.gz',
-    sha256: 'a4199f741a441cedd349bf56c5eba01783b1261258b498efeb7ec9945220c3e8',
-  },
-  'win32-arm64': {
-    target: 'aarch64-pc-windows-msvc',
-    assetName: 'agent-desktop-v1.2.0-aarch64-pc-windows-msvc.tar.gz',
-    sha256: 'd6d8643310c2c13eace2261444d9e4c0d16ca09581f38500983104903604caa6',
-  },
-  'darwin-arm64': {
-    target: 'aarch64-apple-darwin',
-    assetName: 'agent-desktop-v1.2.0-aarch64-apple-darwin.tar.gz',
-    sha256: '219813428bb1ad8decae172faed05c5964a2415170df402e2786ccfa6452ba82',
-  },
-  'darwin-x64': {
-    target: 'x86_64-apple-darwin',
-    assetName: 'agent-desktop-v1.2.0-x86_64-apple-darwin.tar.gz',
-    sha256: 'd9dc50226f28d7fc86a2f5b0945f0c206dff6c31e418907749f493b6f9e773e6',
-  },
-  'linux-x64': {
-    target: 'x86_64-unknown-linux-gnu',
-    assetName: 'agent-desktop-v1.2.0-x86_64-unknown-linux-gnu.tar.gz',
-    sha256: '591ae7f4a38479dc045df97e27447c0c8b530441730ab6b990e27c813162af44',
-  },
-  'linux-arm64': {
-    target: 'aarch64-unknown-linux-gnu',
-    assetName: 'agent-desktop-v1.2.0-aarch64-unknown-linux-gnu.tar.gz',
-    sha256: '68e8ebbb4f80e44485d2f1cf972943a38ee43108e2e0ce56bdfa641fd1599f68',
-  },
-});
+export {
+  AGENT_DESKTOP_PINNED_VERSION,
+  AGENT_DESKTOP_RELEASE_BASE_URL,
+  AGENT_DESKTOP_RELEASE_REPO,
+  PINNED_RELEASE,
+  parseChecksums,
+  type AgentDesktopReleaseAsset,
+};
 
 /** Motivo pelo qual a distribuição não pôde acontecer. */
 export type AgentDesktopDistributionErrorCode =
@@ -168,24 +131,6 @@ export function agentDesktopAssetUrl(asset: AgentDesktopReleaseAsset): string {
  */
 export function sha256Hex(data: Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
-}
-
-/**
- * Parser do `checksums.txt` do upstream.
- *
- * Tolera **quebras de linha mistas** (o arquivo publicado tem LF e CRLF na
- * mesma linha) e ignora linhas malformadas.
- */
-export function parseChecksums(content: string): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const rawLine of content.split(/\r\n|\n|\r/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line);
-    if (!match) continue;
-    result.set(match[2].trim(), match[1].toLowerCase());
-  }
-  return result;
 }
 
 /**
