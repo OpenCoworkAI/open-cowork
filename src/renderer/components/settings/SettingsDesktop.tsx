@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleAlert,
   CircleSlash,
+  Download,
   FlaskConical,
   Loader2,
   Monitor,
@@ -16,6 +17,15 @@ import { SettingsContentSection } from './shared';
 import type { DesktopAccessMode } from '../../types';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
+type AgentDesktopBinarySource =
+  | 'env-override'
+  | 'bundled'
+  | 'user-data-cache'
+  | 'path'
+  | 'not-found';
+
+type AgentDesktopInstallState = 'installed' | 'manual' | 'available' | 'unavailable';
 
 interface DesktopStatus {
   mode: DesktopAccessMode;
@@ -29,7 +39,27 @@ interface DesktopStatus {
     screen_recording?: { state: string };
   };
   error?: string;
+  binarySource?: AgentDesktopBinarySource;
+  binarySha256?: string;
+  installState?: AgentDesktopInstallState;
+  availableVersion?: string;
+  installable?: boolean;
 }
+
+/**
+ * Chave de i18n da origem do binário.
+ *
+ * A origem é a informação que dá **confiança**: um binário instalado pela
+ * app tem digest conferido; um binário vindo do PATH ou de override por
+ * variável de ambiente é de origem desconhecida.
+ */
+const SOURCE_LABEL_KEY: Record<AgentDesktopBinarySource, string> = {
+  'env-override': 'desktop.sourceEnvOverride',
+  bundled: 'desktop.sourceBundled',
+  'user-data-cache': 'desktop.sourceInstalled',
+  path: 'desktop.sourcePath',
+  'not-found': 'desktop.sourceNotFound',
+};
 
 const MODE_OPTIONS: { value: DesktopAccessMode; icon: typeof Monitor }[] = [
   { value: 'off', icon: CircleSlash },
@@ -76,6 +106,7 @@ export function SettingsDesktop() {
   const [isLoading, setIsLoading] = useState(true);
   const [isChecking, setIsChecking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -153,6 +184,38 @@ export function SettingsDesktop() {
     await persist({ desktopPhysicalInputEnabled: next });
   }
 
+  /**
+   * Instala (ou reinstala) o binário oficial sob demanda.
+   *
+   * O download, a verificação de SHA-256 e a extração acontecem no processo
+   * principal — a renderer só pede e mostra o resultado. A falha é declarada
+   * com o código estruturado, sem "deixar como se tivesse dado certo".
+   */
+  async function installBinary() {
+    if (!isElectron) return;
+    setIsInstalling(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await window.electronAPI.desktop.install();
+      if (!result.ok) {
+        setError(result.error ?? t('desktop.installFailed'));
+        await refreshStatus();
+        return;
+      }
+      if (result.status) setStatus(result.status);
+      setSuccess(
+        result.alreadyInstalled
+          ? t('desktop.installAlreadyCurrent')
+          : t('desktop.installSuccess')
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsInstalling(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 py-8 text-sm text-text-muted">
@@ -171,7 +234,7 @@ export function SettingsDesktop() {
   return (
     <div className="space-y-1">
       {error && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-sm text-error">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -300,7 +363,25 @@ export function SettingsDesktop() {
           </div>
 
           {status?.error && (
-            <p className="text-xs text-danger">{status.error}</p>
+            <p className="text-xs text-error">{status.error}</p>
+          )}
+
+          {/* Procedência do binário: de onde veio e qual o digest conferido. */}
+          {status?.binarySource && (
+            <div className="space-y-1 rounded-lg border border-border-muted p-3">
+              <p className="text-xs font-medium text-text-secondary">
+                {t('desktop.sourceTitle')}
+              </p>
+              <p className="text-xs text-text-muted">
+                {t(SOURCE_LABEL_KEY[status.binarySource])}
+              </p>
+              {status.binarySha256 && (
+                <p className="text-xs text-text-muted break-all">
+                  {t('desktop.binarySha256')}{' '}
+                  <code className="font-mono">{status.binarySha256}</code>
+                </p>
+              )}
+            </div>
           )}
 
           <div className="space-y-2">
@@ -317,7 +398,31 @@ export function SettingsDesktop() {
             })}
           </div>
 
-          {!status?.binaryFound && (
+          {/*
+           * Distribuição sob demanda: quando existe build oficial para a
+           * plataforma, o app baixa e verifica o binário por conta própria.
+           * Sem build oficial, a falha é declarada — nunca uma tela vazia.
+           */}
+          {status?.installable && !status?.binaryFound && (
+            <div className="space-y-2">
+              <p className="text-xs leading-5 text-text-muted">{t('desktop.installHint')}</p>
+              <button
+                type="button"
+                onClick={() => void installBinary()}
+                disabled={isInstalling}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-accent text-xs text-accent hover:bg-accent/10 transition-all disabled:opacity-60"
+              >
+                {isInstalling ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {isInstalling ? t('desktop.installing') : t('desktop.installAction')}
+              </button>
+            </div>
+          )}
+
+          {!status?.binaryFound && !status?.installable && (
             <p className="text-xs leading-5 text-text-muted">{t('desktop.binaryMissingHint')}</p>
           )}
         </div>

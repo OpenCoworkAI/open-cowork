@@ -29,6 +29,33 @@ export interface AgentDesktopPermissions {
 /** Modo de acesso ao desktop — espelha `DesktopAccessMode` do config-store. */
 export type AgentDesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
 
+/**
+ * Origem do binário em uso.
+ *
+ * Espelha `AgentDesktopBinaryResolution['source']` de `agent-desktop-paths.ts`.
+ * Declarar a origem é o que permite ao usuário saber **de onde** veio o
+ * executável que tem acesso ao seu desktop.
+ */
+export type AgentDesktopBinarySource =
+  | 'env-override'
+  | 'bundled'
+  | 'user-data-cache'
+  | 'path'
+  | 'not-found';
+
+/**
+ * Estado da distribuição sob demanda do binário.
+ *
+ * - `installed`      — há binário com procedência verificável (instalado pela
+ *                      app, com digest conferido).
+ * - `manual`         — há binário, mas de origem **não verificável** (PATH do
+ *                      usuário, override por env ou instalação manual).
+ * - `available`      — não há binário, mas existe build oficial para instalar.
+ * - `unavailable`    — não há binário e o upstream não publica build para esta
+ *                      plataforma.
+ */
+export type AgentDesktopInstallState = 'installed' | 'manual' | 'available' | 'unavailable';
+
 export interface AgentDesktopStatus {
   /** Modo configurado no momento da consulta. */
   mode: AgentDesktopAccessMode;
@@ -44,6 +71,36 @@ export interface AgentDesktopStatus {
   permissions?: AgentDesktopPermissions;
   /** Mensagem de erro da checagem, se houve. */
   error?: string;
+  /** Origem do binário resolvido. */
+  binarySource?: AgentDesktopBinarySource;
+  /** SHA-256 do asset instalado (procedência verificável). */
+  binarySha256?: string;
+  /** Estado da distribuição sob demanda. */
+  installState?: AgentDesktopInstallState;
+  /** Versão oficial disponível para download. */
+  availableVersion?: string;
+  /** Há build oficial para esta plataforma? */
+  installable?: boolean;
+}
+
+/**
+ * Resultado da instalação sob demanda do binário.
+ *
+ * A falha é **declarada**: `ok: false` traz `code` (motivo estruturado) e
+ * `error` (mensagem). O status re-lido vem em `status` para que a UI possa
+ * se atualizar sem uma segunda ida ao main.
+ */
+export interface AgentDesktopInstallResult {
+  /** A instalação foi concluída (ou o binário já estava na versão fixada)? */
+  ok: boolean;
+  /** O binário já estava instalado na versão fixada? */
+  alreadyInstalled?: boolean;
+  /** Código do motivo da falha (ex.: `checksum-mismatch`). */
+  code?: string;
+  /** Mensagem da falha. */
+  error?: string;
+  /** Status re-lido após a instalação. */
+  status?: AgentDesktopStatus;
 }
 
 /**

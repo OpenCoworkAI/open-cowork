@@ -49,6 +49,11 @@ import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { resolveAgentDesktopBinary } from './desktop/agent-desktop-paths';
 import { readAgentDesktopStatus } from './desktop/agent-desktop-status';
+import {
+  AgentDesktopDistributionError,
+  describeAgentDesktopInstallState,
+  installAgentDesktopBinary,
+} from './desktop/agent-desktop-distribution';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
@@ -2480,21 +2485,106 @@ ipcMain.on('window.close', () => {
 ipcMain.handle('desktop.getStatus', async () => {
   const mode = configStore.get('desktopAccessMode') ?? 'off';
   const platform = process.platform;
+  const userDataPath = app.getPath('userData');
 
   const resolution = resolveAgentDesktopBinary({
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
-    userDataPath: app.getPath('userData'),
+    userDataPath,
+  });
+
+  const installState = describeAgentDesktopInstallState({
+    platform,
+    arch: process.arch,
+    userDataPath,
+    binarySource: resolution.source,
   });
 
   if (!resolution.binaryPath) {
-    return { mode, platform, binaryFound: false };
+    return {
+      mode,
+      platform,
+      binaryFound: false,
+      binarySource: resolution.source,
+      installState: installState.state,
+      installable: installState.installable,
+      availableVersion: installState.availableVersion,
+    };
   }
 
-  return readAgentDesktopStatus({
+  const status = await readAgentDesktopStatus({
     binaryPath: resolution.binaryPath,
     mode,
     platform,
   });
+
+  return {
+    ...status,
+    binarySource: resolution.source,
+    installState: installState.state,
+    installable: installState.installable,
+    availableVersion: installState.availableVersion,
+    ...(installState.assetSha256 ? { binarySha256: installState.assetSha256 } : {}),
+  };
+});
+
+// Instalação sob demanda do binário oficial do agent-desktop.
+//
+// O download é feito pelo processo principal (não pela renderer) porque
+// precisa escrever em `userData` e verificar o SHA-256 contra o digest
+// **fixado em código** — a renderer não deve poder escolher o que instalar.
+ipcMain.handle('desktop.install', async () => {
+  const mode = configStore.get('desktopAccessMode') ?? 'off';
+  const platform = process.platform;
+  const userDataPath = app.getPath('userData');
+
+  try {
+    const result = await installAgentDesktopBinary({
+      platform,
+      arch: process.arch,
+      userDataPath,
+    });
+
+    // Depois de instalar, o binário precisa ser resolvido de novo (a origem
+    // muda de 'not-found' para 'user-data-cache').
+    const resolution = resolveAgentDesktopBinary({
+      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+      userDataPath,
+    });
+
+    const installState = describeAgentDesktopInstallState({
+      platform,
+      arch: process.arch,
+      userDataPath,
+      binarySource: resolution.source,
+    });
+
+    const status = resolution.binaryPath
+      ? await readAgentDesktopStatus({
+          binaryPath: resolution.binaryPath,
+          mode,
+          platform,
+        })
+      : { mode, platform, binaryFound: false };
+
+    return {
+      ok: true,
+      alreadyInstalled: result.alreadyInstalled ?? false,
+      status: {
+        ...status,
+        binarySource: resolution.source,
+        installState: installState.state,
+        installable: installState.installable,
+        availableVersion: installState.availableVersion,
+        ...(installState.assetSha256 ? { binarySha256: installState.assetSha256 } : {}),
+      },
+    };
+  } catch (error) {
+    const code =
+      error instanceof AgentDesktopDistributionError ? error.code : 'unknown';
+    const message = error instanceof Error ? error.message : String(error);
+    logError('[Desktop] Failed to install agent-desktop:', message);
+    return { ok: false, error: message, code };
+  }
 });
 
 // Sandbox IPC handlers
