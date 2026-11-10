@@ -169,7 +169,7 @@ const REDACTED_TEXT = (length: number | undefined): string =>
 
 const JSON_KV_PATTERN = /"([^"]+)"\s*:\s*("(?:[^"\\]|\\.)*")/g;
 const KV_ASSIGN_PATTERN =
-  /\b([a-zA-Z_][\w.\-]*)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9+/=\-_.~%]{1,}))/g;
+  /\b([a-zA-Z_][\w.-]*)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9+/=\-_.~%]{1,}))/g;
 const DATA_URI_PATTERN = /data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]{100,}/gi;
 const B64_RUN_PATTERN = /[A-Za-z0-9+/]{200,}={0,2}/g;
 
