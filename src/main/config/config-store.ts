@@ -52,6 +52,12 @@ export type ProviderProfileKey =
 export type ConfigSetId = string;
 export type CreateSetMode = 'blank' | 'clone';
 
+/**
+ * Modo de acesso ao desktop (computer use semântico via agent-desktop).
+ * `off` é o padrão — o GUI Operate visual continua sendo o caminho principal.
+ */
+export type DesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
+
 export interface CreateConfigSetPayload {
   name: string;
   mode?: CreateSetMode;
@@ -119,6 +125,29 @@ export interface AppConfig {
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
+
+  /**
+   * Computer use semântico (agent-desktop).
+   * - `off`       → desligado (padrão). Nenhuma tool semântica é exposta.
+   * - `mcp`       → expõe as 8 tools `desktop_*` (camada MCP por sessão).
+   * - `mcp+skill` → além das tools, publica a skill de uso semântico.
+   * - `native`    → reservado para a camada nativa/FFI (Fase 5).
+   */
+  desktopAccessMode?: DesktopAccessMode;
+
+  /**
+   * Chave mestre do input físico do computer use semântico.
+   *
+   * Quando `false` (padrão), toda operação `physical_input` — cursor, foco,
+   * digitação física — é **recusada**, independentemente da autorização por
+   * operação dada em uma sessão anterior. É uma política global e persistente
+   * do app, e complementa (não substitui) o gate por operação, que é uma
+   * concessão do usuário dentro de uma sessão.
+   *
+   * `true` apenas **permite** a abertura do diálogo de autorização; nunca
+   * autoriza sozinho.
+   */
+  desktopPhysicalInputEnabled?: boolean;
 
   // Global memory toggle
   memoryEnabled: boolean;
@@ -190,6 +219,8 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'sandboxEnabled',
   'enableThinking',
   'memoryEnabled',
+  'desktopAccessMode',
+  'desktopPhysicalInputEnabled',
   'model',
   'provider',
   'contextWindow',
@@ -239,6 +270,8 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
+  desktopAccessMode: (v) => v === 'off' || v === 'mcp' || v === 'mcp+skill' || v === 'native',
+  desktopPhysicalInputEnabled: (v) => typeof v === 'boolean',
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -312,6 +345,8 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'light',
   sandboxEnabled: false,
+  desktopAccessMode: 'off',
+  desktopPhysicalInputEnabled: false,
   memoryEnabled: true,
   memoryRuntime: {
     llm: {

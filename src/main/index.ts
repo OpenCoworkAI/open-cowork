@@ -47,6 +47,13 @@ import { listOllamaModels } from './config/ollama-api';
 import { setPermissionRules, decidePermission } from './config/permission-rules-store';
 import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
+import { resolveAgentDesktopBinary } from './desktop/agent-desktop-paths';
+import { readAgentDesktopStatus } from './desktop/agent-desktop-status';
+import {
+  AgentDesktopDistributionError,
+  describeAgentDesktopInstallState,
+  installAgentDesktopBinary,
+} from './desktop/agent-desktop-distribution';
 import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
@@ -2179,7 +2186,6 @@ ipcMain.handle('mcp.saveServer', async (_event, config: MCPServerConfig) => {
     const mcpManager = sessionManager.getMCPManager();
     try {
       await mcpManager.updateServer(config);
-      sessionManager.invalidateMcpServersCache();
       log(`[MCP] Server ${config.name} updated successfully`);
     } catch (err) {
       logError('[MCP] Failed to update server:', err);
@@ -2202,7 +2208,6 @@ ipcMain.handle('mcp.deleteServer', async (_event, serverId: string) => {
     const mcpManager = sessionManager.getMCPManager();
     try {
       await mcpManager.removeServer(serverId);
-      sessionManager.invalidateMcpServersCache();
       log(`[MCP] Server ${serverId} removed successfully`);
     } catch (err) {
       logError('[MCP] Failed to remove server:', err);
@@ -2469,6 +2474,116 @@ ipcMain.on('window.close', () => {
     mainWindow?.close();
   } catch (error) {
     logError('[Window] Error closing:', error);
+  }
+});
+
+// Desktop (computer use semântico via agent-desktop) IPC handlers
+//
+// O status é lido pelo comando CLI avulso `agent-desktop permissions` — não
+// sobe servidor MCP, para que a tela de Configurações não dependa do ciclo de
+// vida do cliente MCP. Falha é declarada (campo `error`), nunca silenciosa.
+ipcMain.handle('desktop.getStatus', async () => {
+  const mode = configStore.get('desktopAccessMode') ?? 'off';
+  const platform = process.platform;
+  const userDataPath = app.getPath('userData');
+
+  const resolution = resolveAgentDesktopBinary({
+    resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+    userDataPath,
+  });
+
+  const installState = describeAgentDesktopInstallState({
+    platform,
+    arch: process.arch,
+    userDataPath,
+    binarySource: resolution.source,
+  });
+
+  if (!resolution.binaryPath) {
+    return {
+      mode,
+      platform,
+      binaryFound: false,
+      binarySource: resolution.source,
+      installState: installState.state,
+      installable: installState.installable,
+      availableVersion: installState.availableVersion,
+    };
+  }
+
+  const status = await readAgentDesktopStatus({
+    binaryPath: resolution.binaryPath,
+    mode,
+    platform,
+  });
+
+  return {
+    ...status,
+    binarySource: resolution.source,
+    installState: installState.state,
+    installable: installState.installable,
+    availableVersion: installState.availableVersion,
+    ...(installState.assetSha256 ? { binarySha256: installState.assetSha256 } : {}),
+  };
+});
+
+// Instalação sob demanda do binário oficial do agent-desktop.
+//
+// O download é feito pelo processo principal (não pela renderer) porque
+// precisa escrever em `userData` e verificar o SHA-256 contra o digest
+// **fixado em código** — a renderer não deve poder escolher o que instalar.
+ipcMain.handle('desktop.install', async () => {
+  const mode = configStore.get('desktopAccessMode') ?? 'off';
+  const platform = process.platform;
+  const userDataPath = app.getPath('userData');
+
+  try {
+    const result = await installAgentDesktopBinary({
+      platform,
+      arch: process.arch,
+      userDataPath,
+    });
+
+    // Depois de instalar, o binário precisa ser resolvido de novo (a origem
+    // muda de 'not-found' para 'user-data-cache').
+    const resolution = resolveAgentDesktopBinary({
+      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+      userDataPath,
+    });
+
+    const installState = describeAgentDesktopInstallState({
+      platform,
+      arch: process.arch,
+      userDataPath,
+      binarySource: resolution.source,
+    });
+
+    const status = resolution.binaryPath
+      ? await readAgentDesktopStatus({
+          binaryPath: resolution.binaryPath,
+          mode,
+          platform,
+        })
+      : { mode, platform, binaryFound: false };
+
+    return {
+      ok: true,
+      alreadyInstalled: result.alreadyInstalled ?? false,
+      status: {
+        ...status,
+        binarySource: resolution.source,
+        installState: installState.state,
+        installable: installState.installable,
+        availableVersion: installState.availableVersion,
+        ...(installState.assetSha256 ? { binarySha256: installState.assetSha256 } : {}),
+      },
+    };
+  } catch (error) {
+    const code =
+      error instanceof AgentDesktopDistributionError ? error.code : 'unknown';
+    const message = error instanceof Error ? error.message : String(error);
+    logError('[Desktop] Failed to install agent-desktop:', message);
+    return { ok: false, error: message, code };
   }
 });
 

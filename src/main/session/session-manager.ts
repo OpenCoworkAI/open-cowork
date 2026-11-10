@@ -185,16 +185,6 @@ export class SessionManager {
   }
 
   /**
-   * Invalidate cached MCP servers config so the next query rebuilds tools.
-   * Call after MCP server add/update/delete.
-   */
-  invalidateMcpServersCache(): void {
-    if (this.agentRunner && 'invalidateMcpServersCache' in this.agentRunner) {
-      (this.agentRunner as CoworkAgentRunner).invalidateMcpServersCache();
-    }
-  }
-
-  /**
    * Invalidate skills setup so the next query re-links skills.
    * Call after skill install/uninstall/toggle.
    */

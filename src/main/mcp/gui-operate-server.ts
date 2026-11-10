@@ -20,6 +20,7 @@
 
 // Bootstrap logging - log as early as possible
 import { writeMCPLog } from './mcp-logger.js';
+import { summarizeToolArgs } from './mcp-log-redaction.js';
 import { type CallToolResult, type ListToolsResult, Server } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
@@ -6486,7 +6487,10 @@ function createMcpServer(): Server {
     const { name, arguments: args } = request.params;
 
     try {
-      writeMCPLog(`[CallTool] name=${name}, args=${JSON.stringify(args ?? {})}`, 'Tool Call');
+      // Privacy: never dump raw argument values (typed text, clipboard, URLs,
+      // queries) into the log. Log the tool name plus a keys-and-sizes summary
+      // only — values stay out of mcp-server-*.log (agent-desktop parity).
+      writeMCPLog(`[CallTool] tool=${name}, args=${summarizeToolArgs(args ?? {})}`, 'Tool Call');
 
       let result: string;
 

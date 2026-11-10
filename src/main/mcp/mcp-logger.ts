@@ -10,9 +10,11 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { redactSensitiveText } from './mcp-log-redaction.js';
+import { resolveOpenCoworkLogsDirectory } from './mcp-log-paths.js';
+
 // Use a session-level timestamp for the log filename
 let mcpLogFilename: string | null = null;
-let logsDir: string | null = null;
 let logInitialized = false;
 
 /**
@@ -20,38 +22,7 @@ let logInitialized = false;
  * This matches the path used by the main application logger
  */
 function getLogsDirectory(): string {
-  if (logsDir) return logsDir;
-  
-  // Determine the app data directory based on platform
-  // This should match app.getPath('userData') in Electron
-  const platform = os.platform();
-  let appDataDir: string;
-  
-  if (platform === 'darwin') {
-    // macOS: ~/Library/Application Support/open-cowork
-    appDataDir = path.join(os.homedir(), 'Library', 'Application Support', 'open-cowork');
-  } else if (platform === 'win32') {
-    // Windows: %APPDATA%/open-cowork
-    appDataDir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'open-cowork');
-  } else {
-    // Linux: ~/.config/open-cowork
-    appDataDir = path.join(os.homedir(), '.config', 'open-cowork');
-  }
-  
-  logsDir = path.join(appDataDir, 'logs');
-  
-  // Ensure logs directory exists (sync for initialization)
-  try {
-    if (!fsSync.existsSync(logsDir)) {
-      fsSync.mkdirSync(logsDir, { recursive: true });
-    }
-  } catch (error) {
-    console.error('[MCP Logger] Failed to create logs directory:', error);
-    // Fallback to current directory
-    logsDir = process.cwd();
-  }
-  
-  return logsDir;
+  return resolveOpenCoworkLogsDirectory();
 }
 
 /**
@@ -98,6 +69,12 @@ Arguments: ${JSON.stringify(process.argv.map(arg => /^(sk-|key-|token-|secret-)/
 const MAX_LOG_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function writeMCPLog(content: string, label?: string): void {
+  // Defense-in-depth: every log line passes through sensitive-value redaction
+  // (mirrors agent-desktop trace sanitization) so ad-hoc template logging
+  // across the MCP servers can never persist raw text, tokens, URLs,
+  // clipboard content or base64 screenshots to disk.
+  const safeContent = redactSensitiveText(content);
+
   // Initialize log file on first call
   if (!logInitialized) {
     initializeLogFile();
@@ -107,7 +84,7 @@ export function writeMCPLog(content: string, label?: string): void {
   const formattedLabel = label ? ` [${label}]` : '';
 
   // Print to stderr (with simpler format for console)
-  console.error(`[${timestamp}]${formattedLabel} ${content}`);
+  console.error(`[${timestamp}]${formattedLabel} ${safeContent}`);
 
   // If log not initialized, can't write to file
   if (!mcpLogFilename || !logInitialized) {
@@ -130,7 +107,7 @@ export function writeMCPLog(content: string, label?: string): void {
 
   // Format log entry for file (with more detail)
   const labelText = label ? `${label}:\n${'='.repeat(80)}\n` : '';
-  const logEntry = `\n${'='.repeat(80)}\n[${timestamp}]${formattedLabel}\n${labelText}${content}\n${'='.repeat(80)}\n`;
+  const logEntry = `\n${'='.repeat(80)}\n[${timestamp}]${formattedLabel}\n${labelText}${safeContent}\n${'='.repeat(80)}\n`;
 
   try {
     // Use sync write for critical logs (Bootstrap, Error, Fatal, Initialization)

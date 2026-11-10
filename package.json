@@ -61,6 +61,7 @@
     "rebuild": "node -e \"const {execSync}=require('node:child_process'); const v=require('electron/package.json').version; execSync('npm rebuild better-sqlite3 --runtime=electron --target='+v+' --disturl=https://electronjs.org/headers',{stdio:'inherit'})\"",
     "typecheck": "tsc --noEmit",
     "pre-build-check": "node scripts/pre-build-check.js",
+    "verify:agent-desktop": "node scripts/verify-agent-desktop-release.js",
     "clean": "rimraf dist dist-electron dist-mcp dist-wsl-agent dist-lima-agent .bundle-resources release",
     "deploy:local": "bash scripts/deploy-local.sh"
   },

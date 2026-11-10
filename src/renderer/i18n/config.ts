@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import enTranslations from './locales/en.json';
 import zhTranslations from './locales/zh.json';
+import ptBRTranslations from './locales/pt-BR.json';
 
 i18n
   .use(LanguageDetector) // 自动检测浏览器语言
@@ -16,9 +17,12 @@ i18n
       zh: {
         translation: zhTranslations,
       },
+      'pt-BR': {
+        translation: ptBRTranslations,
+      },
     },
     fallbackLng: 'en', // 默认语言
-    supportedLngs: ['en', 'zh'], // 支持的语言
+    supportedLngs: ['en', 'zh', 'pt-BR'], // 支持的语言
     interpolation: {
       escapeValue: false, // React 已经处理了 XSS
     },
@@ -28,6 +32,10 @@ i18n
       order: ['localStorage', 'navigator'], // 先检查 localStorage，再检查浏览器语言
       caches: ['localStorage'], // 将语言选择保存到 localStorage
       lookupLocalStorage: 'i18nextLng', // localStorage key
+      // pt-BR e' o unico catalogo em portugues: qualquer variante regional
+      // (pt, pt-PT, pt-BR) resolve para ele.
+      convertDetectedLanguage: (lng: string) =>
+        lng.toLowerCase().startsWith('pt') ? 'pt-BR' : lng,
     },
   });
 
