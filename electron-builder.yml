@@ -83,8 +83,15 @@ win:
   #    ProductVersion, CompanyName) — metadata que hoje nao existe no build;
   #  - a assinatura de codigo passe a ser POSSIVEL quando um certificado for
   #    fornecido.
-  # Fail-open verificado no electron-builder 26.8.1: sem certificado o
-  # signWindows() devolve false e apenas registra aviso — o build NAO quebra.
+  #
+  # IMPORTANTE: `forceCodeSigning` NAO e definido aqui de proposito. Ele e
+  # injetado por job no CI (`--config.win.forceCodeSigning=true`), apenas no
+  # job ASSINADO. Se fosse fixado aqui, o job unsigned quebraria — e o
+  # electron-builder 26.8.1 e fail-open por padrao: sem certificado o
+  # signWindows() devolve false e registra apenas um aviso, deixando passar
+  # um artefato sem assinatura (que o SmartScreen pode bloquear na maquina
+  # do usuario final).
+  #
   # Para assinar, defina (no CI como secrets):
   #   WIN_CSC_LINK         -> PFX em base64 ou caminho do arquivo
   #   WIN_CSC_KEY_PASSWORD -> senha do PFX

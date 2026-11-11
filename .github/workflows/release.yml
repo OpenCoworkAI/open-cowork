@@ -222,17 +222,77 @@ jobs:
       - name: Vite build
         run: npx vite build
 
-      # Assinatura de codigo opcional. Fail-open verificado no
-      # electron-builder 26.8.1: sem certificado o signWindows() devolve
-      # false, registra aviso e o build NAO quebra (o artefato fica sem
-      # assinatura e o SmartScreen pode bloquear em maquinas de usuario).
+      # Build assinado: falha DURO se a assinatura nao for aplicada.
+      # Requer os segredos abaixo cadastrados no repositorio:
       #   WIN_CSC_LINK         -> certificado .pfx em base64
       #   WIN_CSC_KEY_PASSWORD -> senha do .pfx
-      - name: Electron Builder
-        run: npx electron-builder --win nsis --publish never
+      #
+      # `--config.win.forceCodeSigning=true` e o que torna este job fail-closed.
+      # Sem ele o electron-builder 26.8.1 faz fail-open: o signWindows()
+      # devolve false, registra um aviso e o build passa mesmo sem
+      # assinatura — oartefato saia sem assinatura e o problema so aparecia
+      # no SmartScreen do usuario final.
+      #
+      # Mecanismo verificado no fonte do electron-builder 26.8.1:
+      #  - platformPackager.js:609 -> forceCodeSigning resolve
+      #    platformSpecificBuildOptions.forceCodeSigning ?? config.forceCodeSigning;
+      #  - winPackager.js -> `if (!didSignSuccessfully && this.forceCodeSigning)
+      #    throw new InvalidConfigurationError(...)`;
+      #  - o valor chega do CLI como a STRING "true" (yargs dot-notation),
+      #    que e truthy — o merge com o bloco `win:` do electron-builder.yml
+      #    e por deepAssign, portanto nao apaga as demais chaves.
+      - name: Electron Builder (signed)
+        if: ${{ secrets.WIN_CSC_LINK != '' }}
+        run: npx electron-builder --win nsis --publish never --config.win.forceCodeSigning=true
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # Build sem assinatura: caminho padrao, nao exige segredos no repositorio.
+      # O artefato fica sem assinatura e o SmartScreen pode bloquear em
+      # maquinas de usuario final — comportamento conhecido e documentado.
+      - name: Electron Builder (unsigned)
+        if: ${{ secrets.WIN_CSC_LINK == '' }}
+        run: npx electron-builder --win nsis --publish never
+
+      # Verificacao da assinatura do artefato (defesa em profundidade).
+      # O `--config.win.forceCodeSigning=true` acima ja garante que o
+      # electron-builder lance erro se o signWindows() falhar. Esta etapa
+      # fecha o outro lado: confirma no binario final que a assinatura
+      # realmente existe, em vez de confiar apenas no codigo de saida.
+      #
+      # So roda no job assinado. Um certificado autoassinado (util para
+      # validar o pipeline) resulta em Status != Valid por falta de cadeia
+      # de confianca — isso NAO falha o job, porque a garantia que importa
+      # aqui e "o artefato foi assinado", nao "a CA e confiavel". O status
+      # completo fica no log para inspecao.
+      - name: Verify code signature
+        if: ${{ secrets.WIN_CSC_LINK != '' }}
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem -Path "release" -Filter "*.exe" | Where-Object { $_.Name -notmatch 'Uninstall' }
+          if (-not $exes) {
+            Write-Host "::error::No exe found in release/ to verify signature"
+            exit 1
+          }
+          $failed = $false
+          foreach ($exe in $exes) {
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            Write-Host "Signature of $($exe.Name): Status=$($sig.Status)"
+            if ($sig.SignerCertificate) {
+              Write-Host "  Subject: $($sig.SignerCertificate.Subject)"
+              Write-Host "  Thumbprint: $($sig.SignerCertificate.Thumbprint)"
+            }
+            if ($sig.Status -eq 'NotSigned') {
+              Write-Host "::error::$($exe.Name) is NOT signed"
+              $failed = $true
+            }
+          }
+          if ($failed) {
+            Write-Host "::error::At least one artifact is unsigned"
+            exit 1
+          }
+          Write-Host "All Windows artifacts carry a code signature."
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources
