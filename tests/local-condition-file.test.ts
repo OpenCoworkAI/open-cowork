@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
 import type { ScheduledTask } from '../src/main/schedule/scheduled-task-manager';
 
 const { open, realpath } = vi.hoisted(() => ({ open: vi.fn(), realpath: vi.fn() }));
@@ -6,8 +7,13 @@ vi.mock('node:fs/promises', () => ({ open, realpath }));
 import { checkLocalCondition } from '../src/main/schedule/local-condition-checker';
 import { LOCAL_WATCH_CONFIG_ERRORS } from '../src/shared/schedule/local-watch-task';
 
+// The workspace root must be an absolute path in the platform's own format.
+// `node:path.resolve` prefixes the current drive on Windows (`/tmp` becomes
+// `C:\tmp`), so a raw POSIX literal would be canonicalized as a different
+// root than the resolved check target and the workspace-escape guard would
+// reject a path that is actually inside the workspace.
 const task = {
-  cwd: '/tmp',
+  cwd: resolve('/tmp'),
   watchConfig: { checkType: 'file', compareMode: 'content', checkConfig: { path: 'watch.txt' } },
 } as ScheduledTask;
 beforeEach(() => {
