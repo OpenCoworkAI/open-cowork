@@ -108,5 +108,13 @@ jobs:
       # O `gh` ja vem instalado nos runners do GitHub. A verificacao de
       # assinatura usa o log de transparencia publico do Sigstore (Rekor) e
       # nao exige token para repositorios publicos.
+      #
+      # Ainda assim o CLI `gh` recusa executar em automacao sem um token no
+      # ambiente, e a API de attestations exige autenticacao mesmo para
+      # repositorio publico. Por isso o `github.token` do proprio run e
+      # repassado como `GH_TOKEN` — com `permissions: contents: read` acima
+      # ele basta para LER a attestation, sem conceder escrita no repo.
       - name: Verify Sigstore attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/verify-agent-desktop-release.js --platform ${{ matrix.platform }} --attest

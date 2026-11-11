@@ -183,15 +183,29 @@ async function download(url, timeoutMs = 180000) {
  * Verifica a assinatura Sigstore de um arquivo com o CLI `gh`.
  *
  * O `gh` fala com a API de attestations do GitHub e com o log de transparencia
- * do Rekor. Publico nao exige token.
+ * do Rekor. O repositorio e publico, mas a API de attestations exige
+ * autenticacao mesmo assim, e o proprio `gh` recusa rodar em automacao
+ * (CI / GitHub Actions) sem um token no ambiente.
+ *
+ * O token e repassado explicitamente ao subprocesso em vez de depender da
+ * heranca de `process.env`: assim tanto `GH_TOKEN` quanto `GITHUB_TOKEN`
+ * (o nome que o Actions expoe por padrao) funcionam, e o `gh` nao fica
+ *Subject a recusar a execucao por guarda de autenticacao.
  *
  * @param {string} filePath
  * @param {string} repo
  */
 function verifyAttestation(filePath, repo) {
+  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
+  const env = { ...process.env };
+  if (token) {
+    env.GH_TOKEN = token;
+  }
+
   try {
     execFileSync('gh', ['attestation', 'verify', filePath, '--repo', repo], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     });
   } catch (error) {
     const stderr = error.stderr ? error.stderr.toString().trim() : '';
