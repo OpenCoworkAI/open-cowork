@@ -25,6 +25,7 @@ import {
   parseEnvelope,
   parseSuccessDisposition,
   type AgentDesktopDelivery,
+  type AgentDesktopDisposition,
   type AgentDesktopOperation,
 } from './agent-desktop-catalog';
 import { recordMcpToolAttempt } from '../mcp/mcp-metrics';
@@ -142,12 +143,26 @@ export class AgentDesktopClient {
       throw error;
     }
 
+    try {
+      // `tools/list` também precisa de timeout: um servidor que conecta mas
+      // não responde ao catálogo deixaria `start()` pendurado para sempre.
+      const tools = await withTimeout(
+        client.listTools(),
+        this.options.connectTimeoutMs,
+        'tools/list'
+      );
+      this.operations = buildOperationCatalog((tools.tools ?? []).map((tool) => tool.name));
+    } catch (error) {
+      // `tools/list` falhou DEPOIS do connect: o processo filho JÁ está vivo.
+      // Sem este close ele fica órfão — e como `started` continua false, um
+      // novo `start()` criaria um SEGUNDO processo para a mesma sessão.
+      await safeClose(client);
+      await safeClose(transport);
+      throw error;
+    }
+
     this.client = client;
     this.transport = transport;
-
-    const tools = await client.listTools();
-    this.operations = buildOperationCatalog((tools.tools ?? []).map((tool) => tool.name));
-
     this.started = true;
     log(
       `[AgentDesktopClient] Connected. session=${this.options.sessionId ?? '(none)'} ` +
@@ -227,10 +242,7 @@ export class AgentDesktopClient {
         // Um erro **sem** disposition cai em 'delivery_uncertain' (fail-safe),
         // nunca em 'delivered_verified'.
         const disposition = envelope.ok
-          ? parseSuccessDisposition(envelope) ?? {
-              delivery: 'delivered_verified' as AgentDesktopDelivery,
-              retry: false,
-            }
+          ? parseSuccessDisposition(envelope) ?? this.fallbackDisposition(operation)
           : parseDisposition(envelope.error?.disposition);
 
         recordMcpToolAttempt({
@@ -311,6 +323,25 @@ export class AgentDesktopClient {
     await safeClose(this.transport);
     this.client = null;
     this.transport = null;
+  }
+
+  /**
+   * Disposition de fallback quando o upstream **não declara** `data.disposition`.
+   *
+   * - Observação (`snapshot`, `find`, `get`, `list_*`): o payload chegou e não
+   *   há efeito a verificar → `delivered_verified` é honesto.
+   * - Ação (`click`, `type`, `set_value`, …): o upstream não provou o efeito.
+   *   Dizer 'verified' seria mentir para o modelo e inflaria o gate de
+   *   rollout (≥90% `delivered_verified`) → fail-safe: `delivered_unverified`.
+   *
+   * Operação desconhecida (fora do catálogo) cai no caso pessimista.
+   */
+  private fallbackDisposition(operation: string): AgentDesktopDisposition {
+    const known = this.operations.find((op) => op.operation === operation);
+    if (known?.risk === 'observation') {
+      return { delivery: 'delivered_verified', retry: false };
+    }
+    return { delivery: 'delivered_unverified', retry: false };
   }
 
   private resolveUpstreamTool(operation: string): string {

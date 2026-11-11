@@ -24,9 +24,13 @@
  *   STUB_HANG_TOOL        — tool que nunca responde (testa timeout)
  *   STUB_SUCCESS_DELIVERY — disposition em `data` no caso de sucesso
  *   STUB_SUCCESS_RETRY    — `data.disposition.retry` no caso de sucesso
+ *   STUB_FAIL_TOOLS_LIST  — `tools/list` responde com erro (testa o fechamento
+ *                            do processo filho quando o start falha)
+ *   STUB_PID_FILE         — arquivo onde o PID do stub é gravado (permite
+ *                            verificar que o processo não ficou órfão)
  */
 
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const TOOL_NAMES = [
@@ -108,6 +112,16 @@ const REJECT_TOOL = process.env.STUB_REJECT_TOOL;
 const HANG_TOOL = process.env.STUB_HANG_TOOL;
 const SUCCESS_DELIVERY = process.env.STUB_SUCCESS_DELIVERY;
 const SUCCESS_RETRY = process.env.STUB_SUCCESS_RETRY;
+const FAIL_TOOLS_LIST = process.env.STUB_FAIL_TOOLS_LIST;
+const PID_FILE = process.env.STUB_PID_FILE;
+
+if (PID_FILE) {
+  try {
+    writeFileSync(PID_FILE, String(process.pid));
+  } catch {
+    // Best-effort.
+  }
+}
 
 let failCount = 0;
 
@@ -244,6 +258,14 @@ rl.on('line', (line) => {
       break;
 
     case 'tools/list':
+      if (FAIL_TOOLS_LIST) {
+        write({
+          jsonrpc: '2.0',
+          id: message.id,
+          error: { code: -32603, message: 'stub: tools/list unavailable' },
+        });
+        break;
+      }
       respond(message.id, { tools: toolDefinitions() });
       break;
 

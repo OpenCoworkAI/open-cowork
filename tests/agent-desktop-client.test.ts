@@ -206,4 +206,91 @@ describe('AgentDesktopClient (contrato com o servidor MCP do agent-desktop)', ()
     expect(client.isReady()).toBe(false);
     await expect(client.call('snapshot')).rejects.toThrow(/not connected/i);
   });
+
+  it('ação sem disposition no upstream NÃO é reportada como delivered_verified', async () => {
+    // O stub só inclui `data.disposition` quando `STUB_SUCCESS_DELIVERY` está
+    // definido. Sem ele, uma ação bem-sucedida chega sem prova de entrega.
+    const client = createClient();
+    try {
+      await client.start();
+      const result = await client.call('click', { ref: 'e1' });
+
+      expect(result.ok).toBe(true);
+      // Fail-safe: o upstream não provou o efeito da ação.
+      expect(result.delivery).toBe('delivered_unverified');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('observação sem disposition no upstream continua delivered_verified', async () => {
+    // Não há efeito a verificar numa leitura — o payload chegou.
+    const client = createClient();
+    try {
+      await client.start();
+      const result = await client.call('snapshot', { depth: 2 });
+
+      expect(result.ok).toBe(true);
+      expect(result.delivery).toBe('delivered_verified');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('respeita a disposition declarada pelo upstream quando existe', async () => {
+    const client = createClient({
+      STUB_SUCCESS_DELIVERY: 'delivered_unverified',
+      STUB_SUCCESS_RETRY: 'unsafe',
+    });
+    try {
+      await client.start();
+      const result = await client.call('click', { ref: 'e1' });
+
+      expect(result.ok).toBe(true);
+      expect(result.delivery).toBe('delivered_unverified');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('não deixa processo filho órfão quando tools/list falha', async () => {
+    const pidFile = path.join(workDir, 'stub.pid');
+    const client = new AgentDesktopClient({
+      command: process.execPath,
+      args: [STUB_PATH],
+      env: {
+        PATH: process.env.PATH ?? '',
+        STUB_CALL_LOG: callLogPath,
+        STUB_FAIL_TOOLS_LIST: '1',
+        STUB_PID_FILE: pidFile,
+      },
+      callTimeoutMs: 10_000,
+      connectTimeoutMs: 15_000,
+      sessionId: 'session-test',
+      agentId: 'agent-test',
+    });
+
+    await expect(client.start()).rejects.toThrow();
+    expect(client.isReady()).toBe(false);
+
+    // O processo do stub não pode sobreviver ao start falho.
+    const pid = Number(readFileSync(pidFile, 'utf8').trim());
+    expect(Number.isInteger(pid)).toBe(true);
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline && isProcessAlive(pid)) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(isProcessAlive(pid)).toBe(false);
+  });
 });
+
+/** O processo ainda existe? (sem sinalizar) */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

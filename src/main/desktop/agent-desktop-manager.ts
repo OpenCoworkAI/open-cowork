@@ -47,6 +47,15 @@ export interface AgentDesktopSessionTools {
 
 export class AgentDesktopManager {
   private readonly clients = new Map<string, AgentDesktopClient>();
+  /**
+   * Clientes **em início**, por sessão.
+   *
+   * Sem esta guarda, duas chamadas concorrentes para a mesma sessão criavam
+   * dois clientes — dois processos filhos com o **mesmo** `--session` (o
+   * upstream fixa a identidade no start), disputando o estado da sessão, e o
+   * primeiro ficava órfão no Map (nunca fechado por `closeSession`/`closeAll`).
+   */
+  private readonly starting = new Map<string, Promise<AgentDesktopClient>>();
   private readonly options: AgentDesktopManagerOptions;
   /** Materializações em andamento, por versão do binário. */
   private readonly skillMaterializations = new Map<
@@ -78,6 +87,31 @@ export class AgentDesktopManager {
     const existing = this.clients.get(sessionId);
     if (existing && existing.isReady()) return existing;
 
+    // Uma criação já em andamento para a mesma sessão é compartilhada —
+    // nunca dois processos para o mesmo `--session`.
+    const pending = this.starting.get(sessionId);
+    if (pending) return pending;
+
+    const creation = this.createSessionClient(sessionId, agentId).finally(() => {
+      this.starting.delete(sessionId);
+    });
+
+    this.starting.set(sessionId, creation);
+    return creation;
+  }
+
+  /**
+   * Cria e inicia o cliente de uma sessão.
+   *
+   * Em falha de `start()`, o cliente é **fechado**: ele ainda não está no Map,
+   * então `closeSession`/`closeAll` não o alcançariam — e o `start()` pode ter
+   * deixado um processo filho vivo (ex.: o connect funcionou mas `tools/list`
+   * falhou).
+   */
+  private async createSessionClient(
+    sessionId: string,
+    agentId?: string
+  ): Promise<AgentDesktopClient> {
     const binaryPath = this.resolveBinaryPath();
     if (!binaryPath) {
       throw new Error(
@@ -96,7 +130,20 @@ export class AgentDesktopManager {
       agentId,
     });
 
-    await client.start();
+    try {
+      await client.start();
+    } catch (error) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        logError(
+          '[AgentDesktopManager] Failed to close client after failed start:',
+          closeError
+        );
+      }
+      throw error;
+    }
+
     this.clients.set(sessionId, client);
     return client;
   }
@@ -183,6 +230,20 @@ export class AgentDesktopManager {
 
   /** Fecha o cliente da sessão. */
   async closeSession(sessionId: string): Promise<void> {
+    // Um cliente ainda em início precisa ser fechado assim que ficar pronto.
+    const pending = this.starting.get(sessionId);
+    if (pending) {
+      this.starting.delete(sessionId);
+      try {
+        const client = await pending;
+        this.clients.delete(sessionId);
+        await client.close();
+      } catch {
+        // O start falhou — o cliente já foi fechado em `createSessionClient`.
+      }
+      return;
+    }
+
     const client = this.clients.get(sessionId);
     if (!client) return;
     this.clients.delete(sessionId);
@@ -191,17 +252,31 @@ export class AgentDesktopManager {
 
   /** Fecha todos os clientes (shutdown do app). */
   async closeAll(): Promise<void> {
+    const pending = [...this.starting.entries()];
+    this.starting.clear();
+
     const clients = [...this.clients.values()];
     this.clients.clear();
-    await Promise.all(
-      clients.map(async (client) => {
+
+    await Promise.all([
+      ...clients.map(async (client) => {
         try {
           await client.close();
         } catch (error) {
           logError('[AgentDesktopManager] Failed to close client', error);
         }
-      })
-    );
+      }),
+      // Clientes que ainda estavam starting: fecha ao ficarem prontos.
+      ...pending.map(async ([sessionId, creation]) => {
+        try {
+          const client = await creation;
+          this.clients.delete(sessionId);
+          await client.close();
+        } catch {
+          // O start falhou — já foi fechado em `createSessionClient`.
+        }
+      }),
+    ]);
   }
 
   private resolveBinaryPath(): string | undefined {

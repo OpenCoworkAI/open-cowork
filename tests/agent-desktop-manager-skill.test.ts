@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AgentDesktopManager } from '../src/main/desktop/agent-desktop-manager';
+import type { AgentDesktopClient } from '../src/main/desktop/agent-desktop-client';
 import { AGENT_DESKTOP_PATH_ENV } from '../src/main/desktop/agent-desktop-paths';
 import type { AgentDesktopSkillExec } from '../src/main/desktop/agent-desktop-skill';
 
@@ -155,5 +156,113 @@ describe('AgentDesktopManager — camada de skill', () => {
 
     expect(second?.directory).toBe(first?.directory);
     expect(calls.length).toBe(callsAfterFirst);
+  });
+});
+
+describe('AgentDesktopManager — ciclo de vida do cliente por sessão', () => {
+  let workDir: string;
+
+  beforeEach(() => {
+    workDir = mkdtempSync(path.join(tmpdir(), 'agent-desktop-manager-client-'));
+  });
+
+  afterEach(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  function pathContext(): {
+    userDataPath: string;
+    env: NodeJS.ProcessEnv;
+    fileExists: () => boolean;
+  } {
+    return {
+      userDataPath: workDir,
+      env: { [AGENT_DESKTOP_PATH_ENV]: '/fake/agent-desktop' } as NodeJS.ProcessEnv,
+      fileExists: () => true,
+    };
+  }
+
+  it('cria UM cliente quando duas chamadas concorrentes pedem a mesma sessão', async () => {
+    let created = 0;
+    let started = 0;
+
+    const fake = {
+      start: async () => {
+        started += 1;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      },
+      close: async () => undefined,
+      isReady: () => true,
+    } as unknown as AgentDesktopClient;
+
+    const manager = new AgentDesktopManager({
+      pathContext: pathContext(),
+      createClient: () => {
+        created += 1;
+        return fake;
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      manager.getSessionClient('session-a'),
+      manager.getSessionClient('session-a'),
+    ]);
+
+    // O upstream fixa `--session` no start: dois processos com o mesmo id
+    // disputariam o estado da sessão, e um deles ficaria órfão.
+    expect(created).toBe(1);
+    expect(started).toBe(1);
+    expect(first).toBe(second);
+    expect(manager.activeSessionCount).toBe(1);
+  });
+
+  it('fecha o cliente quando o start falha (nenhum processo órfão)', async () => {
+    let closed = 0;
+
+    const failing = {
+      start: async () => {
+        throw new Error('start falhou');
+      },
+      close: async () => {
+        closed += 1;
+      },
+      isReady: () => false,
+    } as unknown as AgentDesktopClient;
+
+    const manager = new AgentDesktopManager({
+      pathContext: pathContext(),
+      createClient: () => failing,
+    });
+
+    await expect(manager.getSessionClient('session-a')).rejects.toThrow(/start falhou/);
+
+    // Sem este close, o cliente não entraria no Map e ficaria órfão.
+    expect(closed).toBe(1);
+    expect(manager.activeSessionCount).toBe(0);
+  });
+
+  it('permite nova criação para a mesma sessão depois de um start falho', async () => {
+    let attempts = 0;
+
+    const manager = new AgentDesktopManager({
+      pathContext: pathContext(),
+      createClient: () => {
+        attempts += 1;
+        const shouldFail = attempts === 1;
+        return {
+          start: async () => {
+            if (shouldFail) throw new Error('primeira tentativa falhou');
+          },
+          close: async () => undefined,
+          isReady: () => true,
+        } as unknown as AgentDesktopClient;
+      },
+    });
+
+    await expect(manager.getSessionClient('session-a')).rejects.toThrow();
+    // A falha não pode envenenar a sessão: a segunda tentativa funciona.
+    const client = await manager.getSessionClient('session-a');
+    expect(client).toBeDefined();
+    expect(attempts).toBe(2);
   });
 });
