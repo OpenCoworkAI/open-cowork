@@ -92,22 +92,85 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       # Build assinado + notarizado. Requer os segredos abaixo cadastrados no
-      # repositorio. O hook scripts/notarize.js (afterSign) e fail-open, mas
-      # com os tres segredos da Apple presentes ele efetivamente notariza.
+      # repositorio.
       #   MAC_CSC_LINK         -> certificado .p12 em base64
       #   MAC_CSC_KEY_PASSWORD -> senha do .p12
       #   APPLE_ID             -> Apple ID
       #   APPLE_ID_PASSWORD    -> senha especifica do app (NAO a senha do Apple ID)
       #   APPLE_TEAM_ID        -> identificador de equipe (10 caracteres)
+      #
+      # Fail-closed em duas camadas:
+      #  1. `--config.mac.forceCodeSigning=true` — se o certificado nao for
+      #     encontrado no keychain, o electron-builder lanca
+      #     InvalidConfigurationError em vez de seguir com ad-hoc/unsigned
+      #     (macPackager.js:254 -> reportError -> macCodeSign.js:75).
+      #  2. `MACOS_REQUIRE_NOTARIZATION=1` — o hook scripts/notarize.js passa
+      #     a LANCAR quando falta APPLE_ID/APPLE_ID_PASSWORD/APPLE_TEAM_ID,
+      #     em vez de dar skip silencioso. Sem isso, um certificado presente
+      #     com credenciais Apple ausentes geraria um .app assinado mas NAO
+      #     notarizado: CI verde, Gatekeeper bloqueando o usuario final e
+      #     nenhum sinal no log.
       - name: Electron Builder (signed + notarized)
         if: ${{ secrets.MAC_CSC_LINK != '' }}
-        run: npx electron-builder --mac dmg dir --publish never
+        run: npx electron-builder --mac dmg dir --publish never --config.mac.forceCodeSigning=true
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_REQUIRE_NOTARIZATION: '1'
+
+      # Verificacao da assinatura e da notarizacao do artefato (defesa em
+      # profundidade). O forceCodeSigning acima garante que o electron-builder
+      # lance erro se o signWindows falhar, e o hook garante que a notarizacao
+      # falhe se as credenciais Apple estiverem faltando. Esta etapa fecha o
+      # ciclo conferindo o binario final.
+      #
+      # O alvo da verificacao e o .app (e nao o .dmg): o electron-builder
+      # assina o bundle .app, enquanto o .dmg tem `sign: false` por padrao
+      # (electron-builder: "Signing is not required and will lead to unwanted
+      # errors in combination with notarization requirements").
+      #
+      # `spctl --assess` so vale como verificacao de Gatekeeper para bundles
+      # notarizados; em build local sem Apple ID ele falha — por isso esta
+      # etapa so roda no job assinado+notarizado.
+      - name: Verify signature and notarization
+        if: ${{ secrets.MAC_CSC_LINK != '' }}
+        run: |
+          set -euo pipefail
+          APP_DIR="release/mac-arm64"
+          APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::No .app bundle found in $APP_DIR"
+            exit 1
+          fi
+          APP_PATH="$APP_DIR/$APP_NAME"
+
+          echo "=== codesign --verify (cadeia de assinatura) ==="
+          # --deep valida componentes aninhados (frameworks, helpers); --strict
+          # exige que TODOS os componentes usem a identidade esperada.
+          if ! codesign --verify --deep --strict --verbose=2 "$APP_PATH"; then
+            echo "::error::codesign verification failed for $APP_PATH"
+            exit 1
+          fi
+
+          echo "=== codesign -dv (detalhes da assinatura) ==="
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed 's/^/  /' || true
+
+          echo "=== spctl --assess (Gatekeeper) ==="
+          if ! spctl --assess --type execute --verbose=4 "$APP_PATH"; then
+            echo "::error::spctl assessment failed for $APP_PATH (not notarized or signature rejected)"
+            exit 1
+          fi
+
+          echo "=== stapler validate (ticket de notarizacao) ==="
+          if ! xcrun stapler validate "$APP_PATH"; then
+            echo "::error::No valid notarization ticket stapled to $APP_PATH"
+            exit 1
+          fi
+
+          echo "All macOS signature and notarization checks passed."
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources

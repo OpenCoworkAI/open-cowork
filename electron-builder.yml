@@ -118,6 +118,19 @@ mac:
         - arm64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   identity: auto
+  # IMPORTANTE: `forceCodeSigning` NAO e definido aqui de proposito. Ele e
+  # injetado por job no CI (`--config.mac.forceCodeSigning=true`), apenas no
+  # job ASSINADO + NOTARIZADO. Fixa-lo aqui quebraria o job unsigned.
+  #
+  # Motivo (comportamento fail-open do electron-builder 26.8.1): sem
+  # `forceCodeSigning`, se a identidade nao for encontrada no keychain o
+  # macPackager apenas registra aviso e pode recorrer a assinatura ad-hoc
+  # (macPackager.js:245-256) — o build passa com um artefato que nao serve
+  # para distribuicao.
+  #
+  # A notarizacao e garantida por outro caminho: o hook scripts/notarize.js
+  # (afterSign) recebe MACOS_REQUIRE_NOTARIZATION=1 no job assinado e LANCA
+  # se APPLE_ID / APPLE_ID_PASSWORD / APPLE_TEAM_ID estiverem faltando.
   hardenedRuntime: true
   gatekeeperAssess: true
   entitlements: resources/entitlements.mac.plist
