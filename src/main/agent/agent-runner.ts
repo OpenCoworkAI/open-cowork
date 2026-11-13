@@ -1008,7 +1008,12 @@ ${hints.join('\n')}
   ): Promise<ToolDefinition[]> {
     const mode = configStore.get('desktopAccessMode') ?? 'off';
     if (mode === 'off' || mode === 'native') {
-      // 'native' é reservado para a camada FFI (Fase 5) — sem tools MCP.
+      // `native` é **reservado** para a camada FFI (Fase 5) e não está
+      // implementado — o registro canônico da reserva vive em
+      // `src/main/desktop/desktop-access-modes.ts`. Enquanto a FFI não existe,
+      // `native` é fail-closed: nenhuma tool semântica é exposta e o processo
+      // filho MCP é encerrado.
+      //
       // Desligar o modo precisa **parar o processo filho**: sem isso o servidor
       // MCP do agent-desktop continuaria vivo (com o agente mantendo acesso ao
       // desktop) mesmo com o modo desligado.

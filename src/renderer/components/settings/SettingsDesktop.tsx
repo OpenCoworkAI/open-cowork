@@ -44,6 +44,14 @@ interface DesktopStatus {
   installState?: AgentDesktopInstallState;
   availableVersion?: string;
   installable?: boolean;
+  /**
+   * O modo `native` (camada FFI, Fase 5) está implementado?
+   *
+   * Vem do registro canônico no processo principal. A UI deriva de aqui a
+   * decisão de renderizar `native` como opção selecionável ou como item
+   * desabilitado — a regra de reserva não é replicada no renderer.
+   */
+  nativeModeImplemented?: boolean;
 }
 
 /**
@@ -66,6 +74,16 @@ const MODE_OPTIONS: { value: DesktopAccessMode; icon: typeof Monitor }[] = [
   { value: 'mcp', icon: Monitor },
   { value: 'mcp+skill', icon: Monitor },
 ];
+
+/**
+ * O modo `native` é **reservado** para a camada FFI (Fase 5).
+ *
+ * Enquanto o processo principal reportar `nativeModeImplemented: false`, a
+ * opção é renderizada como item **indisponível** (sem `onClick`, esmaecida,
+ * com aviso) — e não como botão selecionável. A regra de reserva em si vive
+ * no registro canônico `src/main/desktop/desktop-access-modes.ts`; o renderer
+ * só consome o veredito.
+ */
 
 /**
  * Limitacoes conhecidas do capability, exibidas no fim do painel.
@@ -297,18 +315,46 @@ export function SettingsDesktop() {
             );
           })}
 
-          {/* `native` existe no contrato mas depende da camada FFI (Fase 5). */}
-          <div className="w-full flex items-start gap-3 p-3 rounded-lg border border-border-muted opacity-60">
-            <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-text-secondary" />
-            <span className="space-y-1">
-              <span className="block text-sm font-medium text-text-primary">
-                {t('desktop.mode_native')}
+          {/*
+           * `native` existe no contrato, mas depende da camada FFI (Fase 5).
+           * Enquanto o main reportar que não está implementado, ele aparece
+           * como indisponível — oferecer um modo que não funciona seria
+           * enganoso.
+           */}
+          {status?.nativeModeImplemented ? (
+            <button
+              type="button"
+              onClick={() => void changeMode('native')}
+              disabled={isSaving}
+              className={`w-full flex items-start gap-3 p-3 rounded-lg border text-left transition-all disabled:opacity-60 ${
+                mode === 'native'
+                  ? 'border-accent bg-accent/10'
+                  : 'border-border-muted hover:border-accent/50'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-text-secondary" />
+              <span className="space-y-1">
+                <span className="block text-sm font-medium text-text-primary">
+                  {t('desktop.mode_native')}
+                </span>
+                <span className="block text-xs leading-5 text-text-muted">
+                  {t('desktop.mode_nativeDesc')}
+                </span>
               </span>
-              <span className="block text-xs leading-5 text-text-muted">
-                {t('desktop.mode_nativeDesc')}
+            </button>
+          ) : (
+            <div className="w-full flex items-start gap-3 p-3 rounded-lg border border-border-muted opacity-60">
+              <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-text-secondary" />
+              <span className="space-y-1">
+                <span className="block text-sm font-medium text-text-primary">
+                  {t('desktop.mode_native')}
+                </span>
+                <span className="block text-xs leading-5 text-text-muted">
+                  {t('desktop.mode_nativeDesc')}
+                </span>
               </span>
-            </span>
-          </div>
+            </div>
+          )}
         </div>
       </SettingsContentSection>
 

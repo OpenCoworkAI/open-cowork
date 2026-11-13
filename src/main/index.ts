@@ -49,6 +49,7 @@ import { mcpConfigStore } from './mcp/mcp-config-store';
 import { getSandboxAdapter, shutdownSandbox } from './sandbox/sandbox-adapter';
 import { resolveAgentDesktopBinary } from './desktop/agent-desktop-paths';
 import { readAgentDesktopStatus } from './desktop/agent-desktop-status';
+import { isDesktopAccessModeNativeImplemented } from './desktop/desktop-access-modes';
 import {
   AgentDesktopDistributionError,
   describeAgentDesktopInstallState,
@@ -2530,6 +2531,9 @@ ipcMain.handle('desktop.getStatus', async () => {
       installState: installState.state,
       installable: installState.installable,
       availableVersion: installState.availableVersion,
+      // A reserva do modo `native` (Fase 5, FFI) é parte do contrato que a UI
+      // consome — precisa ser reportada mesmo sem binário instalado.
+      nativeModeImplemented: isDesktopAccessModeNativeImplemented(),
     };
   }
 

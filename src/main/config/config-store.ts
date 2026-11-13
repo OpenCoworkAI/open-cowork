@@ -16,6 +16,10 @@ import * as path from 'path';
 import Store, { type Options as StoreOptions } from 'electron-store';
 import { log, logWarn } from '../utils/logger';
 import {
+  isDesktopAccessModeValue,
+  type DesktopAccessMode as DesktopAccessModeValue,
+} from '../desktop/desktop-access-modes';
+import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
 } from '../utils/store-encryption';
@@ -55,8 +59,13 @@ export type CreateSetMode = 'blank' | 'clone';
 /**
  * Modo de acesso ao desktop (computer use semântico via agent-desktop).
  * `off` é o padrão — o GUI Operate visual continua sendo o caminho principal.
+ *
+ * `'native'` faz parte do contrato mas é **reservado** para a camada FFI
+ * (Fase 5): a UI não o oferece e o runtime o trata como "sem tools"
+ * (fail-closed). O registro único da reserva fica em
+ * `src/main/desktop/desktop-access-modes.ts`.
  */
-export type DesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
+export type DesktopAccessMode = DesktopAccessModeValue;
 
 export interface CreateConfigSetPayload {
   name: string;
@@ -467,7 +476,6 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:gemini',
 ];
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
-const VALID_DESKTOP_ACCESS_MODES: DesktopAccessMode[] = ['off', 'mcp', 'mcp+skill', 'native'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
@@ -497,11 +505,13 @@ function isAppTheme(value: unknown): value is AppTheme {
  *
  * `native` e reservado para a camada nativa/FFI (Fase 5): aceito na config
  * para nao quebrar arquivos ja gravados, mas nao oferecido pela UI.
+ *
+ * O predicado vem do registro canônico (`desktop-access-modes.ts`), que e
+ * tambem onde a reserva esta declarada — a lista de modos validos nao pode
+ * divergir do contrato.
  */
 function isDesktopAccessMode(value: unknown): value is DesktopAccessMode {
-  return (
-    typeof value === 'string' && VALID_DESKTOP_ACCESS_MODES.includes(value as DesktopAccessMode)
-  );
+  return isDesktopAccessModeValue(value);
 }
 
 function isMemoryModelRuntimeConfig(value: unknown): value is Partial<MemoryModelRuntimeConfig> {

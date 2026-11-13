@@ -11,6 +11,9 @@
  * reportada — nunca "parecer" que a permissão está garantida.
  */
 
+import type { DesktopAccessMode } from './desktop-access-modes';
+import { isDesktopAccessModeNativeImplemented } from './desktop-access-modes';
+
 /** Estado de uma permissão do SO (acessibilidade, automação, screen recording). */
 export interface AgentDesktopPermissionState {
   /** `granted` | `denied` | `not_required` | `unknown` (ou outro valor do upstream). */
@@ -26,8 +29,14 @@ export interface AgentDesktopPermissions {
   [key: string]: AgentDesktopPermissionState | undefined;
 }
 
-/** Modo de acesso ao desktop — espelha `DesktopAccessMode` do config-store. */
-export type AgentDesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
+/**
+ * Modo de acesso ao desktop — espelha `DesktopAccessMode` do config-store.
+ *
+ * O tipo deriva do registro canônico em `desktop-access-modes.ts`, para que
+ * o contrato do modo e a reserva do modo `native` (Fase 5, FFI) não possam
+ * divergir entre os dois arquivos.
+ */
+export type AgentDesktopAccessMode = DesktopAccessMode;
 
 /**
  * Origem do binário em uso.
@@ -81,6 +90,15 @@ export interface AgentDesktopStatus {
   availableVersion?: string;
   /** Há build oficial para esta plataforma? */
   installable?: boolean;
+  /**
+   * O modo `native` (camada FFI, Fase 5) está implementado nesta build?
+   *
+   * Vem do registro canônico (`desktop-access-modes.ts`). A UI usa este
+   * campo para decidir entre renderizar `native` como opção selecionável ou
+   * como item desabilitado com aviso — sem duplicar a regra de reserva no
+   * renderer.
+   */
+  nativeModeImplemented?: boolean;
 }
 
 /**
@@ -208,8 +226,12 @@ export async function readAgentDesktopStatus(
 ): Promise<AgentDesktopStatus> {
   const { binaryPath, mode, platform, version } = options;
 
+  // A reserva do modo `native` vem do registro canônico — o status é o
+  // contrato que o renderer consome, então a regra precisa viajar junto.
+  const nativeModeImplemented = isDesktopAccessModeNativeImplemented();
+
   if (!binaryPath) {
-    return { mode, platform, binaryFound: false };
+    return { mode, platform, binaryFound: false, nativeModeImplemented };
   }
 
   const exec = options.exec ?? defaultStatusExec;
@@ -218,6 +240,7 @@ export async function readAgentDesktopStatus(
     platform,
     binaryFound: true,
     binaryPath,
+    nativeModeImplemented,
     ...(version ? { version } : {}),
   };
 

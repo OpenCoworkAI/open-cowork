@@ -64,7 +64,14 @@ describe('agent-desktop status', () => {
         exec,
       });
 
-      expect(status).toEqual({ mode: 'off', platform: 'win32', binaryFound: false });
+      // `nativeModeImplemented` viaja no status porque é o contrato que a UI
+      // usa para decidir se `native` (Fase 5, FFI) é selecionável.
+      expect(status).toEqual({
+        mode: 'off',
+        platform: 'win32',
+        binaryFound: false,
+        nativeModeImplemented: false,
+      });
       expect(exec).not.toHaveBeenCalled();
     });
 
