@@ -1,0 +1,120 @@
+name: Agent Desktop Provenance
+
+# Gate de provenance do binário `agent-desktop` distribuído sob demanda.
+#
+# O app fixa o SHA-256 do asset em código (fonte única:
+# `src/main/desktop/agent-desktop-release-manifest.ts`). Este workflow garante
+# que essa fixação continua **verdadeira**:
+#
+# - `verify-digests` — baixa o asset oficial e compara o digest do byte com o
+#   digest fixado no código **e** com o `checksums.txt` publicado pelo
+#   upstream. Falha fechada: divergência = release adulterada OU digest
+#   envelhecido (que exige commit explícito de atualização).
+# - `verify-attestation` — verifica a assinatura Sigstore do asset
+#   (`gh attestation verify`). A camada de provenance do upstream não pode ser
+#   verificada em runtime (exigiria o CLI `gh` na máquina do usuário), então
+#   fica aqui, onde o `gh` existe.
+#
+# A execução agendada existe para **detectar drift do upstream** mesmo sem
+# alteração de código — é o mecanismo que impede um digest fixado de
+# envelhecer em silêncio.
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'src/main/desktop/agent-desktop-release-manifest.ts'
+      - 'src/main/desktop/agent-desktop-distribution.ts'
+      - 'scripts/verify-agent-desktop-release.js'
+      - '.github/workflows/agent-desktop-provenance.yml'
+      - 'package.json'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'src/main/desktop/agent-desktop-release-manifest.ts'
+      - 'src/main/desktop/agent-desktop-distribution.ts'
+      - 'scripts/verify-agent-desktop-release.js'
+      - '.github/workflows/agent-desktop-provenance.yml'
+      - 'package.json'
+  schedule:
+    # Diario, fora da hora cheia. Detecta re-publicacao/adulteracao upstream.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-desktop-provenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-digests:
+    name: Digest fixado (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - win32-x64
+          - win32-arm64
+          - darwin-x64
+          - darwin-arm64
+          - linux-x64
+          - linux-arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      # `--ignore-scripts` evita o postinstall (baixa runtimes, compila
+      # better-sqlite3) — aqui so precisamos do `typescript` para ler o
+      # manifesto real do codigo.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify pinned digest against upstream
+        run: node scripts/verify-agent-desktop-release.js --platform ${{ matrix.platform }}
+
+  verify-attestation:
+    name: Attestation Sigstore (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - win32-x64
+          - win32-arm64
+          - darwin-x64
+          - darwin-arm64
+          - linux-x64
+          - linux-arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # O `gh` ja vem instalado nos runners do GitHub. A verificacao de
+      # assinatura usa o log de transparencia publico do Sigstore (Rekor) e
+      # nao exige token para repositorios publicos.
+      #
+      # Ainda assim o CLI `gh` recusa executar em automacao sem um token no
+      # ambiente, e a API de attestations exige autenticacao mesmo para
+      # repositorio publico. Por isso o `github.token` do proprio run e
+      # repassado como `GH_TOKEN` — com `permissions: contents: read` acima
+      # ele basta para LER a attestation, sem conceder escrita no repo.
+      - name: Verify Sigstore attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-agent-desktop-release.js --platform ${{ matrix.platform }} --attest

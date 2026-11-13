@@ -12,6 +12,8 @@ import {
   ChevronRight,
   BrainCircuit,
   UsersRound,
+  Monitor,
+  type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -27,6 +29,7 @@ import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 import { SettingsSubagents } from './settings/SettingsSubagents';
+import { SettingsDesktop } from './settings/SettingsDesktop';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -40,7 +43,8 @@ interface SettingsPanelProps {
     | 'schedule'
     | 'remote'
     | 'logs'
-    | 'general';
+    | 'general'
+    | 'desktop';
 }
 
 type TabId =
@@ -53,7 +57,15 @@ type TabId =
   | 'schedule'
   | 'remote'
   | 'logs'
-  | 'general';
+  | 'general'
+  | 'desktop';
+
+interface SettingsTabMeta {
+  id: TabId;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
 
 const VALID_TABS = new Set<TabId>([
   'api',
@@ -66,6 +78,7 @@ const VALID_TABS = new Set<TabId>([
   'remote',
   'logs',
   'general',
+  'desktop',
 ]);
 
 function SettingsConnectorsFallback({ onRetry }: { onRetry: () => void }) {
@@ -127,7 +140,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
     }
   }, [activeTab]);
 
-  const tabs = [
+  const tabs: SettingsTabMeta[] = [
     {
       id: 'subagents' as TabId,
       label: t('settings.subagents'),
@@ -189,7 +202,51 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       description: t('settings.generalDesc'),
     },
   ];
-  const activeTabMeta = tabs.find((tab) => tab.id === activeTab);
+
+  /**
+   * Recursos ainda em fase de validacao.
+   *
+   * O capability foi validado em campo, mas a feature nao esta pronta para uso
+   * geral: o binario nao e distribuido pelo app, o modo nativo (FFI) nao
+   * existe e a observabilidade se restringe a apps nativos do host. Uma secao
+   * propria impede que esses recursos se confundam com o produto entregue.
+   */
+  const experimentalTabs: SettingsTabMeta[] = [
+    {
+      id: 'desktop',
+      label: t('settings.desktop'),
+      icon: Monitor,
+      description: t('settings.desktopDesc'),
+    },
+  ];
+
+  const activeTabMeta = [...tabs, ...experimentalTabs].find((tab) => tab.id === activeTab);
+
+  const renderTabButton = (tab: SettingsTabMeta) => (
+    <button
+      key={tab.id}
+      onClick={() => setActiveTab(tab.id)}
+      title={compactSidebar ? tab.label : undefined}
+      className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
+        activeTab === tab.id
+          ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
+          : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
+      }`}
+    >
+      <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
+      {!compactSidebar && (
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{tab.label}</p>
+          <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
+            {tab.description}
+          </p>
+        </div>
+      )}
+      {!compactSidebar && activeTab === tab.id && (
+        <ChevronRight className="w-4 h-4 flex-shrink-0" />
+      )}
+    </button>
+  );
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background">
@@ -211,31 +268,23 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
         <div
           className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}
         >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              title={compactSidebar ? tab.label : undefined}
-              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
-                activeTab === tab.id
-                  ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
-                  : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
-              {!compactSidebar && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{tab.label}</p>
-                  <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
-                    {tab.description}
-                  </p>
+          {tabs.map(renderTabButton)}
+
+          {experimentalTabs.length > 0 && (
+            <>
+              {compactSidebar ? (
+                <div className="mx-2 my-2 h-px bg-border-muted" />
+              ) : (
+                <div className="px-3.5 pt-5 pb-2 flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-text-muted whitespace-nowrap">
+                    {t('settings.experimental')}
+                  </span>
+                  <span className="flex-1 h-px bg-border-muted" />
                 </div>
               )}
-              {!compactSidebar && activeTab === tab.id && (
-                <ChevronRight className="w-4 h-4 flex-shrink-0" />
-              )}
-            </button>
-          ))}
+              {experimentalTabs.map(renderTabButton)}
+            </>
+          )}
         </div>
         <div
           className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted flex-shrink-0`}
@@ -290,6 +339,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'sandbox' ? '' : 'hidden'}>
                 {viewedTabs.has('sandbox') && <SettingsSandbox />}
+              </div>
+              <div className={activeTab === 'desktop' ? '' : 'hidden'}>
+                {viewedTabs.has('desktop') && <SettingsDesktop />}
               </div>
               <div className={activeTab === 'connectors' ? '' : 'hidden'}>
                 {viewedTabs.has('connectors') && (

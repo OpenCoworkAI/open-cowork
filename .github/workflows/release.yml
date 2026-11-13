@@ -42,6 +42,16 @@ jobs:
     name: Release macOS
     needs: [lint-and-test]
     runs-on: macos-14
+    # O contexto `secrets` NAO esta disponivel em `jobs.<job_id>.steps.if`
+    # (ver https://docs.github.com/en/actions/learn-github-actions/contexts) —
+    # usar `secrets` no `if:` de um step faz o GitHub rejeitar o workflow
+    # inteiro: o run e criado, nenhum job e agendado e o run fecha como
+    # `failure` sem log. O workaround canonico e expor o segredo como `env`
+    # do job (aqui `secrets` e permitido) e comparar `env` no `if:` do step
+    # (`env` e permitido em `steps.if`). O valor do segredo nunca e
+    # comparado diretamente no `if:`.
+    env:
+      MAC_CSC_LINK_PRESENT: ${{ secrets.MAC_CSC_LINK != '' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -84,10 +94,93 @@ jobs:
       - name: Vite build
         run: npx vite build
 
+      # Build sem assinatura: caminho padrao, nao exige segredos no repositorio.
       - name: Electron Builder (unsigned)
+        if: ${{ env.MAC_CSC_LINK_PRESENT != 'true' }}
         run: npx electron-builder --mac dmg dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # Build assinado + notarizado. Requer os segredos abaixo cadastrados no
+      # repositorio.
+      #   MAC_CSC_LINK         -> certificado .p12 em base64
+      #   MAC_CSC_KEY_PASSWORD -> senha do .p12
+      #   APPLE_ID             -> Apple ID
+      #   APPLE_ID_PASSWORD    -> senha especifica do app (NAO a senha do Apple ID)
+      #   APPLE_TEAM_ID        -> identificador de equipe (10 caracteres)
+      #
+      # Fail-closed em duas camadas:
+      #  1. `--config.mac.forceCodeSigning=true` — se o certificado nao for
+      #     encontrado no keychain, o electron-builder lanca
+      #     InvalidConfigurationError em vez de seguir com ad-hoc/unsigned
+      #     (macPackager.js:254 -> reportError -> macCodeSign.js:75).
+      #  2. `MACOS_REQUIRE_NOTARIZATION=1` — o hook scripts/notarize.js passa
+      #     a LANCAR quando falta APPLE_ID/APPLE_ID_PASSWORD/APPLE_TEAM_ID,
+      #     em vez de dar skip silencioso. Sem isso, um certificado presente
+      #     com credenciais Apple ausentes geraria um .app assinado mas NAO
+      #     notarizado: CI verde, Gatekeeper bloqueando o usuario final e
+      #     nenhum sinal no log.
+      - name: Electron Builder (signed + notarized)
+        if: ${{ env.MAC_CSC_LINK_PRESENT == 'true' }}
+        run: npx electron-builder --mac dmg dir --publish never --config.mac.forceCodeSigning=true
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_REQUIRE_NOTARIZATION: '1'
+
+      # Verificacao da assinatura e da notarizacao do artefato (defesa em
+      # profundidade). O forceCodeSigning acima garante que o electron-builder
+      # lance erro se o signWindows falhar, e o hook garante que a notarizacao
+      # falhe se as credenciais Apple estiverem faltando. Esta etapa fecha o
+      # ciclo conferindo o binario final.
+      #
+      # O alvo da verificacao e o .app (e nao o .dmg): o electron-builder
+      # assina o bundle .app, enquanto o .dmg tem `sign: false` por padrao
+      # (electron-builder: "Signing is not required and will lead to unwanted
+      # errors in combination with notarization requirements").
+      #
+      # `spctl --assess` so vale como verificacao de Gatekeeper para bundles
+      # notarizados; em build local sem Apple ID ele falha — por isso esta
+      # etapa so roda no job assinado+notarizado.
+      - name: Verify signature and notarization
+        if: ${{ env.MAC_CSC_LINK_PRESENT == 'true' }}
+        run: |
+          set -euo pipefail
+          APP_DIR="release/mac-arm64"
+          APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::No .app bundle found in $APP_DIR"
+            exit 1
+          fi
+          APP_PATH="$APP_DIR/$APP_NAME"
+
+          echo "=== codesign --verify (cadeia de assinatura) ==="
+          # --deep valida componentes aninhados (frameworks, helpers); --strict
+          # exige que TODOS os componentes usem a identidade esperada.
+          if ! codesign --verify --deep --strict --verbose=2 "$APP_PATH"; then
+            echo "::error::codesign verification failed for $APP_PATH"
+            exit 1
+          fi
+
+          echo "=== codesign -dv (detalhes da assinatura) ==="
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed 's/^/  /' || true
+
+          echo "=== spctl --assess (Gatekeeper) ==="
+          if ! spctl --assess --type execute --verbose=4 "$APP_PATH"; then
+            echo "::error::spctl assessment failed for $APP_PATH (not notarized or signature rejected)"
+            exit 1
+          fi
+
+          echo "=== stapler validate (ticket de notarizacao) ==="
+          if ! xcrun stapler validate "$APP_PATH"; then
+            echo "::error::No valid notarization ticket stapled to $APP_PATH"
+            exit 1
+          fi
+
+          echo "All macOS signature and notarization checks passed."
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources
@@ -157,18 +250,76 @@ jobs:
             exit 1
           fi
 
+      # Estado de assinatura derivado do MESMO segredo que decide qual step de
+      # build rodou. Vai para o fragmento de notas da release para que o corpo
+      # final declare honestamente o que o usuário está baixando.
+      - name: Determine signing state (macOS)
+        run: |
+          if [ -z "$MAC_CSC_LINK" ]; then
+            echo "MAC_SIGNED=false" >> "$GITHUB_ENV"
+          else
+            echo "MAC_SIGNED=true" >> "$GITHUB_ENV"
+          fi
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+
+      # Gera o SHA256SUMS por plataforma + fragmento de notas (estado de
+      # assinatura + tabela de checksums). O merge e a re-verificacao contra
+      # os artefatos anexados acontecem no job finalize-release.
+      - name: Generate SHA256SUMS and notes fragment (macOS)
+        run: |
+          set -euo pipefail
+          cd release
+          : > ../SHA256SUMS-mac.txt
+          found=0
+          for f in *.dmg *.zip; do
+            if [ -e "$f" ]; then
+              shasum -a 256 "$f" >> ../SHA256SUMS-mac.txt
+              found=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No macOS artifacts (.dmg/.zip) found to checksum"
+            exit 1
+          fi
+          cd ..
+          {
+            echo "### macOS"
+            echo ""
+            if [ "$MAC_SIGNED" = "true" ]; then
+              echo "✅ Assinado (Developer ID) **e notarizado** — verificado no pipeline com \`codesign\`, \`spctl\` e \`stapler\`."
+            else
+              echo "⚠️ **NÃO assinado e NÃO notarizado** — nenhum certificado (\`MAC_CSC_LINK\`) está configurado neste repositório."
+              echo "O Gatekeeper pode bloquear a abertura: clique com o botão direito no app → **Abrir**, ou remova a quarentena com \`xattr -dr com.apple.quarantine /Applications/<App>.app\`."
+            fi
+            echo ""
+            echo "| Artefato | SHA-256 |"
+            echo "| --- | --- |"
+            while IFS= read -r line; do
+              sum="${line%%  *}"
+              name="${line#*  }"
+              echo "| \`$name\` | \`$sum\` |"
+            done < SHA256SUMS-mac.txt
+          } > notes-macos.md
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.dmg
             release/*.zip
+            SHA256SUMS-mac.txt
+            notes-macos.md
           draft: true
 
   build-windows:
     name: Release Windows
     needs: [lint-and-test]
     runs-on: windows-latest
+    # Ver a nota em `build-macos`: `secrets` nao pode ser usado em
+    # `steps.if`; a presenca do certificado e exposta via `env` do job.
+    env:
+      WIN_CSC_LINK_PRESENT: ${{ secrets.WIN_CSC_LINK != '' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -202,8 +353,77 @@ jobs:
       - name: Vite build
         run: npx vite build
 
-      - name: Electron Builder
+      # Build assinado: falha DURO se a assinatura nao for aplicada.
+      # Requer os segredos abaixo cadastrados no repositorio:
+      #   WIN_CSC_LINK         -> certificado .pfx em base64
+      #   WIN_CSC_KEY_PASSWORD -> senha do .pfx
+      #
+      # `--config.win.forceCodeSigning=true` e o que torna este job fail-closed.
+      # Sem ele o electron-builder 26.8.1 faz fail-open: o signWindows()
+      # devolve false, registra um aviso e o build passa mesmo sem
+      # assinatura — oartefato saia sem assinatura e o problema so aparecia
+      # no SmartScreen do usuario final.
+      #
+      # Mecanismo verificado no fonte do electron-builder 26.8.1:
+      #  - platformPackager.js:609 -> forceCodeSigning resolve
+      #    platformSpecificBuildOptions.forceCodeSigning ?? config.forceCodeSigning;
+      #  - winPackager.js -> `if (!didSignSuccessfully && this.forceCodeSigning)
+      #    throw new InvalidConfigurationError(...)`;
+      #  - o valor chega do CLI como a STRING "true" (yargs dot-notation),
+      #    que e truthy — o merge com o bloco `win:` do electron-builder.yml
+      #    e por deepAssign, portanto nao apaga as demais chaves.
+      - name: Electron Builder (signed)
+        if: ${{ env.WIN_CSC_LINK_PRESENT == 'true' }}
+        run: npx electron-builder --win nsis --publish never --config.win.forceCodeSigning=true
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # Build sem assinatura: caminho padrao, nao exige segredos no repositorio.
+      # O artefato fica sem assinatura e o SmartScreen pode bloquear em
+      # maquinas de usuario final — comportamento conhecido e documentado.
+      - name: Electron Builder (unsigned)
+        if: ${{ env.WIN_CSC_LINK_PRESENT != 'true' }}
         run: npx electron-builder --win nsis --publish never
+
+      # Verificacao da assinatura do artefato (defesa em profundidade).
+      # O `--config.win.forceCodeSigning=true` acima ja garante que o
+      # electron-builder lance erro se o signWindows() falhar. Esta etapa
+      # fecha o outro lado: confirma no binario final que a assinatura
+      # realmente existe, em vez de confiar apenas no codigo de saida.
+      #
+      # So roda no job assinado. Um certificado autoassinado (util para
+      # validar o pipeline) resulta em Status != Valid por falta de cadeia
+      # de confianca — isso NAO falha o job, porque a garantia que importa
+      # aqui e "o artefato foi assinado", nao "a CA e confiavel". O status
+      # completo fica no log para inspecao.
+      - name: Verify code signature
+        if: ${{ env.WIN_CSC_LINK_PRESENT == 'true' }}
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem -Path "release" -Filter "*.exe" | Where-Object { $_.Name -notmatch 'Uninstall' }
+          if (-not $exes) {
+            Write-Host "::error::No exe found in release/ to verify signature"
+            exit 1
+          }
+          $failed = $false
+          foreach ($exe in $exes) {
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            Write-Host "Signature of $($exe.Name): Status=$($sig.Status)"
+            if ($sig.SignerCertificate) {
+              Write-Host "  Subject: $($sig.SignerCertificate.Subject)"
+              Write-Host "  Thumbprint: $($sig.SignerCertificate.Thumbprint)"
+            }
+            if ($sig.Status -eq 'NotSigned') {
+              Write-Host "::error::$($exe.Name) is NOT signed"
+              $failed = $true
+            }
+          }
+          if ($failed) {
+            Write-Host "::error::At least one artifact is unsigned"
+            exit 1
+          }
+          Write-Host "All Windows artifacts carry a code signature."
 
       # Verify critical resources are present in the packaged app
       - name: Smoke test - verify packaged resources
@@ -266,9 +486,135 @@ jobs:
             exit 1
           }
 
+      # Estado de assinatura derivado do MESMO segredo que decide qual step de
+      # build rodou (mesma semantica do bloco macOS).
+      - name: Determine signing state (Windows)
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          $signed = if (-not [string]::IsNullOrEmpty($env:WIN_CSC_LINK)) { 'true' } else { 'false' }
+          "WIN_SIGNED=$signed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # SHA256SUMS + fragmento de notas, escritos com LF explicito (o job
+      # finalize roda em Linux; CRLF aqui quebraria o parsing e a comparacao
+      # de hashes).
+      - name: Generate SHA256SUMS and notes fragment (Windows)
+        shell: pwsh
+        env:
+          WIN_SIGNED: ${{ env.WIN_SIGNED }}
+        run: |
+          $artifacts = @(Get-ChildItem -Path "release" -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ieq '.exe' })
+          if ($artifacts.Count -eq 0) {
+            Write-Host "::error::No Windows artifacts (.exe) found to checksum"
+            exit 1
+          }
+          $lines = foreach ($f in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $f.FullName).Hash.ToLowerInvariant()
+            "$hash  $($f.Name)"
+          }
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText("$PWD/SHA256SUMS-win.txt", (($lines -join "`n") + "`n"), $utf8NoBom)
+
+          $table = foreach ($l in $lines) {
+            $sum = $l.Substring(0, 64)
+            $name = $l.Substring(66)
+            "| ``$name`` | ``$sum`` |"
+          }
+          $signedLine = if ($env:WIN_SIGNED -eq 'true') {
+            "✅ Assinado com certificado de code signing — verificado no pipeline via \`Get-AuthenticodeSignature\`. O SmartScreen pode ainda pedir confirmação nas primeiras instalações até o reputacional do binário se consolidar."
+          } else {
+            "⚠️ **NÃO assinado** — nenhum certificado (\`WIN_CSC_LINK\`) está configurado neste repositório. O SmartScreen pode bloquear a execução: clique em **Mais informações → Executar assim mesmo**."
+          }
+          $frag = @(
+            "### Windows",
+            "",
+            $signedLine,
+            "",
+            "| Artefato | SHA-256 |",
+            "| --- | --- |"
+          ) + $table
+          [System.IO.File]::WriteAllText("$PWD/notes-windows.md", (($frag -join "`n") + "`n"), $utf8NoBom)
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.exe
+            SHA256SUMS-win.txt
+            notes-windows.md
           draft: true
+
+  # Consolida os checksums das duas plataformas em um unico SHA256SUMS.txt,
+  # RE-VERIFICA cada hash contra os artefatos realmente anexados ao release
+  # (fecha o ciclo entre as maquinas de build e a lista publicada) e escreve
+  # o corpo da release com o estado de assinatura por plataforma.
+  # O release continua DRAFT — a publicacao continua sendo um ato manual.
+  finalize-release:
+    name: Finalize release (checksums + notes)
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Verify artifacts and assemble release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p fragments assets
+          gh release download "$TAG" --dir fragments --clobber \
+            --pattern 'SHA256SUMS-mac.txt' \
+            --pattern 'SHA256SUMS-win.txt' \
+            --pattern 'notes-macos.md' \
+            --pattern 'notes-windows.md'
+
+          # Normaliza CR caso algum fragmento escape com CRLF.
+          sed -i 's/\r$//' fragments/SHA256SUMS-mac.txt fragments/SHA256SUMS-win.txt
+          cat fragments/SHA256SUMS-mac.txt fragments/SHA256SUMS-win.txt > SHA256SUMS.txt
+
+          fail=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            line="${line%$'\r'}"
+            sum="${line%%  *}"
+            name="${line#*  }"
+            gh release download "$TAG" --dir assets --clobber --pattern "$name"
+            actual=$(sha256sum "assets/$name" | cut -d' ' -f1)
+            if [ "$actual" != "$sum" ]; then
+              echo "::error::Checksum mismatch for $name (expected $sum, got $actual)"
+              fail=1
+            fi
+          done < SHA256SUMS.txt
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::At least one release artifact failed checksum verification"
+            exit 1
+          fi
+          echo "All release artifacts verified against SHA256SUMS."
+
+          {
+            echo "# Open Cowork ${TAG}"
+            echo ""
+            echo "Release gerada automaticamente. Leia o estado de assinatura de cada plataforma antes de instalar."
+            echo ""
+            echo "> ⚠️ **Se uma plataforma aparecer como NÃO assinada abaixo, o binário correspondente não passou por code signing (nem notarização, no caso do macOS).** Nesse caso, valide o arquivo baixado contra o \`SHA256SUMS.txt\` anexado e a tabela abaixo antes de executar."
+            echo ""
+            cat fragments/notes-macos.md
+            echo ""
+            cat fragments/notes-windows.md
+            echo ""
+            echo "## Verificação de integridade"
+            echo ""
+            echo "Baixe o \`SHA256SUMS.txt\` desta release e, na pasta dos downloads:"
+            echo ""
+            echo '```'
+            echo "sha256sum -c SHA256SUMS.txt"
+            echo '```'
+            echo ""
+            echo "No macOS: \`shasum -a 256 -c SHA256SUMS.txt\`. No Windows (PowerShell): \`Get-FileHash <arquivo> -Algorithm SHA256\` e compare com a tabela."
+          } > release-notes.md
+
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --notes-file release-notes.md
+          echo "Release metadata updated (draft preserved)."

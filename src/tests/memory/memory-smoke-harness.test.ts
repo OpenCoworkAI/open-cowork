@@ -342,7 +342,9 @@ describe('memory smoke harness', () => {
     expect(sameWorkspacePrompt).toContain('gateway token rotation');
     expect(sameWorkspacePrompt).toContain('<experience_memory');
     expect(otherWorkspacePrompt).toContain('workspace A');
-    expect(otherWorkspacePrompt).toContain('source=/repo/workspace-a');
+    // The prompt payload carries the canonicalized workspace key, which is
+    // the platform-native absolute path (C:\repo\workspace-a on Windows).
+    expect(otherWorkspacePrompt).toContain(`source=${path.resolve(workspaceA)}`);
     expect(otherWorkspacePrompt).toContain('<core_memory>');
   });
 

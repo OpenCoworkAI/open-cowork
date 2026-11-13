@@ -82,6 +82,30 @@ import { MemoryService } from '../../main/memory/memory-service';
 import { configStore } from '../../main/config/config-store';
 import { CORE_MEMORY_ERRORS } from '../../shared/core-memory';
 
+/**
+ * Creating a symlink on Windows requires Developer Mode or an elevated
+ * process; without it `symlinkSync` fails with EPERM. Probe once so the
+ * symlink-escape assertions can be skipped instead of failing the suite.
+ * Mirrors the pattern already used in src/tests/skills/dangling-symlink.test.ts.
+ */
+function supportsFileSymlinks(): boolean {
+  const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-memory-symlink-probe-'));
+  const targetPath = path.join(probeDir, 'target');
+  const linkPath = path.join(probeDir, 'link');
+
+  try {
+    fs.writeFileSync(targetPath, 'probe', 'utf8');
+    fs.symlinkSync(targetPath, linkPath, 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+const itIfSymlinkSupported = supportsFileSymlinks() ? it : it.skip;
+
 class MockMemoryLLMClient implements MemoryLLMClientLike {
   async complete(request: MemoryCompletionRequest): Promise<{ text: string }> {
     if (request.systemPrompt.includes('Memory Profiler')) {
@@ -457,7 +481,9 @@ describe('MemoryService', () => {
     const inspected = service.inspectSession('session-a', '/repo/a');
     expect(inspected?.session.sessionId).toBe('session-a');
     expect(inspected?.chunks).toHaveLength(1);
-    expect(inspected?.sourceWorkspace).toBe('/repo/a');
+    // normalizeWorkspaceKey canonicalizes with path.resolve, so the stored
+    // value is the platform-native absolute path (C:\repo\a on Windows).
+    expect(inspected?.sourceWorkspace).toBe(path.resolve('/repo/a'));
   });
 
   it('escapes memory text before injecting it into the prompt delimiter block', async () => {
@@ -518,7 +544,9 @@ describe('MemoryService', () => {
       scope: 'all',
       limit: 10,
     });
-    expect(allResults.some((item) => item.sourceWorkspace === '/repo/b')).toBe(true);
+    expect(allResults.some((item) => item.sourceWorkspace === path.resolve('/repo/b'))).toBe(
+      true
+    );
 
     const workspaceResults = service.search({
       query: 'gateway token rotation',
@@ -527,7 +555,9 @@ describe('MemoryService', () => {
       limit: 10,
     });
     expect(
-      workspaceResults.every((item) => item.kind === 'core' || item.sourceWorkspace === '/repo/a')
+      workspaceResults.every(
+        (item) => item.kind === 'core' || item.sourceWorkspace === path.resolve('/repo/a')
+      )
     ).toBe(true);
   });
 
@@ -894,28 +924,31 @@ describe('MemoryService', () => {
     stillForgotten();
   });
 
-  it('rejects reading files that escape the memory allowlist through symlinks', async () => {
-    await service.enqueueIngestion({
-      session: makeSession('session-a', 'Gateway fixes', '/repo/a'),
-      prompt: '修复 gateway token rotation',
-      messages: makeMessages('session-a', [
-        { role: 'user', text: '请用中文回答。', timestamp: 1 },
-        { role: 'assistant', text: '好的。', timestamp: 2 },
-      ]),
-    });
+  itIfSymlinkSupported(
+    'rejects reading files that escape the memory allowlist through symlinks',
+    async () => {
+      await service.enqueueIngestion({
+        session: makeSession('session-a', 'Gateway fixes', '/repo/a'),
+        prompt: '修复 gateway token rotation',
+        messages: makeMessages('session-a', [
+          { role: 'user', text: '请用中文回答。', timestamp: 1 },
+          { role: 'assistant', text: '好的。', timestamp: 2 },
+        ]),
+      });
 
-    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-outside-'));
-    const outsideFile = path.join(outsideDir, 'secret.json');
-    fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-outside-'));
+      const outsideFile = path.join(outsideDir, 'secret.json');
+      fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
 
-    const symlinkPath = path.join(service.getOverview().storageRoot, 'escape-link.json');
-    fs.symlinkSync(outsideFile, symlinkPath);
+      const symlinkPath = path.join(service.getOverview().storageRoot, 'escape-link.json');
+      fs.symlinkSync(outsideFile, symlinkPath);
 
-    expect(() => service.readFile(symlinkPath)).toThrow('outside allowed memory files');
+      expect(() => service.readFile(symlinkPath)).toThrow('outside allowed memory files');
 
-    fs.rmSync(outsideDir, { recursive: true, force: true });
-    fs.rmSync(symlinkPath, { force: true });
-  });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+      fs.rmSync(symlinkPath, { force: true });
+    }
+  );
 
   it('rejects arbitrary local files even if storageRoot is configured too broadly', () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-cowork-memory-broad-root-'));
@@ -1067,91 +1100,97 @@ describe('MemoryService', () => {
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 
-  it('rejects readFile when evalArtifactsRoot is a symlink escaping storageRoot', () => {
-    const outsideDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'open-cowork-memory-artifacts-link-target-')
-    );
-    const outsideFile = path.join(outsideDir, 'secret.json');
-    fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
+  itIfSymlinkSupported(
+    'rejects readFile when evalArtifactsRoot is a symlink escaping storageRoot',
+    () => {
+      const outsideDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'open-cowork-memory-artifacts-link-target-')
+      );
+      const outsideFile = path.join(outsideDir, 'secret.json');
+      fs.writeFileSync(outsideFile, '{"secret":true}', 'utf8');
 
-    const safeStorageRoot = path.join(storageRoot, 'memory-root');
-    fs.mkdirSync(safeStorageRoot, { recursive: true });
-    const symlinkArtifactsRoot = path.join(safeStorageRoot, 'linked-artifacts');
-    fs.symlinkSync(outsideDir, symlinkArtifactsRoot, 'dir');
+      const safeStorageRoot = path.join(storageRoot, 'memory-root');
+      fs.mkdirSync(safeStorageRoot, { recursive: true });
+      const symlinkArtifactsRoot = path.join(safeStorageRoot, 'linked-artifacts');
+      fs.symlinkSync(outsideDir, symlinkArtifactsRoot, 'dir');
 
-    configStore.update({
-      memoryRuntime: {
-        llm: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: '',
-          timeoutMs: 180000,
+      configStore.update({
+        memoryRuntime: {
+          llm: {
+            inheritFromActive: true,
+            apiKey: '',
+            baseUrl: '',
+            model: '',
+            timeoutMs: 180000,
+          },
+          embedding: {
+            inheritFromActive: true,
+            apiKey: '',
+            baseUrl: '',
+            model: 'text-embedding-3-small',
+            timeoutMs: 180000,
+          },
+          useEmbedding: false,
+          maxNavSteps: 2,
+          ingestionConcurrency: 2,
+          storageRoot: safeStorageRoot,
+          evalArtifactsRoot: symlinkArtifactsRoot,
         },
-        embedding: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: 'text-embedding-3-small',
-          timeoutMs: 180000,
+      });
+
+      service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
+      expect(() => service.readFile(outsideFile)).toThrow(
+        'evalArtifactsRoot must stay inside storageRoot'
+      );
+
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  );
+
+  itIfSymlinkSupported(
+    'rejects non-existent evalArtifactsRoot paths under escaping symlinks before creating directories',
+    () => {
+      const outsideDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'open-cowork-memory-artifacts-link-parent-')
+      );
+      const outsideArtifactsDir = path.join(outsideDir, 'new-artifacts');
+
+      const safeStorageRoot = path.join(storageRoot, 'memory-root');
+      fs.mkdirSync(safeStorageRoot, { recursive: true });
+      const symlinkParent = path.join(safeStorageRoot, 'linked-parent');
+      fs.symlinkSync(outsideDir, symlinkParent, 'dir');
+
+      configStore.update({
+        memoryRuntime: {
+          llm: {
+            inheritFromActive: true,
+            apiKey: '',
+            baseUrl: '',
+            model: '',
+            timeoutMs: 180000,
+          },
+          embedding: {
+            inheritFromActive: true,
+            apiKey: '',
+            baseUrl: '',
+            model: 'text-embedding-3-small',
+            timeoutMs: 180000,
+          },
+          useEmbedding: false,
+          maxNavSteps: 2,
+          ingestionConcurrency: 2,
+          storageRoot: safeStorageRoot,
+          evalArtifactsRoot: path.join(symlinkParent, 'new-artifacts'),
         },
-        useEmbedding: false,
-        maxNavSteps: 2,
-        ingestionConcurrency: 2,
-        storageRoot: safeStorageRoot,
-        evalArtifactsRoot: symlinkArtifactsRoot,
-      },
-    });
+      });
 
-    service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
-    expect(() => service.readFile(outsideFile)).toThrow(
-      'evalArtifactsRoot must stay inside storageRoot'
-    );
+      service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
+      expect(() => service.getOverview('/repo/a')).toThrow(
+        'evalArtifactsRoot must stay inside storageRoot'
+      );
+      expect(fs.existsSync(outsideArtifactsDir)).toBe(false);
 
-    fs.rmSync(outsideDir, { recursive: true, force: true });
-  });
-
-  it('rejects non-existent evalArtifactsRoot paths under escaping symlinks before creating directories', () => {
-    const outsideDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'open-cowork-memory-artifacts-link-parent-')
-    );
-    const outsideArtifactsDir = path.join(outsideDir, 'new-artifacts');
-
-    const safeStorageRoot = path.join(storageRoot, 'memory-root');
-    fs.mkdirSync(safeStorageRoot, { recursive: true });
-    const symlinkParent = path.join(safeStorageRoot, 'linked-parent');
-    fs.symlinkSync(outsideDir, symlinkParent, 'dir');
-
-    configStore.update({
-      memoryRuntime: {
-        llm: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: '',
-          timeoutMs: 180000,
-        },
-        embedding: {
-          inheritFromActive: true,
-          apiKey: '',
-          baseUrl: '',
-          model: 'text-embedding-3-small',
-          timeoutMs: 180000,
-        },
-        useEmbedding: false,
-        maxNavSteps: 2,
-        ingestionConcurrency: 2,
-        storageRoot: safeStorageRoot,
-        evalArtifactsRoot: path.join(symlinkParent, 'new-artifacts'),
-      },
-    });
-
-    service = new MemoryService(db, { llmClient: new MockMemoryLLMClient() });
-    expect(() => service.getOverview('/repo/a')).toThrow(
-      'evalArtifactsRoot must stay inside storageRoot'
-    );
-    expect(fs.existsSync(outsideArtifactsDir)).toBe(false);
-
-    fs.rmSync(outsideDir, { recursive: true, force: true });
-  });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  );
 });

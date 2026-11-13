@@ -63,7 +63,23 @@ export class ToolExecutor {
     const normalizedTarget = path.normalize(targetPath);
     const isWindows = process.platform === 'win32';
 
-    // Symlink resolve if exists; fall back to normalizedTarget on error
+    const isInsideMounts = (candidate: string): boolean =>
+      mounts.some((m) => {
+        const mountRoot = path.normalize(m.real);
+        return isPathWithinRoot(candidate, mountRoot, isWindows);
+      });
+
+    // Reject out-of-mount paths using pure path arithmetic BEFORE touching the
+    // filesystem. Resolving symlinks first would make the OS probe the path,
+    // and a UNC target (\\host\share) makes Windows perform an SMB round-trip
+    // against an arbitrary host — blocking the main process and coercing an
+    // NTLM authentication against that host. Containment needs no I/O.
+    if (!isInsideMounts(normalizedTarget)) {
+      throw new Error('Path is outside the mounted workspace');
+    }
+
+    // Symlink resolve if exists; fall back to normalizedTarget on error.
+    // Only reached for paths already proven to live inside a mount.
     let realPath: string;
     try {
       realPath = fs.existsSync(normalizedTarget)
@@ -73,12 +89,9 @@ export class ToolExecutor {
       realPath = normalizedTarget;
     }
 
-    const allowed = mounts.some((m) => {
-      const mountRoot = path.normalize(m.real);
-      return isPathWithinRoot(realPath, mountRoot, isWindows);
-    });
-
-    if (!allowed) {
+    // Re-check after symlink resolution: a link inside the mount may point
+    // outside it.
+    if (!isInsideMounts(realPath)) {
       throw new Error('Path is outside the mounted workspace');
     }
 

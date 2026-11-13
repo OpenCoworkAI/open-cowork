@@ -28,7 +28,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { decidePermission, rememberAlwaysAllow } from '../config/permission-rules-store';
 import { PathResolver } from '../sandbox/path-resolver';
 import { MCPManager } from '../mcp/mcp-manager';
-import { mcpConfigStore } from '../mcp/mcp-config-store';
+import {
+  AgentDesktopManager,
+  collectRequestedPhysicalOperations,
+  isObservationOperation,
+  requestedOperation,
+} from '../desktop';
 import {
   log,
   logWarn,
@@ -537,6 +542,18 @@ interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   skillsSignature?: string;
+  /**
+   * Assinatura da camada de acesso ao desktop (modo + chave mestre de input
+   * físico).
+   *
+   * As tools `desktop_*` são registradas na **criação** da sessão, então uma
+   * mudança de modo só passa a valer se a sessão for recriada. O caminho das
+   * skills não cobre isso: o path materializado só existe no modo `mcp+skill`,
+   * logo `off`→`mcp` e `mcp`→`off` deixariam as tools stale (expostas depois
+   * de desligar, ausentes depois de ligar). A assinatura é separada justamente
+   * para capturar **qualquer** mudança de modo.
+   */
+  desktopSignature?: string;
   ollamaNumCtx?: { value: number };
 }
 
@@ -567,13 +584,25 @@ export class CoworkAgentRunner {
   private _pluginRuntimeService?: PluginRuntimeService;
   private _skillsAdapter?: SkillsAdapter;
   private extensionManager?: AgentRuntimeExtensionManager;
+  /**
+   * Computer use semântico (agent-desktop). Criado sob demanda — só existe
+   * quando `desktopAccessMode` está ligado. Mantém **um cliente MCP por
+   * sessão de agente**, porque o upstream fixa a identidade no start do
+   * servidor.
+   */
+  private agentDesktopManager?: AgentDesktopManager;
+  /**
+   * Operações de input físico já autorizadas permanentemente **na sessão**.
+   * A granularidade é por operação (`mouse_click`), não por tool — autorizar
+   * `desktop_act` não autoriza `desktop_clipboard`.
+   */
+  private physicalAlwaysAllow: Map<string, Set<string>> = new Map();
   private activeControllers: Map<string, AbortController> = new Map();
   private piSessions: Map<string, CachedPiSession> = new Map();
   private toolDisplayNameCache: Map<string, string> = new Map();
   private static readonly MAX_CACHED_SESSIONS = 50;
 
   // Per-instance caches — invalidated when the underlying config changes.
-  private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
   private _skillsSetupDone = false;
 
   /**
@@ -602,13 +631,6 @@ export class CoworkAgentRunner {
   /** Call after the user installs / removes a skill so the next query re-links everything. */
   invalidateSkillsSetup(): void {
     this._skillsSetupDone = false;
-  }
-
-  /** Call after the user changes MCP server config so the next query rebuilds mcpServers. */
-  invalidateMcpServersCache(): void {
-    this._mcpServersCache = null;
-    // Sessions stay alive — MCP tools are rebuilt each query via buildMcpCustomTools()
-    log('[CoworkAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
   }
 
   // TODO: Credentials should be served via a secure MCP tool or IPC channel,
@@ -688,6 +710,14 @@ ${hints.join('\n')}
       }
     }
 
+    // Camada de skill do agent-desktop (modo `mcp+skill`).
+    // Precisa entrar **antes** da criação da sessão pi: `skillsSignature` é
+    // derivado desta lista e recria a sessão quando o conjunto de skills muda.
+    const desktopSkillPath = await this.resolveDesktopSkillPath();
+    if (desktopSkillPath) {
+      mergedPaths.add(desktopSkillPath);
+    }
+
     if (sessionId && appliedPlugins.length > 0) {
       this.sendToRenderer({
         type: 'plugins.runtimeApplied',
@@ -696,6 +726,28 @@ ${hints.join('\n')}
     }
 
     return Array.from(mergedPaths);
+  }
+
+  /**
+   * Caminho da skill do agent-desktop, quando o modo é `mcp+skill`.
+   *
+   * A materialização extrai do **binário** (não do servidor MCP), então a
+   * skill existe mesmo se o MCP falhar. Falha é declarada no log e a sessão
+   * segue sem a skill — as tools `desktop_*` continuam disponíveis.
+   */
+  private async resolveDesktopSkillPath(): Promise<string | undefined> {
+    const mode = configStore.get('desktopAccessMode') ?? 'off';
+    if (mode !== 'mcp+skill') return undefined;
+
+    try {
+      const materialization = await this.getAgentDesktopManager().ensureSkillsMaterialized();
+      if (!materialization) return undefined;
+      if (!fs.existsSync(materialization.directory)) return undefined;
+      return materialization.directory;
+    } catch (error) {
+      logError('[CoworkAgentRunner] Failed to materialize the agent-desktop skill', error);
+      return undefined;
+    }
   }
 
   /**
@@ -918,6 +970,97 @@ ${hints.join('\n')}
    * the backend, but the renderer's loading spinner may not clear. This is
    * a renderer-side issue tracked as a follow-up.
    */
+  /**
+   * Constrói as tools agregadas de computer use semântico (`desktop_*`) da sessão.
+   *
+   * Camada **opt-in**: com `desktopAccessMode: 'off'` nada é exposto e o GUI
+   * Operate visual continua sendo o único caminho.
+   *
+   * Pontos-chave:
+   *  - **um cliente MCP por sessão** — o upstream fixa `--session` /
+   *    `--agent-id` no start do servidor, então um servidor compartilhado não
+   *    representa dois subagentes ao mesmo tempo;
+   *  - **não passa pelo `MCPManager` global**, que reexecuta chamadas após
+   *    timeout independentemente da ação (achado C4 — duplicação de ação);
+   *  - a falha é **declarada, nunca silenciosa**: sem binário ou sem permissão
+   *    de acessibilidade, registrámos e degradamos para a camada visual em vez
+   *    de fingir que a capacidade existe.
+   */
+  /**
+   * Gerenciador do agent-desktop (lazy, compartilhado entre a camada de skill
+   * e a camada de tools agregadas).
+   */
+  private getAgentDesktopManager(): AgentDesktopManager {
+    if (!this.agentDesktopManager) {
+      this.agentDesktopManager = new AgentDesktopManager({
+        pathContext: {
+          resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+          userDataPath: app.getPath('userData'),
+        },
+      });
+    }
+    return this.agentDesktopManager;
+  }
+
+  private async buildAgentDesktopCustomTools(
+    sessionId: string,
+    agentId?: string
+  ): Promise<ToolDefinition[]> {
+    const mode = configStore.get('desktopAccessMode') ?? 'off';
+    if (mode === 'off' || mode === 'native') {
+      // `native` é **reservado** para a camada FFI (Fase 5) e não está
+      // implementado — o registro canônico da reserva vive em
+      // `src/main/desktop/desktop-access-modes.ts`. Enquanto a FFI não existe,
+      // `native` é fail-closed: nenhuma tool semântica é exposta e o processo
+      // filho MCP é encerrado.
+      //
+      // Desligar o modo precisa **parar o processo filho**: sem isso o servidor
+      // MCP do agent-desktop continuaria vivo (com o agente mantendo acesso ao
+      // desktop) mesmo com o modo desligado.
+      void this.getAgentDesktopManager()
+        .closeSession(sessionId)
+        .catch((error) =>
+          logError('[CoworkAgentRunner] Failed to close agent-desktop session:', error)
+        );
+      return [];
+    }
+
+    try {
+      const { tools } = await this.getAgentDesktopManager().buildToolsForSession(
+        sessionId,
+        agentId
+      );
+
+      log(
+        `[CoworkAgentRunner] Registered ${tools.length} semantic desktop tools:`,
+        tools.map((tool) => tool.name).join(', ')
+      );
+      return tools;
+    } catch (error) {
+      logError(
+        '[CoworkAgentRunner] Failed to start agent-desktop — degrading to visual GUI Operate:',
+        error
+      );
+      return [];
+    }
+  }
+
+  /** Todas as operações físicas pedidas já estão autorizadas nesta sessão? */
+  private isPhysicalOperationAllowed(sessionId: string, operations: string[]): boolean {
+    const allowed = this.physicalAlwaysAllow.get(sessionId);
+    if (!allowed) return false;
+    return operations.every((operation) => allowed.has(operation));
+  }
+
+  /** Registra autorização permanente para as operações físicas informadas. */
+  private rememberPhysicalOperationAllowed(sessionId: string, operations: string[]): void {
+    const allowed = this.physicalAlwaysAllow.get(sessionId) ?? new Set<string>();
+    for (const operation of operations) {
+      allowed.add(operation);
+    }
+    this.physicalAlwaysAllow.set(sessionId, allowed);
+  }
+
   private installPermissionHook(piSession: PiAgentSession, sessionId: string): void {
     if (!this.requestPermission) {
       log('[CoworkAgentRunner] No requestPermission callback — skipping permission hook');
@@ -961,6 +1104,46 @@ ${hints.join('\n')}
         // `toolName` so allow-once decisions stay stable across calls.
         const displayName = getDisplayName(toolName);
 
+        // --- Computer use semântico: leitura livre, input físico explícito ---
+        // `desktop_*` roda headless por padrão. Operações que movem o cursor
+        // (mouse_*, hover, drag, triple_click, cursor_overlay_enable) só passam
+        // depois de o usuário autorizar **esta operação** — uma regra genérica
+        // de "sempre permitir desktop_act" não basta.
+        const isDesktopTool = toolName.startsWith('desktop_');
+        const desktopOperation = isDesktopTool ? requestedOperation(input) : '';
+        const isDesktopObservation =
+          isDesktopTool && desktopOperation !== '' && isObservationOperation(desktopOperation);
+        const physicalOperations = isDesktopTool
+          ? collectRequestedPhysicalOperations(input)
+          : [];
+        const requiresPhysicalAuthorization =
+          physicalOperations.length > 0 &&
+          !this.isPhysicalOperationAllowed(sessionId, physicalOperations);
+
+        // Chave mestre global de input físico.
+        //
+        // Quando desligada, input físico é **proibido** — não é "pergunte de
+        // novo". É uma política do app, absoluta e persistente; por isso não
+        // passa pelo diálogo de autorização nem pelo `allow_always` (que é uma
+        // concessão por operação dentro de uma sessão). A checagem vem antes
+        // do diálogo: desligar a chave tem que valer imediatamente.
+        const physicalInputEnabled =
+          configStore.get('desktopPhysicalInputEnabled') ?? false;
+        if (physicalOperations.length > 0 && !physicalInputEnabled) {
+          log(
+            `[CoworkAgentRunner] Physical desktop input '${physicalOperations.join(', ')}' blocked — ` +
+              'global physical input setting is disabled'
+          );
+          return {
+            block: true,
+            reason:
+              `Physical input is disabled by the global desktop setting ` +
+              `(operations: ${physicalOperations.join(', ')}). ` +
+              'Use the semantic alternatives instead (click, type, set_value) — ' +
+              'they do not move the cursor or steal focus.',
+          };
+        }
+
         if (decision === 'deny') {
           log(`[CoworkAgentRunner] Tool '${toolName}' denied by rule`);
           return {
@@ -969,7 +1152,15 @@ ${hints.join('\n')}
           };
         }
 
-        if (decision === 'ask') {
+        // Leitura semântica é segura por construção: não abre diálogo.
+        // Sem isto, `decidePermission` cairia em 'ask' para toda tool nova
+        // (ALLOW_WITHOUT_RULE só contém 'todowrite') e cada snapshot viraria
+        // uma confirmação — inviável para computer use.
+        if (decision === 'ask' && isDesktopObservation && !requiresPhysicalAuthorization) {
+          log(
+            `[CoworkAgentRunner] Desktop observation '${desktopOperation}' — allowed without prompt`
+          );
+        } else if (decision === 'ask' || requiresPhysicalAuthorization) {
           const toolUseId = `${ctx.toolCall?.id ?? 'unknown'}-perm-${uuidv4().slice(0, 8)}`;
           let result: 'allow' | 'deny' | 'allow_always';
           try {
@@ -995,6 +1186,10 @@ ${hints.join('\n')}
 
           if (result === 'allow_always') {
             rememberAlwaysAllow(sessionId, toolName);
+            // Autorização permanente **por operação física**, não só por tool.
+            if (physicalOperations.length > 0) {
+              this.rememberPhysicalOperationAllowed(sessionId, physicalOperations);
+            }
           }
         }
 
@@ -1695,7 +1890,7 @@ ${hints.join('\n')}
       logTiming('after pi-ai model resolution', runStartTime);
 
       // the agent SDK handles path sandboxing via its own tools
-      const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      // (pi-ai models generally support images; the model handles unsupported cases)
       const effectiveCwd =
         useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
 
@@ -1805,6 +2000,18 @@ ${hints.join('\n')}
       const skillsSignature = JSON.stringify(skillPaths);
       log('[CoworkAgentRunner] Skill paths for pi ResourceLoader:', skillPaths);
 
+      // Assinatura da camada de desktop. Fica **fora** de `skillsSignature` de
+      // propósito: as tools `desktop_*` são registradas na criação da sessão, e
+      // o conjunto de paths de skills não muda quando o modo vai de `off` para
+      // `mcp` (o path materializado só existe em `mcp+skill`). Sem esta
+      // assinatura, desligar o modo deixaria as tools expostas na sessão já
+      // aberta — violando "desligar o modo remove todas as `desktop_*` sem
+      // reinício".
+      const desktopSignature = JSON.stringify({
+        mode: configStore.get('desktopAccessMode') ?? 'off',
+        physicalInput: configStore.get('desktopPhysicalInputEnabled') ?? false,
+      });
+
       // Build contextual prompt — if reusing an existing SDK session, the SDK
       // already has conversation history so we only pass the new prompt.
       // For cold starts (new SDK session with existing DB history), we inject
@@ -1827,6 +2034,22 @@ ${hints.join('\n')}
         } catch (disposeError) {
           logWarn(
             '[CoworkAgentRunner] dispose error while recreating pi session for skills:',
+            disposeError
+          );
+        }
+        this.piSessions.delete(session.id);
+        cachedSession = undefined;
+      }
+      if (cachedSession && cachedSession.desktopSignature !== desktopSignature) {
+        logCtx(
+          '[CoworkAgentRunner] Desktop access changed, recreating cached pi session:',
+          session.id
+        );
+        try {
+          cachedSession.session.dispose();
+        } catch (disposeError) {
+          logWarn(
+            '[CoworkAgentRunner] dispose error while recreating pi session for desktop access:',
             disposeError
           );
         }
@@ -1922,153 +2145,28 @@ ${hints.join('\n')}
         contextualPrompt = `${extensionResult.promptPrefix.trim()}\n\n${contextualPrompt}`;
       }
 
-      logTiming('before building MCP servers config', runStartTime);
+      logTiming('before reading MCP server status', runStartTime);
 
-      // Build MCP servers configuration for SDK
-      // IMPORTANT: SDK uses tool names in format: mcp__<ServerKey>__<toolName>
-      const mcpServers: Record<string, unknown> = {};
+      // MCP tools are bridged into the SDK as customTools via
+      // buildMcpCustomTools(this.mcpManager) below — the SDK never receives an
+      // `mcpServers` config map. This block used to build (and cache) such a
+      // map only to log it: it duplicated mcp-manager state, could drift from
+      // the servers actually connected, and did per-query config/preset work
+      // for no functional gain. Diagnostics now come from the authoritative
+      // source (mcpManager.getServerStatus()).
       if (this.mcpManager) {
         const serverStatuses = this.mcpManager.getServerStatus();
-        const connectedServers = serverStatuses.filter((s) => s.connected);
         log('[CoworkAgentRunner] MCP server statuses:', safeStringify(serverStatuses));
-        log('[CoworkAgentRunner] Connected MCP servers:', connectedServers.length);
-
-        let allConfigs: ReturnType<typeof mcpConfigStore.getEnabledServers> = [];
-        try {
-          allConfigs = mcpConfigStore.getEnabledServers();
-          log(
-            '[CoworkAgentRunner] Enabled MCP configs:',
-            allConfigs.map((c) => c.name)
-          );
-        } catch (error) {
-          logWarn(
-            '[CoworkAgentRunner] Failed to read enabled MCP configs; MCP tools will be unavailable this query',
-            error
-          );
-          allConfigs = [];
-        }
-
-        // Cache key: serialized config list + imageCapable flag.  The bundled node
-        // paths are stable for the lifetime of the process so they don't need to be
-        // part of the fingerprint.
-        const mcpFingerprint = JSON.stringify(allConfigs) + String(imageCapable);
-        if (this._mcpServersCache?.fingerprint === mcpFingerprint) {
-          Object.assign(mcpServers, this._mcpServersCache.servers);
-          log('[CoworkAgentRunner] MCP servers config reused from cache');
-        } else {
-          // Use the module-level memoized helper — no more per-query fs.existsSync calls.
-          const bundledNodePaths = getBundledNodePaths();
-          const bundledNpx = bundledNodePaths?.npx ?? null;
-
-          for (const config of allConfigs) {
-            try {
-              // Use a simpler key without spaces to avoid issues
-              const serverKey = config.name;
-
-              if (config.type === 'stdio') {
-                // 当命令是 npx 或 node 时优先使用内置路径
-                const command =
-                  config.command === 'npx' && bundledNpx
-                    ? bundledNpx
-                    : config.command === 'node' && bundledNodePaths
-                      ? bundledNodePaths.node
-                      : config.command;
-
-                // 使用内置 npx/node 时，将内置 node bin 注入 PATH
-                const serverEnv = { ...config.env };
-                if (bundledNodePaths && (config.command === 'npx' || config.command === 'node')) {
-                  const nodeBinDir = path.dirname(bundledNodePaths.node);
-                  const currentPath = process.env.PATH || '';
-                  // Prepend bundled node bin to PATH so npx can find node
-                  serverEnv.PATH = `${nodeBinDir}${path.delimiter}${currentPath}`;
-                  log(`[CoworkAgentRunner]   Added bundled node bin to PATH: ${nodeBinDir}`);
-                }
-
-                if (!imageCapable) {
-                  serverEnv.OPEN_COWORK_DISABLE_IMAGE_TOOL_OUTPUT = '1';
-                }
-
-                // Resolve path placeholders for presets
-                let resolvedArgs = config.args || [];
-
-                // Check if any args contain placeholders that need resolving
-                const hasPlaceholders = resolvedArgs.some(
-                  (arg) =>
-                    arg.includes('{SOFTWARE_DEV_SERVER_PATH}') ||
-                    arg.includes('{GUI_OPERATE_SERVER_PATH}')
-                );
-
-                if (hasPlaceholders) {
-                  // Get the appropriate preset based on config name
-                  let presetKey: string | null = null;
-                  if (
-                    config.name === 'Software_Development' ||
-                    config.name === 'Software Development'
-                  ) {
-                    presetKey = 'software-development';
-                  } else if (config.name === 'GUI_Operate' || config.name === 'GUI Operate') {
-                    presetKey = 'gui-operate';
-                  }
-
-                  if (presetKey) {
-                    const preset = mcpConfigStore.createFromPreset(presetKey, true);
-                    if (preset && preset.args) {
-                      resolvedArgs = preset.args;
-                    }
-                  }
-                }
-
-                mcpServers[serverKey] = {
-                  type: 'stdio',
-                  command,
-                  args: resolvedArgs,
-                  env: serverEnv,
-                };
-                log(`[CoworkAgentRunner] Added STDIO MCP server: ${serverKey}`);
-                log(`[CoworkAgentRunner]   Command: ${command} ${resolvedArgs.join(' ')}`);
-                log(`[CoworkAgentRunner]   Tools will be named: mcp__${serverKey}__<toolName>`);
-              } else if (config.type === 'sse') {
-                mcpServers[serverKey] = {
-                  type: 'sse',
-                  url: config.url,
-                  headers: config.headers || {},
-                };
-                log(`[CoworkAgentRunner] Added SSE MCP server: ${serverKey}`);
-              }
-            } catch (error) {
-              logError('[CoworkAgentRunner] Failed to prepare MCP server config, skipping server', {
-                serverId: config.id,
-                serverName: config.name,
-                error: toErrorText(error),
-              });
-            }
-          }
-
-          // Store in cache for subsequent queries
-          this._mcpServersCache = { fingerprint: mcpFingerprint, servers: { ...mcpServers } };
-        }
-
-        const mcpServersSummary = Object.entries(mcpServers).map(([name, serverConfig]) => {
-          const typedServerConfig = serverConfig as {
-            type?: string;
-            command?: string;
-            args?: unknown[];
-            env?: Record<string, unknown>;
-          };
-          return {
-            name,
-            type: typedServerConfig.type ?? 'unknown',
-            command: typedServerConfig.command ?? '',
-            argsCount: Array.isArray(typedServerConfig.args) ? typedServerConfig.args.length : 0,
-            envKeys: typedServerConfig.env ? Object.keys(typedServerConfig.env).length : 0,
-          };
-        });
-        log('[CoworkAgentRunner] Final mcpServers summary:', safeStringify(mcpServersSummary, 2));
-        if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {
-          log('[CoworkAgentRunner] Final mcpServers config:', safeStringify(mcpServers, 2));
-        }
+        const connectedServers = serverStatuses.filter((s) => s.connected);
+        log(
+          '[CoworkAgentRunner] Connected MCP servers:',
+          connectedServers.length,
+          '— exposed tools:',
+          connectedServers.reduce((sum, s) => sum + s.toolCount, 0)
+        );
       }
-      logTiming('after building MCP servers config', runStartTime);
+
+      logTiming('after reading MCP server status', runStartTime);
 
       const workspaceInfoPrompt =
         useSandboxIsolation && sandboxPath
@@ -2122,7 +2220,9 @@ Tool routing:
       // Re-read every query so newly added/removed MCP servers take effect immediately.
       const mcpCustomTools = this.mcpManager ? buildMcpCustomTools(this.mcpManager) : [];
       const extensionCustomTools = extensionResult.customTools || [];
-      const customTools = [...mcpCustomTools, ...extensionCustomTools];
+      // Camada de desktop semântico (agent-desktop) — opt-in, um cliente por sessão.
+      const desktopCustomTools = await this.buildAgentDesktopCustomTools(session.id);
+      const customTools = [...mcpCustomTools, ...extensionCustomTools, ...desktopCustomTools];
       if (mcpCustomTools.length > 0) {
         log(
           `[CoworkAgentRunner] Registered ${mcpCustomTools.length} MCP tools as customTools:`,
@@ -2133,6 +2233,12 @@ Tool routing:
         log(
           `[CoworkAgentRunner] Registered ${extensionCustomTools.length} extension tools as customTools:`,
           extensionCustomTools.map((t) => t.name).join(', ')
+        );
+      }
+      if (desktopCustomTools.length > 0) {
+        log(
+          `[CoworkAgentRunner] Registered ${desktopCustomTools.length} semantic desktop tools as customTools:`,
+          desktopCustomTools.map((t) => t.name).join(', ')
         );
       }
 
@@ -2332,6 +2438,7 @@ Tool routing:
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
+          desktopSignature,
         });
 
         // Ollama: wrap _onPayload to inject num_ctx into every request

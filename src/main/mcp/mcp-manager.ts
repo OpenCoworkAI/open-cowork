@@ -23,8 +23,14 @@ import { app, BrowserWindow, shell } from 'electron';
 
 import path from 'path';
 import { connectWithOAuthRetry, OpenCoworkMcpOAuthProvider } from './mcp-oauth';
+import { buildGuiOperateRuntimeEnv } from './gui-operate-runtime-env';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import {
+  classifyMcpErrorKind,
+  recordMcpToolAttempt,
+  ensureMcpMetricsAutoFlush,
+} from './mcp-metrics';
 
 const MCP_LIST_TOOLS_TIMEOUT_MS = 5 * 60 * 1000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -234,6 +240,16 @@ export class MCPManager {
   // Cached base environment (shell env + PATH). Resolved once, reused for all MCP server spawns.
   private cachedBaseEnv: Record<string, string> | null = null;
   private initializingServers = false;
+  /**
+   * Preferência "entregar imagem no GUI Operate" (config
+   * `guiOperateImageOutputEnabled`). O default `true` é o mesmo do
+   * config-store. NÃO é lida daqui pelo app — o `SessionManager` e o `index.ts`
+   * sincronizam este campo a partir do `configStore` antes de
+   * `initializeServers`/`updateServer`. Fica como propriedade (e não leitura
+   * direta do config-store) porque o config-store puxa `electron-store`, que
+   * quebra os testes unitários do mcp-manager com mock mínimo de electron.
+   */
+  guiOperateImageOutputEnabled = true;
   // Pending config queued while initialization is in progress
   private pendingInitConfigs: MCPServerConfig[] | null = null;
   // Guards against concurrent reconnect/update operations on the same server
@@ -361,6 +377,33 @@ export class MCPManager {
    * Get enhanced environment with proper PATH for packaged app
    * This is critical for packaged apps where process.env is very limited
    */
+  /**
+   * Decorates a server config with runtime env derived from app preferences.
+   *
+   * Hoje só o GUI Operate embutido é decorado: quando a preferência
+   * `guiOperateImageOutputEnabled` é `false`, injeta
+   * `OPEN_COWORK_DISABLE_IMAGE_TOOL_OUTPUT='1'` para que o servidor filho
+   * devolva apenas metadados da captura de tela em vez do payload base64.
+   *
+   * A decoração acontece ANTES do fingerprint de `initializeServers` (para
+   * que alternar a preferência force reconexão) e na entrada de
+   * `updateServer` (para que o reconnect por config também a receba).
+   */
+  private withRuntimeEnv(config: MCPServerConfig): MCPServerConfig {
+    const injected = buildGuiOperateRuntimeEnv({
+      serverName: config.name,
+      imageOutputEnabled: this.guiOperateImageOutputEnabled,
+    });
+    if (!injected) {
+      return config;
+    }
+    log(
+      `[MCPManager] Injecting runtime env for '${config.name}':`,
+      Object.keys(injected).join(', ')
+    );
+    return { ...config, env: { ...config.env, ...injected } };
+  }
+
   private async getEnhancedEnv(configEnv: Record<string, string>): Promise<Record<string, string>> {
     if (!this.cachedBaseEnv) {
       this.cachedBaseEnv = await this.resolveBaseEnv();
@@ -532,6 +575,11 @@ export class MCPManager {
     }
     this.initializingServers = true;
     try {
+      // Decorate builtin servers with runtime env from app config BEFORE the
+      // fingerprint is computed. This is what makes toggling a preference
+      // (e.g. GUI Operate image output) change the fingerprint and force a
+      // reconnect on the next initializeMCP() call.
+      configs = configs.map((config) => this.withRuntimeEnv(config));
       const fingerprint = JSON.stringify(
         configs.map((c) => ({
           id: c.id,
@@ -1622,9 +1670,18 @@ export class MCPManager {
     let compatHotReloadTried = false;
     const deadline = Date.now() + MCP_TOOL_CALL_TIMEOUT_MS;
 
+    // Baseline metrics (Fase 0): one logical call, many transport attempts.
+    // The id groups attempts so a retry after an uncertain action attempt can
+    // be counted (duplicate-action risk). Contains no user data.
+    const metricsCallId = `${tool.serverName}::${actualToolName}::${Date.now()}::${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    ensureMcpMetricsAutoFlush();
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       // Re-lookup tool on every iteration: after reconnect the registry is refreshed
       const currentTool = this.tools.get(toolName) ?? tool;
+      const attemptStart = Date.now();
       try {
         const client = this.clients.get(currentTool.serverId);
         if (!client) {
@@ -1671,10 +1728,27 @@ export class MCPManager {
         }
 
         logTiming(`MCP tool ${actualToolName}`, callStartTime);
+        recordMcpToolAttempt({
+          callId: metricsCallId,
+          tool: actualToolName,
+          server: currentTool.serverName,
+          attempt: attempt + 1,
+          durationMs: Date.now() - attemptStart,
+          outcome: 'ok',
+        });
         return result;
       } catch (error: unknown) {
         lastError = error;
         const errorMsg = error instanceof Error ? error.message : String(error);
+        recordMcpToolAttempt({
+          callId: metricsCallId,
+          tool: actualToolName,
+          server: currentTool.serverName,
+          attempt: attempt + 1,
+          durationMs: Date.now() - attemptStart,
+          outcome: 'error',
+          errorKind: classifyMcpErrorKind(errorMsg),
+        });
         logCtxError(
           `[MCPManager] Error calling tool ${toolName} (attempt ${attempt + 1}/${maxRetries + 1}):`,
           errorMsg

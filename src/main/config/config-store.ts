@@ -16,6 +16,10 @@ import * as path from 'path';
 import Store, { type Options as StoreOptions } from 'electron-store';
 import { log, logWarn } from '../utils/logger';
 import {
+  isDesktopAccessModeValue,
+  type DesktopAccessMode as DesktopAccessModeValue,
+} from '../desktop/desktop-access-modes';
+import {
   createEncryptedStoreWithKeyRotation,
   getLegacyDerivedKeyHexes,
 } from '../utils/store-encryption';
@@ -51,6 +55,17 @@ export type ProviderProfileKey =
   | 'custom:gemini';
 export type ConfigSetId = string;
 export type CreateSetMode = 'blank' | 'clone';
+
+/**
+ * Modo de acesso ao desktop (computer use semântico via agent-desktop).
+ * `off` é o padrão — o GUI Operate visual continua sendo o caminho principal.
+ *
+ * `'native'` faz parte do contrato mas é **reservado** para a camada FFI
+ * (Fase 5): a UI não o oferece e o runtime o trata como "sem tools"
+ * (fail-closed). O registro único da reserva fica em
+ * `src/main/desktop/desktop-access-modes.ts`.
+ */
+export type DesktopAccessMode = DesktopAccessModeValue;
 
 export interface CreateConfigSetPayload {
   name: string;
@@ -120,6 +135,46 @@ export interface AppConfig {
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
 
+  /**
+   * Computer use semântico (agent-desktop).
+   * - `off`       → desligado (padrão). Nenhuma tool semântica é exposta.
+   * - `mcp`       → expõe as 8 tools `desktop_*` (camada MCP por sessão).
+   * - `mcp+skill` → além das tools, publica a skill de uso semântico.
+   * - `native`    → reservado para a camada nativa/FFI (Fase 5).
+   */
+  desktopAccessMode?: DesktopAccessMode;
+
+  /**
+   * Chave mestre do input físico do computer use semântico.
+   *
+   * Quando `false` (padrão), toda operação `physical_input` — cursor, foco,
+   * digitação física — é **recusada**, independentemente da autorização por
+   * operação dada em uma sessão anterior. É uma política global e persistente
+   * do app, e complementa (não substitui) o gate por operação, que é uma
+   * concessão do usuário dentro de uma sessão.
+   *
+   * `true` apenas **permite** a abertura do diálogo de autorização; nunca
+   * autoriza sozinho.
+   */
+  desktopPhysicalInputEnabled?: boolean;
+
+  /**
+   * Entrega de imagem pelo GUI Operate (computer use visual).
+   *
+   * Quando `false`, o servidor MCP `gui-operate-server` devolve **apenas
+   * metadados** (caminho, regiao, display) e omite o payload base64 da
+   * captura de tela. Isso e o que o flag
+   * `OPEN_COWORK_DISABLE_IMAGE_TOOL_OUTPUT=1` faz no processo filho.
+   *
+   * Use quando o modelo em uso **nao aceita entrada de imagem** (provedores
+   * text-only, modelos que anunciam visao sem suportar): em vez de a API
+   * rejeitar a requisicao com 400, a ferramenta entrega a descricao textual
+   * do que foi capturado.
+   *
+   * `true` (padrao) preserva o comportamento atual: a imagem e entregue.
+   */
+  guiOperateImageOutputEnabled?: boolean;
+
   // Global memory toggle
   memoryEnabled: boolean;
 
@@ -176,6 +231,9 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'memoryEnabled',
   'enableThinking',
   'isConfigured',
+  'desktopAccessMode',
+  'desktopPhysicalInputEnabled',
+  'guiOperateImageOutputEnabled',
 ]);
 
 /**
@@ -190,6 +248,9 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'sandboxEnabled',
   'enableThinking',
   'memoryEnabled',
+  'desktopAccessMode',
+  'desktopPhysicalInputEnabled',
+  'guiOperateImageOutputEnabled',
   'model',
   'provider',
   'contextWindow',
@@ -239,6 +300,9 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
+  desktopAccessMode: (v) => isDesktopAccessMode(v),
+  desktopPhysicalInputEnabled: (v) => typeof v === 'boolean',
+  guiOperateImageOutputEnabled: (v) => typeof v === 'boolean',
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -312,6 +376,9 @@ const defaultConfig: AppConfig = {
   enableDevLogs: false,
   theme: 'light',
   sandboxEnabled: false,
+  desktopAccessMode: 'off',
+  desktopPhysicalInputEnabled: false,
+  guiOperateImageOutputEnabled: true,
   memoryEnabled: true,
   memoryRuntime: {
     llm: {
@@ -431,6 +498,20 @@ function isProfileKey(value: unknown): value is ProviderProfileKey {
 
 function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
+}
+
+/**
+ * Modos de acesso ao desktop aceitos no arquivo de config.
+ *
+ * `native` e reservado para a camada nativa/FFI (Fase 5): aceito na config
+ * para nao quebrar arquivos ja gravados, mas nao oferecido pela UI.
+ *
+ * O predicado vem do registro canônico (`desktop-access-modes.ts`), que e
+ * tambem onde a reserva esta declarada — a lista de modos validos nao pode
+ * divergir do contrato.
+ */
+function isDesktopAccessMode(value: unknown): value is DesktopAccessMode {
+  return isDesktopAccessModeValue(value);
 }
 
 function isMemoryModelRuntimeConfig(value: unknown): value is Partial<MemoryModelRuntimeConfig> {
@@ -1046,6 +1127,17 @@ export class ConfigStore {
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
+      desktopAccessMode: isDesktopAccessMode(raw.desktopAccessMode)
+        ? raw.desktopAccessMode
+        : (defaultConfig.desktopAccessMode ?? 'off'),
+      desktopPhysicalInputEnabled: toBoolean(
+        raw.desktopPhysicalInputEnabled,
+        defaultConfig.desktopPhysicalInputEnabled ?? false
+      ),
+      guiOperateImageOutputEnabled: toBoolean(
+        raw.guiOperateImageOutputEnabled,
+        defaultConfig.guiOperateImageOutputEnabled ?? true
+      ),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       subagent,
@@ -1196,12 +1288,17 @@ export class ConfigStore {
         if (key === 'theme' && !isAppTheme(rawValue)) {
           return defaultConfig[key];
         }
+        if (key === 'desktopAccessMode' && !isDesktopAccessMode(rawValue)) {
+          return defaultConfig[key];
+        }
         if (
           (key === 'enableDevLogs' ||
             key === 'sandboxEnabled' ||
             key === 'memoryEnabled' ||
             key === 'enableThinking' ||
-            key === 'isConfigured') &&
+            key === 'isConfigured' ||
+            key === 'desktopPhysicalInputEnabled' ||
+            key === 'guiOperateImageOutputEnabled') &&
           typeof rawValue !== 'boolean'
         ) {
           return defaultConfig[key];
@@ -1473,6 +1570,26 @@ export class ConfigStore {
       theme: updates.theme !== undefined ? updates.theme : current.theme,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
+      desktopAccessMode:
+        updates.desktopAccessMode !== undefined
+          ? isDesktopAccessMode(updates.desktopAccessMode)
+            ? updates.desktopAccessMode
+            : (current.desktopAccessMode ?? defaultConfig.desktopAccessMode ?? 'off')
+          : (current.desktopAccessMode ?? defaultConfig.desktopAccessMode ?? 'off'),
+      desktopPhysicalInputEnabled:
+        updates.desktopPhysicalInputEnabled !== undefined
+          ? toBoolean(
+              updates.desktopPhysicalInputEnabled,
+              current.desktopPhysicalInputEnabled ?? false
+            )
+          : (current.desktopPhysicalInputEnabled ?? false),
+      guiOperateImageOutputEnabled:
+        updates.guiOperateImageOutputEnabled !== undefined
+          ? toBoolean(
+              updates.guiOperateImageOutputEnabled,
+              current.guiOperateImageOutputEnabled ?? true
+            )
+          : (current.guiOperateImageOutputEnabled ?? true),
       memoryEnabled:
         updates.memoryEnabled !== undefined ? updates.memoryEnabled : current.memoryEnabled,
       memoryRuntime:

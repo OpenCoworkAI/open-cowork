@@ -7,20 +7,25 @@ const agentRunnerContent = readFileSync(agentRunnerPath, 'utf8');
 
 describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   it('avoids dynamic re-import shadowing for config store singletons', () => {
-    expect(agentRunnerContent).toContain(
-      "import { mcpConfigStore } from '../mcp/mcp-config-store'"
-    );
+    // O agent-runner nao usa mais mcpConfigStore: as tools MCP chegam ao SDK
+    // como customTools (buildMcpCustomTools), sem mapa `mcpServers`. O que
+    // importa e que nenhum store de config seja reimportado dinamicamente
+    // (reimport dinamico sombreia o singleton e quebra o cache de config).
     expect(agentRunnerContent).not.toContain(
       "const { configStore } = await import('../config/config-store')"
     );
     expect(agentRunnerContent).not.toContain(
       "const { mcpConfigStore } = await import('../mcp/mcp-config-store')"
     );
+    expect(agentRunnerContent).not.toContain("await import('../mcp/mcp-config-store')");
   });
 
   it('keeps MCP config build resilient', () => {
     expect(agentRunnerContent).toContain('function safeStringify');
-    expect(agentRunnerContent).toContain('Failed to prepare MCP server config, skipping server');
+    // A leitura de status do MCP nao pode derrubar a query: ela e derivada do
+    // mcp-manager (fonte autoritativa) e nao de um mapa `mcpServers` duplicado.
+    expect(agentRunnerContent).toContain('this.mcpManager.getServerStatus()');
+    expect(agentRunnerContent).toContain('buildMcpCustomTools(this.mcpManager)');
   });
 
   it('uses standard markdown link guidance for sources citations', () => {
@@ -40,9 +45,12 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
   });
 
   it('keeps MCP server logging compact unless full debug logging is enabled', () => {
-    expect(agentRunnerContent).toContain("log('[CoworkAgentRunner] Final mcpServers summary:'");
+    // O resumo de status e compacto por padrao; o detalhamento completo
+    // permanece atrás da flag de debug do SDK.
+    expect(agentRunnerContent).toContain(
+      "log('[CoworkAgentRunner] MCP server statuses:', safeStringify(serverStatuses))"
+    );
     expect(agentRunnerContent).toContain("if (process.env.COWORK_LOG_SDK_MESSAGES_FULL === '1') {");
-    expect(agentRunnerContent).toContain("log('[CoworkAgentRunner] Final mcpServers config:'");
   });
 
   it('summarizes noisy SDK message updates instead of logging every text delta', () => {

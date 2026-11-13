@@ -9,6 +9,10 @@ directories:
 npmRebuild: true
 afterPack: ./scripts/after-pack.js
 afterAllArtifactBuild: ./scripts/compress-dmg.js
+# Hook de notarizacao macOS. O script e fail-open: sem APPLE_ID /
+# APPLE_ID_PASSWORD / APPLE_TEAM_ID ele apenas registra o skip e devolve,
+# de modo que builds de desenvolvimento nao quebram.
+afterSign: ./scripts/notarize.js
 
 files:
   - dist/**/*
@@ -74,7 +78,26 @@ win:
       arch:
         - x64
   artifactName: ${productName}-${version}-win-${arch}.${ext}
-  signAndEditExecutable: false
+  # Mantido explicito (padrao do electron-builder) para que:
+  #  - o rcedit aplique os recursos de versao no .exe (FileDescription,
+  #    ProductVersion, CompanyName) — metadata que hoje nao existe no build;
+  #  - a assinatura de codigo passe a ser POSSIVEL quando um certificado for
+  #    fornecido.
+  #
+  # IMPORTANTE: `forceCodeSigning` NAO e definido aqui de proposito. Ele e
+  # injetado por job no CI (`--config.win.forceCodeSigning=true`), apenas no
+  # job ASSINADO. Se fosse fixado aqui, o job unsigned quebraria — e o
+  # electron-builder 26.8.1 e fail-open por padrao: sem certificado o
+  # signWindows() devolve false e registra apenas um aviso, deixando passar
+  # um artefato sem assinatura (que o SmartScreen pode bloquear na maquina
+  # do usuario final).
+  #
+  # Para assinar, defina (no CI como secrets):
+  #   WIN_CSC_LINK         -> PFX em base64 ou caminho do arquivo
+  #   WIN_CSC_KEY_PASSWORD -> senha do PFX
+  # Sem essas variaveis o artefato segue sem assinatura (SmartScreen pode
+  # bloquear a instalacao em maquinas de usuario final).
+  signAndEditExecutable: true
   extraResources:
     - from: .bundle-resources/mcp
       to: mcp
@@ -95,6 +118,19 @@ mac:
         - arm64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   identity: auto
+  # IMPORTANTE: `forceCodeSigning` NAO e definido aqui de proposito. Ele e
+  # injetado por job no CI (`--config.mac.forceCodeSigning=true`), apenas no
+  # job ASSINADO + NOTARIZADO. Fixa-lo aqui quebraria o job unsigned.
+  #
+  # Motivo (comportamento fail-open do electron-builder 26.8.1): sem
+  # `forceCodeSigning`, se a identidade nao for encontrada no keychain o
+  # macPackager apenas registra aviso e pode recorrer a assinatura ad-hoc
+  # (macPackager.js:245-256) — o build passa com um artefato que nao serve
+  # para distribuicao.
+  #
+  # A notarizacao e garantida por outro caminho: o hook scripts/notarize.js
+  # (afterSign) recebe MACOS_REQUIRE_NOTARIZATION=1 no job assinado e LANCA
+  # se APPLE_ID / APPLE_ID_PASSWORD / APPLE_TEAM_ID estiverem faltando.
   hardenedRuntime: true
   gatekeeperAssess: true
   entitlements: resources/entitlements.mac.plist

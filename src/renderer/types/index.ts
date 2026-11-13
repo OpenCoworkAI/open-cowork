@@ -723,6 +723,16 @@ export interface MemoryRuntimeConfig {
   promptIterationRounds?: number;
 }
 
+/**
+ * Modo de acesso ao desktop — espelha `DesktopAccessMode` do config-store (main).
+ *
+ * - `off`       — nenhuma tool `desktop_*` exposta;
+ * - `mcp`       — tools agregadas via servidor MCP por sessao;
+ * - `mcp+skill` — as mesmas tools + a skill upstream materializada localmente;
+ * - `native`    — camada FFI (Fase 5, ainda indisponivel).
+ */
+export type DesktopAccessMode = 'off' | 'mcp' | 'mcp+skill' | 'native';
+
 export interface AppConfig {
   subagent?: SubagentConfig;
   subagentConfigError?: string;
@@ -746,6 +756,12 @@ export interface AppConfig {
   memoryRuntime?: MemoryRuntimeConfig;
   enableThinking?: boolean;
   isConfigured: boolean;
+  /** Modo de acesso ao desktop (agent-desktop). */
+  desktopAccessMode?: DesktopAccessMode;
+  /** Chave mestre de input fisico — `false` recusa operacao fisica. */
+  desktopPhysicalInputEnabled?: boolean;
+  /** `false` omite a imagem no retorno do GUI Operate (so metadados). */
+  guiOperateImageOutputEnabled?: boolean;
 }
 
 export interface ProviderPreset {

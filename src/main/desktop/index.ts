@@ -1,0 +1,123 @@
+export {
+  AGGREGATE_BY_OPERATION,
+  AGGREGATE_ORDER,
+  BATCH_COMMANDS_ARG,
+  OBSERVATION_OPERATIONS,
+  PHYSICAL_INPUT_OPERATIONS,
+  UPSTREAM_CONTRACT_TAG,
+  UPSTREAM_TOOL_PREFIX,
+  aggregateToolName,
+  buildOperationCatalog,
+  classifyAggregate,
+  classifyRisk,
+  collectRequestedPhysicalOperations,
+  extractBatchedOperations,
+  groupOperationsByAggregate,
+  isKnownOperation,
+  isObservationOperation,
+  isPhysicalInputOperation,
+  operationFromUpstreamTool,
+  parseDelivery,
+  parseDisposition,
+  parseEnvelope,
+  parseSuccessDisposition,
+  requestedOperation,
+  resolveEffectiveRisk,
+  type AgentDesktopAggregate,
+  type AgentDesktopDelivery,
+  type AgentDesktopDisposition,
+  type AgentDesktopEnvelope,
+  type AgentDesktopOperation,
+  type AgentDesktopRisk,
+} from './agent-desktop-catalog';
+
+export {
+  AGENT_DESKTOP_SERVER_NAME,
+  AgentDesktopClient,
+  type AgentDesktopCallResult,
+  type AgentDesktopClientOptions,
+} from './agent-desktop-client';
+
+export {
+  AGENT_DESKTOP_PATH_ENV,
+  agentDesktopExecutableName,
+  agentDesktopPlatformDir,
+  buildAgentDesktopCandidates,
+  resolveAgentDesktopBinary,
+  type AgentDesktopBinaryResolution,
+  type AgentDesktopPathContext,
+} from './agent-desktop-paths';
+
+export {
+  AGENT_DESKTOP_PINNED_VERSION,
+  AGENT_DESKTOP_RELEASE_BASE_URL,
+  AGENT_DESKTOP_RELEASE_REPO,
+  PINNED_RELEASE,
+  parseChecksums,
+  type AgentDesktopReleaseAsset,
+} from './agent-desktop-release-manifest';
+
+export {
+  AGENT_DESKTOP_INSTALL_METADATA_FILE,
+  AgentDesktopDistributionError,
+  agentDesktopAssetUrl,
+  agentDesktopInstallDirectory,
+  describeAgentDesktopInstallState,
+  extractTarGz,
+  installAgentDesktopBinary,
+  readAgentDesktopInstallMetadata,
+  resolveAgentDesktopReleaseAsset,
+  safeArchivePath,
+  sha256Hex,
+  type AgentDesktopArchiveContents,
+  type AgentDesktopDistributionErrorCode,
+  type AgentDesktopFetch,
+  type AgentDesktopInstallMetadata,
+  type AgentDesktopInstallSummary,
+  type InstallAgentDesktopOptions,
+  type InstallAgentDesktopResult,
+} from './agent-desktop-distribution';
+
+export {
+  parsePermissionsEnvelope,
+  readAgentDesktopStatus,
+  type AgentDesktopAccessMode,
+  type AgentDesktopBinarySource,
+  type AgentDesktopInstallResult,
+  type AgentDesktopInstallState,
+  type AgentDesktopPermissions,
+  type AgentDesktopStatus,
+  type AgentDesktopStatusExec,
+} from './agent-desktop-status';
+
+export {
+  buildAgentDesktopTools,
+  formatAgentDesktopResult,
+  resolveRequestedOperation,
+  type AgentDesktopToolsOptions,
+} from './agent-desktop-tools';
+
+export {
+  AgentDesktopManager,
+  type AgentDesktopManagerOptions,
+  type AgentDesktopSessionTools,
+} from './agent-desktop-manager';
+
+export {
+  AGENT_DESKTOP_CORE_SKILL,
+  buildAdapterSection,
+  buildSkillDocument,
+  buildStaticOperationCatalog,
+  extractAgentDesktopSkillGuide,
+  extractDescription,
+  listAgentDesktopSkills,
+  materializeAgentDesktopSkills,
+  readAgentDesktopVersion,
+  selectSkillNames,
+  splitFrontmatter,
+  type AgentDesktopMaterializedSkill,
+  type AgentDesktopSkillExec,
+  type AgentDesktopSkillMaterialization,
+  type AgentDesktopSkillSummary,
+  type MaterializeAgentDesktopSkillsOptions,
+} from './agent-desktop-skill';

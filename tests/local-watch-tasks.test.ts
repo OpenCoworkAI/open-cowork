@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -27,6 +28,31 @@ const fileWatch: LocalWatchConfig = {
   compareMode: 'content',
   checkConfig: { path: 'watched.txt' },
 };
+
+/**
+ * Creating a symlink on Windows requires Developer Mode or an elevated
+ * process; without it `symlink()` fails with EPERM. Probe once so the
+ * symlink-specific assertion can be skipped instead of failing the suite.
+ * Mirrors the pattern already used in src/tests/skills/dangling-symlink.test.ts.
+ */
+function supportsFileSymlinks(): boolean {
+  const probeDir = mkdtempSync(join(tmpdir(), 'cowork-symlink-probe-'));
+  const targetPath = join(probeDir, 'target');
+  const linkPath = join(probeDir, 'link');
+
+  try {
+    writeFileSync(targetPath, 'probe');
+    symlinkSync(targetPath, linkPath, 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+const supportsSymlink = supportsFileSymlinks();
+
 let cwd: string;
 let task: ScheduledTask;
 let store: ScheduledTaskStore;
@@ -487,11 +513,17 @@ describe('local conditional scheduled tasks', () => {
       await expect(checkLocalCondition(task)).rejects.toThrow(
         LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
       );
-      await symlink(outside, join(cwd, 'watched.txt'));
-      task.watchConfig = fileWatch;
-      await expect(checkLocalCondition(task)).rejects.toThrow(
-        LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
-      );
+      if (supportsSymlink) {
+        await symlink(outside, join(cwd, 'watched.txt'));
+        task.watchConfig = fileWatch;
+        await expect(checkLocalCondition(task)).rejects.toThrow(
+          LOCAL_WATCH_CONFIG_ERRORS.workspaceEscape
+        );
+      } else {
+        console.warn(
+          '[local-watch-tasks] symlink escape assertion skipped: creating symlinks is not permitted on this host (Windows without Developer Mode).'
+        );
+      }
     } finally {
       await unlink(outside).catch(() => undefined);
     }

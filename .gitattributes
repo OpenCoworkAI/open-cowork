@@ -25,3 +25,10 @@
 
 # Lock files - enforce LF to prevent cross-platform false diffs
 package-lock.json text eol=lf
+
+# Fixture do checksums.txt oficial do agent-desktop.
+# As quebras de linha MISTAS (LF e CRLF no mesmo arquivo) sao parte do que
+# esta sendo testado - o parser precisa tolerar o \r que o upstream publica.
+# `-text` desliga toda conversao de EOL para que o arquivo seja preservado
+# byte a byte no repositorio e no checkout do CI.
+tests/fixtures/agent-desktop/checksums-v1.2.0.txt -text
