@@ -760,6 +760,8 @@ export interface AppConfig {
   desktopAccessMode?: DesktopAccessMode;
   /** Chave mestre de input fisico — `false` recusa operacao fisica. */
   desktopPhysicalInputEnabled?: boolean;
+  /** `false` omite a imagem no retorno do GUI Operate (so metadados). */
+  guiOperateImageOutputEnabled?: boolean;
 }
 
 export interface ProviderPreset {

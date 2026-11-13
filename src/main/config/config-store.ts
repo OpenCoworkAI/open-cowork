@@ -149,6 +149,23 @@ export interface AppConfig {
    */
   desktopPhysicalInputEnabled?: boolean;
 
+  /**
+   * Entrega de imagem pelo GUI Operate (computer use visual).
+   *
+   * Quando `false`, o servidor MCP `gui-operate-server` devolve **apenas
+   * metadados** (caminho, regiao, display) e omite o payload base64 da
+   * captura de tela. Isso e o que o flag
+   * `OPEN_COWORK_DISABLE_IMAGE_TOOL_OUTPUT=1` faz no processo filho.
+   *
+   * Use quando o modelo em uso **nao aceita entrada de imagem** (provedores
+   * text-only, modelos que anunciam visao sem suportar): em vez de a API
+   * rejeitar a requisicao com 400, a ferramenta entrega a descricao textual
+   * do que foi capturado.
+   *
+   * `true` (padrao) preserva o comportamento atual: a imagem e entregue.
+   */
+  guiOperateImageOutputEnabled?: boolean;
+
   // Global memory toggle
   memoryEnabled: boolean;
 
@@ -205,6 +222,9 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'memoryEnabled',
   'enableThinking',
   'isConfigured',
+  'desktopAccessMode',
+  'desktopPhysicalInputEnabled',
+  'guiOperateImageOutputEnabled',
 ]);
 
 /**
@@ -221,6 +241,7 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
   'memoryEnabled',
   'desktopAccessMode',
   'desktopPhysicalInputEnabled',
+  'guiOperateImageOutputEnabled',
   'model',
   'provider',
   'contextWindow',
@@ -270,8 +291,9 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
-  desktopAccessMode: (v) => v === 'off' || v === 'mcp' || v === 'mcp+skill' || v === 'native',
+  desktopAccessMode: (v) => isDesktopAccessMode(v),
   desktopPhysicalInputEnabled: (v) => typeof v === 'boolean',
+  guiOperateImageOutputEnabled: (v) => typeof v === 'boolean',
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -347,6 +369,7 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   desktopAccessMode: 'off',
   desktopPhysicalInputEnabled: false,
+  guiOperateImageOutputEnabled: true,
   memoryEnabled: true,
   memoryRuntime: {
     llm: {
@@ -444,6 +467,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:gemini',
 ];
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+const VALID_DESKTOP_ACCESS_MODES: DesktopAccessMode[] = ['off', 'mcp', 'mcp+skill', 'native'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
@@ -466,6 +490,18 @@ function isProfileKey(value: unknown): value is ProviderProfileKey {
 
 function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
+}
+
+/**
+ * Modos de acesso ao desktop aceitos no arquivo de config.
+ *
+ * `native` e reservado para a camada nativa/FFI (Fase 5): aceito na config
+ * para nao quebrar arquivos ja gravados, mas nao oferecido pela UI.
+ */
+function isDesktopAccessMode(value: unknown): value is DesktopAccessMode {
+  return (
+    typeof value === 'string' && VALID_DESKTOP_ACCESS_MODES.includes(value as DesktopAccessMode)
+  );
 }
 
 function isMemoryModelRuntimeConfig(value: unknown): value is Partial<MemoryModelRuntimeConfig> {
@@ -1081,6 +1117,17 @@ export class ConfigStore {
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
+      desktopAccessMode: isDesktopAccessMode(raw.desktopAccessMode)
+        ? raw.desktopAccessMode
+        : (defaultConfig.desktopAccessMode ?? 'off'),
+      desktopPhysicalInputEnabled: toBoolean(
+        raw.desktopPhysicalInputEnabled,
+        defaultConfig.desktopPhysicalInputEnabled ?? false
+      ),
+      guiOperateImageOutputEnabled: toBoolean(
+        raw.guiOperateImageOutputEnabled,
+        defaultConfig.guiOperateImageOutputEnabled ?? true
+      ),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
       subagent,
@@ -1231,12 +1278,17 @@ export class ConfigStore {
         if (key === 'theme' && !isAppTheme(rawValue)) {
           return defaultConfig[key];
         }
+        if (key === 'desktopAccessMode' && !isDesktopAccessMode(rawValue)) {
+          return defaultConfig[key];
+        }
         if (
           (key === 'enableDevLogs' ||
             key === 'sandboxEnabled' ||
             key === 'memoryEnabled' ||
             key === 'enableThinking' ||
-            key === 'isConfigured') &&
+            key === 'isConfigured' ||
+            key === 'desktopPhysicalInputEnabled' ||
+            key === 'guiOperateImageOutputEnabled') &&
           typeof rawValue !== 'boolean'
         ) {
           return defaultConfig[key];
@@ -1508,6 +1560,26 @@ export class ConfigStore {
       theme: updates.theme !== undefined ? updates.theme : current.theme,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
+      desktopAccessMode:
+        updates.desktopAccessMode !== undefined
+          ? isDesktopAccessMode(updates.desktopAccessMode)
+            ? updates.desktopAccessMode
+            : (current.desktopAccessMode ?? defaultConfig.desktopAccessMode ?? 'off')
+          : (current.desktopAccessMode ?? defaultConfig.desktopAccessMode ?? 'off'),
+      desktopPhysicalInputEnabled:
+        updates.desktopPhysicalInputEnabled !== undefined
+          ? toBoolean(
+              updates.desktopPhysicalInputEnabled,
+              current.desktopPhysicalInputEnabled ?? false
+            )
+          : (current.desktopPhysicalInputEnabled ?? false),
+      guiOperateImageOutputEnabled:
+        updates.guiOperateImageOutputEnabled !== undefined
+          ? toBoolean(
+              updates.guiOperateImageOutputEnabled,
+              current.guiOperateImageOutputEnabled ?? true
+            )
+          : (current.guiOperateImageOutputEnabled ?? true),
       memoryEnabled:
         updates.memoryEnabled !== undefined ? updates.memoryEnabled : current.memoryEnabled,
       memoryRuntime:

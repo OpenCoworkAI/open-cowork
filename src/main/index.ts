@@ -1970,6 +1970,14 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
     buildAgentRuntimeSignature(previousConfig) !== buildAgentRuntimeSignature(updatedConfig);
   const shouldReloadSandbox = previousConfig.sandboxEnabled !== updatedConfig.sandboxEnabled;
 
+  // GUI Operate image output: the flag is injected into the spawned MCP
+  // server's environment, so a change only takes effect after the server
+  // process restarts. Reloading MCP re-runs initializeServers; the runtime
+  // env decoration changes the config fingerprint, which forces the
+  // reconnect. Only trigger when the preference actually flipped.
+  const shouldReloadMcpForImageOutput =
+    previousConfig.guiOperateImageOutputEnabled !== updatedConfig.guiOperateImageOutputEnabled;
+
   if (sessionManager) {
     if (shouldReloadRunner) {
       sessionManager.reloadConfig();
@@ -1979,10 +1987,24 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
         .reloadSandbox()
         .catch((err) => logError('[Config] Sandbox reload failed:', err));
     }
-    if (shouldReloadRunner || shouldReloadSandbox) {
+    if (shouldReloadMcpForImageOutput) {
+      // A preferência é lida pelo MCPManager no momento da decoração de env,
+      // dentro de initializeServers. Precisa ser sincronizada ANTES do
+      // reload para o novo valor chegar ao processo reiniciado.
+      sessionManager.getMCPManager().guiOperateImageOutputEnabled =
+        updatedConfig.guiOperateImageOutputEnabled ?? true;
+      await sessionManager
+        .reloadMCP()
+        .catch((err) => logError('[Config] MCP reload for image-output change failed:', err));
+    }
+    if (shouldReloadRunner || shouldReloadSandbox || shouldReloadMcpForImageOutput) {
       log(
         '[Config] Session manager config synced:',
-        JSON.stringify({ runnerReloaded: shouldReloadRunner, sandboxReloaded: shouldReloadSandbox })
+        JSON.stringify({
+          runnerReloaded: shouldReloadRunner,
+          sandboxReloaded: shouldReloadSandbox,
+          mcpReloaded: shouldReloadMcpForImageOutput,
+        })
       );
     }
   }

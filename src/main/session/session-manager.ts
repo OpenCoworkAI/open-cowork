@@ -221,6 +221,15 @@ export class SessionManager {
   private async initializeMCP(): Promise<void> {
     try {
       const servers = mcpConfigStore.getEnabledServers();
+      // Sincroniza a preferência de runtime do GUI Operate ANTES de inicializar:
+      // a decoração de env acontece dentro de initializeServers (antes do
+      // fingerprint), então este valor precisa estar atualizado aqui — cobre
+      // tanto a inicialização inicial quanto reloadMCP() após mudança de config.
+      // Leitura direta do store (raw): não depende da whitelist de
+      // `normalizeConfig()` e passa pelo guard de tipo do `ConfigStore.get()`
+      // (fail-closed: valor corrompido cai no default `true`).
+      this.mcpManager.guiOperateImageOutputEnabled =
+        configStore.get('guiOperateImageOutputEnabled') ?? true;
       await this.mcpManager.initializeServers(servers);
       log(`[SessionManager] Initialized ${servers.length} MCP servers`);
     } catch (error) {

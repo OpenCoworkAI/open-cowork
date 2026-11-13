@@ -12,6 +12,11 @@ export function SettingsGeneral() {
       ? 'pt-BR'
       : 'en';
   const [appVer, setAppVer] = useState('');
+  // Preferência vem do config-store do processo principal (AppConfig), não do
+  // store local de Settings — mesmo padrão do SettingsDesktop. `undefined`
+  // significa "ainda não carregado": o toggle fica desabilitado até ler.
+  const [imageOutput, setImageOutput] = useState<boolean | undefined>(undefined);
+  const [imageOutputSaving, setImageOutputSaving] = useState(false);
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -21,6 +26,36 @@ export function SettingsGeneral() {
       /* ignore */
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const cfg = await window.electronAPI.config.get();
+        if (!cancelled) setImageOutput(cfg.guiOperateImageOutputEnabled ?? true);
+      } catch {
+        if (!cancelled) setImageOutput(true);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggleImageOutput(next: boolean) {
+    const previous = imageOutput;
+    setImageOutput(next);
+    setImageOutputSaving(true);
+    try {
+      await window.electronAPI.config.save({ guiOperateImageOutputEnabled: next });
+    } catch {
+      // Rollback otimista: não deixa o toggle mentindo sobre o estado real.
+      setImageOutput(previous ?? true);
+    } finally {
+      setImageOutputSaving(false);
+    }
+  }
 
   const languages = [
     { code: 'en', nativeName: 'English' },
@@ -74,6 +109,28 @@ export function SettingsGeneral() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Desktop & Ferramentas — entrega de imagem do GUI Operate */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-text-primary">{t('general.toolsTitle')}</h4>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={imageOutput ?? true}
+            disabled={imageOutputSaving || imageOutput === undefined}
+            onChange={(e) => void toggleImageOutput(e.target.checked)}
+            className="mt-1 w-4 h-4 accent-[var(--accent)] disabled:opacity-50"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium text-text-primary">
+              {t('general.guiOperateImageOutputLabel')}
+            </span>
+            <span className="block text-xs leading-5 text-text-muted">
+              {t('general.guiOperateImageOutputHint')}
+            </span>
+          </span>
+        </label>
       </div>
 
       {/* About */}
