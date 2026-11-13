@@ -81,7 +81,10 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
-    "language": "Language"
+    "language": "Language",
+    "toolsTitle": "Desktop & tools",
+    "guiOperateImageOutputLabel": "Deliver screenshots to the model (GUI Operate)",
+    "guiOperateImageOutputHint": "When disabled, the GUI Operate tools return only capture metadata (path, region, display) instead of the image payload. Useful when the selected model does not accept image input: the tool then describes what it captured in text instead of failing."
   },
   "memory": {
     "title": "Memory",

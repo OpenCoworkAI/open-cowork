@@ -81,7 +81,10 @@
     "themeLight": "浅色",
     "themeDark": "深色",
     "themeSystem": "跟随系统",
-    "language": "语言"
+    "language": "语言",
+    "toolsTitle": "桌面与工具",
+    "guiOperateImageOutputLabel": "向模型交付截图（GUI Operate）",
+    "guiOperateImageOutputHint": "关闭后，GUI Operate 工具仅返回截图的元数据（路径、区域、显示器），而不返回图像数据。当所选模型不支持图像输入时很有用：工具将以文字描述截取的内容，而不是直接失败。"
   },
   "memory": {
     "title": "Memory 机制",
