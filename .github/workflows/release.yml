@@ -240,12 +240,66 @@ jobs:
             exit 1
           fi
 
+      # Estado de assinatura derivado do MESMO segredo que decide qual step de
+      # build rodou. Vai para o fragmento de notas da release para que o corpo
+      # final declare honestamente o que o usuário está baixando.
+      - name: Determine signing state (macOS)
+        run: |
+          if [ -z "$MAC_CSC_LINK" ]; then
+            echo "MAC_SIGNED=false" >> "$GITHUB_ENV"
+          else
+            echo "MAC_SIGNED=true" >> "$GITHUB_ENV"
+          fi
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+
+      # Gera o SHA256SUMS por plataforma + fragmento de notas (estado de
+      # assinatura + tabela de checksums). O merge e a re-verificacao contra
+      # os artefatos anexados acontecem no job finalize-release.
+      - name: Generate SHA256SUMS and notes fragment (macOS)
+        run: |
+          set -euo pipefail
+          cd release
+          : > ../SHA256SUMS-mac.txt
+          found=0
+          for f in *.dmg *.zip; do
+            if [ -e "$f" ]; then
+              shasum -a 256 "$f" >> ../SHA256SUMS-mac.txt
+              found=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No macOS artifacts (.dmg/.zip) found to checksum"
+            exit 1
+          fi
+          cd ..
+          {
+            echo "### macOS"
+            echo ""
+            if [ "$MAC_SIGNED" = "true" ]; then
+              echo "✅ Assinado (Developer ID) **e notarizado** — verificado no pipeline com \`codesign\`, \`spctl\` e \`stapler\`."
+            else
+              echo "⚠️ **NÃO assinado e NÃO notarizado** — nenhum certificado (\`MAC_CSC_LINK\`) está configurado neste repositório."
+              echo "O Gatekeeper pode bloquear a abertura: clique com o botão direito no app → **Abrir**, ou remova a quarentena com \`xattr -dr com.apple.quarantine /Applications/<App>.app\`."
+            fi
+            echo ""
+            echo "| Artefato | SHA-256 |"
+            echo "| --- | --- |"
+            while IFS= read -r line; do
+              sum="${line%%  *}"
+              name="${line#*  }"
+              echo "| \`$name\` | \`$sum\` |"
+            done < SHA256SUMS-mac.txt
+          } > notes-macos.md
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.dmg
             release/*.zip
+            SHA256SUMS-mac.txt
+            notes-macos.md
           draft: true
 
   build-windows:
@@ -418,9 +472,135 @@ jobs:
             exit 1
           }
 
+      # Estado de assinatura derivado do MESMO segredo que decide qual step de
+      # build rodou (mesma semantica do bloco macOS).
+      - name: Determine signing state (Windows)
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          $signed = if (-not [string]::IsNullOrEmpty($env:WIN_CSC_LINK)) { 'true' } else { 'false' }
+          "WIN_SIGNED=$signed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # SHA256SUMS + fragmento de notas, escritos com LF explicito (o job
+      # finalize roda em Linux; CRLF aqui quebraria o parsing e a comparacao
+      # de hashes).
+      - name: Generate SHA256SUMS and notes fragment (Windows)
+        shell: pwsh
+        env:
+          WIN_SIGNED: ${{ env.WIN_SIGNED }}
+        run: |
+          $artifacts = @(Get-ChildItem -Path "release" -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ieq '.exe' })
+          if ($artifacts.Count -eq 0) {
+            Write-Host "::error::No Windows artifacts (.exe) found to checksum"
+            exit 1
+          }
+          $lines = foreach ($f in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $f.FullName).Hash.ToLowerInvariant()
+            "$hash  $($f.Name)"
+          }
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText("$PWD/SHA256SUMS-win.txt", (($lines -join "`n") + "`n"), $utf8NoBom)
+
+          $table = foreach ($l in $lines) {
+            $sum = $l.Substring(0, 64)
+            $name = $l.Substring(66)
+            "| ``$name`` | ``$sum`` |"
+          }
+          $signedLine = if ($env:WIN_SIGNED -eq 'true') {
+            "✅ Assinado com certificado de code signing — verificado no pipeline via \`Get-AuthenticodeSignature\`. O SmartScreen pode ainda pedir confirmação nas primeiras instalações até o reputacional do binário se consolidar."
+          } else {
+            "⚠️ **NÃO assinado** — nenhum certificado (\`WIN_CSC_LINK\`) está configurado neste repositório. O SmartScreen pode bloquear a execução: clique em **Mais informações → Executar assim mesmo**."
+          }
+          $frag = @(
+            "### Windows",
+            "",
+            $signedLine,
+            "",
+            "| Artefato | SHA-256 |",
+            "| --- | --- |"
+          ) + $table
+          [System.IO.File]::WriteAllText("$PWD/notes-windows.md", (($frag -join "`n") + "`n"), $utf8NoBom)
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.exe
+            SHA256SUMS-win.txt
+            notes-windows.md
           draft: true
+
+  # Consolida os checksums das duas plataformas em um unico SHA256SUMS.txt,
+  # RE-VERIFICA cada hash contra os artefatos realmente anexados ao release
+  # (fecha o ciclo entre as maquinas de build e a lista publicada) e escreve
+  # o corpo da release com o estado de assinatura por plataforma.
+  # O release continua DRAFT — a publicacao continua sendo um ato manual.
+  finalize-release:
+    name: Finalize release (checksums + notes)
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Verify artifacts and assemble release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p fragments assets
+          gh release download "$TAG" --dir fragments --clobber \
+            --pattern 'SHA256SUMS-mac.txt' \
+            --pattern 'SHA256SUMS-win.txt' \
+            --pattern 'notes-macos.md' \
+            --pattern 'notes-windows.md'
+
+          # Normaliza CR caso algum fragmento escape com CRLF.
+          sed -i 's/\r$//' fragments/SHA256SUMS-mac.txt fragments/SHA256SUMS-win.txt
+          cat fragments/SHA256SUMS-mac.txt fragments/SHA256SUMS-win.txt > SHA256SUMS.txt
+
+          fail=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            line="${line%$'\r'}"
+            sum="${line%%  *}"
+            name="${line#*  }"
+            gh release download "$TAG" --dir assets --clobber --pattern "$name"
+            actual=$(sha256sum "assets/$name" | cut -d' ' -f1)
+            if [ "$actual" != "$sum" ]; then
+              echo "::error::Checksum mismatch for $name (expected $sum, got $actual)"
+              fail=1
+            fi
+          done < SHA256SUMS.txt
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::At least one release artifact failed checksum verification"
+            exit 1
+          fi
+          echo "All release artifacts verified against SHA256SUMS."
+
+          {
+            echo "# Open Cowork ${TAG}"
+            echo ""
+            echo "Release gerada automaticamente. Leia o estado de assinatura de cada plataforma antes de instalar."
+            echo ""
+            echo "> ⚠️ **Se uma plataforma aparecer como NÃO assinada abaixo, o binário correspondente não passou por code signing (nem notarização, no caso do macOS).** Nesse caso, valide o arquivo baixado contra o \`SHA256SUMS.txt\` anexado e a tabela abaixo antes de executar."
+            echo ""
+            cat fragments/notes-macos.md
+            echo ""
+            cat fragments/notes-windows.md
+            echo ""
+            echo "## Verificação de integridade"
+            echo ""
+            echo "Baixe o \`SHA256SUMS.txt\` desta release e, na pasta dos downloads:"
+            echo ""
+            echo '```'
+            echo "sha256sum -c SHA256SUMS.txt"
+            echo '```'
+            echo ""
+            echo "No macOS: \`shasum -a 256 -c SHA256SUMS.txt\`. No Windows (PowerShell): \`Get-FileHash <arquivo> -Algorithm SHA256\` e compare com a tabela."
+          } > release-notes.md
+
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --notes-file release-notes.md
+          echo "Release metadata updated (draft preserved)."
