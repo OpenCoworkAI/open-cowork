@@ -42,6 +42,16 @@ jobs:
     name: Release macOS
     needs: [lint-and-test]
     runs-on: macos-14
+    # O contexto `secrets` NAO esta disponivel em `jobs.<job_id>.steps.if`
+    # (ver https://docs.github.com/en/actions/learn-github-actions/contexts) —
+    # usar `secrets` no `if:` de um step faz o GitHub rejeitar o workflow
+    # inteiro: o run e criado, nenhum job e agendado e o run fecha como
+    # `failure` sem log. O workaround canonico e expor o segredo como `env`
+    # do job (aqui `secrets` e permitido) e comparar `env` no `if:` do step
+    # (`env` e permitido em `steps.if`). O valor do segredo nunca e
+    # comparado diretamente no `if:`.
+    env:
+      MAC_CSC_LINK_PRESENT: ${{ secrets.MAC_CSC_LINK != '' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -86,7 +96,7 @@ jobs:
 
       # Build sem assinatura: caminho padrao, nao exige segredos no repositorio.
       - name: Electron Builder (unsigned)
-        if: ${{ secrets.MAC_CSC_LINK == '' }}
+        if: ${{ env.MAC_CSC_LINK_PRESENT != 'true' }}
         run: npx electron-builder --mac dmg dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -111,7 +121,7 @@ jobs:
       #     notarizado: CI verde, Gatekeeper bloqueando o usuario final e
       #     nenhum sinal no log.
       - name: Electron Builder (signed + notarized)
-        if: ${{ secrets.MAC_CSC_LINK != '' }}
+        if: ${{ env.MAC_CSC_LINK_PRESENT == 'true' }}
         run: npx electron-builder --mac dmg dir --publish never --config.mac.forceCodeSigning=true
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -136,7 +146,7 @@ jobs:
       # notarizados; em build local sem Apple ID ele falha — por isso esta
       # etapa so roda no job assinado+notarizado.
       - name: Verify signature and notarization
-        if: ${{ secrets.MAC_CSC_LINK != '' }}
+        if: ${{ env.MAC_CSC_LINK_PRESENT == 'true' }}
         run: |
           set -euo pipefail
           APP_DIR="release/mac-arm64"
@@ -306,6 +316,10 @@ jobs:
     name: Release Windows
     needs: [lint-and-test]
     runs-on: windows-latest
+    # Ver a nota em `build-macos`: `secrets` nao pode ser usado em
+    # `steps.if`; a presenca do certificado e exposta via `env` do job.
+    env:
+      WIN_CSC_LINK_PRESENT: ${{ secrets.WIN_CSC_LINK != '' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -359,7 +373,7 @@ jobs:
       #    que e truthy — o merge com o bloco `win:` do electron-builder.yml
       #    e por deepAssign, portanto nao apaga as demais chaves.
       - name: Electron Builder (signed)
-        if: ${{ secrets.WIN_CSC_LINK != '' }}
+        if: ${{ env.WIN_CSC_LINK_PRESENT == 'true' }}
         run: npx electron-builder --win nsis --publish never --config.win.forceCodeSigning=true
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -369,7 +383,7 @@ jobs:
       # O artefato fica sem assinatura e o SmartScreen pode bloquear em
       # maquinas de usuario final — comportamento conhecido e documentado.
       - name: Electron Builder (unsigned)
-        if: ${{ secrets.WIN_CSC_LINK == '' }}
+        if: ${{ env.WIN_CSC_LINK_PRESENT != 'true' }}
         run: npx electron-builder --win nsis --publish never
 
       # Verificacao da assinatura do artefato (defesa em profundidade).
@@ -384,7 +398,7 @@ jobs:
       # aqui e "o artefato foi assinado", nao "a CA e confiavel". O status
       # completo fica no log para inspecao.
       - name: Verify code signature
-        if: ${{ secrets.WIN_CSC_LINK != '' }}
+        if: ${{ env.WIN_CSC_LINK_PRESENT == 'true' }}
         shell: pwsh
         run: |
           $exes = Get-ChildItem -Path "release" -Filter "*.exe" | Where-Object { $_.Name -notmatch 'Uninstall' }
