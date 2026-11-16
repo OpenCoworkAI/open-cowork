@@ -136,7 +136,9 @@ jobs:
         if: steps.check_bot.outputs.has_review_for_current_head != 'true'
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          # The privileged reviewer must run maintained scripts even when the
+          # PR targets an older integration branch that has no .github/scripts.
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
       - name: Pre-fetch base and head refs
