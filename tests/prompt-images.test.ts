@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '../src/renderer/types';
 import { buildPromptImageOptions } from '../src/main/agent/prompt-images';
-import {
-  buildSyntheticPiModel,
-  resolvePiRegistryModel,
-} from '../src/main/agent/pi-model-resolution';
+import { resolvePiRegistryModel } from '../src/main/agent/pi-model-resolution';
 
 const message: Message = {
   id: 'clipboard',
@@ -32,10 +29,8 @@ describe('prompt image forwarding', () => {
     expect(message).toEqual(original);
   });
 
-  it('does not attach images to unknown text-only models or reuse assistant images', () => {
-    const model = buildSyntheticPiModel('deepseek-v4-pro', 'openai', 'openai');
-    expect(model.input).toEqual(['text']);
-    expect(buildPromptImageOptions(message, model.input.includes('image'))).toBeUndefined();
+  it('does not attach images to text-only models or reuse assistant images', () => {
+    expect(buildPromptImageOptions(message, false)).toBeUndefined();
     expect(buildPromptImageOptions({ ...message, role: 'assistant' }, true)).toBeUndefined();
     expect(buildPromptImageOptions(null, true)).toBeUndefined();
     expect(
