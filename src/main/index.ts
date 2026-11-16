@@ -51,6 +51,7 @@ import { SandboxSync } from './sandbox/sandbox-sync';
 import { WSLBridge } from './sandbox/wsl-bridge';
 import { LimaBridge } from './sandbox/lima-bridge';
 import { getSandboxBootstrap } from './sandbox/sandbox-bootstrap';
+import { enrichProcessPathForBuild } from './agent/agent-runner';
 import type { MCPServerConfig } from './mcp/mcp-manager';
 import type {
   ClientEvent,
@@ -868,6 +869,10 @@ function sendToRenderer(event: ServerEvent) {
 app
   .whenReady()
   .then(async () => {
+    // Make Homebrew and bundled CLIs discoverable before the window can ask
+    // for Lima status or start the sandbox bootstrap.
+    await enrichProcessPathForBuild();
+
     // Smoke test mode: verify the app can start, then exit cleanly
     if (process.argv.includes('--smoke-test')) {
       log('[SmokeTest] App launched successfully in smoke test mode');
