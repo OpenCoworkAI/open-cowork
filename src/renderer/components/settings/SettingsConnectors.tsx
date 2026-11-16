@@ -17,6 +17,7 @@ import {
 import type { MCPServerConfig, MCPServerStatus, MCPToolInfo, MCPPreset } from './shared';
 import {
   formatMcpArgsInput,
+  parseMcpArgsInput,
   formatMcpCommandLine,
   formatMcpTypeLabel,
   normalizeMcpConfigInput,
@@ -702,7 +703,12 @@ function ServerForm({
         return;
       }
       config.command = command.trim();
-      config.args = args.trim() ? args.trim().split(/\s+/) : [];
+      try {
+        config.args = parseMcpArgsInput(args);
+      } catch {
+        alert(t('mcp.argsInvalid'));
+        return;
+      }
       // Include environment variables
       if (Object.keys(envVars).length > 0) {
         config.env = envVars;
