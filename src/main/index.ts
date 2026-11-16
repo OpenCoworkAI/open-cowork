@@ -14,6 +14,9 @@
  */
 import './agent/install-image-resize-reporting';
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
+import { pathToFileURL } from 'node:url';
+import { assertTrustedAuthIpcSender } from './auth/auth-ipc-sender';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
@@ -2078,9 +2081,21 @@ ipcMain.handle('config.isConfigured', () => {
   }
 });
 
-ipcMain.handle('openai-codex-auth.status', () => openAICodexAuthService.getStatus());
+function assertCodexAuthSender(event: IpcMainInvokeEvent): void {
+  assertTrustedAuthIpcSender(
+    event,
+    mainWindow?.webContents,
+    process.env.VITE_DEV_SERVER_URL || pathToFileURL(join(__dirname, '../../dist/index.html')).href
+  );
+}
 
-ipcMain.handle('openai-codex-auth.login', async (): Promise<OpenAICodexAuthActionResult> => {
+ipcMain.handle('openai-codex-auth.status', (event) => {
+  assertCodexAuthSender(event);
+  return openAICodexAuthService.getStatus();
+});
+
+ipcMain.handle('openai-codex-auth.login', async (event): Promise<OpenAICodexAuthActionResult> => {
+  assertCodexAuthSender(event);
   const result = await runOpenAICodexLoginAction(openAICodexAuthService, (url) =>
     shell.openExternal(url)
   );
@@ -2092,17 +2107,15 @@ ipcMain.handle('openai-codex-auth.login', async (): Promise<OpenAICodexAuthActio
   return result;
 });
 
-ipcMain.handle(
-  'openai-codex-auth.cancel',
-  async (): Promise<OpenAICodexAuthActionResult> => ({
-    ok: true,
-    status: await openAICodexAuthService.cancelLogin(),
-  })
-);
+ipcMain.handle('openai-codex-auth.cancel', async (event): Promise<OpenAICodexAuthActionResult> => {
+  assertCodexAuthSender(event);
+  return { ok: true, status: await openAICodexAuthService.cancelLogin() };
+});
 
 ipcMain.handle(
   'openai-codex-auth.submit-code',
   (_event, value: string): OpenAICodexAuthActionResult => {
+    assertCodexAuthSender(_event);
     try {
       return { ok: true, status: openAICodexAuthService.submitManualCode(value) };
     } catch (error) {
@@ -2112,7 +2125,8 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('openai-codex-auth.logout', async (): Promise<OpenAICodexAuthActionResult> => {
+ipcMain.handle('openai-codex-auth.logout', async (event): Promise<OpenAICodexAuthActionResult> => {
+  assertCodexAuthSender(event);
   const result = await runOpenAICodexLogoutAction(openAICodexAuthService);
   if (result.ok) {
     await syncConfigAfterMutation(configStore.getAll());
