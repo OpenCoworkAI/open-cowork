@@ -33,7 +33,7 @@ export class FeishuChannel extends ChannelBase {
   constructor(config: FeishuChannelConfig) {
     super();
     this.config = config;
-    this.api = new FeishuAPI(config.appId, config.appSecret);
+    this.api = new FeishuAPI(config.appId, config.appSecret, config.domain);
   }
 
   /**
@@ -305,6 +305,7 @@ export class FeishuChannel extends ChannelBase {
     this.wsClient = new FeishuWSClient({
       appId: this.config.appId,
       appSecret: this.config.appSecret,
+      domain: this.config.domain,
       logLevel: 'info',
     });
 

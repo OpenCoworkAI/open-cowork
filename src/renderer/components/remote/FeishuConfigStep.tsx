@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 
 interface Props {
+  domain: 'feishu' | 'lark';
+  onDomainChange: (value: 'feishu' | 'lark') => void;
   feishuAppId: string;
   feishuAppSecret: string;
   feishuDmPolicy: string;
@@ -15,6 +17,8 @@ interface Props {
 }
 
 export function FeishuConfigStep({
+  domain,
+  onDomainChange,
   feishuAppId,
   feishuAppSecret,
   feishuDmPolicy,
@@ -50,6 +54,23 @@ export function FeishuConfigStep({
       </div>
 
       <div className="grid gap-4">
+        <div>
+          <label
+            htmlFor="feishu-domain"
+            className="block text-sm font-medium text-text-secondary mb-2"
+          >
+            {t('remote.tenantEdition')}
+          </label>
+          <select
+            id="feishu-domain"
+            value={domain}
+            onChange={(event) => onDomainChange(event.target.value === 'lark' ? 'lark' : 'feishu')}
+            className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary"
+          >
+            <option value="feishu">{t('remote.feishuEdition')}</option>
+            <option value="lark">{t('remote.larkEdition')}</option>
+          </select>
+        </div>
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-2">App ID</label>
           <input
@@ -96,13 +117,13 @@ export function FeishuConfigStep({
       </div>
 
       <a
-        href="https://open.feishu.cn/app"
+        href={domain === 'lark' ? 'https://open.larksuite.com/app' : 'https://open.feishu.cn/app'}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-2 text-sm text-accent hover:underline"
       >
         <ExternalLink className="w-4 h-4" />
-        {t('remote.openFeishu')}
+        {t(domain === 'lark' ? 'remote.openLark' : 'remote.openFeishu')}
       </a>
     </div>
   );

@@ -5,8 +5,6 @@
 
 import { log, logError } from '../../../utils/logger';
 
-const FEISHU_API_BASE = 'https://open.feishu.cn/open-apis';
-
 interface TokenResponse {
   code: number;
   msg: string;
@@ -35,13 +33,18 @@ interface SendMessageResponse {
 }
 
 export class FeishuAPI {
+  private readonly apiBase: string;
   private appId: string;
   private appSecret: string;
   private accessToken?: string;
   private tokenExpireAt?: number;
   private refreshPromise?: Promise<string>;
 
-  constructor(appId: string, appSecret: string) {
+  constructor(appId: string, appSecret: string, domain?: 'feishu' | 'lark') {
+    this.apiBase =
+      domain === 'lark'
+        ? 'https://open.larksuite.com/open-apis'
+        : 'https://open.feishu.cn/open-apis';
     this.appId = appId;
     this.appSecret = appSecret;
   }
@@ -64,7 +67,7 @@ export class FeishuAPI {
       try {
         log('[FeishuAPI] Refreshing access token...');
 
-        const response = await fetch(`${FEISHU_API_BASE}/auth/v3/tenant_access_token/internal`, {
+        const response = await fetch(`${this.apiBase}/auth/v3/tenant_access_token/internal`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
@@ -105,7 +108,7 @@ export class FeishuAPI {
   async getBotInfo(): Promise<{ open_id: string; app_name: string; avatar_url: string }> {
     const token = await this.refreshToken();
 
-    const response = await fetch(`${FEISHU_API_BASE}/bot/v3/info`, {
+    const response = await fetch(`${this.apiBase}/bot/v3/info`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -158,7 +161,7 @@ export class FeishuAPI {
       contentLength: contentStr.length,
     });
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/messages?receive_id_type=chat_id`, {
+    const response = await fetch(`${this.apiBase}/im/v1/messages?receive_id_type=chat_id`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -200,7 +203,7 @@ export class FeishuAPI {
 
     log('[FeishuAPI] Replying to message:', messageId);
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/messages/${messageId}/reply`, {
+    const response = await fetch(`${this.apiBase}/im/v1/messages/${messageId}/reply`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -234,7 +237,7 @@ export class FeishuAPI {
     formData.append('image_type', 'message');
     formData.append('image', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/images`, {
+    const response = await fetch(`${this.apiBase}/im/v1/images`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -266,7 +269,7 @@ export class FeishuAPI {
     formData.append('file_name', fileName);
     formData.append('file', new Blob([new Uint8Array(fileBuffer)]), fileName);
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/files`, {
+    const response = await fetch(`${this.apiBase}/im/v1/files`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -293,7 +296,7 @@ export class FeishuAPI {
   async downloadImage(imageKey: string): Promise<Buffer> {
     const token = await this.refreshToken();
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/images/${imageKey}`, {
+    const response = await fetch(`${this.apiBase}/im/v1/images/${imageKey}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -314,7 +317,7 @@ export class FeishuAPI {
   async downloadFile(fileKey: string): Promise<Buffer> {
     const token = await this.refreshToken();
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/files/${fileKey}`, {
+    const response = await fetch(`${this.apiBase}/im/v1/files/${fileKey}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -335,7 +338,7 @@ export class FeishuAPI {
   async getChatInfo(chatId: string): Promise<Record<string, unknown>> {
     const token = await this.refreshToken();
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/chats/${chatId}`, {
+    const response = await fetch(`${this.apiBase}/im/v1/chats/${chatId}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -365,7 +368,7 @@ export class FeishuAPI {
     const token = await this.refreshToken();
 
     const response = await fetch(
-      `${FEISHU_API_BASE}/contact/v3/users/${userId}?user_id_type=${idType}`,
+      `${this.apiBase}/contact/v3/users/${userId}?user_id_type=${idType}`,
       {
         method: 'GET',
         headers: {
