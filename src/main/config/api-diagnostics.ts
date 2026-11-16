@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 /**
  * @module main/config/api-diagnostics
  *
@@ -100,6 +101,7 @@ function isOpenAICompatible(input: DiagnosticInput): boolean {
   return (
     input.provider === 'openai' ||
     input.provider === 'ollama' ||
+    isLocalOpenAIProvider(input.provider) ||
     input.provider === 'openrouter' ||
     (input.provider === 'custom' && input.customProtocol === 'openai')
   );

@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 import type { AppConfig } from './config-store';
 import { isLoopbackBaseUrl as sharedIsLoopbackBaseUrl } from '../../shared/network/loopback';
 import { normalizeOllamaBaseUrl as sharedNormalizeOllamaBaseUrl } from '../../shared/ollama-base-url';
@@ -42,6 +43,7 @@ export function isOpenAIProvider(config: Pick<AppConfig, 'provider' | 'customPro
   return (
     config.provider === 'openai' ||
     config.provider === 'ollama' ||
+    isLocalOpenAIProvider(config.provider) ||
     (config.provider === 'custom' && config.customProtocol === 'openai')
   );
 }
@@ -220,8 +222,8 @@ export function shouldAllowEmptyOpenAIApiKey(
   config: Pick<AppConfig, 'provider' | 'customProtocol' | 'baseUrl'>
 ): boolean {
   return (
-    config.provider === 'custom' &&
-    config.customProtocol === 'openai' &&
+    (isLocalOpenAIProvider(config.provider) ||
+      (config.provider === 'custom' && config.customProtocol === 'openai')) &&
     isLoopbackBaseUrl(config.baseUrl)
   );
 }

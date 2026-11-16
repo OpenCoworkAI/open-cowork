@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../../shared/local-openai-provider';
 import { useTranslation } from 'react-i18next';
 import {
   Key,
@@ -128,22 +129,31 @@ export function SettingsAPI() {
         </label>
         <p className="text-xs leading-5 text-text-muted">{t('api.providerDescription')}</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-          {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
-            (p) => (
-              <button
-                key={p}
-                onClick={() => changeProvider(p)}
-                disabled={isLoadingConfig}
-                className={`px-3 py-2 rounded-lg text-sm transition-colors border ${
-                  provider === p
-                    ? 'border-accent bg-accent/10 text-accent font-medium'
-                    : 'border-border-muted text-text-secondary hover:border-border hover:text-text-primary disabled:opacity-50'
-                }`}
-              >
-                {p === 'custom' ? t('api.moreModels') : presets?.[p]?.name || p}
-              </button>
-            )
-          )}
+          {(
+            [
+              'openrouter',
+              'anthropic',
+              'openai',
+              'gemini',
+              'ollama',
+              'vllm',
+              'lmstudio',
+              'custom',
+            ] as const
+          ).map((p) => (
+            <button
+              key={p}
+              onClick={() => changeProvider(p)}
+              disabled={isLoadingConfig}
+              className={`px-3 py-2 rounded-lg text-sm transition-colors border ${
+                provider === p
+                  ? 'border-accent bg-accent/10 text-accent font-medium'
+                  : 'border-border-muted text-text-secondary hover:border-border hover:text-text-primary disabled:opacity-50'
+              }`}
+            >
+              {p === 'custom' ? t('api.moreModels') : presets?.[p]?.name || p}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -206,7 +216,7 @@ export function SettingsAPI() {
         </div>
       )}
 
-      {(provider === 'custom' || provider === 'ollama') && (
+      {(provider === 'custom' || provider === 'ollama' || isLocalOpenAIProvider(provider)) && (
         <div className="space-y-3 py-5 border-b border-border-muted">
           <div className="flex items-center justify-between gap-2">
             <label
@@ -238,24 +248,28 @@ export function SettingsAPI() {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={
-              provider === 'ollama'
-                ? 'http://localhost:11434/v1'
-                : customProtocol === 'openai'
-                  ? 'https://api.openai.com/v1'
-                  : customProtocol === 'gemini'
-                    ? 'https://generativelanguage.googleapis.com'
-                    : currentPreset?.baseUrl || 'https://api.anthropic.com'
+              isLocalOpenAIProvider(provider)
+                ? currentPreset?.baseUrl || ''
+                : provider === 'ollama'
+                  ? 'http://localhost:11434/v1'
+                  : customProtocol === 'openai'
+                    ? 'https://api.openai.com/v1'
+                    : customProtocol === 'gemini'
+                      ? 'https://generativelanguage.googleapis.com'
+                      : currentPreset?.baseUrl || 'https://api.anthropic.com'
             }
             className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
           />
           <p className="text-xs text-text-muted">
-            {provider === 'ollama'
-              ? t('api.enterOllamaUrl')
-              : customProtocol === 'openai'
-                ? t('api.enterOpenAIUrl')
-                : customProtocol === 'gemini'
-                  ? t('api.enterGeminiUrl')
-                  : t('api.enterAnthropicUrl')}
+            {isLocalOpenAIProvider(provider)
+              ? t('api.localServerHint')
+              : provider === 'ollama'
+                ? t('api.enterOllamaUrl')
+                : customProtocol === 'openai'
+                  ? t('api.enterOpenAIUrl')
+                  : customProtocol === 'gemini'
+                    ? t('api.enterGeminiUrl')
+                    : t('api.enterAnthropicUrl')}
           </p>
           {isOllamaMode && (
             <p className="text-xs text-text-muted">{t('api.discoverLocalOllamaHint')}</p>
@@ -316,7 +330,7 @@ export function SettingsAPI() {
             type="text"
             value={customModel}
             onChange={(e) => setCustomModel(e.target.value)}
-            placeholder={modelInputPlaceholder}
+            placeholder={isLocalOpenAIProvider(provider) ? t('api.model') : modelInputPlaceholder}
             className="w-full px-4 py-3 rounded-lg bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
           />
         ) : (
@@ -339,10 +353,14 @@ export function SettingsAPI() {
             )}
           </select>
         )}
-        {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
+        {useCustomModel && (
+          <p className="text-xs text-text-muted">
+            {isLocalOpenAIProvider(provider) ? t('api.localServerModelHint') : modelInputHint}
+          </p>
+        )}
 
         {/* Context Window & Max Tokens — only for non-registry providers */}
-        {(provider === 'ollama' || provider === 'custom') && (
+        {(provider === 'ollama' || provider === 'custom' || isLocalOpenAIProvider(provider)) && (
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div>
               <label
