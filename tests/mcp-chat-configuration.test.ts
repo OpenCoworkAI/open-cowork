@@ -330,4 +330,50 @@ describe('chat MCP configuration', () => {
     expect(saved.env).toEqual({ NEW: 'new-value' });
     expect(saved.headers).toEqual({ 'X-New': 'new-value' });
   });
+
+  it('removes omitted credentials from the actual persisted connector when its endpoint changes', async () => {
+    const host = await fixture();
+    host.store.saveServer({
+      id: 'notes',
+      name: 'Notes',
+      type: 'sse',
+      enabled: false,
+      url: 'https://old.example/mcp',
+      env: { UNRECOGNISED: 'OLD_ENV_SECRET' },
+      headers: { Authorization: 'OLD_HEADER_SECRET' },
+    });
+    await callTool(host.tools, 'mcp_configure', {
+      server: {
+        id: 'notes',
+        name: 'Notes',
+        type: 'sse',
+        url: 'https://new.example/mcp',
+      },
+    });
+    expect(host.store.getServer('notes')?.env).toBeUndefined();
+    expect(host.store.getServer('notes')?.headers).toBeUndefined();
+    const document = fs.readFileSync(path.join(profile.directory, 'mcp-config.json'), 'utf8');
+    expect(document).not.toContain('OLD_ENV_SECRET');
+    expect(document).not.toContain('OLD_HEADER_SECRET');
+  });
+
+  it('redacts credentials from an imported URL-only connector fallback name', async () => {
+    const host = await fixture();
+    fs.writeFileSync(
+      path.join(profile.directory, 'mcp-config.json'),
+      JSON.stringify({
+        servers: [
+          {
+            id: 'notes',
+            type: 'sse',
+            enabled: false,
+            url: 'https://SECRET_USER:SECRET_PASSWORD@example.com/mcp?token=SECRET_QUERY#SECRET_FRAGMENT',
+          },
+        ],
+      })
+    );
+    const result = await callTool(host.tools, 'mcp_list', {});
+    expect(result).toMatchObject({ servers: [{ id: 'notes', name: 'https://example.com' }] });
+    expect(JSON.stringify(result)).not.toContain('SECRET_');
+  });
 });

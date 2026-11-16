@@ -25,12 +25,24 @@ function describeServer(server: MCPServerConfig) {
   // from an existing connector into a conversation.
   return {
     id: server.id,
-    name: server.name,
+    name: describeServerName(server.name),
     type: server.type,
     enabled: server.enabled,
     envKeys: Object.keys(server.env || {}),
     headerKeys: Object.keys(server.headers || {}),
   };
+}
+
+function describeServerName(name: string): string {
+  // Imported URL-only entries use their URL as a fallback label. That label
+  // must not become an indirect route for query strings or URL userinfo.
+  try {
+    const url = new URL(name);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin;
+  } catch {
+    // Ordinary human-readable connector names are not URLs.
+  }
+  return name;
 }
 
 function stringRecord(value: unknown): value is Record<string, string> {
