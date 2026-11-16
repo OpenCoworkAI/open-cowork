@@ -296,7 +296,7 @@ function resolveBundledToolsBinDir(): string | null {
  */
 let pathEnriched = false;
 
-async function enrichProcessPathForBuild(): Promise<void> {
+export async function enrichProcessPathForBuild(): Promise<void> {
   if (pathEnriched) return;
   pathEnriched = true;
 
@@ -308,6 +308,13 @@ async function enrichProcessPathForBuild(): Promise<void> {
   const platform = process.platform;
   const delimiter = platform === 'win32' ? ';' : ':';
   const currentPaths = (process.env.PATH || '').split(delimiter).filter((p: string) => p.trim());
+
+  // Finder/Dock do not inherit Homebrew's PATH. Retain these conventional
+  // locations even when a user's login-shell startup script fails or times out.
+  const platformPaths =
+    platform === 'darwin'
+      ? ['/opt/homebrew/bin', '/usr/local/bin'].filter((entry) => fs.existsSync(entry))
+      : [];
 
   // 1. Restore user's login-shell PATH
   let shellPaths: string[] = [];
@@ -374,7 +381,7 @@ async function enrichProcessPathForBuild(): Promise<void> {
   const seen = new Set<string>();
   const merged: string[] = [];
 
-  for (const p of [...bundledDirs, ...shellPaths, ...currentPaths]) {
+  for (const p of [...bundledDirs, ...shellPaths, ...platformPaths, ...currentPaths]) {
     const normalized = platform === 'win32' ? p.toLowerCase() : p;
     if (!seen.has(normalized)) {
       seen.add(normalized);
