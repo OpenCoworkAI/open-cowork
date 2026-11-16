@@ -1,10 +1,7 @@
+import { OPENAI_CODEX_BASE_URL } from './openai-codex';
+
 export type SharedProviderType =
-  | 'openrouter'
-  | 'anthropic'
-  | 'custom'
-  | 'openai'
-  | 'gemini'
-  | 'ollama';
+  'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
 
 export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 
@@ -21,6 +18,7 @@ export interface SharedProviderPresets {
   anthropic: SharedProviderPreset;
   custom: SharedProviderPreset;
   openai: SharedProviderPreset;
+  'openai-codex': SharedProviderPreset;
   gemini: SharedProviderPreset;
   ollama: SharedProviderPreset;
 }
@@ -74,6 +72,19 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     ],
     keyPlaceholder: 'sk-...',
     keyHint: '从 platform.openai.com 获取',
+  },
+  'openai-codex': {
+    name: 'OpenAI Codex (ChatGPT)',
+    baseUrl: OPENAI_CODEX_BASE_URL,
+    models: [
+      { id: 'gpt-5.4', name: 'GPT-5.4' },
+      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+      { id: 'gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark' },
+      { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex' },
+      { id: 'gpt-5.2', name: 'GPT-5.2' },
+    ],
+    keyPlaceholder: '',
+    keyHint: '',
   },
   gemini: {
     name: 'Gemini',
@@ -155,6 +166,10 @@ export const PI_AI_CURATED_PRESETS: Record<string, { piProvider: string; pick: s
       'o4-mini',
     ],
   },
+  'openai-codex': {
+    piProvider: 'openai-codex',
+    pick: ['gpt-5.4', 'gpt-5.3-codex', 'gpt-5.3-codex-spark', 'gpt-5.2-codex', 'gpt-5.2'],
+  },
   gemini: {
     piProvider: 'google',
     pick: [
@@ -204,6 +219,13 @@ export function getModelInputGuidance(
     return {
       placeholder: 'gpt-5.4, gpt-5.4-mini, o3',
       hint: 'Use the exact model ID for the selected protocol or endpoint.',
+    };
+  }
+
+  if (provider === 'openai-codex') {
+    return {
+      placeholder: 'gpt-5.4, gpt-5.3-codex',
+      hint: 'Choose a model available through your ChatGPT subscription.',
     };
   }
 

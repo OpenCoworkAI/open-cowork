@@ -250,7 +250,15 @@ describe('Config File Sync', () => {
     });
 
     it('accepts every whitelisted provider value', () => {
-      const validProviders = ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'];
+      const validProviders = [
+        'openrouter',
+        'anthropic',
+        'custom',
+        'openai',
+        'openai-codex',
+        'gemini',
+        'ollama',
+      ];
       for (const provider of validProviders) {
         const updates = parseAndFilterImport(JSON.stringify({ provider }));
         expect(updates!.provider).toBe(provider);

@@ -86,6 +86,7 @@ import { fetchOllamaModelInfo } from '../config/ollama-api';
 import { createWindowsBashOperations } from './windows-bash-operations';
 import { createLimaSandboxCodingTools, VIRTUAL_WORKSPACE_PATH } from './lima-sandbox-operations';
 import { createCompactionExtensionFactory } from './compaction-extension';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 
 /**
  * Estimate chars-per-token ratio based on content language.
@@ -1659,8 +1660,20 @@ ${hints.join('\n')}
       });
 
       // Set up API keys via AuthStorage
-      const authStorage = getSharedAuthStorage();
+      const authStorage = getSharedAuthStorage(piModel.provider);
       const apiKey = runtimeConfig.apiKey?.trim();
+      if (!apiKey && piModel.provider === 'openai-codex') {
+        authStorage.removeRuntimeApiKey('openai-codex');
+      }
+      if (
+        !apiKey &&
+        piModel.provider === 'openai-codex' &&
+        !isTrustedOpenAICodexBaseUrl(piModel.baseUrl)
+      ) {
+        throw new Error(
+          'Refusing to send ChatGPT OAuth credentials to an untrusted Codex endpoint.'
+        );
+      }
       if (apiKey) {
         // Map our config provider to pi-ai provider name
         const piProvider =
@@ -1684,6 +1697,10 @@ ${hints.join('\n')}
               baseUrl: piModel.baseUrl || runtimeConfig.baseUrl || '',
             })
           );
+        } else if (provider === 'openai-codex') {
+          // ModelRegistry reads the shared AuthStorage before every prompt and
+          // refreshes expired OAuth credentials without recreating the runner.
+          log('[CoworkAgentRunner] Using stored ChatGPT OAuth credentials for OpenAI Codex');
         } else {
           logWarn('[CoworkAgentRunner] No API key configured for provider:', provider);
         }

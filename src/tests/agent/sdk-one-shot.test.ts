@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const completeSimpleMock = vi.hoisted(() => vi.fn());
+const getApiKeyMock = vi.hoisted(() => vi.fn());
+const removeRuntimeApiKeyMock = vi.hoisted(() => vi.fn());
+const selectStorageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mariozechner/pi-ai', () => ({
   completeSimple: completeSimpleMock,
@@ -8,9 +11,14 @@ vi.mock('@mariozechner/pi-ai', () => ({
 }));
 
 vi.mock('../../main/agent/shared-auth', () => ({
-  getSharedAuthStorage: () => ({
-    setRuntimeApiKey: vi.fn(),
-  }),
+  getSharedAuthStorage: (provider?: string) => {
+    selectStorageMock(provider);
+    return {
+      setRuntimeApiKey: vi.fn(),
+      removeRuntimeApiKey: removeRuntimeApiKeyMock,
+      getApiKey: getApiKeyMock,
+    };
+  },
   ModelRegistry: vi.fn(),
 }));
 
@@ -68,10 +76,49 @@ function makeConfig(): AppConfig {
 describe('runPiAiOneShot', () => {
   beforeEach(() => {
     completeSimpleMock.mockReset();
+    getApiKeyMock.mockReset();
+    removeRuntimeApiKeyMock.mockReset();
+    selectStorageMock.mockReset();
     completeSimpleMock.mockResolvedValue({
       content: [{ type: 'text', text: 'ok' }],
       stopReason: 'stop',
     });
+  });
+
+  it('resolves the ChatGPT OAuth token inside the main process', async () => {
+    getApiKeyMock.mockResolvedValue('oauth-access-token');
+    const config = makeConfig();
+    config.provider = 'openai-codex';
+    config.customProtocol = 'openai';
+    config.apiKey = '';
+    config.baseUrl = 'https://chatgpt.com/backend-api';
+    config.model = 'gpt-5.4';
+    config.activeProfileKey = 'openai-codex';
+
+    await runPiAiOneShot('hello', 'system', config);
+
+    expect(getApiKeyMock).toHaveBeenCalledWith('openai-codex');
+    expect(selectStorageMock).toHaveBeenCalledWith('openai-codex');
+    expect(removeRuntimeApiKeyMock).toHaveBeenCalledWith('openai-codex');
+    expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
+      apiKey: 'oauth-access-token',
+    });
+  });
+
+  it('never resolves the OAuth token for a non-ChatGPT endpoint', async () => {
+    const config = makeConfig();
+    config.provider = 'openai-codex';
+    config.customProtocol = 'openai';
+    config.apiKey = '';
+    config.baseUrl = 'https://example.test/backend-api/codex';
+    config.model = 'unknown-codex-model';
+    config.activeProfileKey = 'openai-codex';
+
+    await expect(runPiAiOneShot('hello', 'system', config)).rejects.toThrow(
+      'untrusted Codex endpoint'
+    );
+    expect(getApiKeyMock).not.toHaveBeenCalled();
+    expect(completeSimpleMock).not.toHaveBeenCalled();
   });
 
   it('passes generation options through to completeSimple', async () => {

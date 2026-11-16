@@ -41,6 +41,7 @@ export interface SyntheticPiModelFallback {
 }
 
 export function resolvePiRouteProtocol(provider?: string, customProtocol?: string): string {
+  if (provider === 'openai-codex') return 'openai-codex';
   if (provider === 'custom') {
     if (customProtocol === 'openai' || customProtocol === 'gemini') {
       return customProtocol;
@@ -105,6 +106,8 @@ function shouldPreserveOpenAIResponsesApi(
 
 export function inferPiApi(protocol: string): string {
   switch (protocol) {
+    case 'openai-codex':
+      return 'openai-codex-responses';
     case 'anthropic':
       return 'anthropic-messages';
     case 'gemini':
@@ -269,6 +272,9 @@ export function resolvePiModelString(input: PiModelStringInput): string {
   }
   if (model.includes('/')) {
     return model;
+  }
+  if (input.provider === 'openai-codex') {
+    return `openai-codex/${model}`;
   }
   const provider = input.provider || 'anthropic';
   const protocol = input.customProtocol || provider;

@@ -15,6 +15,7 @@ import type {
   AgentRuntimeCustomTool,
 } from '../extensions/agent-runtime-extension';
 import { getSharedAuthStorage, ModelRegistry } from './shared-auth';
+import { isTrustedOpenAICodexBaseUrl } from '../../shared/openai-codex';
 import { MCPManager } from '../mcp/mcp-manager';
 import { configStore } from '../config/config-store';
 import { log, logError } from '../utils/logger';
@@ -243,7 +244,7 @@ function createSpawnSubagentTool(
       );
 
       try {
-        const authStorage = getSharedAuthStorage();
+        const authStorage = getSharedAuthStorage(config.provider);
         const modelRegistry = new ModelRegistry(authStorage);
 
         const selectedModel = model?.trim() || preset?.model || childConfig.model || config.model;
@@ -317,6 +318,14 @@ function createSpawnSubagentTool(
           );
         }
         const apiKey = config.apiKey?.trim();
+        if (!apiKey && piModel.provider === 'openai-codex') {
+          if (!isTrustedOpenAICodexBaseUrl(piModel.baseUrl)) {
+            throw new Error(
+              'Refusing to send ChatGPT OAuth credentials to an untrusted Codex endpoint.'
+            );
+          }
+          authStorage.removeRuntimeApiKey('openai-codex');
+        }
         if (apiKey) authStorage.setRuntimeApiKey(piModel.provider, apiKey);
 
         // Build MCP tools (minus spawn_subagent)
