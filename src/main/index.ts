@@ -26,6 +26,7 @@ import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
+import { McpConfigExtension } from './mcp/mcp-config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
 import { TodoExtension } from './agent/todo-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
@@ -149,7 +150,7 @@ let scheduledTaskManager: ScheduledTaskManager | null = null;
  * interactive dialog in the top-level session, never through a background
  * subagent.
  */
-const SUBAGENT_ALWAYS_DENIED_TOOLS = new Set<string>(['config_write']);
+const SUBAGENT_ALWAYS_DENIED_TOOLS = new Set<string>(['config_write', 'mcp_configure']);
 
 /**
  * Resolve the allow/deny decision for a tool call made by a spawned
@@ -166,6 +167,24 @@ function resolveSubagentToolPermission(
   }
   const decision = decidePermission('subagent', toolName, toolInput);
   return decision === 'deny' ? 'deny' : 'allow';
+}
+
+function createMcpConfigExtension(): McpConfigExtension {
+  return new McpConfigExtension(
+    mcpConfigStore,
+    async (config) => {
+      if (!sessionManager) throw new Error('Session manager is still starting.');
+      const manager = sessionManager.getMCPManager();
+      await manager.updateServer(config);
+      const status = manager.getServerStatus().find((server) => server.id === config.id);
+      // updateServer can defer while startup/reconnection is in progress.
+      // Keep the extension's change queued until the requested state exists.
+      if (!status || (config.enabled ? !status.connected : status.status !== 'disabled')) {
+        throw new Error('MCP activation is still pending.');
+      }
+    },
+    () => sessionManager?.invalidateMcpServersCache()
+  );
 }
 
 function sanitizeDiagnosticBaseUrl(value: string | undefined): string | null {
@@ -934,6 +953,7 @@ app
       const headlessExtensionManager = new AgentRuntimeExtensionManager([
         new MemoryExtension(memoryService),
         new ConfigExtension(configStore),
+        createMcpConfigExtension(),
         new TodoExtension(),
         new SubagentExtension(
           () => sessionManager?.getMCPManager() ?? null,
@@ -1352,6 +1372,7 @@ app
     const extensionManager = new AgentRuntimeExtensionManager([
       new MemoryExtension(memoryService),
       new ConfigExtension(configStore),
+      createMcpConfigExtension(),
       new TodoExtension(),
       new SubagentExtension(
         () => sessionManager?.getMCPManager() ?? null,
