@@ -5,7 +5,7 @@ import type {
   AgentRuntimeExtension,
   BeforeSessionRunResult,
 } from '../extensions/agent-runtime-extension';
-import type { MCPServerConfig } from './mcp-manager';
+import type { MCPManager, MCPServerConfig } from './mcp-manager';
 import { isPlainObject, normalizeMcpServerEntry } from '../../shared/mcp-config';
 
 interface McpConfigurationStore {
@@ -35,6 +35,18 @@ function describeServer(server: MCPServerConfig) {
 
 function stringRecord(value: unknown): value is Record<string, string> {
   return isPlainObject(value) && Object.values(value).every((item) => typeof item === 'string');
+}
+
+/** A connected old instance does not prove a deferred configuration was applied. */
+export async function activateMcpConfiguration(
+  manager: Pick<MCPManager, 'updateServer' | 'getServerStatus'>,
+  config: MCPServerConfig
+): Promise<void> {
+  const applied = await manager.updateServer(config);
+  const status = manager.getServerStatus().find((server) => server.id === config.id);
+  if (!applied || !status || (config.enabled ? !status.connected : status.status !== 'disabled')) {
+    throw new Error('MCP activation is still pending.');
+  }
 }
 
 export function validateMcpConfiguration(
@@ -75,16 +87,29 @@ export function validateMcpConfiguration(
     if (input[field] !== undefined && !stringRecord(input[field]))
       throw new McpConfigurationValidationError(`${field} must contain string values.`);
   }
-  const { server } = normalizeMcpServerEntry(
-    {
-      ...existing,
-      ...input,
-      id: input.id ?? `mcp-${randomUUID()}`,
-      enabled: input.enabled ?? existing?.enabled ?? false,
-    },
-    undefined,
-    new Set()
-  );
+  const merged: Record<string, unknown> = {
+    ...existing,
+    ...input,
+    id: input.id ?? `mcp-${randomUUID()}`,
+    enabled: input.enabled ?? existing?.enabled ?? false,
+  };
+  const sameTarget =
+    existing !== undefined &&
+    existing.type === input.type &&
+    (input.type === 'stdio'
+      ? existing.command?.trim() === String(input.command).trim() &&
+        JSON.stringify(existing.args ?? []) === JSON.stringify(input.args ?? existing.args ?? []) &&
+        existing.cwd === (input.cwd ?? existing.cwd)
+      : existing.url?.trim() === String(input.url).trim());
+  if (!sameTarget) {
+    // Every env/header value may be a secret, including unrecognised key names.
+    // Omitted credentials may only follow edits to the same transport target.
+    if (!Object.hasOwn(input, 'env')) delete merged.env;
+    if (!Object.hasOwn(input, 'headers')) delete merged.headers;
+    // A different executable must not inherit potentially secret CLI arguments.
+    if (existing?.command !== input.command && !Object.hasOwn(input, 'args')) delete merged.args;
+  }
+  const { server } = normalizeMcpServerEntry(merged, undefined, new Set());
   if (!server) throw new McpConfigurationValidationError('Invalid MCP server configuration.');
   return server;
 }
@@ -145,7 +170,7 @@ export class McpConfigExtension implements AgentRuntimeExtension {
       name: 'mcp_configure',
       label: 'mcp_configure',
       description:
-        'Add or update an MCP connector using configuration supplied by the user or the server documentation. Do not invent an app server command, endpoint or credentials. New connectors default to disabled; set enabled:true only when the user requests activation. This configuration change uses the normal approval flow. It saves configuration, never installs packages itself, and activation is applied on the next turn. For updates, include the connector ID and its name and transport configuration; omitted credentials are preserved.',
+        'Add or update an MCP connector using configuration supplied by the user or the server documentation. Do not invent an app server command, endpoint or credentials. New connectors default to disabled; set enabled:true only when the user requests activation. This configuration change uses the normal approval flow. It saves configuration, never installs packages itself, and activation is applied on the next turn. For updates, include the connector ID and its name and transport configuration. Omitted credentials are preserved only for the same transport target; when changing an endpoint, executable or its arguments, supply any credentials explicitly.',
       parameters: Type.Object({
         server: Type.Object({
           id: Type.Optional(Type.String()),

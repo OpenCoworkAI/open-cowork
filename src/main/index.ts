@@ -26,7 +26,7 @@ import { PluginRuntimeService } from './skills/plugin-runtime-service';
 import { MemoryService } from './memory/memory-service';
 import { MemoryExtension } from './memory/memory-extension';
 import { ConfigExtension } from './config/config-extension';
-import { McpConfigExtension } from './mcp/mcp-config-extension';
+import { McpConfigExtension, activateMcpConfiguration } from './mcp/mcp-config-extension';
 import { SubagentExtension } from './agent/subagent-extension';
 import { TodoExtension } from './agent/todo-extension';
 import { AgentRuntimeExtensionManager } from './extensions/agent-runtime-extension-manager';
@@ -175,13 +175,7 @@ function createMcpConfigExtension(): McpConfigExtension {
     async (config) => {
       if (!sessionManager) throw new Error('Session manager is still starting.');
       const manager = sessionManager.getMCPManager();
-      await manager.updateServer(config);
-      const status = manager.getServerStatus().find((server) => server.id === config.id);
-      // updateServer can defer while startup/reconnection is in progress.
-      // Keep the extension's change queued until the requested state exists.
-      if (!status || (config.enabled ? !status.connected : status.status !== 'disabled')) {
-        throw new Error('MCP activation is still pending.');
-      }
+      await activateMcpConfiguration(manager, config);
     },
     () => sessionManager?.invalidateMcpServersCache()
   );

@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { McpConfigExtension } from '../src/main/mcp/mcp-config-extension';
+import {
+  McpConfigExtension,
+  activateMcpConfiguration,
+  validateMcpConfiguration,
+} from '../src/main/mcp/mcp-config-extension';
+import type { MCPServerConfig } from '../src/main/mcp/mcp-manager';
 import type { AgentRuntimeCustomTool } from '../src/main/extensions/agent-runtime-extension';
 import { decidePermission, setPermissionRules } from '../src/main/config/permission-rules-store';
 
@@ -12,7 +17,14 @@ vi.mock('electron', () => {
   const ipcMain = { on: vi.fn() };
   return { app, ipcMain, default: { app, ipcMain } };
 });
-vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logError: vi.fn() }));
+vi.mock('../src/main/utils/logger', () => ({
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logCtx: vi.fn(),
+  logCtxError: vi.fn(),
+  logTiming: vi.fn(),
+}));
 
 async function fixture() {
   const { mcpConfigStore } = await import('../src/main/mcp/mcp-config-store');
@@ -135,7 +147,7 @@ describe('chat MCP configuration', () => {
         id: 'notes',
         name: 'Notes',
         type: 'sse',
-        url: 'https://example.com/mcp',
+        url: 'https://example.com/mcp?key=SECRET_URL',
         enabled: true,
       },
     });
@@ -176,5 +188,146 @@ describe('chat MCP configuration', () => {
     host.store.deleteServer('notes');
     await host.extension.beforeSessionRun();
     expect(host.activate).not.toHaveBeenCalled();
+  });
+
+  it.each(['initialization', 'reconnection'])(
+    'retries a deferred %s update even while the old same-ID server is connected',
+    async (phase) => {
+      const host = await fixture();
+      const { MCPManager } = await import('../src/main/mcp/mcp-manager');
+      const manager = new MCPManager();
+      const original: MCPServerConfig = {
+        id: 'notes',
+        name: 'Notes',
+        type: 'sse',
+        url: 'https://old.example/mcp',
+        enabled: true,
+      };
+      const updated: MCPServerConfig = { ...original, url: 'https://new.example/mcp' };
+      const internals = manager as unknown as {
+        initializingServers: boolean;
+        reconnectingServers: Set<string>;
+        clients: Map<string, { close: () => Promise<void> }>;
+        serverConfigs: Map<string, MCPServerConfig>;
+        connectServer(config: MCPServerConfig): Promise<void>;
+        refreshTools(): Promise<void>;
+      };
+      const client = { close: vi.fn(async () => {}) };
+      internals.serverConfigs.set(original.id, original);
+      internals.clients.set(original.id, client);
+      const connect = vi.spyOn(internals, 'connectServer').mockImplementation(async (config) => {
+        internals.clients.set(config.id, client);
+      });
+      vi.spyOn(internals, 'refreshTools').mockResolvedValue(undefined);
+      const extension = new McpConfigExtension(host.store, (config) =>
+        activateMcpConfiguration(manager, config)
+      );
+      const tools = (await extension.beforeSessionRun()).customTools!;
+      await callTool(tools, 'mcp_configure', { server: updated });
+      internals.initializingServers = phase === 'initialization';
+      if (phase === 'reconnection') internals.reconnectingServers.add(original.id);
+      expect(manager.getServerStatus()[0].connected).toBe(true);
+      expect((await extension.beforeSessionRun()).promptPrefix).toContain('could not be activated');
+      expect(internals.serverConfigs.get(original.id)?.url).toBe(original.url);
+      expect(connect).not.toHaveBeenCalled();
+      internals.initializingServers = false;
+      internals.reconnectingServers.clear();
+      expect((await extension.beforeSessionRun()).promptPrefix).toBeUndefined();
+      expect(internals.serverConfigs.get(original.id)?.url).toBe(updated.url);
+      expect(connect).toHaveBeenCalledOnce();
+      await extension.beforeSessionRun();
+      expect(connect).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([
+    { type: 'sse', url: 'https://other.example/mcp' },
+    { type: 'sse', url: 'https://original.example/new-endpoint' },
+    { type: 'streamable-http', url: 'https://original.example/mcp' },
+    { type: 'stdio', command: 'other-executable', args: ['--serve'] },
+  ])(
+    'does not forward stored headers or arbitrary environment values to a changed target: %j',
+    (target) => {
+      const existing: MCPServerConfig = {
+        id: 'notes',
+        name: 'Notes',
+        type: 'sse',
+        url: 'https://original.example/mcp',
+        enabled: true,
+        headers: { Authorization: 'old-secret', 'X-Custom': 'unknown-secret' },
+        env: { SOMETHING: 'opaque-secret', PATH: '/private/bin' },
+      };
+      const saved = validateMcpConfiguration({ id: 'notes', name: 'Notes', ...target }, existing);
+      expect(saved.headers).toBeUndefined();
+      expect(saved.env).toBeUndefined();
+    }
+  );
+
+  it.each([
+    { command: 'other-executable' },
+    { command: 'npx', args: ['other-server'] },
+    { command: 'npx', cwd: '/another-directory' },
+  ])('clears omitted credentials when a stdio target changes: %j', (target) => {
+    const existing: MCPServerConfig = {
+      id: 'notes',
+      name: 'Notes',
+      type: 'stdio',
+      command: 'npx',
+      args: ['old-server', '--token=secret'],
+      cwd: '/original-directory',
+      env: { OPAQUE: 'secret' },
+      headers: { Authorization: 'secret' },
+      enabled: true,
+    };
+    const saved = validateMcpConfiguration(
+      { id: 'notes', name: 'Notes', type: 'stdio', ...target },
+      existing
+    );
+    expect(saved.env).toBeUndefined();
+    expect(saved.headers).toBeUndefined();
+    if (target.command !== 'npx') expect(saved.args).toBeUndefined();
+  });
+
+  it('preserves omitted credentials for the same stdio target', () => {
+    const existing: MCPServerConfig = {
+      id: 'notes',
+      name: 'Notes',
+      type: 'stdio',
+      command: 'node',
+      args: ['server.js'],
+      env: { OPAQUE: 'secret' },
+      enabled: true,
+    };
+    expect(
+      validateMcpConfiguration(
+        { id: 'notes', name: 'Renamed', type: 'stdio', command: 'node' },
+        existing
+      ).env
+    ).toEqual(existing.env);
+  });
+
+  it('uses explicitly supplied credentials for a new target without merging old entries', () => {
+    const existing: MCPServerConfig = {
+      id: 'notes',
+      name: 'Notes',
+      type: 'sse',
+      url: 'https://original.example/mcp',
+      enabled: true,
+      env: { OLD: 'secret' },
+      headers: { Authorization: 'secret', 'X-Old': 'secret' },
+    };
+    const saved = validateMcpConfiguration(
+      {
+        id: 'notes',
+        name: 'Notes',
+        type: 'sse',
+        url: 'https://new.example/mcp',
+        env: { NEW: 'new-value' },
+        headers: { 'X-New': 'new-value' },
+      },
+      existing
+    );
+    expect(saved.env).toEqual({ NEW: 'new-value' });
+    expect(saved.headers).toEqual({ 'X-New': 'new-value' });
   });
 });

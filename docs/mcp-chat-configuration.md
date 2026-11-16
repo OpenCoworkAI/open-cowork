@@ -27,7 +27,11 @@ that command may perform its own setup, such as an explicitly configured `npx`
 invocation. Review the supplied command before approving it.
 
 Use `mcp_list` to find an existing connector ID, then include that ID when editing
-it. Environment and header credentials omitted from an edit are retained. The
+it. Environment and header credentials omitted from an edit are retained only
+when the transport target stays the same. Changing an HTTP URL, stdio executable,
+arguments, or working directory clears omitted credentials; supply new values
+explicitly for the new target. A changed executable also clears omitted arguments.
+Explicit environment and header objects replace the whole previous object. The
 listing and save result omit stored credential values. Saved connectors also
 appear in Settings → MCP Connectors. If activation fails, the next turn reports
 that it could not connect and permits a later retry; saving does not prove a
