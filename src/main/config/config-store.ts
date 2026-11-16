@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider, LOCAL_OPENAI_BASE_URLS } from '../../shared/local-openai-provider';
 /**
  * @module main/config/config-store
  *
@@ -37,7 +38,15 @@ import { normalizeSubagentConfig, type SubagentConfig } from '../../shared/subag
 /**
  * Application configuration schema
  */
-export type ProviderType = 'openrouter' | 'anthropic' | 'custom' | 'openai' | 'gemini' | 'ollama';
+export type ProviderType =
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'vllm'
+  | 'lmstudio';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
@@ -46,6 +55,8 @@ export type ProviderProfileKey =
   | 'openai'
   | 'gemini'
   | 'ollama'
+  | 'vllm'
+  | 'lmstudio'
   | 'custom:anthropic'
   | 'custom:openai'
   | 'custom:gemini';
@@ -236,7 +247,16 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   model: (v) => typeof v === 'string',
   provider: (v) =>
     typeof v === 'string' &&
-    ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
+    [
+      'openrouter',
+      'anthropic',
+      'custom',
+      'openai',
+      'gemini',
+      'ollama',
+      'vllm',
+      'lmstudio',
+    ].includes(v),
   contextWindow: isValidPositiveNumber,
   maxTokens: isValidPositiveNumber,
 };
@@ -262,6 +282,8 @@ const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
     baseUrl: 'http://localhost:11434/v1',
     model: '',
   },
+  vllm: { apiKey: '', baseUrl: LOCAL_OPENAI_BASE_URLS.vllm, model: '' },
+  lmstudio: { apiKey: '', baseUrl: LOCAL_OPENAI_BASE_URLS.lmstudio, model: '' },
   gemini: {
     apiKey: '',
     baseUrl: 'https://generativelanguage.googleapis.com',
@@ -404,6 +426,8 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openai',
   'gemini',
   'ollama',
+  'vllm',
+  'lmstudio',
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
@@ -417,7 +441,8 @@ function isProviderType(value: unknown): value is ProviderType {
     value === 'custom' ||
     value === 'openai' ||
     value === 'gemini' ||
-    value === 'ollama'
+    value === 'ollama' ||
+    isLocalOpenAIProvider(value)
   );
 }
 
@@ -535,8 +560,8 @@ function profileKeyToProvider(profileKey: ProviderProfileKey): {
   if (profileKey === 'gemini') {
     return { provider: 'gemini', customProtocol: 'gemini' };
   }
-  if (profileKey === 'ollama') {
-    return { provider: 'ollama', customProtocol: 'openai' };
+  if (profileKey === 'ollama' || isLocalOpenAIProvider(profileKey)) {
+    return { provider: profileKey, customProtocol: 'openai' };
   }
   return { provider: profileKey, customProtocol: 'anthropic' };
 }
@@ -568,7 +593,7 @@ function normalizeCustomProtocol(
 }
 
 function defaultProtocolForProvider(provider: ProviderType): CustomProtocolType {
-  if (provider === 'openai' || provider === 'ollama') {
+  if (provider === 'openai' || provider === 'ollama' || isLocalOpenAIProvider(provider)) {
     return 'openai';
   }
   if (provider === 'gemini') {
@@ -1503,7 +1528,10 @@ export class ConfigStore {
     baseUrl?: string;
     model?: string;
   }): boolean {
-    if (projection.provider === 'ollama' && !projection.model?.trim()) {
+    if (
+      (projection.provider === 'ollama' || isLocalOpenAIProvider(projection.provider)) &&
+      !projection.model?.trim()
+    ) {
       return false;
     }
     const apiKey = projection.apiKey?.trim();
@@ -1633,6 +1661,7 @@ export class ConfigStore {
     const useOpenAI =
       projectedConfig.provider === 'openai' ||
       projectedConfig.provider === 'ollama' ||
+      isLocalOpenAIProvider(projectedConfig.provider) ||
       (projectedConfig.provider === 'custom' && projectedConfig.customProtocol === 'openai');
     const useGemini =
       projectedConfig.provider === 'gemini' ||

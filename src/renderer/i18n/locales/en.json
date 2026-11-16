@@ -156,6 +156,8 @@
     "currentLanguage": "Current language"
   },
   "api": {
+    "localServerHint": "Start the local server first. An API key is optional on localhost; use your server key when authentication is enabled.",
+    "localServerModelHint": "Enter the exact model ID served by your backend. Tool use requires a tool-capable model and the server's tool-calling configuration.",
     "firstRunTitle": "Set Up API",
     "firstRunSubtitle": "Configure a provider to start using Open Cowork",
     "settingsTitle": "API Settings",

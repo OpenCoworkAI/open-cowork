@@ -1,10 +1,14 @@
+import { isLocalOpenAIProvider, LOCAL_OPENAI_BASE_URLS } from './local-openai-provider';
+
 export type SharedProviderType =
   | 'openrouter'
   | 'anthropic'
   | 'custom'
   | 'openai'
   | 'gemini'
-  | 'ollama';
+  | 'ollama'
+  | 'vllm'
+  | 'lmstudio';
 
 export type SharedCustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 
@@ -23,6 +27,8 @@ export interface SharedProviderPresets {
   openai: SharedProviderPreset;
   gemini: SharedProviderPreset;
   ollama: SharedProviderPreset;
+  vllm: SharedProviderPreset;
+  lmstudio: SharedProviderPreset;
 }
 
 export interface ModelInputGuidance {
@@ -99,6 +105,20 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
     ],
     keyPlaceholder: '可留空',
     keyHint: '多数 Ollama 部署可留空；如果你的代理层要求鉴权，也可以填写 Key',
+  },
+  vllm: {
+    name: 'vLLM',
+    baseUrl: LOCAL_OPENAI_BASE_URLS.vllm,
+    models: [],
+    keyPlaceholder: '',
+    keyHint: '',
+  },
+  lmstudio: {
+    name: 'LM Studio',
+    baseUrl: LOCAL_OPENAI_BASE_URLS.lmstudio,
+    models: [],
+    keyPlaceholder: '',
+    keyHint: '',
   },
   custom: {
     name: '更多模型',
@@ -204,6 +224,13 @@ export function getModelInputGuidance(
     return {
       placeholder: 'gpt-5.4, gpt-5.4-mini, o3',
       hint: 'Use the exact model ID for the selected protocol or endpoint.',
+    };
+  }
+
+  if (isLocalOpenAIProvider(provider)) {
+    return {
+      placeholder: 'Model ID',
+      hint: '',
     };
   }
 

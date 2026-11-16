@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 import { useEffect } from 'react';
 import {
   X,
@@ -26,7 +27,7 @@ interface ConfigModalProps {
 }
 
 const PROVIDER_LABELS: Record<
-  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'custom',
+  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'vllm' | 'lmstudio' | 'custom',
   string
 > = {
   openrouter: 'OpenRouter',
@@ -34,6 +35,8 @@ const PROVIDER_LABELS: Record<
   openai: 'OpenAI',
   gemini: 'Gemini',
   ollama: 'Ollama',
+  vllm: 'vLLM',
+  lmstudio: 'LM Studio',
   custom: 'Custom',
 };
 
@@ -201,23 +204,32 @@ export function ConfigModal({
               {t('api.provider')}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'custom'] as const).map(
-                (p) => (
-                  <button
-                    key={p}
-                    onClick={() => changeProvider(p)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      provider === p
-                        ? 'bg-accent text-white'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    {presets?.[p]?.name ||
-                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
-                      p}
-                  </button>
-                )
-              )}
+              {(
+                [
+                  'openrouter',
+                  'anthropic',
+                  'openai',
+                  'gemini',
+                  'ollama',
+                  'vllm',
+                  'lmstudio',
+                  'custom',
+                ] as const
+              ).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => changeProvider(p)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    provider === p
+                      ? 'bg-accent text-white'
+                      : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
+                  }`}
+                >
+                  {presets?.[p]?.name ||
+                    (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
+                    p}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -273,7 +285,7 @@ export function ConfigModal({
           )}
 
           {/* Base URL - Editable for custom provider */}
-          {(provider === 'custom' || provider === 'ollama') && (
+          {(provider === 'custom' || provider === 'ollama' || isLocalOpenAIProvider(provider)) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
@@ -301,24 +313,28 @@ export function ConfigModal({
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder={
-                  provider === 'ollama'
-                    ? 'http://localhost:11434/v1'
-                    : customProtocol === 'openai'
-                      ? 'https://api.openai.com/v1'
-                      : customProtocol === 'gemini'
-                        ? 'https://generativelanguage.googleapis.com'
-                        : currentPreset?.baseUrl || 'https://api.anthropic.com'
+                  isLocalOpenAIProvider(provider)
+                    ? currentPreset?.baseUrl || ''
+                    : provider === 'ollama'
+                      ? 'http://localhost:11434/v1'
+                      : customProtocol === 'openai'
+                        ? 'https://api.openai.com/v1'
+                        : customProtocol === 'gemini'
+                          ? 'https://generativelanguage.googleapis.com'
+                          : currentPreset?.baseUrl || 'https://api.anthropic.com'
                 }
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
               <p className="text-xs text-text-muted">
-                {provider === 'ollama'
-                  ? t('api.enterOllamaUrl')
-                  : customProtocol === 'openai'
-                    ? t('api.enterOpenAIUrl')
-                    : customProtocol === 'gemini'
-                      ? t('api.enterGeminiUrl')
-                      : t('api.enterAnthropicUrl')}
+                {isLocalOpenAIProvider(provider)
+                  ? t('api.localServerHint')
+                  : provider === 'ollama'
+                    ? t('api.enterOllamaUrl')
+                    : customProtocol === 'openai'
+                      ? t('api.enterOpenAIUrl')
+                      : customProtocol === 'gemini'
+                        ? t('api.enterGeminiUrl')
+                        : t('api.enterAnthropicUrl')}
               </p>
               {isOllamaMode && (
                 <p className="text-xs text-text-muted">{t('api.discoverLocalOllamaHint')}</p>
@@ -360,8 +376,12 @@ export function ConfigModal({
                   >
                     <Edit3 className="w-3 h-3" />
                     {isOllamaMode
-                      ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
-                      : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
+                      ? useCustomModel
+                        ? t('api.useDetectedModels')
+                        : t('api.manualModel')
+                      : useCustomModel
+                        ? t('api.usePreset')
+                        : t('api.custom')}
                   </button>
                 )}
               </div>
@@ -371,7 +391,9 @@ export function ConfigModal({
                 type="text"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={modelInputPlaceholder}
+                placeholder={
+                  isLocalOpenAIProvider(provider) ? t('api.model') : modelInputPlaceholder
+                }
                 className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
             ) : (
@@ -393,7 +415,11 @@ export function ConfigModal({
                 )}
               </select>
             )}
-            {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
+            {useCustomModel && (
+              <p className="text-xs text-text-muted">
+                {isLocalOpenAIProvider(provider) ? t('api.localServerModelHint') : modelInputHint}
+              </p>
+            )}
           </div>
 
           {provider === 'custom' && (

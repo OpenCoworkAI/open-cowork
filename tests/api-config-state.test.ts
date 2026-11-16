@@ -17,6 +17,27 @@ import {
 const hookPath = path.resolve(process.cwd(), 'src/renderer/hooks/useApiConfigState.ts');
 
 describe('api config state helpers', () => {
+  it.each(['vllm', 'lmstudio'] as const)(
+    'bootstraps %s as a dedicated provider with a manual model ID',
+    (provider) => {
+      expect(profileKeyFromProvider(provider)).toBe(provider);
+      expect(profileKeyToProvider(provider)).toEqual({ provider, customProtocol: 'openai' });
+      const snapshot = buildApiConfigSnapshot(
+        {
+          provider,
+          model: 'organization/served-model',
+          baseUrl: FALLBACK_PROVIDER_PRESETS[provider].baseUrl,
+        } as AppConfig,
+        FALLBACK_PROVIDER_PRESETS
+      );
+      expect(snapshot.activeProfileKey).toBe(provider);
+      expect(snapshot.profiles[provider]).toMatchObject({
+        useCustomModel: true,
+        customModel: 'organization/served-model',
+        baseUrl: FALLBACK_PROVIDER_PRESETS[provider].baseUrl,
+      });
+    }
+  );
   it('maps provider/protocol to profile key and back', () => {
     expect(profileKeyFromProvider('openrouter')).toBe('openrouter');
     expect(profileKeyFromProvider('ollama')).toBe('ollama');

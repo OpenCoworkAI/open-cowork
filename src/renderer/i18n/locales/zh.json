@@ -156,6 +156,8 @@
     "currentLanguage": "当前语言"
   },
   "api": {
+    "localServerHint": "请先启动本地服务。localhost 默认无需 API Key；若服务开启了鉴权，请填写对应的 Key。",
+    "localServerModelHint": "填写后端实际提供的模型 ID。工具调用需要模型支持工具，并在服务端启用相应的工具调用配置。",
     "firstRunTitle": "配置 API",
     "firstRunSubtitle": "设置 API 提供商后即可开始使用",
     "settingsTitle": "API 设置",

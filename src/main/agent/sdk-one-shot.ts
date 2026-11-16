@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 import { completeSimple, type UserMessage as PiUserMessage } from '@mariozechner/pi-ai';
 import type { ApiTestInput, ApiTestResult } from '../../renderer/types';
 import { PROVIDER_PRESETS, type AppConfig, type CustomProtocolType } from '../config/config-store';
@@ -68,6 +69,7 @@ function resolveProbeApiKey(
   if (
     input.provider === 'openai' ||
     input.provider === 'openrouter' ||
+    isLocalOpenAIProvider(input.provider) ||
     (input.provider === 'custom' && resolvedCustomProtocol === 'openai')
   ) {
     return (
@@ -225,7 +227,9 @@ export async function runPiAiOneShot(
   const resolvedModel = piModel!;
 
   // Set API key via AuthStorage (for agent sessions) AND env vars (for pi-ai completeSimple)
-  const apiKey = config.apiKey?.trim();
+  const apiKey = isLocalOpenAIProvider(config.provider)
+    ? resolveOpenAICredentials({ ...config, baseUrl: effectiveBaseUrl })?.apiKey
+    : config.apiKey?.trim();
   if (apiKey) {
     const authStorage = getSharedAuthStorage();
     // Set for the config provider

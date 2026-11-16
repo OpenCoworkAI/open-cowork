@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
@@ -74,6 +75,8 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'openai',
   'gemini',
   'ollama',
+  'vllm',
+  'lmstudio',
   'custom:anthropic',
   'custom:openai',
   'custom:gemini',
@@ -90,7 +93,8 @@ function isProviderType(value: unknown): value is ProviderType {
     value === 'custom' ||
     value === 'openai' ||
     value === 'gemini' ||
-    value === 'ollama'
+    value === 'ollama' ||
+    isLocalOpenAIProvider(value)
   );
 }
 
@@ -118,8 +122,8 @@ export function profileKeyToProvider(profileKey: ProviderProfileKey): {
   provider: ProviderType;
   customProtocol: CustomProtocolType;
 } {
-  if (profileKey === 'ollama') {
-    return { provider: 'ollama', customProtocol: 'openai' };
+  if (profileKey === 'ollama' || isLocalOpenAIProvider(profileKey)) {
+    return { provider: profileKey, customProtocol: 'openai' };
   }
   if (profileKey === 'custom:openai') {
     return { provider: 'custom', customProtocol: 'openai' };
@@ -192,7 +196,7 @@ function defaultProfileForKey(
   presets: ProviderPresets
 ): UIProviderProfile {
   const preset = modelPresetForProfile(profileKey, presets);
-  const prefersCustomInput = profileKey.startsWith('custom:');
+  const prefersCustomInput = profileKey.startsWith('custom:') || isLocalOpenAIProvider(profileKey);
   return {
     apiKey: '',
     baseUrl: preset.baseUrl,
@@ -956,10 +960,10 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
   const customModel = currentProfile.customModel;
   const useCustomModel = currentProfile.useCustomModel;
   const shouldShowOllamaManualModelToggle =
-    provider !== 'ollama'
+    !isLocalOpenAIProvider(provider) && (provider !== 'ollama'
       || useCustomModel
       || Boolean(error)
-      || modelOptions.length === 0;
+      || modelOptions.length === 0);
   const contextWindow = currentProfile.contextWindow;
   const maxTokens = currentProfile.maxTokens;
   const detectedProviderSetup = useMemo(
@@ -1105,6 +1109,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
 
   const allowEmptyApiKey =
     provider === 'ollama' ||
+    (isLocalOpenAIProvider(provider) && isLoopbackBaseUrl(baseUrl)) ||
     (provider === 'custom' &&
       ((customProtocol === 'anthropic' && isCustomAnthropicLoopbackGateway(baseUrl)) ||
         (customProtocol === 'openai' && isCustomOpenAiLoopbackGateway(baseUrl)) ||
@@ -1375,7 +1380,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       return;
     }
 
-    if (provider === 'ollama' && !baseUrl.trim()) {
+    if ((provider === 'ollama' || isLocalOpenAIProvider(provider)) && !baseUrl.trim()) {
       showErrorKey('api.testError.missing_base_url');
       return;
     }
@@ -1385,7 +1390,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     dispatch({ type: 'SET_TEST_RESULT', payload: null });
     try {
       const resolvedBaseUrl =
-        provider === 'custom' || provider === 'ollama'
+        provider === 'custom' || provider === 'ollama' || isLocalOpenAIProvider(provider)
           ? baseUrl.trim()
           : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
 
@@ -1442,7 +1447,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
     dispatch({ type: 'SET_TEST_RESULT', payload: null });
     try {
       const resolvedBaseUrl =
-        provider === 'custom' || provider === 'ollama'
+        provider === 'custom' || provider === 'ollama' || isLocalOpenAIProvider(provider)
           ? baseUrl.trim()
           : (baseUrl.trim() || currentPreset.baseUrl || '').trim();
 
@@ -1718,7 +1723,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
         return false;
       }
 
-      if (provider === 'ollama' && !baseUrl.trim()) {
+      if ((provider === 'ollama' || isLocalOpenAIProvider(provider)) && !baseUrl.trim()) {
         showErrorKey('api.testError.missing_base_url');
         return false;
       }
@@ -1727,7 +1732,7 @@ export function useApiConfigState(options: UseApiConfigStateOptions = {}) {
       dispatch({ type: 'SET_IS_SAVING', payload: true });
       try {
         const resolvedBaseUrl =
-          provider === 'custom' || provider === 'ollama'
+          provider === 'custom' || provider === 'ollama' || isLocalOpenAIProvider(provider)
             ? baseUrl.trim()
             : (currentPreset.baseUrl || baseUrl).trim();
 

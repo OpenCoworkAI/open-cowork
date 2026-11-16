@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 /**
  * @module main/agent/agent-runner
  *
@@ -54,7 +55,7 @@ import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import type { SkillsAdapter } from '../skills/skills-adapter';
 import { AgentRuntimeExtensionManager } from '../extensions/agent-runtime-extension-manager';
 import { configStore } from '../config/config-store';
-import { normalizeOpenAICompatibleBaseUrl } from '../config/auth-utils';
+import { normalizeOpenAICompatibleBaseUrl, resolveOpenAICredentials } from '../config/auth-utils';
 import {
   buildTerminalErrorEmissionDetails,
   buildTerminalErrorMessage,
@@ -1660,7 +1661,9 @@ ${hints.join('\n')}
 
       // Set up API keys via AuthStorage
       const authStorage = getSharedAuthStorage();
-      const apiKey = runtimeConfig.apiKey?.trim();
+      const apiKey = isLocalOpenAIProvider(provider)
+        ? resolveOpenAICredentials({ ...runtimeConfig, baseUrl: effectiveBaseUrl })?.apiKey
+        : runtimeConfig.apiKey?.trim();
       if (apiKey) {
         // Map our config provider to pi-ai provider name
         const piProvider =

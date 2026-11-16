@@ -1,3 +1,4 @@
+import { isLocalOpenAIProvider } from '../../shared/local-openai-provider';
 import { getModel, type Api, type Model } from '@mariozechner/pi-ai';
 import { isOfficialOpenAIBaseUrl } from '../config/auth-utils';
 
@@ -47,7 +48,7 @@ export function resolvePiRouteProtocol(provider?: string, customProtocol?: strin
     }
     return 'anthropic';
   }
-  if (provider === 'ollama') return 'openai';
+  if (provider === 'ollama' || isLocalOpenAIProvider(provider)) return 'openai';
   if (provider === 'openai') return 'openai';
   if (provider === 'openrouter') return 'openai';
   if (provider === 'gemini') return 'gemini';
@@ -232,6 +233,12 @@ export function resolveSyntheticPiModelFallback(
   input: SyntheticPiModelFallbackInput
 ): SyntheticPiModelFallback {
   const rawModel = input.rawModel?.trim() || '';
+  if (isLocalOpenAIProvider(input.rawProvider)) {
+    return {
+      provider: 'openai',
+      modelId: rawModel || input.resolvedModelString.replace(/^openai\//, ''),
+    };
+  }
   const modelString = input.resolvedModelString.trim();
   const parts = modelString.split('/');
   const parsedProvider = parts.length >= 2 ? parts[0] : '';
@@ -267,6 +274,7 @@ export function resolvePiModelString(input: PiModelStringInput): string {
   if (!model) {
     return input.defaultModel || 'anthropic/claude-sonnet-4-6';
   }
+  if (isLocalOpenAIProvider(input.provider)) return `openai/${model}`;
   if (model.includes('/')) {
     return model;
   }
@@ -340,6 +348,14 @@ export function applyPiModelRuntimeOverrides(
   options: PiModelLookupOptions = {}
 ): Model<Api> {
   let nextModel = model;
+  if (isLocalOpenAIProvider(options.rawProvider)) {
+    nextModel = {
+      ...nextModel,
+      provider: 'openai',
+      api: 'openai-completions',
+      baseUrl: options.customBaseUrl || nextModel.baseUrl,
+    } as Model<Api>;
+  }
   const isCustomProvider = options.rawProvider === 'custom' || options.configProvider === 'custom';
   const shouldHonorConfiguredBaseUrl = options.rawProvider === 'openai' || isCustomProvider;
   const modelHasBaseUrl = Boolean(nextModel.baseUrl);

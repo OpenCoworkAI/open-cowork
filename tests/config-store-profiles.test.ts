@@ -48,6 +48,57 @@ describe('ConfigStore provider profiles', () => {
     mocks.seed = {};
   });
 
+  it('keeps vLLM and LM Studio profiles separate across switching and reload', () => {
+    const store = new ConfigStore();
+    store.update({
+      provider: 'vllm',
+      customProtocol: 'openai',
+      apiKey: '',
+      baseUrl: 'http://localhost:8000/v1',
+      model: 'org/vllm-model',
+    });
+    expect(store.getAll()).toMatchObject({
+      provider: 'vllm',
+      activeProfileKey: 'vllm',
+      model: 'org/vllm-model',
+    });
+    expect(store.hasUsableCredentials()).toBe(true);
+    store.update({
+      provider: 'lmstudio',
+      customProtocol: 'openai',
+      apiKey: '',
+      baseUrl: 'http://localhost:1234/v1',
+      model: 'studio-model',
+    });
+    expect(store.getAll().profiles.vllm).toMatchObject({
+      baseUrl: 'http://localhost:8000/v1',
+      model: 'org/vllm-model',
+    });
+    expect(store.getAll().profiles.lmstudio).toMatchObject({
+      baseUrl: 'http://localhost:1234/v1',
+      model: 'studio-model',
+    });
+    mocks.seed = store.getAll() as unknown as Record<string, unknown>;
+    const reloaded = new ConfigStore();
+    expect(reloaded.getAll()).toMatchObject({
+      provider: 'lmstudio',
+      activeProfileKey: 'lmstudio',
+      model: 'studio-model',
+    });
+    reloaded.update({ provider: 'vllm' });
+    expect(reloaded.getAll().model).toBe('org/vllm-model');
+  });
+
+  it('does not consider an unselected local model or a remote server without credentials configured', () => {
+    const store = new ConfigStore();
+    store.update({ provider: 'vllm', customProtocol: 'openai' });
+    expect(store.hasUsableCredentials()).toBe(false);
+    store.update({ model: 'served-model', baseUrl: 'https://models.example.test/v1' });
+    expect(store.hasUsableCredentials()).toBe(false);
+    store.update({ apiKey: 'server-key' });
+    expect(store.hasUsableCredentials()).toBe(true);
+  });
+
   it('migrates legacy single-profile fields into active profile', () => {
     mocks.seed = {
       provider: 'openai',
