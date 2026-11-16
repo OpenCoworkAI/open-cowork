@@ -17,7 +17,7 @@ export function ScheduleConditionFields({
   const { t } = useTranslation();
   const fieldClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-sm';
   const timeout =
-    value?.checkType === 'command' ? (value.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
+    value && value.checkType !== 'file' ? (value.checkConfig.timeoutMs ?? 10000) / 1000 : 10;
   const timeoutValid = isLocalWatchTimeoutValid(value);
   return (
     <div className="border-t border-border pt-3 space-y-2">
@@ -37,13 +37,20 @@ export function ScheduleConditionFields({
                       compareMode: 'output',
                       checkConfig: { command: '', timeoutMs: 10000 },
                     }
-                  : null
+                  : event.target.value === 'http'
+                    ? {
+                        checkType: 'http',
+                        compareMode: 'bodyHash',
+                        checkConfig: { url: '', method: 'GET', timeoutMs: 10000 },
+                      }
+                    : null
             );
           }}
         >
           <option value="none">{t('schedule.watchNone')}</option>
           <option value="file">{t('schedule.watchFile')}</option>
           <option value="command">{t('schedule.watchCommand')}</option>
+          <option value="http">{t('schedule.watchHttp')}</option>
         </select>
       </label>
       {error && (
@@ -59,6 +66,43 @@ export function ScheduleConditionFields({
             onChange={(event) => onChange({ ...value, checkConfig: { path: event.target.value } })}
           />
         </label>
+      )}
+      {value?.checkType === 'http' && (
+        <>
+          <label className="block text-sm space-y-1">
+            <span>{t('schedule.watchUrl')}</span>
+            <input
+              aria-label={t('schedule.watchUrl')}
+              className={fieldClass}
+              type="url"
+              value={value.checkConfig.url}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  checkConfig: { ...value.checkConfig, url: event.target.value },
+                })
+              }
+            />
+          </label>
+          <label className="block text-sm space-y-1">
+            <span>{t('schedule.watchCompare')}</span>
+            <select
+              aria-label={t('schedule.watchCompare')}
+              className={fieldClass}
+              value={value.compareMode}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  compareMode: event.target.value === 'status' ? 'status' : 'bodyHash',
+                  checkConfig: { ...value.checkConfig, method: 'GET' },
+                })
+              }
+            >
+              <option value="bodyHash">{t('schedule.watchBodyHash')}</option>
+              <option value="status">{t('schedule.watchStatus')}</option>
+            </select>
+          </label>
+        </>
       )}
       {value?.checkType === 'command' && (
         <>
@@ -77,35 +121,36 @@ export function ScheduleConditionFields({
               }
             />
           </label>
-          <label className="block text-sm space-y-1">
-            <span>{t('schedule.watchTimeout')}</span>
-            <input
-              aria-label={t('schedule.watchTimeout')}
-              className={fieldClass}
-              type="number"
-              min={1}
-              max={30}
-              required
-              aria-invalid={!timeoutValid}
-              aria-describedby={!timeoutValid ? 'watch-timeout-error' : undefined}
-              value={Number.isFinite(timeout) ? timeout : ''}
-              onChange={(event) =>
-                onChange({
-                  ...value,
-                  checkConfig: {
-                    ...value.checkConfig,
-                    timeoutMs: event.target.value === '' ? NaN : Number(event.target.value) * 1000,
-                  },
-                })
-              }
-            />
-            {!timeoutValid && (
-              <span id="watch-timeout-error" role="alert" className="block text-xs text-error">
-                {t('schedule.watchTimeoutInvalid')}
-              </span>
-            )}
-          </label>
         </>
+      )}
+      {value && value.checkType !== 'file' && (
+        <label className="block text-sm space-y-1">
+          <span>{t('schedule.watchTimeout')}</span>
+          <input
+            aria-label={t('schedule.watchTimeout')}
+            className={fieldClass}
+            type="number"
+            min={1}
+            max={30}
+            required
+            aria-invalid={!timeoutValid}
+            aria-describedby={!timeoutValid ? 'watch-timeout-error' : undefined}
+            value={Number.isFinite(timeout) ? timeout : ''}
+            onChange={(event) => {
+              const timeoutMs = event.target.value === '' ? NaN : Number(event.target.value) * 1000;
+              if (value.checkType === 'http') {
+                onChange({ ...value, checkConfig: { ...value.checkConfig, timeoutMs } });
+              } else {
+                onChange({ ...value, checkConfig: { ...value.checkConfig, timeoutMs } });
+              }
+            }}
+          />
+          {!timeoutValid && (
+            <span id="watch-timeout-error" role="alert" className="block text-xs text-error">
+              {t('schedule.watchTimeoutInvalid')}
+            </span>
+          )}
+        </label>
       )}
     </div>
   );

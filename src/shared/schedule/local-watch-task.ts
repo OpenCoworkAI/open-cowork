@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { stripIpcErrorPrefix } from '../ipc-error';
+import { normalizeWatchConfig, type HttpWatchConfigInput } from './watch-task';
+import { HTTP_WATCH_ERROR_TRANSLATIONS } from './http-watch-errors';
 
 export type ScheduledTaskRunOutcome =
   | 'baseline'
@@ -44,7 +46,13 @@ export function watchCommandExitedMessage(code: number | null, detail: string): 
 }
 
 export function localizeWatchConfigError(message: string, translate: WatchTranslate): string {
-  const raw = stripIpcErrorPrefix(message);
+  const raw = stripIpcErrorPrefix(message).replace(
+    /^(?:WatchConfigValidationError|HttpConditionCheckError): /,
+    ''
+  );
+  if (Object.hasOwn(HTTP_WATCH_ERROR_TRANSLATIONS, raw)) {
+    return translate(HTTP_WATCH_ERROR_TRANSLATIONS[raw]);
+  }
   if (localWatchErrorKeys.has(raw)) return translate(raw);
   if (raw.startsWith(timedOutPrefix)) {
     const ms = raw.slice(timedOutPrefix.length);
@@ -75,6 +83,7 @@ export function localizeWatchConfigError(message: string, translate: WatchTransl
 }
 
 export type LocalWatchConfig =
+  | HttpWatchConfigInput
   | { checkType: 'file'; compareMode: 'content'; checkConfig: { path: string } }
   | {
       checkType: 'command';
@@ -83,14 +92,19 @@ export type LocalWatchConfig =
     };
 
 export function isLocalWatchTimeoutValid(config: LocalWatchConfig | null): boolean {
-  if (config?.checkType !== 'command') return true;
+  if (!config || config.checkType === 'file') return true;
   const timeoutMs = config.checkConfig.timeoutMs ?? 10000;
   return Number.isInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 30000;
 }
 
 export function isLocalWatchConditionComplete(config: LocalWatchConfig | null): boolean {
   if (!config) return true;
-  const value = config.checkType === 'file' ? config.checkConfig.path : config.checkConfig.command;
+  const value =
+    config.checkType === 'file'
+      ? config.checkConfig.path
+      : config.checkType === 'http'
+        ? config.checkConfig.url
+        : config.checkConfig.command;
   return value.trim().length > 0;
 }
 
@@ -111,10 +125,13 @@ const watchSchema = Type.Union([
 ]);
 
 export function normalizeLocalWatchConfig(input: unknown): LocalWatchConfig {
+  if (input && typeof input === 'object' && 'checkType' in input && input.checkType === 'http') {
+    return normalizeWatchConfig(input);
+  }
   if (!Value.Check(watchSchema, input)) {
     throw new Error(LOCAL_WATCH_CONFIG_ERRORS.invalid);
   }
-  const config = input as LocalWatchConfig;
+  const config = input as Exclude<LocalWatchConfig, HttpWatchConfigInput>;
   if (config.checkType === 'file') {
     const path = config.checkConfig.path.trim();
     if (!path) throw new Error(LOCAL_WATCH_CONFIG_ERRORS.fileRequired);
