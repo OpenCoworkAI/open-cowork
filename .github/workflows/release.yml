@@ -39,9 +39,19 @@ jobs:
         run: npm run test:coverage
 
   build-macos:
-    name: Release macOS
+    name: Release macOS (${{ matrix.arch }})
     needs: [lint-and-test]
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            app-dir: release/mac-arm64
+          - arch: x64
+            runner: macos-15-intel
+            app-dir: release/mac
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -54,8 +64,8 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/Library/Caches/electron
-          key: electron-mac-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-mac-
+          key: electron-mac-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-mac-${{ matrix.arch }}-
 
       - name: Install dependencies
         run: npm ci
@@ -85,7 +95,7 @@ jobs:
         run: npx vite build
 
       - name: Electron Builder (unsigned)
-        run: npx electron-builder --mac dmg dir --publish never
+        run: npx electron-builder --mac dmg dir --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
@@ -93,7 +103,7 @@ jobs:
       - name: Smoke test - verify packaged resources
         run: |
           set -euo pipefail
-          APP_DIR="release/mac-arm64"
+          APP_DIR="${{ matrix.app-dir }}"
           APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
           if [ -z "$APP_NAME" ]; then
             echo "::error::No .app bundle found in $APP_DIR"
@@ -126,7 +136,7 @@ jobs:
       - name: Smoke test - launch app
         run: |
           set -euo pipefail
-          APP_DIR="release/mac-arm64"
+          APP_DIR="${{ matrix.app-dir }}"
           APP_NAME=$(ls "$APP_DIR" | grep '\.app$' | head -1)
           if [ -z "$APP_NAME" ]; then
             echo "::error::No .app bundle found"

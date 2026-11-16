@@ -39,13 +39,15 @@ module.exports = async function afterAllArtifactBuild(buildResult) {
 
   // Find the .app directory in the dir target output
   const macOutDirs = fs.readdirSync(outDir)
-    .filter(d => d.startsWith('mac-'))
+    // electron-builder uses `mac` for Intel and `mac-arm64` for Apple Silicon.
+    .filter(d => d === 'mac' || d.startsWith('mac-'))
     .map(d => path.join(outDir, d));
 
   const createdDmgs = [];
 
   for (const macDir of macOutDirs) {
-    const arch = path.basename(macDir).replace('mac-', ''); // e.g. "arm64"
+    const directoryName = path.basename(macDir);
+    const arch = directoryName === 'mac' ? 'x64' : directoryName.replace('mac-', '');
     const appName = `${productName}.app`;
     const appPath = path.join(macDir, appName);
 

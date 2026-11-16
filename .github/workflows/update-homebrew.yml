@@ -10,7 +10,7 @@ permissions:
 jobs:
   update-cask:
     name: Update Cask Formula
-    runs-on: macos-14
+    runs-on: macos-15
     if: contains(github.ref_name, 'v')
     steps:
       - name: Extract version from tag
