@@ -51,6 +51,7 @@ export interface RemoteConfig {
   };
   channels: {
     feishu?: {
+      domain?: 'feishu' | 'lark';
       appId: string;
       appSecret: string;
       verificationToken?: string;

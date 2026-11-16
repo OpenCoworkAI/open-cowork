@@ -46,6 +46,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [activeStep, setActiveStep] = useState<ConfigStep>('feishu');
 
   // Form state
+  const [feishuDomain, setFeishuDomain] = useState<'feishu' | 'lark'>('feishu');
   const [feishuAppId, setFeishuAppId] = useState('');
   const [feishuAppSecret, setFeishuAppSecret] = useState('');
   const [feishuVerificationToken, setFeishuVerificationToken] = useState('');
@@ -102,6 +103,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         setTunnelEnabled(configResult.gateway?.tunnel?.enabled || false);
         setNgrokAuthToken(configResult.gateway?.tunnel?.ngrok?.authToken || '');
         if (configResult.channels?.feishu) {
+          setFeishuDomain(configResult.channels.feishu.domain === 'lark' ? 'lark' : 'feishu');
           setFeishuAppId(configResult.channels.feishu.appId || '');
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
           setFeishuVerificationToken(configResult.channels.feishu.verificationToken || '');
@@ -160,6 +162,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       feishuAppId && feishuAppSecret
         ? {
             type: 'feishu' as const,
+            domain: feishuDomain,
             appId: feishuAppId,
             appSecret: feishuAppSecret,
             verificationToken: feishuVerificationToken.trim() || undefined,
@@ -337,6 +340,8 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       <div className="p-6 rounded-[2rem] border border-border-subtle bg-background/60">
         {activeStep === 'feishu' && (
           <FeishuConfigStep
+            domain={feishuDomain}
+            onDomainChange={setFeishuDomain}
             feishuAppId={feishuAppId}
             feishuAppSecret={feishuAppSecret}
             feishuDmPolicy={feishuDmPolicy}

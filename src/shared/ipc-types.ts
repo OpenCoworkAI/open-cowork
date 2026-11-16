@@ -70,6 +70,8 @@ export type RemoteChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 
 /** Feishu channel configuration (mirrors FeishuChannelConfig in remote/types.ts). */
 export interface FeishuChannelConfig {
   type: 'feishu';
+  /** Tenant edition. Defaults to mainland Feishu for existing configurations. */
+  domain?: 'feishu' | 'lark';
   appId: string;
   appSecret: string;
   verificationToken?: string;

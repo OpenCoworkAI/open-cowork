@@ -106,6 +106,8 @@ export interface ChannelConfig {
 // Feishu (飞书) Channel
 export interface FeishuChannelConfig {
   type: 'feishu';
+  /** Tenant edition. Defaults to mainland Feishu for existing configurations. */
+  domain?: 'feishu' | 'lark';
 
   /** App ID from Feishu Open Platform */
   appId: string;

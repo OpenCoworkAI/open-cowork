@@ -968,7 +968,11 @@
     "expiresIn": "{{time}}后过期",
     "userRemoved": "用户已移除",
     "revokeFailed": "移除失败",
-    "copied": "已复制"
+    "copied": "已复制",
+    "tenantEdition": "租户版本",
+    "feishuEdition": "飞书（中国大陆）",
+    "larkEdition": "Lark（国际版）",
+    "openLark": "打开 Lark 开发者控制台"
   },
   "time": {
     "now": "刚刚"

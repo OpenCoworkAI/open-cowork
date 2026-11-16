@@ -968,7 +968,11 @@
     "expiresIn": "Expires in {{time}}",
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
-    "copied": "Copied"
+    "copied": "Copied",
+    "tenantEdition": "Tenant edition",
+    "feishuEdition": "Feishu (mainland China)",
+    "larkEdition": "Lark (international)",
+    "openLark": "Open Lark Developer Console"
   },
   "time": {
     "now": "now"

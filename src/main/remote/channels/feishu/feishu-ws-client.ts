@@ -10,6 +10,7 @@ import { log, logError, logWarn } from '../../../utils/logger';
 export interface FeishuWSConfig {
   appId: string;
   appSecret: string;
+  domain?: 'feishu' | 'lark';
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
 }
 
@@ -57,6 +58,7 @@ export class FeishuWSClient extends EventEmitter {
     this.stopped = false;
 
     const { appId, appSecret } = this.config;
+    const domain = this.config.domain === 'lark' ? Lark.Domain.Lark : Lark.Domain.Feishu;
 
     if (!appId || !appSecret) {
       this.starting = false;
@@ -72,6 +74,7 @@ export class FeishuWSClient extends EventEmitter {
       this.client = new Lark.Client({
         appId,
         appSecret,
+        domain,
         disableTokenCache: false,
       });
 
@@ -80,6 +83,7 @@ export class FeishuWSClient extends EventEmitter {
       this.wsClient = new Lark.WSClient({
         appId,
         appSecret,
+        domain,
         loggerLevel,
       });
 
