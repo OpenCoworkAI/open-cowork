@@ -589,18 +589,18 @@ export class MCPManager {
    * Update a single server configuration and reconnect if needed
    * This is more efficient than reinitializing all servers
    */
-  async updateServer(config: MCPServerConfig): Promise<void> {
+  async updateServer(config: MCPServerConfig): Promise<boolean> {
     // Defer if initialization is in progress to avoid races
     if (this.initializingServers) {
       log('[MCPManager] Deferring update during initialization');
-      return;
+      return false;
     }
     // Prevent concurrent update while a reconnect is already in progress for this server
     if (this.reconnectingServers.has(config.id)) {
       logWarn(
         `[MCPManager] Skipping updateServer for ${config.name}: reconnect already in progress`
       );
-      return;
+      return false;
     }
     log(`[MCPManager] Updating server: ${config.name} (enabled: ${config.enabled})`);
     this.lastConfigFingerprint = null;
@@ -636,6 +636,7 @@ export class MCPManager {
       }
     }
     // If disabled and not connected, nothing to do
+    return true;
   }
 
   /**

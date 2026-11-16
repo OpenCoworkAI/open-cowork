@@ -537,6 +537,7 @@ interface CachedPiSession {
   thinkingLevel: string;
   runtimeSignature: string;
   skillsSignature?: string;
+  mcpToolsVersion?: number;
   ollamaNumCtx?: { value: number };
 }
 
@@ -574,6 +575,7 @@ export class CoworkAgentRunner {
 
   // Per-instance caches — invalidated when the underlying config changes.
   private _mcpServersCache: { fingerprint: string; servers: Record<string, unknown> } | null = null;
+  private mcpToolsVersion = 0;
   private _skillsSetupDone = false;
 
   /**
@@ -607,8 +609,21 @@ export class CoworkAgentRunner {
   /** Call after the user changes MCP server config so the next query rebuilds mcpServers. */
   invalidateMcpServersCache(): void {
     this._mcpServersCache = null;
-    // Sessions stay alive — MCP tools are rebuilt each query via buildMcpCustomTools()
+    // Mark sessions stale without disposing one that may currently be executing
+    // mcp_configure. The next turn recreates its SDK tool registry from the DB.
+    this.mcpToolsVersion += 1;
     log('[CoworkAgentRunner] MCP servers cache invalidated — tools will rebuild on next query');
+  }
+
+  private refreshCachedMcpSession(
+    sessionId: string,
+    cached: CachedPiSession | undefined
+  ): CachedPiSession | undefined {
+    if (cached && (cached.mcpToolsVersion ?? 0) !== this.mcpToolsVersion) {
+      this.clearSdkSession(sessionId);
+      return undefined;
+    }
+    return cached;
   }
 
   // TODO: Credentials should be served via a secure MCP tool or IPC channel,
@@ -1844,6 +1859,12 @@ ${hints.join('\n')}
           })
         : { promptPrefix: undefined, customTools: [] };
 
+      // Extensions may activate an approved connector before this turn. A
+      // cached SDK session retains its old custom tools, so recreate it here
+      // and use the existing cold-start history restoration below.
+      cachedSession = this.refreshCachedMcpSession(session.id, cachedSession);
+      const mcpToolsVersion = this.mcpToolsVersion;
+
       let contextualPrompt = prompt;
       if (!cachedSession) {
         // Cold start: inject recent history into prompt if available
@@ -2332,6 +2353,7 @@ Tool routing:
           thinkingLevel,
           runtimeSignature: sessionRuntimeSignature,
           skillsSignature,
+          mcpToolsVersion,
         });
 
         // Ollama: wrap _onPayload to inject num_ctx into every request
