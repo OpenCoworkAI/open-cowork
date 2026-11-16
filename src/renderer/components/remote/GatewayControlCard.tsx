@@ -48,7 +48,7 @@ export function GatewayControlCard({
 
           <button
             onClick={onToggle}
-            disabled={isTogglingGateway || !canStartGateway}
+            disabled={isTogglingGateway || (!status?.running && !canStartGateway)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
               status?.running
                 ? 'bg-error hover:bg-error/90 text-white'
