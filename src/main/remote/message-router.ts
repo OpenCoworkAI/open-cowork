@@ -551,6 +551,30 @@ export class MessageRouter {
     return Array.from(this.sessionMappings.values());
   }
   
+  /** Change only a chat's selected conversation, preserving the archived session. */
+  selectSessionMapping(
+    channelType: ChannelType,
+    channelId: string,
+    userId: string,
+    mapping?: RemoteSessionMapping
+  ): boolean {
+    const key = `${channelType}:dm:${userId}`;
+    const current = this.sessionMappings.get(key);
+    if (current && this.processingSession.has(current.sessionId)) return false;
+    if (mapping) {
+      if (
+        mapping.channelType !== channelType ||
+        mapping.channelId !== channelId ||
+        mapping.userId !== userId
+      )
+        return false;
+      this.sessionMappings.set(key, mapping);
+    } else {
+      this.sessionMappings.delete(key);
+    }
+    return true;
+  }
+
   /**
    * Clear session mapping
    */

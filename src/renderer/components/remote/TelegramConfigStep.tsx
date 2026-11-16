@@ -15,9 +15,15 @@ export function TelegramConfigStep({
   const [users, setUsers] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  const [completion, setCompletion] = useState(true);
+  const [failure, setFailure] = useState(true);
+  const [toolProgress, setToolProgress] = useState(false);
   useEffect(() => {
     setToken(config?.botToken || '');
     setUsers(config?.dm.allowFrom?.join(', ') || '');
+    setCompletion(config?.notifications?.completion !== false);
+    setFailure(config?.notifications?.failure !== false);
+    setToolProgress(config?.notifications?.toolProgress === true);
   }, [config]);
 
   async function save() {
@@ -26,6 +32,7 @@ export function TelegramConfigStep({
           type: 'telegram',
           botToken: token.trim(),
           dm: { policy: 'allowlist', allowFrom: users.split(/[,\s]+/).filter(Boolean) },
+          notifications: { completion, failure, toolProgress },
         }
       : null;
     if (next && getTelegramConfigError(next)) {
@@ -77,6 +84,22 @@ export function TelegramConfigStep({
           className="block w-full mt-2 p-3 bg-surface-hover border border-border rounded-xl text-text-primary"
         />
       </label>
+      {(
+        [
+          ['telegramNotifyCompletion', completion, setCompletion],
+          ['telegramNotifyFailure', failure, setFailure],
+          ['telegramNotifyProgress', toolProgress, setToolProgress],
+        ] as const
+      ).map(([key, value, setValue]) => (
+        <label key={key} className="flex gap-2 items-center text-sm text-text-secondary">
+          <input
+            type="checkbox"
+            checked={value}
+            onChange={(event) => setValue(event.target.checked)}
+          />
+          {t(`remote.${key}`)}
+        </label>
+      ))}
       {error && (
         <p role="alert" className="text-error text-sm">
           {t('remote.telegramSaveError')}

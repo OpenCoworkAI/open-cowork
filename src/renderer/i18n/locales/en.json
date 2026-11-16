@@ -976,7 +976,10 @@
     "telegramToken": "Bot token",
     "telegramAllowedUsers": "Allowed user IDs (comma separated)",
     "telegramSaveError": "Check the bot token and enter at least one numeric user ID, then try again.",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "telegramNotifyCompletion": "Notify when tasks complete",
+    "telegramNotifyFailure": "Notify when tasks fail",
+    "telegramNotifyProgress": "Send tool progress updates"
   },
   "time": {
     "now": "now"

@@ -31,6 +31,7 @@ describe('Telegram settings form', () => {
       type: 'telegram',
       botToken: '123456:token',
       dm: { policy: 'allowlist', allowFrom: ['42', '43'] },
+      notifications: { completion: true, failure: true, toolProgress: false },
     });
     expect(onSaved).toHaveBeenCalledOnce();
   });
@@ -71,5 +72,38 @@ describe('Telegram settings form', () => {
     expect(tree!.root.findByProps({ role: 'alert' }).children).toEqual([
       'remote.telegramSaveError',
     ]);
+  });
+
+  it('loads and saves separate event notification preferences', async () => {
+    const update = vi.fn(async (_config: unknown) => ({ success: true }));
+    vi.stubGlobal('window', { electronAPI: { remote: { updateTelegramConfig: update } } });
+    act(() => {
+      tree = create(
+        React.createElement(TelegramConfigStep, {
+          onSaved: async () => {},
+          config: {
+            type: 'telegram',
+            botToken: '123456:token',
+            dm: { policy: 'allowlist', allowFrom: ['42'] },
+            notifications: { completion: false, failure: true, toolProgress: false },
+          },
+        })
+      );
+    });
+    const checkboxes = tree!.root.findAllByProps({ type: 'checkbox' });
+    expect(checkboxes.map((input) => input.props.checked)).toEqual([false, true, false]);
+    act(() => checkboxes[2].props.onChange({ target: { checked: true } }));
+    await act(async () => {
+      await tree!.root.findByType('button').props.onClick();
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notifications: {
+          completion: false,
+          failure: true,
+          toolProgress: true,
+        },
+      })
+    );
   });
 });

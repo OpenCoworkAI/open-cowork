@@ -85,6 +85,7 @@ export interface FeishuChannelConfig {
 
 export interface TelegramChannelConfig {
   type: 'telegram';
+  notifications?: { completion?: boolean; failure?: boolean; toolProgress?: boolean };
   botToken: string;
   webhookUrl?: string;
   dm: { policy: 'open' | 'pairing' | 'allowlist'; allowFrom?: string[] };

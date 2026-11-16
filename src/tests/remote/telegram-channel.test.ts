@@ -38,7 +38,12 @@ function installFetch(messages: unknown[] = [], attachment = new Uint8Array([1, 
       result = { file_path: 'photos/photo.jpg', file_size: attachment.length };
     if (method === 'getUpdates') {
       if (polls++ === 0 && messages.length) {
-        result = messages.map((entry, index) => ({ update_id: index + 10, message: entry }));
+        result = messages.map((entry, index) => ({
+          update_id: index + 10,
+          ...(entry && typeof entry === 'object' && 'callback_query' in entry
+            ? entry
+            : { message: entry }),
+        }));
       } else {
         return await new Promise<Response>((_resolve, reject) => {
           const abort = () => reject(new Error('aborted'));
@@ -225,8 +230,46 @@ describe('Telegram polling channel', () => {
     await channel.start();
     await vi.waitFor(() => expect(channel.connected).toBe(false));
     await channel.stop();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+
+  it.each([42, 7])(
+    'validates callback sender %s before emitting a permission control',
+    async (userId) => {
+      const { calls } = installFetch([
+        {
+          callback_query: {
+            id: 'callback',
+            from: { id: userId, is_bot: false },
+            message: message(),
+            data: `perm:${'a'.repeat(24)}:y`,
+          },
+        },
+      ]);
+      const channel = new TelegramChannel(config());
+      const received = vi.fn();
+      channel.onMessage(received);
+      await channel.start();
+      try {
+        await vi.waitFor(() =>
+          expect(calls.some((call) => call.method === 'answerCallbackQuery')).toBe(true)
+        );
+        if (userId === 42) {
+          expect(received).toHaveBeenCalledWith(
+            expect.objectContaining({
+              sender: { id: '42', isBot: false },
+              content: {
+                type: 'interactive',
+                interactive: { kind: 'telegram_permission', token: 'a'.repeat(24), answer: 'y' },
+              },
+            })
+          );
+        } else expect(received).not.toHaveBeenCalled();
+      } finally {
+        await channel.stop();
+      }
+    }
+  );
 
   it.each([
     { ...config(), botToken: '' },

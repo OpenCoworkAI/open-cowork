@@ -22,6 +22,12 @@ interface TelegramMessage {
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: {
+    id: string;
+    data?: string;
+    from: { id: number; is_bot: boolean };
+    message?: TelegramMessage;
+  };
 }
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -61,6 +67,18 @@ export class TelegramChannel extends ChannelBase {
     try {
       await this.api('getMe', {}, controller.signal);
       await this.api('deleteWebhook', { drop_pending_updates: false }, controller.signal);
+      await this.api(
+        'setMyCommands',
+        {
+          commands: [
+            { command: 'new', description: 'Start a new conversation' },
+            { command: 'sessions', description: 'List your conversations' },
+            { command: 'switch', description: 'Switch to a conversation ID' },
+            { command: 'stop', description: 'Stop the current task' },
+          ],
+        },
+        controller.signal
+      );
       if (controller.signal.aborted) return;
       this._connected = true;
       this.polling = this.poll(controller.signal);
@@ -93,7 +111,7 @@ export class TelegramChannel extends ChannelBase {
           {
             offset: this.offset,
             timeout: 25,
-            allowed_updates: ['message'],
+            allowed_updates: ['message', 'callback_query'],
           },
           signal
         );
@@ -105,6 +123,7 @@ export class TelegramChannel extends ChannelBase {
           // A malformed message must not cause an infinite replay loop.
           this.offset = update.update_id + 1;
           try {
+            if (update.callback_query) await this.receiveCallback(update.callback_query, signal);
             if (update.message) await this.receive(update.message, signal);
           } catch {
             logWarn('[Telegram] Unable to process a message or attachment');
@@ -126,6 +145,33 @@ export class TelegramChannel extends ChannelBase {
         });
       }
     }
+  }
+
+  private async receiveCallback(
+    query: NonNullable<TelegramUpdate['callback_query']>,
+    signal: AbortSignal
+  ): Promise<void> {
+    const allowed =
+      !query.from.is_bot &&
+      query.message?.chat.type === 'private' &&
+      this.config.dm.allowFrom?.includes(String(query.from.id));
+    // Acknowledge the UI spinner without claiming an authorization succeeded.
+    await this.api('answerCallbackQuery', { callback_query_id: query.id }, signal);
+    const parsed = query.data?.match(/^perm:([a-f0-9]{24}):(y|n|always)$/);
+    if (!allowed || !query.message || !parsed || signal.aborted) return;
+    this.emitMessage({
+      id: query.id,
+      channelType: 'telegram',
+      channelId: String(query.message.chat.id),
+      sender: { id: String(query.from.id), isBot: false },
+      content: {
+        type: 'interactive',
+        interactive: { kind: 'telegram_permission', token: parsed[1], answer: parsed[2] },
+      },
+      timestamp: Date.now(),
+      isGroup: false,
+      isMentioned: false,
+    });
   }
 
   private async receive(message: TelegramMessage, signal: AbortSignal): Promise<void> {

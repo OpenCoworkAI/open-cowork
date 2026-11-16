@@ -976,7 +976,10 @@
     "telegramToken": "机器人令牌",
     "telegramAllowedUsers": "允许的用户 ID（逗号分隔）",
     "telegramSaveError": "请检查机器人令牌，填写至少一个数字用户 ID，然后重试。",
-    "saving": "保存中..."
+    "saving": "保存中...",
+    "telegramNotifyCompletion": "任务完成时通知",
+    "telegramNotifyFailure": "任务失败时通知",
+    "telegramNotifyProgress": "发送工具执行进度"
   },
   "time": {
     "now": "刚刚"

@@ -827,9 +827,12 @@ function sendToRenderer(event: ServerEvent) {
       const status = payload.status as string;
       if (status === 'idle' || status === 'error') {
         // 会话结束，清空缓冲
-        remoteManager.clearSessionBuffer(sessionId).catch((err: Error) => {
-          logError('[Remote] Failed to clear session buffer:', err);
-        });
+        remoteManager
+          .clearSessionBuffer(sessionId)
+          .then(() => remoteManager.sendTelegramSessionStatus(sessionId, status))
+          .catch((err: Error) => {
+            logError('[Remote] Failed to clear session buffer:', err);
+          });
       }
     }
 
