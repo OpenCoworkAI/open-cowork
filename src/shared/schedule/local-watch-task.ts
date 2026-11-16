@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { stripIpcErrorPrefix } from '../ipc-error';
 import { normalizeWatchConfig, type HttpWatchConfigInput } from './watch-task';
+import { HTTP_WATCH_ERROR_TRANSLATIONS } from './http-watch-errors';
 
 export type ScheduledTaskRunOutcome =
   | 'baseline'
@@ -45,7 +46,13 @@ export function watchCommandExitedMessage(code: number | null, detail: string): 
 }
 
 export function localizeWatchConfigError(message: string, translate: WatchTranslate): string {
-  const raw = stripIpcErrorPrefix(message);
+  const raw = stripIpcErrorPrefix(message).replace(
+    /^(?:WatchConfigValidationError|HttpConditionCheckError): /,
+    ''
+  );
+  if (Object.hasOwn(HTTP_WATCH_ERROR_TRANSLATIONS, raw)) {
+    return translate(HTTP_WATCH_ERROR_TRANSLATIONS[raw]);
+  }
   if (localWatchErrorKeys.has(raw)) return translate(raw);
   if (raw.startsWith(timedOutPrefix)) {
     const ms = raw.slice(timedOutPrefix.length);

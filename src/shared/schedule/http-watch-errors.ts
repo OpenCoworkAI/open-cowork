@@ -1,0 +1,27 @@
+/** Stable HTTP validation/check messages also occur in persisted task errors. */
+export const HTTP_WATCH_ERROR_TRANSLATIONS: Readonly<Record<string, string>> = {
+  'Watch configuration must be an object.': 'schedule.watchHttpInvalid',
+  'Watch configuration checkType must be http.': 'schedule.watchHttpInvalid',
+  'Watch configuration compareMode must be status or bodyHash.': 'schedule.watchHttpCompareInvalid',
+  'Watch configuration URL must be a string.': 'schedule.watchHttpUrlInvalid',
+  'Watch configuration URL must be a valid URL.': 'schedule.watchHttpUrlInvalid',
+  'Watch configuration URL must use HTTP or HTTPS.': 'schedule.watchHttpProtocolUnsupported',
+  'Watch configuration method must be GET or HEAD.': 'schedule.watchHttpMethodInvalid',
+  'Watch configuration timeoutMs must be an integer between 1000 and 30000.':
+    'schedule.watchTimeoutInvalid',
+  'Watch configuration cannot compare a HEAD response body hash.': 'schedule.watchHttpHeadBody',
+  'Persisted HTTP watch configuration must be a JSON string.': 'schedule.watchHttpPersistedInvalid',
+  'Invalid persisted HTTP watch configuration JSON.': 'schedule.watchHttpPersistedInvalid',
+  'HTTP condition check timed out.': 'schedule.watchHttpTimedOut',
+  'HTTP condition check request failed.': 'schedule.watchHttpRequestFailed',
+  'HTTP condition check URL is invalid.': 'schedule.watchHttpUrlInvalid',
+  'HTTP condition check URL must use HTTP or HTTPS.': 'schedule.watchHttpProtocolUnsupported',
+  'HTTP condition check exceeded the redirect limit.': 'schedule.watchHttpRedirectLimit',
+  'HTTP condition check redirect is missing Location.': 'schedule.watchHttpRedirectMissing',
+  'HTTP condition check redirect Location is invalid.': 'schedule.watchHttpRedirectInvalid',
+  'HTTP condition check redirect must use HTTP or HTTPS.': 'schedule.watchHttpRedirectProtocol',
+  'HTTP condition check response body exceeds 1048576 bytes.': 'schedule.watchHttpBodyTooLarge',
+  'HTTP condition check could not discard a response body.': 'schedule.watchHttpCleanupFailed',
+  'Conditional tasks require a repeating schedule.': 'schedule.watchRepeatingRequired',
+  'Condition checker is unavailable.': 'schedule.watchCheckerUnavailable',
+};
