@@ -93,6 +93,7 @@ mac:
     - target: dir
       arch:
         - arm64
+        - x64
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   identity: auto
   hardenedRuntime: true
