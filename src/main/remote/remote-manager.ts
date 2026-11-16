@@ -10,6 +10,8 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { TelegramChannel } from './channels/telegram/telegram-channel';
+import { getTelegramConfigError } from '../../shared/telegram-channel-config';
 import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
@@ -19,6 +21,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  TelegramChannelConfig,
   ChannelType,
   RemoteMessage,
   RemoteSessionMapping,
@@ -31,7 +34,12 @@ import { getFeishuWebhookConfigError } from '../../shared/feishu-webhook-config'
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
-  startSession(title: string, prompt: string, cwd?: string): Promise<Session>;
+  startSession(
+    title: string,
+    prompt: string,
+    cwd?: string,
+    content?: ContentBlock[]
+  ): Promise<Session>;
   continueSession(
     sessionId: string,
     prompt: string,
@@ -51,6 +59,7 @@ export interface AgentExecutor {
 // Question/Permission request from agent
 export interface RemoteInteraction {
   type: 'question' | 'permission';
+  telegramCallbackToken?: string;
   sessionId: string; // Actual session ID
   remoteSessionId: string; // Remote session ID (for routing back)
   ownerSenderId: string; // Sender ID of the session owner (for security verification)
@@ -89,6 +98,8 @@ export class RemoteManager extends EventEmitter {
 
   // Mapping: remote session ID -> owner sender ID (for interaction security)
   private sessionOwnerMapping: Map<string, string> = new Map();
+  private telegramSessionMappings = new Map<string, RemoteSessionMapping>();
+  private telegramRunningSessions = new Set<string>();
 
   // Pending interactions (questions/permissions) waiting for user response
   private pendingInteractions: Map<string, RemoteInteraction> = new Map();
@@ -201,7 +212,9 @@ export class RemoteManager extends EventEmitter {
       this.setupGatewayEvents();
 
       // Set up message interceptor for interaction responses
-      this.gateway.setMessageInterceptor((message) => {
+      this.gateway.setMessageInterceptor(async (message) => {
+        if (await this.handleTelegramControlMessage(message)) return true;
+        if (message.content.type !== 'text' || !message.content.text) return false;
         return this.handlePotentialInteractionResponse(
           message.channelType,
           message.channelId,
@@ -427,6 +440,26 @@ export class RemoteManager extends EventEmitter {
     if (this.gateway?.running) {
       await this.restart();
     }
+  }
+
+  async updateTelegramConfig(config: TelegramChannelConfig | null): Promise<void> {
+    if (config) {
+      const error = getTelegramConfigError(config);
+      if (error) throw new Error(error);
+      remoteConfigStore.setTelegramConfig({ ...config, botToken: config.botToken.trim() });
+    } else {
+      remoteConfigStore.clearTelegramConfig();
+    }
+    const gateway = remoteConfigStore.getGatewayConfig();
+    const otherEntries = (gateway.auth.allowlist ?? []).filter(
+      (entry) => !entry.startsWith('telegram:')
+    );
+    const entries = config?.dm.allowFrom?.map((id) => `telegram:${id}`) ?? [];
+    // Add scoped IDs without weakening auth or changing other channel policies.
+    remoteConfigStore.setGatewayConfig({
+      auth: { ...gateway.auth, allowlist: [...new Set([...otherEntries, ...entries])] },
+    });
+    if (this.gateway?.running) await this.restart();
   }
 
   /**
@@ -755,6 +788,10 @@ export class RemoteManager extends EventEmitter {
     // Store pending interaction
     const interaction: RemoteInteraction = {
       type: 'permission',
+      telegramCallbackToken:
+        channelInfo.channelType === 'telegram'
+          ? uuidv4().replace(/-/g, '').slice(0, 24)
+          : undefined,
       sessionId: actualSessionId,
       remoteSessionId,
       ownerSenderId: this.sessionOwnerMapping.get(remoteSessionId) || '',
@@ -762,7 +799,7 @@ export class RemoteManager extends EventEmitter {
       toolName,
       input,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes timeout
+      expiresAt: Date.now() + (channelInfo.channelType === 'telegram' ? 60_000 : 5 * 60_000),
     };
     await this.withInteractionLock(async () => {
       this.pendingInteractions.set(toolUseId, interaction);
@@ -776,6 +813,28 @@ export class RemoteManager extends EventEmitter {
         content: {
           type: 'markdown',
           markdown: messageText,
+          ...(channelInfo.channelType === 'telegram'
+            ? {
+                card: {
+                  inline_keyboard: [
+                    [
+                      {
+                        text: 'Allow once',
+                        callback_data: `perm:${interaction.telegramCallbackToken}:y`,
+                      },
+                      {
+                        text: 'Deny',
+                        callback_data: `perm:${interaction.telegramCallbackToken}:n`,
+                      },
+                      {
+                        text: 'Always allow',
+                        callback_data: `perm:${interaction.telegramCallbackToken}:always`,
+                      },
+                    ],
+                  ],
+                },
+              }
+            : {}),
         },
       });
     } catch (err) {
@@ -816,7 +875,7 @@ export class RemoteManager extends EventEmitter {
             }
           }).catch((err) => logError('[RemoteManager] Permission timeout lock error:', err));
         },
-        5 * 60 * 1000
+        Math.max(0, interaction.expiresAt - Date.now())
       );
     });
   }
@@ -858,6 +917,13 @@ export class RemoteManager extends EventEmitter {
           if (!interaction.ownerSenderId || senderId !== interaction.ownerSenderId) {
             log('[RemoteManager] Ignoring interaction response from non-owner sender:', senderId);
             continue;
+          }
+
+          if (interaction.expiresAt <= Date.now()) {
+            this.pendingInteractions.delete(id);
+            this.interactionResolvers.get(id)?.(interaction.type === 'permission' ? 'n' : '{}');
+            this.interactionResolvers.delete(id);
+            return true;
           }
 
           log('[RemoteManager] Found pending interaction:', id);
@@ -1088,8 +1154,8 @@ export class RemoteManager extends EventEmitter {
     if (!channelInfo || !this.gateway) return;
 
     // Only send notifications for interesting tools
-    const notifyTools = ['Bash', 'Write', 'Edit', 'WebSearch', 'WebFetch', 'mcp__Chrome__'];
-    const shouldNotify = notifyTools.some((t) => toolName.includes(t));
+    const notifyTools = ['bash', 'write', 'edit', 'websearch', 'webfetch', 'mcp__chrome__'];
+    const shouldNotify = notifyTools.some((t) => toolName.toLowerCase().includes(t));
 
     if (!shouldNotify) return;
 
@@ -1117,6 +1183,13 @@ export class RemoteManager extends EventEmitter {
         break;
     }
 
+    if (channelInfo.channelType === 'telegram') {
+      if (remoteConfigStore.getAll().channels.telegram?.notifications?.toolProgress === true) {
+        await this.doSendToChannel(channelInfo, `${emoji} ${statusText}`);
+      }
+      return;
+    }
+
     // Only send running status for long-running tools
     if (status === 'running') {
       // Add to buffer's tool steps
@@ -1132,6 +1205,139 @@ export class RemoteManager extends EventEmitter {
       // For Chrome MCP, send progress
       await this.doSendToChannel(channelInfo, `${emoji} ${statusText}`);
     }
+  }
+
+  /** Called after Gateway authorization, so controls obey pairing/allowlist too. */
+  async handleTelegramControlMessage(message: RemoteMessage): Promise<boolean> {
+    if (message.channelType !== 'telegram' || message.isGroup) return false;
+    if (message.content.type === 'interactive') {
+      const data = message.content.interactive as
+        | { kind?: unknown; token?: unknown; answer?: unknown }
+        | undefined;
+      if (data?.kind !== 'telegram_permission') return false;
+      const accepted = await this.withInteractionLock(async () => {
+        if (typeof data.token !== 'string' || !['y', 'n', 'always'].includes(String(data.answer)))
+          return false;
+        for (const [id, interaction] of this.pendingInteractions) {
+          const channel = this.sessionChannelMapping.get(interaction.remoteSessionId);
+          if (
+            interaction.type !== 'permission' ||
+            interaction.telegramCallbackToken !== data.token ||
+            interaction.expiresAt <= Date.now() ||
+            interaction.ownerSenderId !== message.sender.id ||
+            channel?.channelType !== 'telegram' ||
+            channel.channelId !== message.channelId
+          )
+            continue;
+          const resolve = this.interactionResolvers.get(id);
+          if (!resolve) return false;
+          this.pendingInteractions.delete(id);
+          this.interactionResolvers.delete(id);
+          resolve(String(data.answer));
+          return true;
+        }
+        return false;
+      });
+      await this.doSendToChannel(
+        { channelType: 'telegram', channelId: message.channelId },
+        accepted
+          ? 'Permission response recorded.'
+          : 'Permission expired, already answered, or belongs to another user.'
+      );
+      return true;
+    }
+    const command = message.content.text
+      ?.trim()
+      .match(/^\/(new|sessions|switch|stop)(?:@\w+)?(?:\s+(.*))?$/i);
+    if (!command) return false;
+    const reply = (text: string) =>
+      this.doSendToChannel({ channelType: 'telegram', channelId: message.channelId }, text);
+    const owned = Array.from(this.sessionIdMapping).filter(([actual, remote]) => {
+      const channel = this.sessionChannelMapping.get(remote);
+      return (
+        this.sessionOwnerMapping.get(remote) === message.sender.id &&
+        channel?.channelType === 'telegram' &&
+        channel.channelId === message.channelId &&
+        (!this.agentExecutor?.hasSession || this.agentExecutor.hasSession(actual))
+      );
+    });
+    const selected = this.messageRouter.getSessionMapping(
+      'telegram',
+      message.channelId,
+      message.sender.id
+    );
+    switch (command[1].toLowerCase()) {
+      case 'sessions':
+        await reply(
+          owned.length
+            ? owned
+                .map(([actual, remote]) => `${remote === selected?.sessionId ? '* ' : ''}${actual}`)
+                .join('\n')
+            : 'No conversations yet. Send a task to create one.'
+        );
+        break;
+      case 'new':
+        await reply(
+          this.messageRouter.selectSessionMapping('telegram', message.channelId, message.sender.id)
+            ? 'Your next message will start a new conversation.'
+            : 'A message is being dispatched. Please retry shortly.'
+        );
+        break;
+      case 'switch': {
+        const matches = owned.filter(
+          ([actual]) => command[2] && actual.startsWith(command[2].trim())
+        );
+        const mapping =
+          matches.length === 1 ? this.telegramSessionMappings.get(matches[0][1]) : undefined;
+        await reply(
+          mapping &&
+            this.messageRouter.selectSessionMapping(
+              'telegram',
+              message.channelId,
+              message.sender.id,
+              mapping
+            )
+            ? `Selected conversation ${matches[0][0]}.`
+            : 'Use /sessions, then /switch with one of your unique conversation IDs.'
+        );
+        break;
+      }
+      case 'stop': {
+        const actual = owned.find(([, remote]) => remote === selected?.sessionId)?.[0];
+        if (actual && this.agentExecutor) {
+          await this.withInteractionLock(async () => {
+            for (const [id, interaction] of this.pendingInteractions) {
+              if (interaction.sessionId !== actual) continue;
+              this.pendingInteractions.delete(id);
+              this.interactionResolvers.get(id)?.(interaction.type === 'question' ? '{}' : 'n');
+              this.interactionResolvers.delete(id);
+            }
+          });
+          this.telegramRunningSessions.delete(actual);
+          await this.agentExecutor.stopSession(actual);
+          await reply(`Stopped conversation ${actual}.`);
+        } else await reply('No current conversation to stop.');
+        break;
+      }
+    }
+    return true;
+  }
+
+  async sendTelegramSessionStatus(actualSessionId: string, status: string): Promise<void> {
+    if (status !== 'idle' && status !== 'error') return;
+    const remote = this.sessionIdMapping.get(actualSessionId);
+    const channel = remote ? this.sessionChannelMapping.get(remote) : undefined;
+    if (
+      channel?.channelType !== 'telegram' ||
+      !this.telegramRunningSessions.delete(actualSessionId)
+    )
+      return;
+    const preferences = remoteConfigStore.getAll().channels.telegram?.notifications;
+    if ((status === 'idle' ? preferences?.completion : preferences?.failure) === false) return;
+    await this.doSendToChannel(
+      channel,
+      `${status === 'idle' ? 'Task completed' : 'Task failed'} (${actualSessionId}).`
+    );
   }
 
   /**
@@ -1179,6 +1385,8 @@ export class RemoteManager extends EventEmitter {
       this.remoteSessionIds.delete(remoteSessionId);
       this.sessionChannelMapping.delete(remoteSessionId);
       this.sessionOwnerMapping.delete(remoteSessionId);
+      this.telegramSessionMappings.delete(remoteSessionId);
+      this.telegramRunningSessions.delete(actualSessionId);
     }
   }
 
@@ -1264,7 +1472,11 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Slack channel registered');
     }
 
-    // TODO: Register other channels (WeChat, Telegram, DingTalk)
+    if (config.channels.telegram?.botToken) {
+      this.gateway.registerChannel(new TelegramChannel(config.channels.telegram));
+    }
+
+    // TODO: Register other channels (WeChat, DingTalk)
   }
 
   /**
@@ -1300,6 +1512,13 @@ export class RemoteManager extends EventEmitter {
 
     log('[RemoteManager] Executing agent for session:', sessionId);
     log('[RemoteManager] Working directory:', workingDirectory || '(default)');
+
+    if (channelType === 'telegram') {
+      const mapping = this.messageRouter.getSessionMapping('telegram', channelId, senderId);
+      if (mapping) this.telegramSessionMappings.set(sessionId, mapping);
+      const actual = this.reverseSessionIdMapping.get(sessionId);
+      if (actual) this.telegramRunningSessions.add(actual);
+    }
 
     // Check if this is a new remote session
     let isNewSession = !this.remoteSessionIds.has(sessionId);
@@ -1359,7 +1578,8 @@ export class RemoteManager extends EventEmitter {
       const newSession = await this.agentExecutor.startSession(
         buildRemoteSessionTitle(prompt),
         prompt,
-        workingDirectory
+        workingDirectory,
+        content
       );
 
       // Map remote session ID to actual session ID
@@ -1367,6 +1587,7 @@ export class RemoteManager extends EventEmitter {
 
       // Store bidirectional mapping
       this.sessionIdMapping.set(newSession.id, sessionId);
+      if (channelType === 'telegram') this.telegramRunningSessions.add(newSession.id);
       this.reverseSessionIdMapping.set(sessionId, newSession.id);
 
       // Store channel info for routing responses back

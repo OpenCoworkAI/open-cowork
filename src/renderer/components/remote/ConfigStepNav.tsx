@@ -9,6 +9,7 @@ import type { ConfigStep } from './types';
 interface Props {
   activeStep: ConfigStep;
   isFeishuConfigured: boolean;
+  isTelegramConfigured?: boolean;
   isConnectionConfigured: boolean;
   onStepChange: (step: ConfigStep) => void;
 }
@@ -16,6 +17,7 @@ interface Props {
 export function ConfigStepNav({
   activeStep,
   isFeishuConfigured,
+  isTelegramConfigured = false,
   isConnectionConfigured,
   onStepChange,
 }: Props) {
@@ -27,6 +29,12 @@ export function ConfigStepNav({
       labelKey: 'remote.stepFeishu',
       icon: MessageSquare,
       done: isFeishuConfigured,
+    },
+    {
+      id: 'telegram',
+      labelKey: 'remote.stepTelegram',
+      icon: MessageSquare,
+      done: isTelegramConfigured,
     },
     {
       id: 'connection',

@@ -968,7 +968,18 @@
     "expiresIn": "Expires in {{time}}",
     "userRemoved": "User removed",
     "revokeFailed": "Failed to remove user",
-    "copied": "Copied"
+    "copied": "Copied",
+    "stepTelegram": "Telegram",
+    "telegramTitle": "Telegram remote control",
+    "telegramSetup": "Create a bot with BotFather and enter its token and the numeric Telegram user IDs allowed to use it. Uses private chats and long polling; no public webhook is needed. Clear the token to disconnect.",
+    "telegramBotFather": "Open BotFather",
+    "telegramToken": "Bot token",
+    "telegramAllowedUsers": "Allowed user IDs (comma separated)",
+    "telegramSaveError": "Check the bot token and enter at least one numeric user ID, then try again.",
+    "saving": "Saving...",
+    "telegramNotifyCompletion": "Notify when tasks complete",
+    "telegramNotifyFailure": "Notify when tasks fail",
+    "telegramNotifyProgress": "Send tool progress updates"
   },
   "time": {
     "now": "now"

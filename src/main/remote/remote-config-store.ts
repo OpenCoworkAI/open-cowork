@@ -193,6 +193,10 @@ class RemoteConfigStore {
   /**
    * Set telegram channel config
    */
+  clearTelegramConfig(): void {
+    this.store.delete('channels.telegram');
+  }
+
   setTelegramConfig(config: TelegramChannelConfig): void {
     this.store.set('channels.telegram', config);
     log('[RemoteConfig] Telegram config updated');

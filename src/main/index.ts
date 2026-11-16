@@ -63,7 +63,12 @@ import type {
 } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
-import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
+import type {
+  GatewayConfig,
+  FeishuChannelConfig,
+  TelegramChannelConfig,
+  ChannelType,
+} from './remote/types';
 import { startNavServer, stopNavServer } from './nav-server';
 import {
   ScheduledTaskManager,
@@ -822,9 +827,12 @@ function sendToRenderer(event: ServerEvent) {
       const status = payload.status as string;
       if (status === 'idle' || status === 'error') {
         // 会话结束，清空缓冲
-        remoteManager.clearSessionBuffer(sessionId).catch((err: Error) => {
-          logError('[Remote] Failed to clear session buffer:', err);
-        });
+        remoteManager
+          .clearSessionBuffer(sessionId)
+          .then(() => remoteManager.sendTelegramSessionStatus(sessionId, status))
+          .catch((err: Error) => {
+            logError('[Remote] Failed to clear session buffer:', err);
+          });
       }
     }
 
@@ -1163,13 +1171,13 @@ app
 
         // Set up RemoteManager with StdioChannel
         const stdioAgentExecutor: AgentExecutor = {
-          startSession: async (title, prompt, cwd) => {
+          startSession: async (title, prompt, cwd, content) => {
             if (!sessionManager) throw new Error('Session manager not initialized');
             const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
             if (unsupportedReason) {
               throw new Error(unsupportedReason);
             }
-            return sessionManager.startSession(title, prompt, cwd);
+            return sessionManager.startSession(title, prompt, cwd, undefined, content);
           },
           continueSession: async (sessionId, prompt, content) => {
             if (!sessionManager) throw new Error('Session manager not initialized');
@@ -1479,13 +1487,13 @@ app
     // 初始化远程管理器
     remoteManager.setRendererCallback(sendToRenderer);
     const agentExecutor: AgentExecutor = {
-      startSession: async (title, prompt, cwd) => {
+      startSession: async (title, prompt, cwd, content) => {
         if (!sessionManager) throw new Error('Session manager not initialized');
         const unsupportedReason = getWorkspacePathUnsupportedReason(cwd);
         if (unsupportedReason) {
           throw new Error(unsupportedReason);
         }
-        return sessionManager.startSession(title, prompt, cwd);
+        return sessionManager.startSession(title, prompt, cwd, undefined, content);
       },
       continueSession: async (sessionId, prompt, content, cwd) => {
         if (!sessionManager) throw new Error('Session manager not initialized');
@@ -2892,6 +2900,18 @@ ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannel
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
+
+ipcMain.handle(
+  'remote.updateTelegramConfig',
+  async (_event, config: TelegramChannelConfig | null) => {
+    try {
+      await remoteManager.updateTelegramConfig(config);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+);
 
 ipcMain.handle('remote.getPairedUsers', () => {
   try {

@@ -11,6 +11,7 @@ import { PairingRequestsSection } from './remote/PairingRequestsSection';
 import { PairingGuideCard } from './remote/PairingGuideCard';
 import { ConfigStepNav } from './remote/ConfigStepNav';
 import { FeishuConfigStep } from './remote/FeishuConfigStep';
+import { TelegramConfigStep } from './remote/TelegramConfigStep';
 import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
 import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
@@ -37,7 +38,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   // Remote state
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
-  const [, setConfig] = useState<RemoteConfig | null>(null);
+  const [config, setConfig] = useState<RemoteConfig | null>(null);
   const [pairedUsers, setPairedUsers] = useState<PairedUser[]>([]);
   const [pendingPairings, setPendingPairings] = useState<PairingRequest[]>([]);
   const [isTogglingGateway, setIsTogglingGateway] = useState(false);
@@ -270,6 +271,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   }
 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
+  const isTelegramConfigured = Boolean(config?.channels.telegram?.botToken);
   const hasWebhookCredentials = !!(feishuVerificationToken.trim() && feishuEncryptKey.trim());
   const isConnectionConfigured =
     (useLongConnection || (tunnelEnabled && !!ngrokAuthToken) || !!tunnelStatus?.connected) &&
@@ -313,7 +315,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         pairedUsers={pairedUsers}
         pendingPairings={pendingPairings}
         isTogglingGateway={isTogglingGateway}
-        isFeishuConfigured={isFeishuConfigured}
+        canStartGateway={isFeishuConfigured || isTelegramConfigured}
         onToggle={toggleGateway}
       />
 
@@ -327,6 +329,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       />
 
       <ConfigStepNav
+        isTelegramConfigured={isTelegramConfigured}
         activeStep={activeStep}
         isFeishuConfigured={isFeishuConfigured}
         isConnectionConfigured={isConnectionConfigured}
@@ -344,6 +347,9 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             onAppSecretChange={setFeishuAppSecret}
             onDmPolicyChange={setFeishuDmPolicy}
           />
+        )}
+        {activeStep === 'telegram' && (
+          <TelegramConfigStep config={config?.channels.telegram} onSaved={loadData} />
         )}
         {activeStep === 'connection' && (
           <ConnectionConfigStep
@@ -375,20 +381,22 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         )}
 
         {/* Save button */}
-        <div className="flex justify-end mt-6 pt-6 border-t border-border">
-          <button
-            onClick={saveConfig}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
-          >
-            {isSaving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-            {t('remote.saveConfig')}
-          </button>
-        </div>
+        {activeStep !== 'telegram' && (
+          <div className="flex justify-end mt-6 pt-6 border-t border-border">
+            <button
+              onClick={saveConfig}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-6 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Check className="w-4 h-4" />
+              )}
+              {t('remote.saveConfig')}
+            </button>
+          </div>
+        )}
       </div>
 
       <AuthorizedUsersSection pairedUsers={pairedUsers} onRevoke={revokePairing} />
