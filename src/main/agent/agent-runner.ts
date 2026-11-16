@@ -70,6 +70,7 @@ import {
   resolvePiRouteProtocol,
 } from './pi-model-resolution';
 import { buildPiSessionRuntimeSignature } from './pi-session-runtime';
+import { buildPromptImageOptions } from './prompt-images';
 import {
   LoopGuard,
   buildAbortUserMessage,
@@ -1695,7 +1696,7 @@ ${hints.join('\n')}
       logTiming('after pi-ai model resolution', runStartTime);
 
       // the agent SDK handles path sandboxing via its own tools
-      const imageCapable = true; // pi-ai models generally support images; let the model handle unsupported cases
+      const imageCapable = piModel.input.includes('image');
       const effectiveCwd =
         useSandboxIsolation && sandboxPath ? sandboxPath : workingDir || process.cwd();
 
@@ -2923,7 +2924,10 @@ Tool routing:
             })
           );
         }
-        const promptResult = await piSession.prompt(contextualPrompt);
+        const promptResult = await piSession.prompt(
+          contextualPrompt,
+          buildPromptImageOptions(lastUserMessage, imageCapable)
+        );
         log(
           '[CoworkAgentRunner] prompt() returned:',
           JSON.stringify(promptResult ?? 'void').substring(0, 1000)
