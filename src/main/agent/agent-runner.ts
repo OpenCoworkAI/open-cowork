@@ -2858,7 +2858,8 @@ Tool routing:
               // Surface compaction result details to the renderer (skip if retrying)
               if (event.result && !event.willRetry) {
                 const compactionDetails = event.result.details as
-                  { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
+                  | { readFiles?: string[]; modifiedFiles?: string[] }
+                  | undefined;
                 this.sendToRenderer({
                   type: 'compaction.result',
                   payload: {
@@ -3130,7 +3131,8 @@ Tool routing:
         })
       );
       const compactionDetails = result.details as
-        { readFiles?: string[]; modifiedFiles?: string[] } | undefined;
+        | { readFiles?: string[]; modifiedFiles?: string[] }
+        | undefined;
       this.sendToRenderer({
         type: 'compaction.result',
         payload: {

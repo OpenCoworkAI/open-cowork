@@ -40,7 +40,13 @@ import { openAICodexAuthService } from '../auth/openai-codex-auth';
  * Application configuration schema
  */
 export type ProviderType =
-  'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'openai-codex'
+  | 'gemini'
+  | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =

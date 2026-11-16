@@ -2092,10 +2092,13 @@ ipcMain.handle('openai-codex-auth.login', async (): Promise<OpenAICodexAuthActio
   return result;
 });
 
-ipcMain.handle('openai-codex-auth.cancel', async (): Promise<OpenAICodexAuthActionResult> => ({
-  ok: true,
-  status: await openAICodexAuthService.cancelLogin(),
-}));
+ipcMain.handle(
+  'openai-codex-auth.cancel',
+  async (): Promise<OpenAICodexAuthActionResult> => ({
+    ok: true,
+    status: await openAICodexAuthService.cancelLogin(),
+  })
+);
 
 ipcMain.handle(
   'openai-codex-auth.submit-code',

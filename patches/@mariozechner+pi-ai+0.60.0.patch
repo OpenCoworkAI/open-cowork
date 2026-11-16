@@ -91,10 +91,20 @@ index 29ae8cf..da97105 100644
  function convertTools(tools, compat) {
      return tools.map((tool) => ({
 diff --git a/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js b/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
-index a2d3ebf..2ccb876 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js
-@@ -82,13 +82,12 @@ async function exchangeAuthorizationCode(code, verifier, redirectUri = REDIRECT_
+@@ -69,8 +69,9 @@
+         return null;
+     }
+ }
+-async function exchangeAuthorizationCode(code, verifier, redirectUri = REDIRECT_URI) {
++async function exchangeAuthorizationCode(code, verifier, redirectUri = REDIRECT_URI, signal) {
+     const response = await fetch(TOKEN_URL, {
++        signal,
+         method: "POST",
+         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+         body: new URLSearchParams({
+@@ -82,13 +83,12 @@
          }),
      });
      if (!response.ok) {
@@ -110,7 +120,7 @@ index a2d3ebf..2ccb876 100644
          return { type: "failed" };
      }
      return {
-@@ -110,13 +109,12 @@ async function refreshAccessToken(refreshToken) {
+@@ -110,13 +110,12 @@
              }),
          });
          if (!response.ok) {
@@ -126,3 +136,54 @@ index a2d3ebf..2ccb876 100644
              return { type: "failed" };
          }
          return {
+@@ -241,11 +240,15 @@
+  * @param options.originator - OAuth originator parameter (defaults to "pi")
+  */
+ export async function loginOpenAICodex(options) {
++    options.signal?.throwIfAborted();
+     const { verifier, state, url } = await createAuthorizationFlow(options.originator);
+     const server = await startLocalOAuthServer(state);
+-    options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
++    const onAbort = () => server.cancelWait();
++    options.signal?.addEventListener("abort", onAbort, { once: true });
+     let code;
+     try {
++        options.signal?.throwIfAborted();
++        options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
+         if (options.onManualCodeInput) {
+             // Race between browser callback and manual input
+             let manualCode;
+@@ -299,6 +302,7 @@
+                 code = result.code;
+             }
+         }
++        options.signal?.throwIfAborted();
+         // Fallback to onPrompt if still no code
+         if (!code) {
+             const input = await options.onPrompt({
+@@ -313,7 +317,8 @@
+         if (!code) {
+             throw new Error("Missing authorization code");
+         }
+-        const tokenResult = await exchangeAuthorizationCode(code, verifier);
++        const tokenResult = await exchangeAuthorizationCode(code, verifier, REDIRECT_URI, options.signal);
++        options.signal?.throwIfAborted();
+         if (tokenResult.type !== "success") {
+             throw new Error("Token exchange failed");
+         }
+@@ -329,6 +334,7 @@
+         };
+     }
+     finally {
++        options.signal?.removeEventListener("abort", onAbort);
+         server.close();
+     }
+ }
+@@ -357,6 +363,7 @@
+     usesCallbackServer: true,
+     async login(callbacks) {
+         return loginOpenAICodex({
++            signal: callbacks.signal,
+             onAuth: callbacks.onAuth,
+             onPrompt: callbacks.onPrompt,
+             onProgress: callbacks.onProgress,

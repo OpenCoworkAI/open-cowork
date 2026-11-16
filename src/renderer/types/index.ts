@@ -635,7 +635,14 @@ export interface Settings {
 
 // Tool types
 export type ToolName =
-  'read' | 'write' | 'edit' | 'glob' | 'grep' | 'bash' | 'webFetch' | 'webSearch';
+  | 'read'
+  | 'write'
+  | 'edit'
+  | 'glob'
+  | 'grep'
+  | 'bash'
+  | 'webFetch'
+  | 'webSearch';
 
 export interface ToolResult {
   success: boolean;
@@ -653,7 +660,13 @@ export interface ExecutionContext {
 
 // App Config types
 export type ProviderType =
-  'openrouter' | 'anthropic' | 'custom' | 'openai' | 'openai-codex' | 'gemini' | 'ollama';
+  | 'openrouter'
+  | 'anthropic'
+  | 'custom'
+  | 'openai'
+  | 'openai-codex'
+  | 'gemini'
+  | 'ollama';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type ProviderProfileKey =
