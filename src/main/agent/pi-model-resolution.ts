@@ -174,7 +174,9 @@ export function buildSyntheticPiModel(
     provider,
     baseUrl: baseUrl || '',
     reasoning: autoReasoning,
-    input: ['text', 'image'],
+    // Unknown models have no verified vision capability. A false claim sends
+    // image_url parts to text-only endpoints and fails the whole request.
+    input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: contextWindow ?? knownSpecs?.contextWindow ?? 128000,
     maxTokens: maxTokens ?? knownSpecs?.maxTokens ?? 16384,
