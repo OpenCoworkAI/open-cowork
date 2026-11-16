@@ -203,6 +203,26 @@ describe('Telegram inline permission callbacks', () => {
     }
   );
 
+  it.each(['y', 'always'])(
+    'denies overdue %s before a delayed timer callback can run',
+    async (answer) => {
+      vi.useFakeTimers();
+      const { manager, send } = setup();
+      await manager.routeMessage(msg('task'));
+      const permission = manager.handlePermissionRequest('session-1', 'tool-id', 'bash', {});
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([response]) => response.content.card)).toBe(true)
+      );
+      // Advance wall time without executing timers: the reply path must enforce
+      // its own deadline when the event loop has not delivered the timeout yet.
+      vi.setSystemTime(Date.now() + 61_000);
+      expect(await manager.handlePotentialInteractionResponse('telegram', '42', '42', answer)).toBe(
+        true
+      );
+      await expect(permission).resolves.toEqual({ allow: false });
+    }
+  );
+
   it('runs interactive controls only after gateway authorization', async () => {
     const router = new MessageRouter();
     const gateway = new RemoteGateway(
