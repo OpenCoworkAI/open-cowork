@@ -54,7 +54,12 @@ async function writeReleaseChecksums(directory, target, env = process.env) {
 module.exports = { writeReleaseChecksums };
 
 if (require.main === module) {
-  writeReleaseChecksums(process.argv[2] || 'release', process.argv[3] || '')
+  const platform =
+    process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : process.platform;
+  writeReleaseChecksums(
+    process.argv[2] || 'release',
+    process.argv[3] || `${platform}-${process.arch}`
+  )
     .then((artifacts) =>
       console.log(`Wrote SHA256 checksums for ${artifacts.length} release artifacts`)
     )
