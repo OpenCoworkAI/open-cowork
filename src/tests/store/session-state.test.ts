@@ -50,6 +50,7 @@ describe('SessionState unified store', () => {
       expect(useAppStore.getState().sessionStates['s1']).toBeUndefined();
       expect(useAppStore.getState().sessions).toHaveLength(0);
       expect(useAppStore.getState().sessionScrollPositions['s1']).toBeUndefined();
+      expect(useAppStore.getState().sessionInputDrafts['s1']).toBeUndefined();
     });
 
     it('should clear activeSessionId when removing active session', () => {
@@ -58,6 +59,61 @@ describe('SessionState unified store', () => {
       useAppStore.getState().setActiveSession('s1');
       useAppStore.getState().removeSession('s1');
       expect(useAppStore.getState().activeSessionId).toBeNull();
+    });
+  });
+
+  describe('input drafts', () => {
+    it('stores unsent composer text independently for each session', () => {
+      useAppStore.getState().setSessionInputDraft('s1', 'draft A');
+      useAppStore.getState().setSessionInputDraft('s2', 'draft B');
+
+      expect(useAppStore.getState().sessionInputDrafts).toEqual({ s1: 'draft A', s2: 'draft B' });
+    });
+
+    it('removes empty drafts instead of storing blank text', () => {
+      useAppStore.getState().setSessionInputDraft('s1', 'keep me');
+      useAppStore.getState().setSessionInputDraft('s1', '');
+
+      expect(useAppStore.getState().sessionInputDrafts['s1']).toBeUndefined();
+    });
+
+    it('leaves the map unchanged when clearing a missing draft', () => {
+      const before = useAppStore.getState().sessionInputDrafts;
+      useAppStore.getState().setSessionInputDraft('s1', '');
+
+      expect(useAppStore.getState().sessionInputDrafts).toBe(before);
+    });
+
+    it('leaves the map unchanged when writing the same draft twice', () => {
+      useAppStore.getState().setSessionInputDraft('s1', 'same');
+      const before = useAppStore.getState().sessionInputDrafts;
+      useAppStore.getState().setSessionInputDraft('s1', 'same');
+
+      expect(useAppStore.getState().sessionInputDrafts).toBe(before);
+    });
+
+    it('removes drafts with their sessions', () => {
+      useAppStore.getState().addSession(makeSession('s1'));
+      useAppStore.getState().addSession(makeSession('s2'));
+      useAppStore.getState().setSessionInputDraft('s1', 'gone');
+      useAppStore.getState().setSessionInputDraft('s2', 'kept');
+
+      useAppStore.getState().removeSession('s1');
+
+      expect(useAppStore.getState().sessionInputDrafts).toEqual({ s2: 'kept' });
+    });
+
+    it('removes drafts for batch-deleted sessions', () => {
+      useAppStore.getState().addSession(makeSession('s1'));
+      useAppStore.getState().addSession(makeSession('s2'));
+      useAppStore.getState().addSession(makeSession('s3'));
+      useAppStore.getState().setSessionInputDraft('s1', 'a');
+      useAppStore.getState().setSessionInputDraft('s2', 'b');
+      useAppStore.getState().setSessionInputDraft('s3', 'c');
+
+      useAppStore.getState().removeSessions(['s1', 's3']);
+
+      expect(useAppStore.getState().sessionInputDrafts).toEqual({ s2: 'b' });
     });
   });
 

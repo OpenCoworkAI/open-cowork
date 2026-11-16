@@ -43,7 +43,7 @@ export const CodeBlock = memo(function CodeBlock({ language, children }: CodeBlo
   };
 
   return (
-    <div className="relative group my-3">
+    <div dir="ltr" className="relative group my-3" style={{ unicodeBidi: 'isolate' }}>
       <div className="absolute top-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <span className="text-xs text-text-muted px-2 py-1 rounded bg-surface">{language}</span>
         <button

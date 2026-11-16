@@ -37,6 +37,11 @@ export interface CoreMemoryEntry {
   value: string;
 }
 
+export interface CoreMemoryListEntry extends CoreMemoryEntry {
+  /** Written by the user in Settings; extraction and rebuild keep it as is. */
+  userWritten: boolean;
+}
+
 export interface ChunkMemoryItem {
   id: string;
   sessionId: string;

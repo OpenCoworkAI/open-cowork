@@ -32,6 +32,7 @@ import {
   shouldUseAnthropicAuthToken,
 } from './auth-utils';
 import { API_PROVIDER_PRESETS, PI_AI_CURATED_PRESETS } from '../../shared/api-model-presets';
+import { normalizeSubagentConfig, type SubagentConfig } from '../../shared/subagent-config';
 
 /**
  * Application configuration schema
@@ -78,6 +79,8 @@ export interface ApiConfigSet {
 }
 
 export interface AppConfig {
+  subagent?: SubagentConfig;
+  subagentConfigError?: string;
   // API Provider
   provider: ProviderType;
 
@@ -194,6 +197,31 @@ export const EXPORTABLE_FIELDS: (keyof AppConfig)[] = [
 ];
 
 /**
+ * True for a finite number greater than zero. Rejects NaN/Infinity so callers
+ * that claim "valid positive number" cannot persist non-finite overrides.
+ */
+function isValidPositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * Assign an optional positive numeric field, or drop it. electron-store/conf
+ * throws if a present key is explicitly `undefined`, and spreading a previous
+ * config can leak a stale override when the next profile omits the field.
+ */
+function assignOptionalPositiveNumber<K extends 'contextWindow' | 'maxTokens'>(
+  result: { contextWindow?: number; maxTokens?: number },
+  key: K,
+  value: unknown
+): void {
+  if (isValidPositiveNumber(value)) {
+    result[key] = value;
+  } else {
+    delete result[key];
+  }
+}
+
+/**
  * Per-field type/value validators applied when importing the plaintext config
  * file (see `importSafeConfig`). Fields not listed here are accepted as-is.
  */
@@ -209,8 +237,8 @@ export const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   provider: (v) =>
     typeof v === 'string' &&
     ['openrouter', 'anthropic', 'custom', 'openai', 'gemini', 'ollama'].includes(v),
-  contextWindow: (v) => typeof v === 'number' && v > 0,
-  maxTokens: (v) => typeof v === 'number' && v > 0,
+  contextWindow: isValidPositiveNumber,
+  maxTokens: isValidPositiveNumber,
 };
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -582,8 +610,7 @@ export class ConfigStore {
   }
 
   private ensureNormalized(): void {
-    const normalized = this.normalizeConfig(this.store.store as Partial<AppConfig>);
-    this.store.set(normalized);
+    this.saveConfig(this.store.store as Partial<AppConfig>);
   }
 
   /**
@@ -652,12 +679,8 @@ export class ConfigStore {
       model,
     };
     // Preserve optional numeric fields so callers don't silently lose user-set values
-    if (typeof profile?.contextWindow === 'number' && profile.contextWindow > 0) {
-      result.contextWindow = profile.contextWindow;
-    }
-    if (typeof profile?.maxTokens === 'number' && profile.maxTokens > 0) {
-      result.maxTokens = profile.maxTokens;
-    }
+    assignOptionalPositiveNumber(result, 'contextWindow', profile?.contextWindow);
+    assignOptionalPositiveNumber(result, 'maxTokens', profile?.maxTokens);
     return result;
   }
 
@@ -994,6 +1017,14 @@ export class ConfigStore {
     const activeConfigSet = configSets.find((set) => set.id === activeConfigSetId) || configSets[0];
     const projected = this.projectFromConfigSet(activeConfigSet);
 
+    let subagent: SubagentConfig | undefined;
+    let subagentConfigError: string | undefined;
+    try {
+      subagent = normalizeSubagentConfig(raw.subagent);
+    } catch (error) {
+      subagentConfigError = error instanceof Error ? error.message : String(error);
+    }
+
     const result: AppConfig = {
       provider: projected.provider,
       customProtocol: projected.customProtocol,
@@ -1017,9 +1048,13 @@ export class ConfigStore {
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       memoryEnabled: toBoolean(raw.memoryEnabled, defaultConfig.memoryEnabled),
       memoryRuntime: normalizeMemoryRuntimeConfig(raw.memoryRuntime),
+      subagent,
+      ...(subagentConfigError ? { subagentConfigError } : {}),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
     };
+    assignOptionalPositiveNumber(result, 'contextWindow', projected.contextWindow);
+    assignOptionalPositiveNumber(result, 'maxTokens', projected.maxTokens);
     this.normalizeModelIds(result);
     return result;
   }
@@ -1032,9 +1067,13 @@ export class ConfigStore {
     };
   }
 
-  private saveConfig(config: AppConfig): void {
-    const normalized = this.normalizeConfig(config);
-    this.store.set(normalized);
+  private saveConfig(config: Partial<AppConfig>): void {
+    const { subagent, subagentConfigError, ...rest } = this.normalizeConfig(config);
+    // Merge other fields while preserving the invalid persisted subagent for repair.
+    this.store.set({
+      ...rest,
+      ...(config.subagentConfigError || subagentConfigError ? {} : { subagent }),
+    });
   }
 
   private composeProjectedConfig(
@@ -1045,7 +1084,7 @@ export class ConfigStore {
     const activeConfigSet =
       nextConfigSets.find((set) => set.id === requestedActiveConfigSetId) || nextConfigSets[0];
     const projected = this.projectFromConfigSet(activeConfigSet);
-    return {
+    const result: AppConfig = {
       ...base,
       provider: projected.provider,
       customProtocol: projected.customProtocol,
@@ -1058,6 +1097,10 @@ export class ConfigStore {
       activeConfigSetId: activeConfigSet.id,
       configSets: nextConfigSets,
     };
+    // Clear rather than leave stale: `...base` can carry the previous set's value.
+    assignOptionalPositiveNumber(result, 'contextWindow', projected.contextWindow);
+    assignOptionalPositiveNumber(result, 'maxTokens', projected.maxTokens);
+    return result;
   }
 
   private buildUniqueConfigSetName(
@@ -1436,6 +1479,11 @@ export class ConfigStore {
         updates.memoryRuntime !== undefined
           ? normalizeMemoryRuntimeConfig(updates.memoryRuntime)
           : current.memoryRuntime,
+      subagent:
+        updates.subagent === undefined
+          ? current.subagent
+          : normalizeSubagentConfig(updates.subagent),
+      subagentConfigError: updates.subagent === undefined ? current.subagentConfigError : undefined,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
     });

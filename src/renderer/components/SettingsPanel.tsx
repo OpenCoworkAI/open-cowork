@@ -11,6 +11,7 @@ import {
   Globe,
   ChevronRight,
   BrainCircuit,
+  UsersRound,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -24,6 +25,8 @@ import { SettingsSchedule } from './settings/SettingsSchedule';
 import { SettingsGeneral } from './settings/SettingsGeneral';
 import { SettingsLogs } from './settings/SettingsLogs';
 import { SettingsMemory } from './settings/SettingsMemory';
+import { PanelErrorBoundary } from './PanelErrorBoundary';
+import { SettingsSubagents } from './settings/SettingsSubagents';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -33,6 +36,7 @@ interface SettingsPanelProps {
     | 'connectors'
     | 'skills'
     | 'memory'
+    | 'subagents'
     | 'schedule'
     | 'remote'
     | 'logs'
@@ -45,6 +49,7 @@ type TabId =
   | 'connectors'
   | 'skills'
   | 'memory'
+  | 'subagents'
   | 'schedule'
   | 'remote'
   | 'logs'
@@ -56,11 +61,30 @@ const VALID_TABS = new Set<TabId>([
   'connectors',
   'skills',
   'memory',
+  'subagents',
   'schedule',
   'remote',
   'logs',
   'general',
 ]);
+
+function SettingsConnectorsFallback({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-lg border border-error/20 bg-error/5 p-6 space-y-3 text-center">
+      <AlertCircle className="w-8 h-8 mx-auto text-error" />
+      <h3 className="text-sm font-medium text-text-primary">{t('mcp.pageErrorTitle')}</h3>
+      <p className="text-sm text-text-muted">{t('mcp.pageErrorDescription')}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90"
+      >
+        {t('mcp.pageErrorRetry')}
+      </button>
+    </div>
+  );
+}
 
 export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
   const { t } = useTranslation();
@@ -76,6 +100,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   const [activeTab, setActiveTab] = useState<TabId>(resolvedInitial);
   // Track which tabs have been viewed at least once (for lazy loading)
   const [viewedTabs, setViewedTabs] = useState<Set<TabId>>(new Set([resolvedInitial]));
+  const [connectorsResetKey, setConnectorsResetKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
   useEffect(() => {
     try {
@@ -103,6 +128,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   }, [activeTab]);
 
   const tabs = [
+    {
+      id: 'subagents' as TabId,
+      label: t('settings.subagents'),
+      icon: UsersRound,
+      description: t('settings.subagentsDesc'),
+    },
     {
       id: 'api' as TabId,
       label: t('settings.apiSettings'),
@@ -164,10 +195,10 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
     <div className="flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
       <div
-        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0`}
+        className={`${compactSidebar ? 'w-14' : 'w-52 lg:w-60'} bg-background-secondary/88 border-r border-border-muted flex flex-col flex-shrink-0 min-h-0`}
       >
         {!compactSidebar && (
-          <div className="px-4 pt-5 pb-4 border-b border-border-muted">
+          <div className="px-4 pt-5 pb-4 border-b border-border-muted flex-shrink-0">
             <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
               {t('settings.title')}
             </p>
@@ -177,7 +208,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
           </div>
         )}
-        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}
+        >
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -204,7 +237,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             </button>
           ))}
         </div>
-        <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
+        <div
+          className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted flex-shrink-0`}
+        >
           <button
             onClick={onClose}
             className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-background transition-colors text-text-secondary text-sm`}
@@ -258,7 +293,17 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'connectors' ? '' : 'hidden'}>
                 {viewedTabs.has('connectors') && (
-                  <SettingsConnectors isActive={activeTab === 'connectors'} />
+                  <PanelErrorBoundary
+                    name="SettingsConnectors"
+                    resetKey={`connectors:${connectorsResetKey}`}
+                    fallback={
+                      <SettingsConnectorsFallback
+                        onRetry={() => setConnectorsResetKey((key) => key + 1)}
+                      />
+                    }
+                  >
+                    <SettingsConnectors isActive={activeTab === 'connectors'} />
+                  </PanelErrorBoundary>
                 )}
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
@@ -266,6 +311,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'memory' ? '' : 'hidden'}>
                 {viewedTabs.has('memory') && <SettingsMemory />}
+              </div>
+              <div className={activeTab === 'subagents' ? '' : 'hidden'}>
+                {viewedTabs.has('subagents') && <SettingsSubagents />}
               </div>
               <div className={activeTab === 'schedule' ? '' : 'hidden'}>
                 {viewedTabs.has('schedule') && (

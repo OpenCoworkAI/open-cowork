@@ -10,6 +10,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { log } from '../utils/logger';
+import {
+  createWindowsOutputNormalizer,
+  getWindowsConsoleCodePage,
+  type OutputNormalizer,
+} from '../utils/windows-output-encoding';
 import { isPathWithinRoot } from '../tools/path-containment';
 import type { SandboxConfig, SandboxExecutor, ExecutionResult, DirectoryEntry } from './types';
 
@@ -117,7 +122,8 @@ export class NativeExecutor implements SandboxExecutor {
   async executeCommand(
     command: string,
     cwd?: string,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ExecutionResult> {
     if (!this.isInitialized) {
       throw new Error('Executor not initialized');
@@ -125,6 +131,21 @@ export class NativeExecutor implements SandboxExecutor {
 
     const workDir = cwd ? this.validatePath(cwd) : this.workspacePath;
     this.validateCommand(command, workDir);
+
+    const executionTimeout = timeoutMs || this.config?.timeout || 60000;
+    const startedAt = Date.now();
+    const codePage = await getWindowsConsoleCodePage({ timeoutMs: executionTimeout });
+    const remainingTimeout = executionTimeout - (Date.now() - startedAt);
+    if (remainingTimeout <= 0) {
+      return {
+        success: false,
+        stdout: '',
+        stderr: 'Command timed out before execution',
+        exitCode: 1,
+      };
+    }
+    const normalizeStdout: OutputNormalizer | null = createWindowsOutputNormalizer(codePage);
+    const normalizeStderr: OutputNormalizer | null = createWindowsOutputNormalizer(codePage);
 
     return new Promise((resolve) => {
       const isWindows = process.platform === 'win32';
@@ -163,18 +184,18 @@ export class NativeExecutor implements SandboxExecutor {
           ...env,
           WORKSPACE: this.workspacePath,
         },
-        timeout: this.config?.timeout || 60000,
+        timeout: remainingTimeout,
       });
 
       let stdout = '';
       let stderr = '';
 
       proc.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+        stdout += (normalizeStdout ? normalizeStdout(data) : data).toString();
       });
 
       proc.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        stderr += (normalizeStderr ? normalizeStderr(data) : data).toString();
       });
 
       proc.on('error', (error: Error) => {
@@ -189,6 +210,8 @@ export class NativeExecutor implements SandboxExecutor {
 
       proc.on('close', (code: number | null) => {
         cleanupScript();
+        stdout += normalizeStdout?.flush().toString('utf-8') ?? '';
+        stderr += normalizeStderr?.flush().toString('utf-8') ?? '';
         resolve({
           success: code === 0,
           stdout,

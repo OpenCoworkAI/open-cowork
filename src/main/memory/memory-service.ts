@@ -5,6 +5,7 @@ import type { AppConfig } from '../config/config-store';
 import { configStore } from '../config/config-store';
 import type { DatabaseInstance, SessionRow } from '../db/database';
 import { log, logError, logWarn } from '../utils/logger';
+import { CORE_MEMORY_ERRORS, MAX_CORE_MEMORY_VALUE_LENGTH } from '../../shared/core-memory';
 import { CoreMemoryStore } from './core-memory-store';
 import { CoreMemoryExtractor } from './core-memory-extractor';
 import { ExperienceMemoryExtractor } from './experience-memory-extractor';
@@ -18,6 +19,7 @@ import { MemoryRetriever } from './memory-retriever';
 import { MemorySessionStateStore } from './memory-state-store';
 import type {
   ChunkMemoryItem,
+  CoreMemoryListEntry,
   MemoryDebugFileContent,
   MemoryDebugFileInfo,
   MemoryIngestionInput,
@@ -415,7 +417,7 @@ export class MemoryService {
 
   async rebuildAll(): Promise<{ success: boolean; workspaceCount: number; sessionCount: number }> {
     const paths = this.getPaths();
-    safeRemoveFile(paths.coreFilePath);
+    this.getCoreStore().clearExtracted();
     safeRemoveFile(paths.experienceFilePath);
     safeRemoveFile(paths.stateFilePath);
     fs.rmSync(paths.artifactsDir, { recursive: true, force: true });
@@ -447,21 +449,69 @@ export class MemoryService {
     return { success: true, workspaceKey };
   }
 
+  getCoreEntries(): CoreMemoryListEntry[] {
+    const store = this.getCoreStore();
+    return store
+      .getEntries()
+      .map((entry) => ({ ...entry, userWritten: store.isUserWritten(entry.combinedKey) }));
+  }
+
+  /** Called over IPC, where the value's type is not checked at runtime. */
+  writeCoreEntry(combinedKey: string, value: unknown): CoreMemoryListEntry[] {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) {
+      throw new Error(CORE_MEMORY_ERRORS.emptyValue);
+    }
+    if (trimmed.length > MAX_CORE_MEMORY_VALUE_LENGTH) {
+      throw new Error(CORE_MEMORY_ERRORS.valueTooLong);
+    }
+    this.requireCoreEntry(combinedKey);
+    this.getCoreStore().writeEntry(combinedKey, trimmed);
+    return this.getCoreEntries();
+  }
+
+  forgetCoreEntry(combinedKey: string): CoreMemoryListEntry[] {
+    this.requireCoreEntry(combinedKey);
+    this.getCoreStore().forgetEntry(combinedKey);
+    return this.getCoreEntries();
+  }
+
   clearCoreMemory(): { success: boolean } {
     this.getCoreStore().clear();
     return { success: true };
   }
 
+  /**
+   * Removes the experience memory taken from a conversation and turns memory
+   * off for it, so later runs and rebuilds do not learn from it again. The
+   * conversation and core memory stay.
+   */
+  forgetSession(sessionId: string): Promise<void> {
+    this.db.sessions.update(sessionId, { memory_enabled: 0 });
+    return this.queue.enqueue(sessionId, async () => {
+      this.removeSessionMemory(sessionId);
+    });
+  }
+
   deleteSession(sessionId: string): Promise<void> {
     this.deletedSessionIds.add(sessionId);
     return this.queue.enqueue(sessionId, async () => {
-      const store = this.getExperienceStore();
-      if (store.getSession(sessionId)) {
-        store.removeSession(sessionId);
-        store.save();
-      }
-      this.getStateStore().delete(sessionId);
+      this.removeSessionMemory(sessionId);
     });
+  }
+
+  private removeSessionMemory(sessionId: string): void {
+    const store = this.getExperienceStore();
+    if (store.getSession(sessionId)) {
+      store.removeSession(sessionId);
+      store.save();
+    }
+    this.getStateStore().delete(sessionId);
+  }
+
+  /** A run's session object can predate forgetSession, so the saved session decides. */
+  private isMemoryTurnedOff(sessionId: string): boolean {
+    return this.db.sessions.get(sessionId)?.memory_enabled === 0;
   }
 
   private async batchRebuild(sessionRows: SessionRow[]): Promise<void> {
@@ -471,13 +521,14 @@ export class MemoryService {
     const bundles = await this.extractExperienceBundles(sessionRows);
     const sortedBundles = [...bundles].sort((a, b) => a.session.createdAt - b.session.createdAt);
     for (const bundle of sortedBundles) {
-      await this.ingestExtractedBundle(bundle);
+      // On the session's queue, so forgetting it during the rebuild takes effect.
+      await this.queue.enqueue(bundle.session.id, () => this.ingestExtractedBundle(bundle));
     }
   }
 
   private async ingest(input: MemoryIngestionInput): Promise<void> {
     const { session, messages } = input;
-    if (!session.memoryEnabled || !messages.length) {
+    if (!session.memoryEnabled || !messages.length || this.isMemoryTurnedOff(session.id)) {
       return;
     }
 
@@ -552,6 +603,9 @@ export class MemoryService {
   }
 
   private async ingestExtractedBundle(bundle: ExtractionBundle): Promise<void> {
+    if (this.isMemoryTurnedOff(bundle.session.id)) {
+      return;
+    }
     await this.updateCoreMemory(bundle.session.id, bundle.sessionDate, bundle.fullTurns);
     if (bundle.fullTurns.length) {
       await this.storeExperienceSession({
@@ -629,7 +683,8 @@ export class MemoryService {
       turns,
       existingCorePromptBlock: coreStore.toPromptBlock(),
     });
-    if (actions.length) {
+    // The conversation can be forgotten while the extractor runs.
+    if (actions.length && !this.isMemoryTurnedOff(sessionId)) {
       coreStore.applyActions(actions);
     }
   }
@@ -997,6 +1052,12 @@ export class MemoryService {
     this.coreStore = null;
     this.stateStore = null;
     this.experienceStore = null;
+  }
+
+  private requireCoreEntry(combinedKey: string): void {
+    if (!Object.prototype.hasOwnProperty.call(this.getCoreStore().getRaw(), combinedKey)) {
+      throw new Error(CORE_MEMORY_ERRORS.entryNotFound);
+    }
   }
 
   private getCoreStore(): CoreMemoryStore {

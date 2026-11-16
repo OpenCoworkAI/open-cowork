@@ -83,12 +83,13 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
     );
     expect(agentRunnerContent).toContain('Runtime changed, recreating cached pi session:');
     expect(agentRunnerContent).toContain('runtimeSignature: sessionRuntimeSignature');
+    expect(agentRunnerContent).toContain('subagent: configStore.getAll().subagent');
   });
 
   it('uses the normalized route protocol so openrouter follows the openai-compatible path', () => {
     expect(agentRunnerContent).toContain('resolvePiRouteProtocol');
     expect(agentRunnerContent).toContain('const configProtocol = resolvePiRouteProtocol(');
-    expect(agentRunnerContent).toContain('resolveSyntheticPiModelFallback');
+    expect(agentRunnerContent).toContain('buildSyntheticPiModelFromRuntimeConfig');
   });
 
   it('nudges the model to proceed with reasonable assumptions', () => {
@@ -129,5 +130,10 @@ describe('CoworkAgentRunner Open Cowork SDK integration', () => {
       'Do NOT create, write, or edit files unless the user explicitly asks'
     );
     expect(agentRunnerContent).toContain('START DOING IT');
+  });
+
+  it('forwards flat runtimeConfig contextWindow and maxTokens into synthetic model resolution', () => {
+    expect(agentRunnerContent).toContain('buildSyntheticPiModelFromRuntimeConfig(runtimeConfig');
+    expect(agentRunnerContent).not.toContain('buildSyntheticPiModel(');
   });
 });
