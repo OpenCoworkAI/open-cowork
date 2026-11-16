@@ -16,6 +16,12 @@ const deepSeekRunner = readFileSync(
 );
 
 describe('Codex PR review context safety', () => {
+  it('loads privileged review scripts from the maintained default branch', () => {
+    expect(workflow).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(workflow).not.toContain('ref: ${{ github.event.pull_request.base.ref }}');
+    expect(workflow).not.toContain('ref: ${{ github.event.pull_request.head.sha }}');
+  });
+
   it('does not let an older matching review hide a newer stale review after rollback', () => {
     expect(workflow).toContain('latestBotReview?.commit_id === currentHeadSha');
     expect(workflow).not.toContain('botReviews.some(\n              (review) => review.commit_id');
