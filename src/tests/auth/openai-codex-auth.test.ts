@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OAuthLoginCallbacks } from '@mariozechner/pi-ai';
 import { AuthStorage } from '@mariozechner/pi-coding-agent';
 import {
@@ -78,6 +78,47 @@ function createStorage(
 }
 
 describe('OpenAICodexAuthService', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('cancels the installed provider during token exchange without persisting credentials', async () => {
+    const storage = AuthStorage.inMemory();
+    const service = new OpenAICodexAuthService(storage, 1_000);
+    let requestedSignal: AbortSignal | undefined;
+    let rejectTokenRequest: ((error: Error) => void) | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        requestedSignal = init.signal as AbortSignal | undefined;
+        return new Promise((_resolve, reject) => {
+          rejectTokenRequest = reject;
+          requestedSignal?.addEventListener('abort', () => reject(requestedSignal?.reason), {
+            once: true,
+          });
+        });
+      })
+    );
+    const login = service.login(async (authorizationUrl) => {
+      const state = new URL(authorizationUrl).searchParams.get('state');
+      // The manual-input callback is installed immediately after onAuth returns.
+      queueMicrotask(() => service.submitManualCode(`test-code#${state}`));
+    });
+    const rejection = expect(login).rejects.toMatchObject({ code: 'cancelled' });
+    try {
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+      expect(requestedSignal).toBeInstanceOf(AbortSignal);
+      await expect(service.cancelLogin()).resolves.toEqual({
+        authenticated: false,
+        authenticating: false,
+      });
+      await rejection;
+      expect(storage.get('openai-codex')).toBeUndefined();
+    } finally {
+      // Also release the loopback listener if an assertion fails.
+      rejectTokenRequest?.(new OpenAICodexAuthError('cancelled', 'Test cleanup'));
+      await service.cancelLogin();
+    }
+  });
+
   it('accepts the authorization URL emitted by the installed pi-ai provider', async () => {
     const service = new OpenAICodexAuthService(AuthStorage.inMemory(), 1_000);
     const openExternal = vi.fn(async (_url: string) => undefined);
