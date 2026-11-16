@@ -452,7 +452,9 @@ export class FeishuChannel extends ChannelBase {
     // group images are still emitted (cheap) so Gateway auth/pairing can run,
     // but we skip Feishu image downloads that would be discarded.
     const content = shouldProcess
-      ? await resolveFeishuRemoteContent(parsed, (imageKey) => this.api.downloadImage(imageKey))
+      ? await resolveFeishuRemoteContent(parsed, (imageKey) =>
+          this.api.downloadImage(imageKey, params.id)
+        )
       : parsed;
 
     const remoteMessage: RemoteMessage = {

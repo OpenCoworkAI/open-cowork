@@ -290,10 +290,14 @@ export class FeishuAPI {
   /**
    * Download image from Feishu
    */
-  async downloadImage(imageKey: string): Promise<Buffer> {
+  async downloadImage(imageKey: string, messageId?: string): Promise<Buffer> {
     const token = await this.refreshToken();
 
-    const response = await fetch(`${FEISHU_API_BASE}/im/v1/images/${imageKey}`, {
+    // Inbound user images require the original message resource endpoint.
+    const resourcePath = messageId
+      ? `/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(imageKey)}?type=image`
+      : `/im/v1/images/${encodeURIComponent(imageKey)}`;
+    const response = await fetch(`${FEISHU_API_BASE}${resourcePath}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

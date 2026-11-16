@@ -338,7 +338,7 @@ describe('FeishuChannel webhook imageKey resolution', () => {
     expect(result).toEqual({ status: 200, data: { code: 0 } });
 
     const message = await received;
-    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro');
+    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro', 'om_img');
     expect(message.content).toEqual({
       type: 'image',
       imageKey: 'img_v2_repro',
@@ -389,7 +389,7 @@ describe('FeishuChannel webhook imageKey resolution', () => {
     });
 
     const message = await received;
-    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro');
+    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro', 'om_ws');
     expect(message.content).toEqual({
       type: 'image',
       imageKey: 'img_v2_repro',
@@ -478,7 +478,7 @@ describe('FeishuChannel webhook imageKey resolution', () => {
     channel.handleWebhook(signedHeaders(officialSha256Signature(body)), body);
 
     const message = await received;
-    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro');
+    expect(downloadImage).toHaveBeenCalledWith('img_v2_repro', 'om_img');
     expect(message.isMentioned).toBe(true);
     expect(message.content.imageBase64).toBe(PNG_1X1.toString('base64'));
   });
