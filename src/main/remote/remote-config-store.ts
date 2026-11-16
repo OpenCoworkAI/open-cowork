@@ -17,6 +17,7 @@ import type {
   TelegramChannelConfig,
   DingtalkChannelConfig,
   WebSocketChannelConfig,
+  SlackChannelConfig,
   PairedUser,
 } from './types';
 import { DEFAULT_REMOTE_CONFIG } from './types';
@@ -166,6 +167,29 @@ class RemoteConfigStore {
   setFeishuConfig(config: FeishuChannelConfig): void {
     this.store.set('channels.feishu', config);
     log('[RemoteConfig] Feishu config updated');
+  }
+
+  /**
+   * Get slack channel config
+   */
+  getSlackConfig(): SlackChannelConfig | undefined {
+    return this.store.get('channels.slack');
+  }
+
+  /**
+   * Set slack channel config
+   */
+  setSlackConfig(config: SlackChannelConfig): void {
+    this.store.set('channels.slack', config);
+    log('[RemoteConfig] Slack config updated');
+  }
+
+  /**
+   * Remove slack channel config
+   */
+  clearSlackConfig(): void {
+    this.store.delete('channels.slack');
+    log('[RemoteConfig] Slack config cleared');
   }
 
   /**

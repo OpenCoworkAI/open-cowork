@@ -76,7 +76,7 @@ describe('Feishu webhook encryptKey and verificationToken settings', () => {
   });
 
   it('resets isSaving in finally after Feishu save failures', () => {
-    expect(panelSource).toContain('feishuSaved = false');
+    expect(panelSource).toMatch(/if \(!feishuResult\.success\) \{.*?return; \}/);
     expect(panelSource).toContain('finally { setIsSaving(false); }');
   });
 

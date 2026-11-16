@@ -1,6 +1,6 @@
 /**
  * Remote Control Settings Panel
- * Composes sub-components for Feishu/Lark bot remote control configuration.
+ * Composes sub-components for Feishu/Lark and Slack remote control configuration.
  */
 
 import { useState, useEffect } from 'react';
@@ -11,6 +11,7 @@ import { PairingRequestsSection } from './remote/PairingRequestsSection';
 import { PairingGuideCard } from './remote/PairingGuideCard';
 import { ConfigStepNav } from './remote/ConfigStepNav';
 import { FeishuConfigStep } from './remote/FeishuConfigStep';
+import { SlackConfigStep } from './remote/SlackConfigStep';
 import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
 import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
@@ -28,6 +29,12 @@ import {
   FEISHU_WEBHOOK_ENCRYPT_KEY_REQUIRED,
   getFeishuWebhookConfigError,
 } from '../../shared/feishu-webhook-config';
+import {
+  buildSlackSocketChannelConfig,
+  getSlackChannelConfigError,
+  isRemotePairingPolicy,
+  isSlackSocketConfigComplete,
+} from '../../shared/slack-channel-config';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -37,7 +44,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   // Remote state
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
-  const [, setConfig] = useState<RemoteConfig | null>(null);
+  const [config, setConfig] = useState<RemoteConfig | null>(null);
   const [pairedUsers, setPairedUsers] = useState<PairedUser[]>([]);
   const [pendingPairings, setPendingPairings] = useState<PairingRequest[]>([]);
   const [isTogglingGateway, setIsTogglingGateway] = useState(false);
@@ -51,6 +58,9 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [feishuVerificationToken, setFeishuVerificationToken] = useState('');
   const [feishuEncryptKey, setFeishuEncryptKey] = useState('');
   const [feishuDmPolicy, setFeishuDmPolicy] = useState('pairing');
+  const [slackBotToken, setSlackBotToken] = useState('');
+  const [slackAppToken, setSlackAppToken] = useState('');
+  const [slackDmPolicy, setSlackDmPolicy] = useState('pairing');
   const [gatewayPort, setGatewayPort] = useState(18789);
   const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('');
   const [autoApproveSafeTools, setAutoApproveSafeTools] = useState(true);
@@ -108,6 +118,11 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
           setFeishuEncryptKey(configResult.channels.feishu.encryptKey || '');
           setFeishuDmPolicy(configResult.channels.feishu.dm?.policy || 'pairing');
           setUseLongConnection(configResult.channels.feishu.useWebSocket !== false);
+        }
+        if (configResult.channels?.slack) {
+          setSlackBotToken(configResult.channels.slack.botToken || '');
+          setSlackAppToken(configResult.channels.slack.appToken || '');
+          setSlackDmPolicy(configResult.channels.slack.dm?.policy || 'pairing');
         }
       }
     } catch (err) {
@@ -180,6 +195,24 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       return;
     }
 
+    const hasSlackInput = Boolean(slackBotToken.trim() || slackAppToken.trim());
+    const slackWasConfigured = Boolean(config?.channels?.slack?.botToken);
+    const slackConfig = isSlackSocketConfigComplete({
+      botToken: slackBotToken,
+      appToken: slackAppToken,
+    })
+      ? buildSlackSocketChannelConfig({
+          botToken: slackBotToken,
+          appToken: slackAppToken,
+          dmPolicy: slackDmPolicy,
+        })
+      : null;
+
+    if (hasSlackInput && (!slackConfig || getSlackChannelConfigError(slackConfig))) {
+      setError({ key: 'remote.slackCredentialsRequired' });
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     try {
@@ -197,18 +230,31 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             : { enabled: false, type: 'ngrok' },
       });
 
-      let feishuSaved = true;
       if (feishuConfig) {
         const feishuResult = await window.electronAPI.remote.updateFeishuConfig(feishuConfig);
         if (!feishuResult.success) {
           setError(
             feishuResult.error ? { text: feishuResult.error } : { key: 'remote.saveFailed' }
           );
-          feishuSaved = false;
+          return;
         }
       }
 
-      if (feishuSaved) {
+      if (slackConfig) {
+        const slackResult = await window.electronAPI.remote.updateSlackConfig(slackConfig);
+        if (!slackResult.success) {
+          setError(slackResult.error ? { text: slackResult.error } : { key: 'remote.saveFailed' });
+          return;
+        }
+      } else if (!hasSlackInput && slackWasConfigured) {
+        const slackResult = await window.electronAPI.remote.updateSlackConfig(null);
+        if (!slackResult.success) {
+          setError(slackResult.error ? { text: slackResult.error } : { key: 'remote.saveFailed' });
+          return;
+        }
+      }
+
+      {
         setSuccess({ key: 'remote.configSaved' });
         setTimeout(() => setSuccess(null), 3000);
         await loadData();
@@ -271,6 +317,16 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
   const hasWebhookCredentials = !!(feishuVerificationToken.trim() && feishuEncryptKey.trim());
+  const isSlackConfigured = isSlackSocketConfigComplete({
+    botToken: slackBotToken,
+    appToken: slackAppToken,
+  });
+  const canStartGateway = isFeishuConfigured || isSlackConfigured;
+  const isPairingPolicy = isRemotePairingPolicy({
+    feishuDmPolicy,
+    slackDmPolicy,
+    isSlackConfigured,
+  });
   const isConnectionConfigured =
     (useLongConnection || (tunnelEnabled && !!ngrokAuthToken) || !!tunnelStatus?.connected) &&
     (useLongConnection || hasWebhookCredentials);
@@ -313,15 +369,15 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         pairedUsers={pairedUsers}
         pendingPairings={pendingPairings}
         isTogglingGateway={isTogglingGateway}
-        isFeishuConfigured={isFeishuConfigured}
+        canStartGateway={canStartGateway}
         onToggle={toggleGateway}
       />
 
-      {status?.running && feishuDmPolicy === 'pairing' && <PairingGuideCard />}
+      {status?.running && isPairingPolicy && <PairingGuideCard />}
 
       <PairingRequestsSection
         pendingPairings={pendingPairings}
-        showEmpty={status?.running && feishuDmPolicy === 'pairing'}
+        showEmpty={status?.running && isPairingPolicy}
         onApprove={approvePairing}
         onReject={rejectPairing}
       />
@@ -329,6 +385,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       <ConfigStepNav
         activeStep={activeStep}
         isFeishuConfigured={isFeishuConfigured}
+        isSlackConfigured={isSlackConfigured}
         isConnectionConfigured={isConnectionConfigured}
         onStepChange={setActiveStep}
       />
@@ -343,6 +400,16 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             onAppIdChange={setFeishuAppId}
             onAppSecretChange={setFeishuAppSecret}
             onDmPolicyChange={setFeishuDmPolicy}
+          />
+        )}
+        {activeStep === 'slack' && (
+          <SlackConfigStep
+            botToken={slackBotToken}
+            appToken={slackAppToken}
+            dmPolicy={slackDmPolicy}
+            onBotTokenChange={setSlackBotToken}
+            onAppTokenChange={setSlackAppToken}
+            onDmPolicyChange={setSlackDmPolicy}
           />
         )}
         {activeStep === 'connection' && (

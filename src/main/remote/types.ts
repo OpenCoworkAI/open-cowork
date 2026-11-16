@@ -3,7 +3,12 @@
  * 远程控制模块类型定义
  */
 
-// Types are defined locally in this file
+import type { SlackChannelConfig } from '../../shared/ipc-types';
+
+export type { SlackChannelConfig };
+
+// Types are defined locally in this file except SlackChannelConfig, which is
+// the shared IPC type so preload/main cannot drift.
 
 // ============================================================================
 // Gateway Configuration
@@ -220,37 +225,6 @@ export interface DingtalkChannelConfig {
   /** Group configuration */
   groups?: {
     [conversationId: string]: {
-      requireMention: boolean;
-      allowFrom?: string[];
-    };
-  };
-}
-
-// Slack Channel
-export interface SlackChannelConfig {
-  type: 'slack';
-
-  /** Bot User OAuth Token (xoxb-...) */
-  botToken: string;
-
-  /** App-Level Token for Socket Mode (xapp-...) */
-  appToken?: string;
-
-  /** Use Socket Mode instead of webhook (recommended for local dev) */
-  useSocketMode?: boolean;
-
-  /** Signing secret for webhook verification */
-  signingSecret?: string;
-
-  /** DM policy */
-  dm: {
-    policy: 'open' | 'pairing' | 'allowlist';
-    allowFrom?: string[]; // Slack user IDs
-  };
-
-  /** Channel configuration */
-  channels?: {
-    [channelId: string]: {
       requireMention: boolean;
       allowFrom?: string[];
     };

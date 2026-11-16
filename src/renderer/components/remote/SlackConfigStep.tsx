@@ -1,5 +1,9 @@
 /**
- * SlackConfigStep — Slack bot credentials and DM policy configuration
+ * SlackConfigStep — Slack bot credentials and DM policy configuration.
+ *
+ * Socket Mode only: webhook mode is not exposed until signingSecret is
+ * collected and validated. SlackChannel.verifySlackSignature cannot accept
+ * webhook traffic without it.
  */
 
 import { useTranslation } from 'react-i18next';
@@ -8,22 +12,18 @@ import { ExternalLink } from 'lucide-react';
 interface Props {
   botToken: string;
   appToken: string;
-  useSocketMode: boolean;
   dmPolicy: string;
   onBotTokenChange: (value: string) => void;
   onAppTokenChange: (value: string) => void;
-  onSocketModeChange: (value: boolean) => void;
   onDmPolicyChange: (value: string) => void;
 }
 
 export function SlackConfigStep({
   botToken,
   appToken,
-  useSocketMode,
   dmPolicy,
   onBotTokenChange,
   onAppTokenChange,
-  onSocketModeChange,
   onDmPolicyChange,
 }: Props) {
   const { t } = useTranslation();
@@ -59,37 +59,23 @@ export function SlackConfigStep({
           />
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onSocketModeChange(!useSocketMode)}
-            className={`relative w-10 h-6 rounded-full transition-colors ${useSocketMode ? 'bg-accent' : 'bg-border'}`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${useSocketMode ? 'translate-x-5' : 'translate-x-1'}`}
-            />
-          </button>
-          <div>
-            <div className="text-sm font-medium text-text-primary">
-              {t('remote.slackSocketMode')}
-            </div>
-            <div className="text-xs text-text-muted">{t('remote.slackSocketModeDesc')}</div>
-          </div>
+        <div className="p-3 rounded-xl border border-accent/30 bg-accent/5">
+          <div className="text-sm font-medium text-text-primary">{t('remote.slackSocketMode')}</div>
+          <div className="text-xs text-text-muted mt-0.5">{t('remote.slackSocketModeDesc')}</div>
         </div>
 
-        {useSocketMode && (
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">
-              {t('remote.slackAppToken')}
-            </label>
-            <input
-              type="password"
-              value={appToken}
-              onChange={(e) => onAppTokenChange(e.target.value)}
-              className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
-              placeholder="xapp-••••••••••••"
-            />
-          </div>
-        )}
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-2">
+            {t('remote.slackAppToken')}
+          </label>
+          <input
+            type="password"
+            value={appToken}
+            onChange={(e) => onAppTokenChange(e.target.value)}
+            className="w-full px-4 py-3 bg-surface-hover border border-border rounded-xl text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+            placeholder="xapp-••••••••••••"
+          />
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-2">
