@@ -439,6 +439,7 @@ export interface MemoryReadResult extends MemorySearchResult {
 export interface PermissionRequest {
   toolUseId: string;
   toolName: string;
+  canonicalToolName?: string;
   input: Record<string, unknown>;
   sessionId: string;
 }

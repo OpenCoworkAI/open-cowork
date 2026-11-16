@@ -14,6 +14,7 @@ import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
+import { isSafeRemoteAutoApprovedTool } from './remote-tool-policy';
 import { SessionNotFoundError } from '../session/session-errors';
 import type {
   GatewayStatus,
@@ -689,7 +690,8 @@ export class RemoteManager extends EventEmitter {
     actualSessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    canonicalToolName?: string
   ): Promise<{ allow: boolean; remember?: boolean } | null> {
     const remoteSessionId = this.sessionIdMapping.get(actualSessionId);
     if (!remoteSessionId) {
@@ -706,36 +708,7 @@ export class RemoteManager extends EventEmitter {
     // Check if auto-approve is enabled for safe tools
     const config = remoteConfigStore.getAll();
     if (config.gateway.autoApproveSafeTools) {
-      const safeTools = [
-        // Read-only tools
-        'Read',
-        'Glob',
-        'Grep',
-        'LS',
-        'WebFetch',
-        'WebSearch',
-        // MCP Chrome tools (for browsing)
-        'mcp__Chrome__navigate_page',
-        'mcp__Chrome__take_screenshot',
-        'mcp__Chrome__take_snapshot',
-        'mcp__Chrome__click',
-        'mcp__Chrome__fill',
-        'mcp__Chrome__hover',
-        'mcp__Chrome__list_pages',
-        'mcp__Chrome__select_page',
-        'mcp__Chrome__new_page',
-        'mcp__Chrome__close_page',
-        'mcp__Chrome__wait_for',
-        'mcp__Chrome__press_key',
-        'mcp__Chrome__evaluate_script',
-        'mcp__Chrome__get_network_request',
-        'mcp__Chrome__list_network_requests',
-        'mcp__Chrome__list_console_messages',
-        // Task tools
-        'Task',
-      ];
-
-      if (safeTools.includes(toolName)) {
+      if (isSafeRemoteAutoApprovedTool(canonicalToolName ?? toolName)) {
         log('[RemoteManager] Auto-approving safe tool:', toolName);
         // Send notification to user
         await this.doSendToChannel(channelInfo, `🔧 自动执行: **${toolName}**`);
