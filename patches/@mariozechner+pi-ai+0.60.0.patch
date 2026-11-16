@@ -10,10 +10,18 @@ index 5aeee0d..cbd865e 100644
  //# sourceMappingURL=anthropic.js.map
 \ No newline at end of file
 diff --git a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-index 29ae8cf..da97105 100644
+index 29ae8cf..64a726c 100644
 --- a/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
 +++ b/node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
-@@ -384,6 +384,43 @@ function maybeAddOpenRouterAnthropicCacheControl(model, messages) {
+@@ -73,6 +73,7 @@ export const streamOpenAICompletions = (model, context, options) => {
+                             type: "thinking_end",
+                             contentIndex: blockIndex(),
+                             content: block.thinking,
++                            contentSignature: block.thinkingSignature,
+                             partial: output,
+                         });
+                     }
+@@ -384,6 +385,43 @@ function maybeAddOpenRouterAnthropicCacheControl(model, messages) {
          }
      }
  }
@@ -57,7 +65,18 @@ index 29ae8cf..da97105 100644
  export function convertMessages(model, context, compat) {
      const params = [];
      const normalizeToolCallId = (id) => {
-@@ -474,13 +511,22 @@ export function convertMessages(model, context, compat) {
+@@ -458,6 +496,10 @@ export function convertMessages(model, context, compat) {
+                 role: "assistant",
+                 content: compat.requiresAssistantAfterToolResult ? "" : null,
+             };
++            const isSameModel = msg.provider === model.provider && msg.api === model.api && msg.model === model.id;
++            if (isSameModel && typeof msg.reasoning_content === "string") {
++                assistantMsg.reasoning_content = msg.reasoning_content;
++            }
+             const textBlocks = msg.content.filter((b) => b.type === "text");
+             // Filter out empty text blocks to avoid API validation errors
+             const nonEmptyTextBlocks = textBlocks.filter((b) => b.text && b.text.trim().length > 0);
+@@ -474,13 +516,22 @@ export function convertMessages(model, context, compat) {
              // Filter out empty thinking blocks to avoid API validation errors
              const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
              if (nonEmptyThinkingBlocks.length > 0) {
@@ -81,7 +100,23 @@ index 29ae8cf..da97105 100644
                      else {
                          assistantMsg.content = [{ type: "text", text: thinkingText }];
                      }
-@@ -594,7 +640,7 @@ export function convertMessages(model, context, compat) {
+@@ -493,6 +544,15 @@ export function convertMessages(model, context, compat) {
+                     }
+                 }
+             }
++            // DeepSeek V4 requires a reasoning_content field on assistant turns,
++            // including empty reasoning and recovered/multi-tool responses.
++            // Restrict the fallback to this model family: other relays may
++            // reject unknown fields, and cross-model thoughts must not replay.
++            if (/(?:^|\/)deepseek-v4(?:-|$)/i.test(model.id) && assistantMsg.reasoning_content === undefined) {
++                assistantMsg.reasoning_content = isSameModel
++                    ? nonEmptyThinkingBlocks.map((block) => block.thinking).join("\n")
++                    : "";
++            }
+             const toolCalls = msg.content.filter((b) => b.type === "toolCall");
+             if (toolCalls.length > 0) {
+                 assistantMsg.tool_calls = toolCalls.map((tc) => ({
+@@ -594,7 +654,7 @@ export function convertMessages(model, context, compat) {
          }
          lastRole = msg.role;
      }

@@ -251,6 +251,85 @@ describe('stripThinkingBlocksFromOpenAICompatibleMessages', () => {
 });
 
 describe('OpenAI-compatible convertMessages (pi-ai openai-completions)', () => {
+  it.each([
+    {
+      label: 'missing signature',
+      content: [{ type: 'thinking', thinking: 'retained reasoning' }],
+      expected: 'retained reasoning',
+    },
+    {
+      label: 'empty signed block',
+      content: [{ type: 'thinking', thinking: '', thinkingSignature: 'reasoning_content' }],
+      expected: '',
+    },
+    {
+      label: 'serialized top-level field',
+      content: [],
+      reasoning_content: 'serialized reasoning',
+      expected: 'serialized reasoning',
+    },
+  ])(
+    'preserves DeepSeek V4 reasoning for $label across batched and failed tools',
+    ({ content, expected, ...extra }) => {
+      const assistant = {
+        role: 'assistant',
+        ...sameDeepseekMeta,
+        ...extra,
+        content: [
+          ...content,
+          { type: 'toolCall', id: 'a', name: 'read', arguments: { path: 'a' } },
+          { type: 'toolCall', id: 'b', name: 'read', arguments: { path: 'b' } },
+        ],
+      };
+      const messages = [
+        assistant,
+        {
+          role: 'toolResult',
+          toolCallId: 'a',
+          toolName: 'read',
+          content: [{ type: 'text', text: 'missing' }],
+          isError: true,
+          timestamp: 2,
+        },
+        {
+          role: 'toolResult',
+          toolCallId: 'b',
+          toolName: 'read',
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
+          timestamp: 3,
+        },
+      ];
+      const original = structuredClone(messages);
+      const converted = convertMessages(deepseekOpenAIModel, { messages }, openaiCompat);
+      expect(converted[0].reasoning_content).toBe(expected);
+      expect(converted[0].tool_calls).toHaveLength(2);
+      expect(converted.filter((message: { role: string }) => message.role === 'tool')).toHaveLength(
+        2
+      );
+      expect(messages).toEqual(original);
+    }
+  );
+
+  it('does not add a DeepSeek-specific field to unrelated models', () => {
+    const model = { ...deepseekOpenAIModel, id: 'custom-text', reasoning: false };
+    const converted = convertMessages(
+      model,
+      {
+        messages: [
+          {
+            role: 'assistant',
+            ...sameDeepseekMeta,
+            model: model.id,
+            content: [{ type: 'text', text: 'answer' }],
+          },
+        ],
+      },
+      openaiCompat
+    );
+    expect(converted[0]).not.toHaveProperty('reasoning_content');
+  });
+
   it('drops thinking content blocks and keeps text plus tool calls/results', () => {
     const result = convertMessages(
       deepseekOpenAIModel,
