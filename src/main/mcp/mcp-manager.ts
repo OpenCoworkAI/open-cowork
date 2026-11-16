@@ -25,6 +25,7 @@ import path from 'path';
 import { connectWithOAuthRetry, OpenCoworkMcpOAuthProvider } from './mcp-oauth';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import { shouldAutoLaunchDefaultChrome } from './chrome-launch-policy';
 
 const MCP_LIST_TOOLS_TIMEOUT_MS = 5 * 60 * 1000;
 const MCP_TOOL_CALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -1091,8 +1092,9 @@ export class MCPManager {
 
     log(`[MCPManager] Connected to ${config.name}`);
 
-    // Special handling for Chrome DevTools MCP Server
-    if (config.name.toLowerCase().includes('chrome')) {
+    // Preserve the bundled preset's legacy bootstrap. Configured browser paths,
+    // modes and remote endpoints must be handled by the MCP server itself.
+    if (shouldAutoLaunchDefaultChrome(config)) {
       await this.ensureChromeReady(config.id, config.name, client);
     }
   }

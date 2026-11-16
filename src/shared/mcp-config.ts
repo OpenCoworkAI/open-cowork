@@ -76,12 +76,33 @@ function nonEmptyString(value: unknown): string | undefined {
 
 export function formatMcpArgsInput(args?: unknown): string {
   if (Array.isArray(args)) {
-    return args.map((item) => String(item)).join(' ');
+    const values = args.map((item) => String(item));
+    // Preserve paths with spaces and empty arguments through the settings form.
+    return values[0]?.startsWith('[') || values.some((item) => !item || /\s/.test(item))
+      ? JSON.stringify(values)
+      : values.join(' ');
   }
   if (typeof args === 'string') {
     return args;
   }
   return '';
+}
+
+/** Parse argument data without shell expansion or platform-specific escaping. */
+export function parseMcpArgsInput(input: string): string[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((item): item is string => typeof item === 'string')
+    ) {
+      throw new Error('MCP arguments must be a JSON array of strings');
+    }
+    return parsed;
+  }
+  return trimmed.split(/\s+/);
 }
 
 export function formatMcpCommandLine(command?: string, args?: unknown): string {
