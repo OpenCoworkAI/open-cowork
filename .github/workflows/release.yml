@@ -157,12 +157,17 @@ jobs:
             exit 1
           fi
 
+      - name: Generate release checksums and provenance
+        run: node scripts/write-release-checksums.js release mac-${{ matrix.arch }}
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.dmg
             release/*.zip
+            release/*.sha256
+            release/build-provenance-*.json
           draft: true
 
   build-windows:
@@ -266,9 +271,14 @@ jobs:
             exit 1
           }
 
+      - name: Generate release checksums and provenance
+        run: node scripts/write-release-checksums.js release win-x64
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           files: |
             release/*.exe
+            release/*.sha256
+            release/build-provenance-*.json
           draft: true
