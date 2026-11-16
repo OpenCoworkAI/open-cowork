@@ -10,6 +10,8 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { TelegramChannel } from './channels/telegram/telegram-channel';
+import { getTelegramConfigError } from '../../shared/telegram-channel-config';
 import { StdioChannel } from './channels/stdio-channel';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
@@ -19,6 +21,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  TelegramChannelConfig,
   ChannelType,
   RemoteMessage,
   RemoteSessionMapping,
@@ -31,7 +34,12 @@ import { getFeishuWebhookConfigError } from '../../shared/feishu-webhook-config'
 
 // Agent executor interface - exported for use in main process
 export interface AgentExecutor {
-  startSession(title: string, prompt: string, cwd?: string): Promise<Session>;
+  startSession(
+    title: string,
+    prompt: string,
+    cwd?: string,
+    content?: ContentBlock[]
+  ): Promise<Session>;
   continueSession(
     sessionId: string,
     prompt: string,
@@ -429,6 +437,26 @@ export class RemoteManager extends EventEmitter {
     }
   }
 
+  async updateTelegramConfig(config: TelegramChannelConfig | null): Promise<void> {
+    if (config) {
+      const error = getTelegramConfigError(config);
+      if (error) throw new Error(error);
+      remoteConfigStore.setTelegramConfig({ ...config, botToken: config.botToken.trim() });
+    } else {
+      remoteConfigStore.clearTelegramConfig();
+    }
+    const gateway = remoteConfigStore.getGatewayConfig();
+    const otherEntries = (gateway.auth.allowlist ?? []).filter(
+      (entry) => !entry.startsWith('telegram:')
+    );
+    const entries = config?.dm.allowFrom?.map((id) => `telegram:${id}`) ?? [];
+    // Add scoped IDs without weakening auth or changing other channel policies.
+    remoteConfigStore.setGatewayConfig({
+      auth: { ...gateway.auth, allowlist: [...new Set([...otherEntries, ...entries])] },
+    });
+    if (this.gateway?.running) await this.restart();
+  }
+
   /**
    * Approve pairing request
    */
@@ -776,6 +804,16 @@ export class RemoteManager extends EventEmitter {
         content: {
           type: 'markdown',
           markdown: messageText,
+          ...(channelInfo.channelType === 'telegram'
+            ? {
+                card: {
+                  keyboard: [[{ text: 'y' }, { text: 'n' }, { text: 'always' }]],
+                  one_time_keyboard: true,
+                  resize_keyboard: true,
+                  selective: true,
+                },
+              }
+            : {}),
         },
       });
     } catch (err) {
@@ -1264,7 +1302,11 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Slack channel registered');
     }
 
-    // TODO: Register other channels (WeChat, Telegram, DingTalk)
+    if (config.channels.telegram?.botToken) {
+      this.gateway.registerChannel(new TelegramChannel(config.channels.telegram));
+    }
+
+    // TODO: Register other channels (WeChat, DingTalk)
   }
 
   /**
@@ -1359,7 +1401,8 @@ export class RemoteManager extends EventEmitter {
       const newSession = await this.agentExecutor.startSession(
         buildRemoteSessionTitle(prompt),
         prompt,
-        workingDirectory
+        workingDirectory,
+        content
       );
 
       // Map remote session ID to actual session ID

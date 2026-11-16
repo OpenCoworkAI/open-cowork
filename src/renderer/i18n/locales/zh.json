@@ -968,7 +968,15 @@
     "expiresIn": "{{time}}后过期",
     "userRemoved": "用户已移除",
     "revokeFailed": "移除失败",
-    "copied": "已复制"
+    "copied": "已复制",
+    "stepTelegram": "Telegram",
+    "telegramTitle": "Telegram 远程控制",
+    "telegramSetup": "通过 BotFather 创建机器人，填写令牌和允许使用的 Telegram 数字用户 ID。使用私聊和长轮询，无需公网 webhook。清空令牌可断开连接。",
+    "telegramBotFather": "打开 BotFather",
+    "telegramToken": "机器人令牌",
+    "telegramAllowedUsers": "允许的用户 ID（逗号分隔）",
+    "telegramSaveError": "请检查机器人令牌，填写至少一个数字用户 ID，然后重试。",
+    "saving": "保存中..."
   },
   "time": {
     "now": "刚刚"

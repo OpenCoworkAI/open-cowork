@@ -173,30 +173,9 @@ export interface WechatChannelConfig {
   };
 }
 
-// Telegram Channel
-export interface TelegramChannelConfig {
-  type: 'telegram';
-
-  /** Bot token from @BotFather */
-  botToken: string;
-
-  /** Webhook URL (optional, uses polling if not set) */
-  webhookUrl?: string;
-
-  /** DM policy */
-  dm: {
-    policy: 'open' | 'pairing' | 'allowlist';
-    allowFrom?: string[]; // Telegram user IDs
-  };
-
-  /** Group configuration */
-  groups?: {
-    [chatId: string]: {
-      requireMention: boolean;
-      allowFrom?: string[];
-    };
-  };
-}
+// Telegram configuration is shared with preload and settings.
+import type { TelegramChannelConfig } from '../../shared/ipc-types';
+export type { TelegramChannelConfig } from '../../shared/ipc-types';
 
 // DingTalk (钉钉) Channel
 export interface DingtalkChannelConfig {
@@ -334,6 +313,8 @@ export interface RemoteContent {
   /** Image URL or key (for image type) */
   imageUrl?: string;
   imageKey?: string;
+  imageBase64?: string;
+  imageMediaType?: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
   /** File information (for file type) */
   file?: {
@@ -342,6 +323,7 @@ export interface RemoteContent {
     key?: string;
     size?: number;
     mimeType?: string;
+    inlineDataBase64?: string;
   };
 
   /** Voice/audio information */

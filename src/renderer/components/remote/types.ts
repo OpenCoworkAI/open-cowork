@@ -2,6 +2,8 @@
  * Shared types for RemoteControlPanel sub-components
  */
 
+import type { TelegramChannelConfig } from '../../../shared/ipc-types';
+
 export interface GatewayStatus {
   running: boolean;
   port?: number;
@@ -50,6 +52,7 @@ export interface RemoteConfig {
     };
   };
   channels: {
+    telegram?: TelegramChannelConfig;
     feishu?: {
       appId: string;
       appSecret: string;
@@ -78,6 +81,6 @@ export interface TunnelStatus {
   error?: string;
 }
 
-export type ConfigStep = 'feishu' | 'connection' | 'advanced';
+export type ConfigStep = 'feishu' | 'connection' | 'advanced' | 'telegram';
 
 export type LocalizedBanner = { key?: string; text?: string | null };
