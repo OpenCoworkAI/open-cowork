@@ -630,12 +630,16 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                         {t(
                           task.watchConfig.checkType === 'file'
                             ? 'schedule.watchFile'
-                            : 'schedule.watchCommand'
+                            : task.watchConfig.checkType === 'http'
+                              ? 'schedule.watchHttp'
+                              : 'schedule.watchCommand'
                         )}
                         :{' '}
                         {task.watchConfig.checkType === 'file'
                           ? task.watchConfig.checkConfig.path
-                          : task.watchConfig.checkConfig.command}
+                          : task.watchConfig.checkType === 'http'
+                            ? task.watchConfig.checkConfig.url
+                            : task.watchConfig.checkConfig.command}
                         <div>
                           {task.lastCheckedAt == null
                             ? t('schedule.watchPending')

@@ -12,6 +12,8 @@ import {
 } from '../../shared/schedule/local-watch-task';
 import { isPathWithinRoot } from '../tools/path-containment';
 import { logError } from '../utils/logger';
+import { HttpConditionChecker } from './http-condition-checker';
+import { normalizeWatchConfig } from '../../shared/schedule/watch-task';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -113,6 +115,9 @@ export async function checkLocalCondition(
   ) => Promise<WatchCommandOutput | null> = defaultWatchCommandRunner
 ): Promise<string> {
   const config = normalizeLocalWatchConfig(task.watchConfig);
+  if (config.checkType === 'http') {
+    return new HttpConditionChecker().check(normalizeWatchConfig(config));
+  }
   const hash = createHash('sha512');
   if (config.checkType === 'command') {
     const timeoutMs = config.checkConfig.timeoutMs ?? 10000;
