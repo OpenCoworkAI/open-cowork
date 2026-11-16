@@ -527,7 +527,8 @@ interface AgentRunnerOptions {
     sessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    canonicalToolName?: string
   ) => Promise<'allow' | 'deny' | 'allow_always'>;
 }
 
@@ -560,7 +561,8 @@ export class CoworkAgentRunner {
     sessionId: string,
     toolUseId: string,
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    canonicalToolName?: string
   ) => Promise<'allow' | 'deny' | 'allow_always'>;
   private pathResolver: PathResolver;
   private mcpManager?: MCPManager;
@@ -976,7 +978,7 @@ ${hints.join('\n')}
             // Send the display name to the renderer so the dialog shows a
             // human-readable tool name; canonical `toolName` is still used
             // for rule matching above and "always allow" memory below.
-            result = await requestPermission(sessionId, toolUseId, displayName, input);
+            result = await requestPermission(sessionId, toolUseId, displayName, input, toolName);
           } catch (permErr) {
             logError(
               `[CoworkAgentRunner] Permission request failed for '${toolName}' — failing closed`,

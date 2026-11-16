@@ -836,7 +836,8 @@ function sendToRenderer(event: ServerEvent) {
           sessionId,
           payload.toolUseId as string,
           payload.toolName as string,
-          (payload.input as Record<string, unknown> | undefined) ?? {}
+          (payload.input as Record<string, unknown> | undefined) ?? {},
+          payload.canonicalToolName as string | undefined
         )
         .then((result) => {
           if (result !== null && sessionManager) {
