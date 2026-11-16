@@ -973,7 +973,8 @@ export class WSLBridge implements SandboxExecutor {
   async executeCommand(
     command: string,
     cwd?: string,
-    env?: Record<string, string>
+    env?: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ExecutionResult> {
     if (!this.isInitialized) {
       throw new Error('WSL bridge not initialized');
@@ -992,8 +993,9 @@ export class WSLBridge implements SandboxExecutor {
         command,
         cwd: wslCwd,
         env,
+        timeout: timeoutMs || this.config?.timeout || 60000,
       },
-      this.config?.timeout || 60000
+      timeoutMs || this.config?.timeout || 60000
     );
 
     return {

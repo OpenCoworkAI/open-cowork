@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPiSessionRuntimeSignature } from '../src/main/agent/pi-session-runtime';
+import { DEFAULT_SUBAGENT_CONFIG } from '../src/shared/subagent-config';
 
 describe('pi session runtime signature', () => {
   const baseInput = {
@@ -62,5 +63,22 @@ describe('pi session runtime signature', () => {
     });
 
     expect(normalized).toBe(original);
+  });
+
+  it('refreshes cached tool descriptions after a named agent changes', () => {
+    const input = { ...baseInput, subagent: DEFAULT_SUBAGENT_CONFIG };
+    const original = buildPiSessionRuntimeSignature(input);
+    const updated = buildPiSessionRuntimeSignature({
+      ...input,
+      subagent: {
+        ...DEFAULT_SUBAGENT_CONFIG,
+        presets: [
+          ...DEFAULT_SUBAGENT_CONFIG.presets,
+          { name: 'custom', description: 'Custom role', prompt: 'Review files.', model: '' },
+        ],
+      },
+    });
+    expect(updated).not.toBe(original);
+    expect(buildPiSessionRuntimeSignature(structuredClone(input))).toBe(original);
   });
 });

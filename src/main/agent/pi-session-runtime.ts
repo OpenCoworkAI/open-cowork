@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { SubagentConfig } from '../../shared/subagent-config';
 
 export interface PiSessionRuntimeSignatureInput {
   configProvider?: string;
@@ -8,6 +9,7 @@ export interface PiSessionRuntimeSignatureInput {
   modelBaseUrl?: string;
   effectiveCwd?: string;
   apiKey?: string;
+  subagent?: SubagentConfig;
 }
 
 function normalizeText(value: string | undefined): string {
@@ -31,5 +33,6 @@ export function buildPiSessionRuntimeSignature(input: PiSessionRuntimeSignatureI
     modelBaseUrl: normalizeText(input.modelBaseUrl).replace(/\/+$/, ''),
     effectiveCwd: normalizeText(input.effectiveCwd),
     apiKeyFingerprint: fingerprintSecret(input.apiKey),
+    subagent: input.subagent,
   });
 }

@@ -1,5 +1,6 @@
 export const DEFAULT_SESSION_TITLE = 'New Session';
 const MAX_SESSION_TITLE_LENGTH = 50;
+export const MAX_RENAMED_SESSION_TITLE_LENGTH = 200;
 
 function truncateSessionTitle(value: string): string {
   return value.length > MAX_SESSION_TITLE_LENGTH
@@ -13,7 +14,10 @@ export function getDefaultTitleFromPrompt(prompt: string): string {
   return truncateSessionTitle(trimmed);
 }
 
-export function getInitialSessionTitle(prompt: string, firstAttachmentName?: string | null): string {
+export function getInitialSessionTitle(
+  prompt: string,
+  firstAttachmentName?: string | null
+): string {
   const promptTitle = getDefaultTitleFromPrompt(prompt);
   if (promptTitle !== DEFAULT_SESSION_TITLE) {
     return promptTitle;

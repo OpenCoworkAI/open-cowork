@@ -13,17 +13,17 @@ import {
   Search as SearchIcon,
   Plus,
   ListChecks,
-  Check,
 } from 'lucide-react';
 import type { Session } from '../types';
+import {
+  createSessionExport,
+  createSessionMarkdownExport,
+  getSessionExportMessages,
+  type SessionExportFormat,
+} from '../utils/session-export';
+import { SessionList } from './SessionList';
 
 import sidebarLogoSrc from '../assets/logo.png';
-
-type SessionGroup = {
-  key: string;
-  label: string;
-  sessions: Session[];
-};
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -40,16 +40,30 @@ export function Sidebar() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const {
     deleteSession,
+    renameSession,
     batchDeleteSessions,
     getSessionMessages,
     getSessionTraceSteps,
     isElectron,
   } = useIPC();
-  const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [exportError, setExportError] = useState<
+    'sidebar.exportFailed' | 'sidebar.exportPending' | null
+  >(null);
+  const [exportingSessionId, setExportingSessionId] = useState<string | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!exportError) return;
+    const timeout = window.setTimeout(() => setExportError(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [exportError]);
 
   const normalizedQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
   const filteredSessions = useMemo(() => {
@@ -58,14 +72,11 @@ export function Sidebar() {
       : sessions;
   }, [sessions, normalizedQuery]);
 
-  const groupedSessions = useMemo(
-    () => groupSessionsByDate(filteredSessions, t),
-    [filteredSessions, t]
-  );
-
   // Exit select mode when sidebar collapses
   useEffect(() => {
-    if (sidebarCollapsed && isSelectMode) {
+    if (!sidebarCollapsed) return;
+    setPendingDeleteSession(null);
+    if (isSelectMode) {
       setIsSelectMode(false);
       setSelectedIds(new Set());
       setShowDeleteConfirm(false);
@@ -85,6 +96,15 @@ export function Sidebar() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSelectMode]);
+
+  useEffect(() => {
+    if (!pendingDeleteSession) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingDeleteSession(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDeleteSession]);
 
   // Reset selection when search query changes to avoid deleting hidden sessions
   useEffect(() => {
@@ -203,7 +223,48 @@ export function Sidebar() {
 
   const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    deleteSession(sessionId);
+    const session = sessions.find((item) => item.id === sessionId);
+    setPendingDeleteSession({ id: sessionId, title: session?.title ?? '' });
+  };
+
+  const confirmPendingDelete = () => {
+    if (!pendingDeleteSession) return;
+    deleteSession(pendingDeleteSession.id);
+    setPendingDeleteSession(null);
+  };
+
+  const handleExportSession = async (
+    e: React.MouseEvent,
+    session: Session,
+    format: SessionExportFormat
+  ) => {
+    e.stopPropagation();
+    setExportError(null);
+    setExportingSessionId(session.id);
+    try {
+      const messages = await getSessionExportMessages(session.id, isElectron, getSessionMessages);
+      if (messages === null) {
+        setExportError('sidebar.exportPending');
+        return;
+      }
+      const { blob, filename } =
+        format === 'markdown'
+          ? createSessionMarkdownExport(session, messages, t)
+          : createSessionExport(session, messages);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error('[Sidebar] Failed to export session:', error);
+      setExportError('sidebar.exportFailed');
+    } finally {
+      setExportingSessionId(null);
+    }
   };
 
   const toggleTheme = () => {
@@ -275,7 +336,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-[17.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
+    <aside className="relative w-[17.5rem] bg-surface/96 border-r border-border-muted flex flex-col overflow-hidden">
       <div className="px-4 pt-5 pb-4 border-b border-border-muted">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">
@@ -340,80 +401,27 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4">
-        {groupedSessions.length === 0 ? (
-          <div className="px-3 py-6">
-            <p className="text-sm text-text-secondary">{t('sidebar.noTasks')}</p>
-            <p className="mt-1 text-xs leading-5 text-text-muted">{t('sidebar.noTasksHint')}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {groupedSessions.map((group) => (
-              <section key={group.key}>
-                <div className="px-3 pb-2 text-[11px] font-medium tracking-[0.04em] text-text-muted">
-                  {group.label}
-                </div>
-                <div className="space-y-0.5">
-                  {group.sessions.map((session) => {
-                    const isActive = activeSessionId === session.id;
-                    const isSelected = selectedIds.has(session.id);
-                    return (
-                      <div
-                        key={session.id}
-                        onClick={() => {
-                          if (isSelectMode) {
-                            toggleSelectSession(session.id);
-                          } else {
-                            handleSessionClick(session.id);
-                          }
-                        }}
-                        onMouseEnter={() => setHoveredSession(session.id)}
-                        onMouseLeave={() => setHoveredSession(null)}
-                        className={`group relative cursor-pointer rounded-lg px-2.5 py-1.5 transition-colors ${
-                          isSelectMode && isSelected
-                            ? 'bg-accent-muted/20'
-                            : isActive && !isSelectMode
-                              ? 'bg-surface-hover/80'
-                              : 'hover:bg-surface-hover/60'
-                        }`}
-                      >
-                        <div className={`flex items-center gap-2 ${!isSelectMode ? 'pr-6' : ''}`}>
-                          {isSelectMode && (
-                            <div
-                              className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
-                                isSelected
-                                  ? 'bg-accent text-white'
-                                  : 'border border-border-muted bg-background'
-                              }`}
-                            >
-                              {isSelected && <Check className="w-2.5 h-2.5" />}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-medium leading-5 text-text-primary truncate">
-                              {session.title}
-                            </div>
-                          </div>
-                        </div>
+      <SessionList
+        sessions={filteredSessions}
+        activeSessionId={activeSessionId}
+        selectedIds={selectedIds}
+        isSelectMode={isSelectMode}
+        exportingSessionId={exportingSessionId}
+        isElectron={isElectron}
+        onSessionClick={(sessionId) => {
+          if (isSelectMode) toggleSelectSession(sessionId);
+          else void handleSessionClick(sessionId);
+        }}
+        onExport={handleExportSession}
+        onRename={renameSession}
+        onDelete={handleDeleteSession}
+      />
 
-                        {!isSelectMode && hoveredSession === session.id && (
-                          <button
-                            onClick={(e) => handleDeleteSession(e, session.id)}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-error hover:bg-surface-active transition-colors"
-                            title={t('common.delete')}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-      </div>
+      {exportError && (
+        <p role="alert" className="px-4 pb-2 text-xs text-error">
+          {t(exportError)}
+        </p>
+      )}
 
       {isSelectMode ? (
         <div className="px-3 py-3 border-t border-border-muted">
@@ -497,38 +505,40 @@ export function Sidebar() {
           </div>
         </div>
       )}
+
+      {pendingDeleteSession && (
+        <div
+          className="absolute inset-0 z-20 flex items-end bg-black/20"
+          onClick={() => setPendingDeleteSession(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full border-t border-border-muted bg-surface px-3 py-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border border-error/30 bg-error/10 rounded-lg px-3 py-3">
+              <p className="text-[13px] text-text-primary mb-3">
+                {t('sidebar.deleteConfirm', { title: pendingDeleteSession.title })}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPendingDeleteSession(null)}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium text-text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  {t('sidebar.cancel')}
+                </button>
+                <button
+                  onClick={confirmPendingDelete}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-[13px] font-medium bg-error text-white hover:bg-error/90 transition-colors"
+                >
+                  {t('sidebar.confirmDelete')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
-}
-
-function groupSessionsByDate(sessions: Session[], t: (key: string) => string): SessionGroup[] {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfYesterday = startOfToday - 86_400_000;
-  const startOfPreviousWeek = startOfToday - 7 * 86_400_000;
-
-  const buckets: SessionGroup[] = [
-    { key: 'today', label: t('sidebar.today'), sessions: [] },
-    { key: 'yesterday', label: t('sidebar.yesterday'), sessions: [] },
-    { key: 'previousWeek', label: t('sidebar.previousWeek'), sessions: [] },
-    { key: 'older', label: t('sidebar.older'), sessions: [] },
-  ];
-
-  const sortedSessions = [...sessions].sort(
-    (a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
-  );
-  for (const session of sortedSessions) {
-    const timestamp = session.updatedAt || session.createdAt;
-    if (timestamp >= startOfToday) {
-      buckets[0].sessions.push(session);
-    } else if (timestamp >= startOfYesterday) {
-      buckets[1].sessions.push(session);
-    } else if (timestamp >= startOfPreviousWeek) {
-      buckets[2].sessions.push(session);
-    } else {
-      buckets[3].sessions.push(session);
-    }
-  }
-
-  return buckets.filter((bucket) => bucket.sessions.length > 0);
 }

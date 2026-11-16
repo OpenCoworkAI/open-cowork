@@ -269,9 +269,9 @@ open-cowork/
 
 详见 **[ROADMAP.md](ROADMAP.md)**。
 
-**已完成：** 安装包 · 文件系统沙盒 · VM 隔离 (WSL2/Lima) · 技能 (PPTX/DOCX/PDF/XLSX) · MCP 连接器 · 多模型支持 · 富文本输入 · 中英文界面
+**已完成：** 安装包 · 文件系统沙盒 · VM 隔离 (WSL2/Lima) · 技能 (PPTX/DOCX/PDF/XLSX) · MCP 连接器 · 多模型支持 · 富文本输入 · 中英文界面 · 图形界面操作
 
-**即将推出：** 记忆优化 · Linux 支持 · 插件系统 · Computer Use · 正式版发布
+**即将推出：** 记忆优化 · Linux 支持 · 插件系统 · 正式版发布
 
 ---
 

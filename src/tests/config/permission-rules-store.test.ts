@@ -249,4 +249,116 @@ describe('permission-rules-store', () => {
       expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
     });
   });
+
+  describe('TodoWrite', () => {
+    it('is allowed by default, whatever the case of the name', () => {
+      expect(decidePermission(SESSION_A, 'TodoWrite', { todos: [] })).toBe('allow');
+      expect(decidePermission(SESSION_A, 'todowrite', { todos: [] })).toBe('allow');
+    });
+
+    it('is allowed under saved settings that predate it', () => {
+      setPermissionRules([
+        { tool: 'read', action: 'allow' },
+        { tool: 'bash', action: 'ask' },
+        { tool: 'write', action: 'deny' },
+      ]);
+      expect(decidePermission(SESSION_A, 'TodoWrite', { todos: [] })).toBe('allow');
+    });
+
+    it.each(['ask', 'deny'] as const)('follows a rule that says %s', (action) => {
+      setPermissionRules([{ tool: 'TodoWrite', action }]);
+      expect(decidePermission(SESSION_A, 'TodoWrite', { todos: [] })).toBe(action);
+    });
+
+    it('matches the exact name only', () => {
+      for (const name of ['todo', 'todowrite_v2', 'mcp__notes__TodoWrite', 'TodoRead']) {
+        expect(decidePermission(SESSION_A, name, {})).toBe('ask');
+      }
+    });
+
+    it('does not make other tools without a rule allowed', () => {
+      expect(decidePermission(SESSION_A, 'WebFetch', {})).toBe('ask');
+      expect(decidePermission(SESSION_A, 'config_write', {})).toBe('ask');
+    });
+  });
+
+  describe('changes to the rules', () => {
+    it('drop the approvals given under the old rules, in every session', () => {
+      setPermissionRules([{ tool: 'bash', action: 'ask' }]);
+      rememberAlwaysAllow(SESSION_A, 'bash');
+      rememberAlwaysAllow(SESSION_B, 'bash');
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+
+      setPermissionRules([{ tool: 'bash', action: 'deny' }]);
+
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('deny');
+      expect(decidePermission(SESSION_B, 'bash', {})).toBe('deny');
+    });
+
+    it('let a rule that now asks override an earlier "always allow" for TodoWrite', () => {
+      setPermissionRules([{ tool: 'TodoWrite', action: 'ask' }]);
+      rememberAlwaysAllow(SESSION_A, 'TodoWrite');
+      expect(decidePermission(SESSION_A, 'TodoWrite', {})).toBe('allow');
+
+      setPermissionRules([{ tool: 'TodoWrite', action: 'deny' }]);
+
+      expect(decidePermission(SESSION_A, 'TodoWrite', {})).toBe('deny');
+    });
+
+    it('keep the approvals when the same rules are sent again', () => {
+      setPermissionRules([{ tool: 'bash', action: 'ask' }]);
+      rememberAlwaysAllow(SESSION_A, 'bash');
+
+      // The renderer mirrors its settings to the main process more often than the rules change.
+      setPermissionRules([{ tool: 'bash', action: 'ask' }]);
+
+      expect(decidePermission(SESSION_A, 'bash', {})).toBe('allow');
+    });
+
+    it('keep the approvals when the rules differ only in tool name case or an empty pattern', () => {
+      setPermissionRules([
+        { tool: 'Bash', action: 'ask' },
+        { tool: 'read', pattern: '', action: 'allow' },
+      ]);
+      rememberAlwaysAllow(SESSION_A, 'bash');
+
+      setPermissionRules([
+        { tool: 'bash', action: 'ask' },
+        { tool: 'read', action: 'allow' },
+      ]);
+
+      expect(decidePermission(SESSION_A, 'bash', { command: 'ls' })).toBe('allow');
+    });
+
+    it('drop the approvals when a non-empty pattern changes', () => {
+      setPermissionRules([{ tool: 'bash', pattern: '*sudo*', action: 'deny' }]);
+      rememberAlwaysAllow(SESSION_A, 'bash');
+      expect(decidePermission(SESSION_A, 'bash', { command: 'ls' })).toBe('allow');
+
+      setPermissionRules([{ tool: 'bash', pattern: '*rm*', action: 'deny' }]);
+
+      expect(decidePermission(SESSION_A, 'bash', { command: 'ls' })).toBe('ask');
+    });
+
+    it('drop the approvals when the order of the rules changes, since the first match wins', () => {
+      const sudoDenied = { tool: 'bash', pattern: '*sudo*', action: 'deny' } as const;
+      const otherwiseAsk = { tool: 'bash', action: 'ask' } as const;
+      setPermissionRules([sudoDenied, otherwiseAsk]);
+      expect(decidePermission(SESSION_A, 'bash', { command: 'sudo ls' })).toBe('deny');
+      rememberAlwaysAllow(SESSION_A, 'bash');
+
+      setPermissionRules([otherwiseAsk, sudoDenied]);
+
+      expect(decidePermission(SESSION_A, 'bash', { command: 'sudo ls' })).toBe('ask');
+    });
+
+    it('drop the approvals when invalid input resets the rules to the defaults', () => {
+      setPermissionRules([{ tool: 'bash', action: 'allow' }]);
+      rememberAlwaysAllow(SESSION_A, 'write');
+
+      setPermissionRules(null);
+
+      expect(decidePermission(SESSION_A, 'write', {})).toBe('ask');
+    });
+  });
 });

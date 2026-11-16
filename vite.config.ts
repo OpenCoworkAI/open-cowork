@@ -1,8 +1,33 @@
+import { readFileSync, writeFileSync } from 'fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron';
-import { resolve } from 'path';
+import { dirname, resolve } from 'path';
 import { builtinModules } from 'module';
+
+// Run before the main bundle evaluates. Rollup captures worker_threads.Worker while
+// evaluating imports, which is too late to patch from application code. The helper
+// is a sibling file so this require does not replace the main module's exports.
+const imageResizePackagingSourcePath = resolve(
+  __dirname,
+  'src/main/agent/image-resize-packaging.cjs'
+);
+const imageResizeWorkerBanner =
+  "require('./image-resize-packaging.cjs').installPackagedImageWorkerResolver();\n";
+
+function copyImageResizePackagingPlugin() {
+  return {
+    name: 'copy-image-resize-packaging',
+    writeBundle(options: { dir?: string; file?: string }) {
+      const outDir = options.dir || (options.file ? dirname(options.file) : '');
+      if (!outDir) return;
+      writeFileSync(
+        resolve(outDir, 'image-resize-packaging.cjs'),
+        readFileSync(imageResizePackagingSourcePath)
+      );
+    },
+  };
+}
 
 // Node built-in modules must be external for Electron main process
 const nodeBuiltins = builtinModules.flatMap((m) => [m, `node:${m}`]);
@@ -29,6 +54,7 @@ export default defineConfig({
           args.startup();
         },
         vite: {
+          plugins: [copyImageResizePackagingPlugin()],
           build: {
             outDir: 'dist-electron/main',
             rollupOptions: {
@@ -59,6 +85,7 @@ export default defineConfig({
               output: {
                 // Ensure consistent interop for CJS/ESM
                 interop: 'auto',
+                banner: imageResizeWorkerBanner,
               },
             },
           },

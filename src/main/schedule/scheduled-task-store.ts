@@ -1,13 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { DatabaseInstance, ScheduledTaskRow } from '../db/database';
+import { normalizeLocalWatchConfig } from '../../shared/schedule/local-watch-task';
 import type {
   ScheduledTask,
   ScheduledTaskCreateInput,
   ScheduledTaskStore,
-  ScheduledTaskUpdateInput,
+  ScheduledTaskStoreUpdate,
 } from './scheduled-task-manager';
 
-export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskStore {
+export function createScheduledTaskStore(
+  db: Pick<DatabaseInstance, 'scheduledTasks'>
+): ScheduledTaskStore {
   return {
     list: () => db.scheduledTasks.getAll().map(mapRowToTask),
     get: (id: string) => {
@@ -32,11 +35,17 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
         last_error: null,
         created_at: now,
         updated_at: now,
+        watch_config: input.watchConfig
+          ? JSON.stringify(normalizeLocalWatchConfig(input.watchConfig))
+          : null,
+        last_state: null,
+        last_checked_at: null,
+        consecutive_unchanged: 0,
       };
       db.scheduledTasks.create(row);
       return mapRowToTask(row);
     },
-    update: (id: string, updates: ScheduledTaskUpdateInput) => {
+    update: (id: string, updates: ScheduledTaskStoreUpdate) => {
       const mapped = mapTaskUpdatesToRow(updates);
       db.scheduledTasks.update(id, mapped);
       const row = db.scheduledTasks.get(id);
@@ -52,7 +61,21 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
 }
 
 function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
+  let watchConfig: ScheduledTask['watchConfig'] = null;
+  let watchConfigError: string | null = null;
+  if (row.watch_config != null) {
+    try {
+      watchConfig = normalizeLocalWatchConfig(JSON.parse(row.watch_config));
+    } catch (error) {
+      watchConfigError = error instanceof Error ? error.message : String(error);
+    }
+  }
   return {
+    watchConfig,
+    watchConfigError,
+    lastState: row.last_state ?? null,
+    lastCheckedAt: row.last_checked_at ?? null,
+    consecutiveUnchanged: row.consecutive_unchanged ?? 0,
     id: row.id,
     title: row.title,
     prompt: row.prompt,
@@ -71,7 +94,7 @@ function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
   };
 }
 
-function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<ScheduledTaskRow> {
+function mapTaskUpdatesToRow(updates: ScheduledTaskStoreUpdate): Partial<ScheduledTaskRow> {
   const mapped: Partial<ScheduledTaskRow> = {};
   if (updates.title !== undefined) mapped.title = updates.title;
   if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
@@ -87,6 +110,14 @@ function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<Schedul
   if (updates.lastRunAt !== undefined) mapped.last_run_at = updates.lastRunAt;
   if (updates.lastRunSessionId !== undefined) mapped.last_run_session_id = updates.lastRunSessionId;
   if (updates.lastError !== undefined) mapped.last_error = updates.lastError;
+  if (updates.watchConfig !== undefined)
+    mapped.watch_config = updates.watchConfig
+      ? JSON.stringify(normalizeLocalWatchConfig(updates.watchConfig))
+      : null;
+  if (updates.lastState !== undefined) mapped.last_state = updates.lastState;
+  if (updates.lastCheckedAt !== undefined) mapped.last_checked_at = updates.lastCheckedAt;
+  if (updates.consecutiveUnchanged !== undefined)
+    mapped.consecutive_unchanged = updates.consecutiveUnchanged;
   return mapped;
 }
 
