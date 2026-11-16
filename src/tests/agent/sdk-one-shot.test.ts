@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const completeSimpleMock = vi.hoisted(() => vi.fn());
 const getApiKeyMock = vi.hoisted(() => vi.fn());
+const removeRuntimeApiKeyMock = vi.hoisted(() => vi.fn());
+const selectStorageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mariozechner/pi-ai', () => ({
   completeSimple: completeSimpleMock,
@@ -9,10 +11,14 @@ vi.mock('@mariozechner/pi-ai', () => ({
 }));
 
 vi.mock('../../main/agent/shared-auth', () => ({
-  getSharedAuthStorage: () => ({
-    setRuntimeApiKey: vi.fn(),
-    getApiKey: getApiKeyMock,
-  }),
+  getSharedAuthStorage: (provider?: string) => {
+    selectStorageMock(provider);
+    return {
+      setRuntimeApiKey: vi.fn(),
+      removeRuntimeApiKey: removeRuntimeApiKeyMock,
+      getApiKey: getApiKeyMock,
+    };
+  },
   ModelRegistry: vi.fn(),
 }));
 
@@ -71,6 +77,8 @@ describe('runPiAiOneShot', () => {
   beforeEach(() => {
     completeSimpleMock.mockReset();
     getApiKeyMock.mockReset();
+    removeRuntimeApiKeyMock.mockReset();
+    selectStorageMock.mockReset();
     completeSimpleMock.mockResolvedValue({
       content: [{ type: 'text', text: 'ok' }],
       stopReason: 'stop',
@@ -90,6 +98,8 @@ describe('runPiAiOneShot', () => {
     await runPiAiOneShot('hello', 'system', config);
 
     expect(getApiKeyMock).toHaveBeenCalledWith('openai-codex');
+    expect(selectStorageMock).toHaveBeenCalledWith('openai-codex');
+    expect(removeRuntimeApiKeyMock).toHaveBeenCalledWith('openai-codex');
     expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
       apiKey: 'oauth-access-token',
     });

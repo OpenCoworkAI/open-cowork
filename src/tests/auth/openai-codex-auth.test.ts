@@ -80,6 +80,23 @@ function createStorage(
 describe('OpenAICodexAuthService', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('clears a stale runtime key when logging out so it cannot override account logout', async () => {
+    const storage = AuthStorage.inMemory();
+    storage.set('openai-codex', {
+      type: 'oauth',
+      access: 'account-token',
+      refresh: 'refresh-token',
+      expires: Date.now() + 60_000,
+    });
+    storage.setRuntimeApiKey('openai-codex', 'stale-runtime-key');
+    const service = new OpenAICodexAuthService(storage);
+    await expect(service.logout()).resolves.toEqual({
+      authenticated: false,
+      authenticating: false,
+    });
+    await expect(storage.getApiKey('openai-codex')).resolves.toBeUndefined();
+  });
+
   it('cancels the installed provider during token exchange without persisting credentials', async () => {
     const storage = AuthStorage.inMemory();
     const service = new OpenAICodexAuthService(storage, 1_000);

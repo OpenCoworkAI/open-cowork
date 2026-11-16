@@ -236,7 +236,10 @@ export async function runPiAiOneShot(
 
   // Resolve either the configured API key or an OAuth access token. Tokens stay
   // in the main process and are passed directly to pi-ai for this request only.
-  const authStorage = getSharedAuthStorage();
+  const authStorage = getSharedAuthStorage(resolvedModel.provider);
+  if (!configuredApiKey && resolvedModel.provider === 'openai-codex') {
+    authStorage.removeRuntimeApiKey('openai-codex');
+  }
   if (configuredApiKey) {
     // Set for the config provider
     authStorage.setRuntimeApiKey(provider, configuredApiKey);

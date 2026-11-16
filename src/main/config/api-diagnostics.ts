@@ -364,7 +364,7 @@ async function stepAuth(input: DiagnosticInput, step: DiagnosticStep): Promise<v
   if (input.provider === 'openai-codex') {
     const start = Date.now();
     try {
-      const accessToken = await getSharedAuthStorage().getApiKey('openai-codex');
+      const accessToken = await getSharedAuthStorage('openai-codex').getApiKey('openai-codex');
       if (!accessToken) {
         step.status = 'fail';
         step.error = 'ChatGPT account is not connected';

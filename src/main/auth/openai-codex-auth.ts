@@ -33,7 +33,8 @@ export interface OpenAICodexAuthActionResult {
 type AuthStoragePort = Pick<
   AuthStorage,
   'drainErrors' | 'get' | 'hasAuth' | 'login' | 'logout' | 'reload'
->;
+> &
+  Partial<Pick<AuthStorage, 'removeRuntimeApiKey'>>;
 type OpenExternal = (url: string) => Promise<void>;
 
 export class OpenAICodexAuthError extends Error {
@@ -110,7 +111,7 @@ export class OpenAICodexAuthService {
   } | null = null;
 
   constructor(
-    private readonly storage: AuthStoragePort = getSharedAuthStorage(),
+    private readonly storage: AuthStoragePort = getSharedAuthStorage(PROVIDER_ID),
     private readonly loginTimeoutMs = DEFAULT_LOGIN_TIMEOUT_MS
   ) {}
 
@@ -178,6 +179,8 @@ export class OpenAICodexAuthService {
     if (this.activeLogin) {
       return this.activeLogin;
     }
+    this.storage.removeRuntimeApiKey?.(PROVIDER_ID);
+    this.storage.reload();
 
     const controller = new AbortController();
     this.activeController = controller;
@@ -263,6 +266,7 @@ export class OpenAICodexAuthService {
 
   async logout(): Promise<OpenAICodexAuthStatus> {
     await this.cancelLogin();
+    this.storage.removeRuntimeApiKey?.(PROVIDER_ID);
     this.storage.drainErrors();
     // AuthStorage 0.60.0 is synchronous, but awaiting also preserves correct
     // ordering if its port becomes asynchronous in a future release.

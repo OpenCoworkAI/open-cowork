@@ -1660,8 +1660,11 @@ ${hints.join('\n')}
       });
 
       // Set up API keys via AuthStorage
-      const authStorage = getSharedAuthStorage();
+      const authStorage = getSharedAuthStorage(piModel.provider);
       const apiKey = runtimeConfig.apiKey?.trim();
+      if (!apiKey && piModel.provider === 'openai-codex') {
+        authStorage.removeRuntimeApiKey('openai-codex');
+      }
       if (
         !apiKey &&
         piModel.provider === 'openai-codex' &&
