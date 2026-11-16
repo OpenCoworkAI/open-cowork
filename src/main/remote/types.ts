@@ -346,6 +346,7 @@ export interface RemoteContent {
     key?: string;
     size?: number;
     mimeType?: string;
+    inlineDataBase64?: string;
   };
 
   /** Voice/audio information */

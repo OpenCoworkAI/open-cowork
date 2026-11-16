@@ -28,6 +28,22 @@ export function convertRemoteContentToBlocks(content: RemoteContent): RemoteCont
       return convertImageContent(content);
 
     case 'file':
+      if (content.file?.inlineDataBase64) {
+        return {
+          blocks: [
+            ...(content.text ? [{ type: 'text' as const, text: content.text }] : []),
+            {
+              type: 'file_attachment',
+              filename: content.file.name,
+              relativePath: '',
+              size: content.file.size ?? 0,
+              mimeType: content.file.mimeType,
+              inlineDataBase64: content.file.inlineDataBase64,
+            },
+          ],
+          deliverToAgent: true,
+        };
+      }
       return {
         blocks: [{ type: 'text', text: describeFileContent(content) } as TextContent],
         deliverToAgent: true,
@@ -62,7 +78,13 @@ function convertImageContent(content: RemoteContent): RemoteContentConversion {
         data: content.imageBase64,
       },
     };
-    return { blocks: [imageBlock], deliverToAgent: true };
+    return {
+      blocks: [
+        ...(content.text ? [{ type: 'text' as const, text: content.text }] : []),
+        imageBlock,
+      ],
+      deliverToAgent: true,
+    };
   }
 
   if (content.imageUrl) {
