@@ -299,6 +299,10 @@
           "name": "MiniMax",
           "note": "除非网关文档明确说明其他协议，否则优先按 OpenAI 兼容协议配置。"
         },
+        "openllm": {
+          "name": "OpenLLM",
+          "note": "本地 OpenLLM 守护进程，无需 API Key，使用你已登录的账号。如需云端，请使用 https://www.openllm.sh/v1 并填写 OpenLLM API Key。档位别名：ultra、plus、lite。"
+        },
         "genericOpenAI": {
           "name": "通用 OpenAI 兼容服务",
           "note": "适用于自定义中继、网关或模拟 OpenAI API 的推理服务。"

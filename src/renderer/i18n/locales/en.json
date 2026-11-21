@@ -299,6 +299,10 @@
           "name": "MiniMax",
           "note": "Use OpenAI-compatible mode unless your MiniMax gateway documents another protocol."
         },
+        "openllm": {
+          "name": "OpenLLM",
+          "note": "Local OpenLLM daemon. No API key needed; it uses the account you signed in with. For the cloud origin, use https://www.openllm.sh/v1 with an OpenLLM API key. Tier aliases: ultra, plus, lite."
+        },
         "genericOpenAI": {
           "name": "Generic OpenAI-compatible",
           "note": "Use this for custom relays, gateways, or inference servers that mimic the OpenAI API."

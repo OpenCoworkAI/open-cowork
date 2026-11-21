@@ -74,6 +74,11 @@
       "name": "Kimi",
       "baseUrl": "https://api.kimi.com/coding/",
       "recommendedModels": ["kimi-k2"]
+    },
+    {
+      "name": "OpenLLM",
+      "baseUrl": "http://127.0.0.1:8787/v1",
+      "recommendedModels": ["plus"]
     }
   ],
   "securityAndPrivacy": {
