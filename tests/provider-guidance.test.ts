@@ -43,6 +43,8 @@ describe('provider guidance helpers', () => {
     expect(setup?.exampleModel).toBe('plus');
     expect(setup?.preferProviderTab).toBeUndefined();
     expect(detectCommonProviderSetup('http://localhost:8787/v1/')?.id).toBe('openllm');
+    expect(detectCommonProviderSetup('http://0.0.0.0:8787/v1')?.id).toBe('openllm');
+    expect(detectCommonProviderSetup('http://[::1]:8787/v1')?.id).toBe('openllm');
     expect(detectCommonProviderSetup('http://127.0.0.1:3000/v1')).toBeNull();
     expect(detectCommonProviderSetup('http://127.0.0.1:11434/v1')?.id).toBe('ollama');
   });

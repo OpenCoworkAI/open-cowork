@@ -149,7 +149,7 @@ export const COMMON_PROVIDER_SETUPS: CommonProviderSetup[] = [
     recommendedBaseUrl: 'http://127.0.0.1:8787/v1',
     exampleModel: 'plus',
     matcher: {
-      hosts: ['127.0.0.1', 'localhost'],
+      hosts: ['127.0.0.1', 'localhost', '0.0.0.0', '[::1]'],
       ports: ['8787'],
       pathPrefixes: ['/v1'],
     },
